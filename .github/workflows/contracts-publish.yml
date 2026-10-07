@@ -1,0 +1,28 @@
+# Publishes @lvn/contracts to GitHub Packages when a `contracts-v<semver>` tag is pushed (spec §2, §3).
+# The tag must equal contracts/package.json's version. Blocked on ADR-0006 (package scope).
+name: contracts-publish
+
+on:
+  push:
+    tags: ['contracts-v*']
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm, registry-url: 'https://npm.pkg.github.com' }
+      - run: pnpm install --frozen-lockfile
+      - name: Tag matches package version
+        run: test "contracts-v$(node -p "require('./contracts/package.json').version")" = "$GITHUB_REF_NAME"
+      - run: pnpm --filter @lvn/contracts test
+      - run: pnpm --filter @lvn/contracts build
+      - run: pnpm --filter @lvn/contracts publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
