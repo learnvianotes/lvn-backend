@@ -16,7 +16,7 @@ erDiagram
   User ||--o{ Membership : "belongs to"
   Organization ||--o{ Membership : has
   User ||--o{ ConsentRecord : accepts
-  User ||--o{ Follow : "follows (teachers)"
+  User ||--o{ Follow : "follows a teacher"
   User ||--o{ Connection : "connected (teachers)"
   User ||--o{ ConnectionRequest : sends
   User ||--o{ AuditLog : "acts in"
@@ -65,8 +65,8 @@ erDiagram
     enum role "ORG_ADMIN | TEACHER | STUDENT"
   }
   Follow {
-    uuid followerId FK
-    uuid followeeId FK
+    uuid followerId FK "any user"
+    uuid followeeId FK "a teacher"
     timestamptz createdAt
   }
   Connection {
@@ -143,6 +143,7 @@ erDiagram
     uuid folderId FK
     text title
     text slug
+    enum kind "NOTE | BLOG | POST | PROJECT (ADR-0014)"
     enum visibility "PRIVATE | SHARED | PUBLIC"
     enum moderationState "OK | PENDING_REVIEW | HIDDEN"
     int draftRevision

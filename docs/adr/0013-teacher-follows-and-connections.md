@@ -1,6 +1,6 @@
 # ADR-0013: Teachers follow and connect with other teachers to share notes
 
-- Status: Accepted (owner decision, 2026-10-08)
+- Status: Accepted (owner decision, 2026-10-08); amended by ADR-0014 (students may follow teachers)
 - Date: 2026-10-08
 - Spec sections: §4.1, §5, §6.1, §15.1, §18
 - Answers: the open point in ADR-0011 ("a normal teacher needs a connection")
