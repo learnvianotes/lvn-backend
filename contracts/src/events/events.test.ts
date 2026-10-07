@@ -35,6 +35,12 @@ describe('events', () => {
     expect(() => parseEvent('DoubtAnswered', { ...e, payload: { ...e.payload, byMentor: undefined } })).toThrow()
   })
 
+  it('a data export part names its context', () => {
+    const ok = { ...base, type: 'DataExportPartReady', version: 1, payload: { exportId: uuid(2), context: 'notes', fileId: uuid(3) } }
+    expect(parseEvent('DataExportPartReady', ok).payload.context).toBe('notes')
+    expect(() => parseEvent('DataExportPartReady', { ...ok, payload: { ...ok.payload, context: 'billing' } })).toThrow()
+  })
+
   it('rejects a wrong version or payload', () => {
     expect(() => parseEvent('UserDeleted', { ...base, type: 'UserDeleted', version: 2, payload: { userId: uuid(2) } })).toThrow()
     expect(() => parseEvent('UserDeleted', { ...base, type: 'UserDeleted', version: 1, payload: {} })).toThrow()

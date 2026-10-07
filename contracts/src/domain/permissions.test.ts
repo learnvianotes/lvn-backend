@@ -1,12 +1,12 @@
 import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, Visibility } from './enums'
-import { Action, can, type Actor, type NoteFacts, type Resource } from './permissions'
+import { Action, can, NEEDS_VERIFIED_ACCOUNT, type Actor, type NoteFacts, type Resource } from './permissions'
 
 /**
  * One assertion per cell of the §5 table that has a defined value. If this file and the spec disagree,
  * the spec wins and this file (and permissions.ts) change in the same PR.
  */
 
-const student = (id: string, extra: Partial<Actor> = {}): Actor => ({ id, globalRole: GlobalRole.STUDENT, emailVerified: true, ...extra })
+const student = (id: string, extra: Partial<Actor> = {}): Actor => ({ id, globalRole: GlobalRole.STUDENT, institutionVerified: true, ...extra })
 const owner = student('owner')
 const other = student('other')
 const anon = null
@@ -90,8 +90,8 @@ describe('note rows of §5', () => {
     }
   })
 
-  it('unverified email cannot comment or publish (§7.1)', () => {
-    const unverified = student('owner', { emailVerified: false })
+  it('an unverified account cannot comment or publish (§7.1, ADR-0017)', () => {
+    const unverified = student('owner', { institutionVerified: false })
     expect(can(unverified, Action.NOTE_COMMENT, { kind: 'note', note: note('PUBLIC') })).toBe(false)
     expect(can(unverified, Action.NOTE_PUBLISH, { kind: 'note', note: note('PRIVATE') })).toBe(false)
   })
@@ -173,7 +173,7 @@ describe('group rows of §5', () => {
 
     it('members, unverified users and anonymous visitors cannot join directly', () => {
       expect(can(other, Action.GROUP_JOIN, { ...open, role: GroupRole.MEMBER })).toBe(false)
-      expect(can(student('x', { emailVerified: false }), Action.GROUP_JOIN, open)).toBe(false)
+      expect(can(student('x', { institutionVerified: false }), Action.GROUP_JOIN, open)).toBe(false)
       expect(can(anon, Action.GROUP_JOIN, open)).toBe(false)
     })
 
@@ -184,7 +184,7 @@ describe('group rows of §5', () => {
     expect(can(other, Action.GROUP_REQUEST_JOIN, g())).toBe(true)
     expect(can(other, Action.GROUP_REQUEST_JOIN, g(GroupRole.MEMBER))).toBe(false)
     expect(can(other, Action.GROUP_REQUEST_JOIN, { kind: 'group', pendingJoinRequest: true })).toBe(false)
-    expect(can(student('x', { emailVerified: false }), Action.GROUP_REQUEST_JOIN, g())).toBe(false)
+    expect(can(student('x', { institutionVerified: false }), Action.GROUP_REQUEST_JOIN, g())).toBe(false)
   })
 
   it('review join requests: admin and owner only (ADR-0009)', () => allowedFrom(Action.GROUP_REVIEW_JOIN_REQUESTS, 3))
@@ -368,7 +368,7 @@ describe('teacher network (ADR-0013)', () => {
 
   it('connection requests: verified, not already connected, nothing pending either way', () => {
     expect(can(t1, Action.USER_REQUEST_CONNECTION, towards())).toBe(true)
-    expect(can(teacher('t1', { emailVerified: false }), Action.USER_REQUEST_CONNECTION, towards())).toBe(false)
+    expect(can(teacher('t1', { institutionVerified: false }), Action.USER_REQUEST_CONNECTION, towards())).toBe(false)
     expect(can(t1, Action.USER_REQUEST_CONNECTION, towards({ connected: true }))).toBe(false)
     expect(can(t1, Action.USER_REQUEST_CONNECTION, towards({ pendingConnection: 'OUTGOING' }))).toBe(false)
     expect(can(t1, Action.USER_REQUEST_CONNECTION, towards({ pendingConnection: 'INCOMING' }))).toBe(false)
@@ -409,9 +409,43 @@ describe('teacher network (ADR-0013)', () => {
   })
 })
 
+describe('verified account (ADR-0017)', () => {
+  const unverified = student('u', { institutionVerified: false })
+  const pub = { kind: 'note' as const, note: note('PUBLIC', { ownerId: 'u' }) }
+
+  it('an unverified account reads, keeps private notes, imports, exports, reports and blocks', () => {
+    expect(can(unverified, Action.NOTE_READ, pub)).toBe(true)
+    expect(can(unverified, Action.NOTE_CREATE, { kind: 'newNote', noteKind: NoteKind.NOTE })).toBe(true)
+    expect(can(unverified, Action.NOTE_EDIT_DRAFT, pub)).toBe(true)
+    for (const a of [Action.ACCOUNT_IMPORT_NOTES, Action.ACCOUNT_EXPORT_DATA, Action.CONTENT_REPORT, Action.PERSONAL_STUDY_CREATE]) {
+      expect(can(unverified, a)).toBe(true)
+    }
+    expect(can(unverified, Action.USER_BLOCK, { kind: 'user', targetId: 'x', targetGlobalRole: GlobalRole.STUDENT })).toBe(true)
+  })
+
+  it('nothing that reaches other people works until the college or organisation email is confirmed', () => {
+    expect(can(unverified, Action.NOTE_PUBLISH, pub)).toBe(false)
+    expect(can(unverified, Action.NOTE_SHARE, pub)).toBe(false)
+    expect(can(unverified, Action.NOTE_COMMENT, pub)).toBe(false)
+    expect(can(unverified, Action.GROUP_CREATE)).toBe(false)
+    expect(can(unverified, Action.GROUP_POST, { kind: 'group', role: GroupRole.MEMBER })).toBe(false)
+    expect(can(unverified, Action.CLASSROOM_REQUEST_JOIN, { kind: 'classroom' })).toBe(false)
+    expect(can(unverified, Action.USER_FOLLOW, { kind: 'user', targetId: 'x', targetGlobalRole: GlobalRole.TEACHER })).toBe(false)
+  })
+
+  it('the gated set is exactly the actions that reach other people', () => {
+    expect([...NEEDS_VERIFIED_ACCOUNT].sort()).toEqual([
+      'classroom.acceptInvite', 'classroom.create', 'classroom.requestJoin',
+      'group.acceptMentorInvite', 'group.answerDoubt', 'group.askDoubt', 'group.create', 'group.join', 'group.post', 'group.requestJoin',
+      'note.changeVisibility', 'note.comment', 'note.publish', 'note.share',
+      'user.follow', 'user.requestConnection', 'user.respondToConnection',
+    ])
+  })
+})
+
 describe('actions without a resource', () => {
-  it('any signed-in user creates groups, personal study items and reports', () => {
-    for (const a of [Action.GROUP_CREATE, Action.PERSONAL_STUDY_CREATE, Action.CONTENT_REPORT]) {
+  it('any signed-in user creates groups, personal study items and reports, and exports and imports', () => {
+    for (const a of [Action.GROUP_CREATE, Action.PERSONAL_STUDY_CREATE, Action.CONTENT_REPORT, Action.ACCOUNT_EXPORT_DATA, Action.ACCOUNT_IMPORT_NOTES]) {
       expect(can(other, a)).toBe(true)
       expect(can(anon, a)).toBe(false)
     }

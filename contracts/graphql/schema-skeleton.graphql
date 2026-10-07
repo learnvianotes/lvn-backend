@@ -49,9 +49,17 @@ type User implements Node {             # [users]
   "Only for the viewer themself"
   email: String
   emailVerified: Boolean!
+  "Only for the viewer themself (ADR-0017)"
+  institutionalEmail: String
+  "The confirmed college or organisation, shown on the profile if the user chooses"
+  institution: Institution
+  "False until registration details are given and the institutional email is confirmed"
+  registrationComplete: Boolean!
   globalRole: GlobalRole!
   createdAt: DateTime!
 }
+
+type Institution { name: String!, verified: Boolean! }
 
 type Session {                          # [users]
   "15-minute RS256 JWT. Web keeps it in memory; mobile in expo-secure-store."
@@ -65,7 +73,14 @@ type Session {                          # [users]
 type AuthPayload { session: Session, userErrors: [UserError!]! }
 type OkPayload { ok: Boolean!, userErrors: [UserError!]! }
 
-input SignUpInput { email: String!, password: String!, displayName: String!, dateOfBirth: String!, acceptedTermsVersion: String! }
+"""
+Registration (ADR-0017): date of birth and a college or organisation email are required. The institutional email
+receives a 6-digit code; until it is confirmed the account can read and keep private notes only.
+"""
+input SignUpInput { email: String!, password: String!, displayName: String!, dateOfBirth: String!, institutionalEmail: String!, acceptedTermsVersion: String! }
+"After Google sign-in (no signUp call): the same details, collected once"
+input CompleteRegistrationInput { displayName: String!, dateOfBirth: String!, institutionalEmail: String!, acceptedTermsVersion: String! }
+input VerifyInstitutionalEmailInput { code: String! }
 input SignInInput { email: String!, password: String! }
 input OAuthExchangeInput { provider: OAuthProvider!, code: String!, codeVerifier: String!, redirectUri: String! }
 "Firebase ID token from a Google sign-in; verified by the API and exchanged for an LVN session (ADR-0007)"
@@ -150,10 +165,20 @@ type NotePayload { note: Note, userErrors: [UserError!]! }
 
 # ── files ─────────────────────────────────────────────────────────────────────
 
-enum FilePurpose { ATTACHMENT COVER VOICE_NOTE AVATAR IMPORT }
+enum FilePurpose { ATTACHMENT COVER VOICE_NOTE AVATAR IMPORT EXPORT }
 input CreateUploadIntentInput { fileName: String!, mimeType: String!, sizeBytes: Int!, purpose: FilePurpose!, parentId: UUID }
 type UploadIntent { fileId: UUID!, uploadUrl: String!, expiresAt: DateTime! }
 type UploadIntentPayload { intent: UploadIntent, userErrors: [UserError!]! }
+
+# ── data: export everything, import notes (ADR-0018) ──────────────────────────
+
+enum JobState { QUEUED RUNNING SUCCEEDED FAILED DEAD }
+type DataExport { id: UUID!, status: JobState!, requestedAt: DateTime!, readyAt: DateTime, "Pre-signed, issued per request; valid until expiresAt (7 days)" downloadUrl: String, expiresAt: DateTime }
+type NotesImport { id: UUID!, status: JobState!, created: Int!, skipped: Int!, failed: Int!, issues: [String!]! }
+"The file is uploaded first with createUploadIntent(purpose: IMPORT)"
+input ImportNotesInput { fileId: UUID! }
+type DataExportPayload { export: DataExport, userErrors: [UserError!]! }
+type NotesImportPayload { import: NotesImport, userErrors: [UserError!]! }
 
 # ── roots ─────────────────────────────────────────────────────────────────────
 
@@ -165,12 +190,17 @@ type Query {
   "Anonymous-safe: PUBLIC notes only (§5)"
   publicNote(slug: String!, id: UUID!): Note
   myNotes(first: Int, after: String): NoteConnection!
+  myDataExports: [DataExport!]!
+  myNotesImports: [NotesImport!]!
   subjects(first: Int, after: String): [Subject!]!
 }
 
 type Mutation {
   # Phase 1 — auth (§7)
   signUp(input: SignUpInput!): AuthPayload!
+  completeRegistration(input: CompleteRegistrationInput!): OkPayload!
+  verifyInstitutionalEmail(input: VerifyInstitutionalEmailInput!): OkPayload!
+  resendInstitutionalEmailCode: OkPayload!
   signIn(input: SignInInput!): AuthPayload!
   oauthExchange(input: OAuthExchangeInput!): AuthPayload!
   signInWithGoogle(input: SignInWithGoogleInput!): AuthPayload!
@@ -182,6 +212,9 @@ type Mutation {
   # Phase 1 — uploads (§8.1)
   createUploadIntent(input: CreateUploadIntentInput!): UploadIntentPayload!
   completeUpload(fileId: UUID!): OkPayload!
+  # Phase 2 — data (ADR-0018)
+  requestDataExport: DataExportPayload!
+  importNotes(input: ImportNotesInput!): NotesImportPayload!
   # Phase 2 — notes (§4)
   createNote(input: CreateNoteInput!): NotePayload!
   updateNoteDraft(input: UpdateNoteDraftInput!): NotePayload!

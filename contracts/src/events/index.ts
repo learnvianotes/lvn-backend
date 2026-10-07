@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { enumValues, GlobalRole, NoteKind, Visibility } from '../domain/enums'
+import { BoundedContext, enumValues, GlobalRole, NoteKind, Visibility } from '../domain/enums'
 
 /**
  * Integration events between bounded contexts (spec §3, §6.1). Both EventBus adapters (in-process and
@@ -26,6 +26,24 @@ export const events = {
   // users
   UserRegistered: eventEnvelope('UserRegistered', 1, z.object({ userId: uuid })),
   UserDeleted: eventEnvelope('UserDeleted', 1, z.object({ userId: uuid })),
+  /** The college or organisation email was confirmed (ADR-0017); organizationId when its domain is known. */
+  InstitutionVerified: eventEnvelope('InstitutionVerified', 1, z.object({ userId: uuid, organizationId: uuid.optional() })),
+  // Data export (ADR-0018): users asks every context for its part, then assembles one archive.
+  DataExportRequested: eventEnvelope('DataExportRequested', 1, z.object({ exportId: uuid, userId: uuid })),
+  DataExportPartReady: eventEnvelope('DataExportPartReady', 1, z.object({
+    exportId: uuid,
+    context: z.enum(enumValues(BoundedContext)),
+    fileId: uuid,
+  })),
+  DataExportReady: eventEnvelope('DataExportReady', 1, z.object({ exportId: uuid, userId: uuid, fileId: uuid, expiresAt: z.iso.datetime() })),
+  /** A notes import finished (ADR-0018): counts for the report shown in Settings → Data. */
+  NotesImportCompleted: eventEnvelope('NotesImportCompleted', 1, z.object({
+    importId: uuid,
+    userId: uuid,
+    created: z.number().int().min(0),
+    skipped: z.number().int().min(0),
+    failed: z.number().int().min(0),
+  })),
   RoleChanged: eventEnvelope('RoleChanged', 1, z.object({ userId: uuid, globalRole: z.enum(enumValues(GlobalRole)) })),
   SessionRevoked: eventEnvelope('SessionRevoked', 1, z.object({ userId: uuid, sessionId: uuid, family: z.boolean() })),
   // Teacher network (ADR-0013). notes keeps a connections read model for "shared with my connections"; core

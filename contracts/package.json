@@ -1,6 +1,6 @@
 {
   "name": "@lvn/contracts",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "LearnViaNotes shared contracts: domain enums, permission matrix, config and event schemas, GraphQL schema",
   "license": "UNLICENSED",
   "publishConfig": {

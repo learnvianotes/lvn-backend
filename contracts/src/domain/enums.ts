@@ -87,7 +87,8 @@ export type FileStatus = (typeof FileStatus)[keyof typeof FileStatus]
 export const FileParentType = { NOTE: 'NOTE', CARD: 'CARD', GROUP_POST: 'GROUP_POST', RESOURCE: 'RESOURCE', AVATAR: 'AVATAR' } as const
 export type FileParentType = (typeof FileParentType)[keyof typeof FileParentType]
 
-export const FilePurpose = { ATTACHMENT: 'ATTACHMENT', COVER: 'COVER', VOICE_NOTE: 'VOICE_NOTE', AVATAR: 'AVATAR', IMPORT: 'IMPORT' } as const
+/** IMPORT: a file to import notes from; EXPORT: a generated data export (ADR-0018). Both are temporary. */
+export const FilePurpose = { ATTACHMENT: 'ATTACHMENT', COVER: 'COVER', VOICE_NOTE: 'VOICE_NOTE', AVATAR: 'AVATAR', IMPORT: 'IMPORT', EXPORT: 'EXPORT' } as const
 export type FilePurpose = (typeof FilePurpose)[keyof typeof FilePurpose]
 
 /** Upload limits in bytes (§8.1), enforced server-side; clients use them for early feedback only. */
@@ -105,6 +106,10 @@ export const NoteArtifactType = {
   EMBEDDINGS: 'EMBEDDINGS', TRANSCRIPT: 'TRANSCRIPT',
 } as const
 export type NoteArtifactType = (typeof NoteArtifactType)[keyof typeof NoteArtifactType]
+
+/** The five bounded contexts (spec §6.1); each contributes its part of a data export (ADR-0018). */
+export const BoundedContext = { USERS: 'users', NOTES: 'notes', CORE: 'core', AI: 'ai', COMMUNICATION: 'communication' } as const
+export type BoundedContext = (typeof BoundedContext)[keyof typeof BoundedContext]
 
 export const JobState = { QUEUED: 'QUEUED', RUNNING: 'RUNNING', SUCCEEDED: 'SUCCEEDED', FAILED: 'FAILED', DEAD: 'DEAD' } as const
 export type JobState = (typeof JobState)[keyof typeof JobState]

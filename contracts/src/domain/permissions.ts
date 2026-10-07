@@ -10,7 +10,9 @@ import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, Gr
  *   forking enabled.
  * - A share EDITOR edits the draft while the note is SHARED or PUBLIC; only the owner publishes, so readers
  *   never see an editor's change until the owner releases it (§4.3).
- * - Email verification is required to publish, request to join a group and comment (§7.1).
+ * - A verified account (college or organisation email confirmed, ADR-0017) is required for every action that
+ *   reaches other people — the NEEDS_VERIFIED_ACCOUNT set below. Until then an account reads, keeps private notes,
+ *   imports notes, exports its data, reports and blocks.
  * - Restricted minors cannot make a note PUBLIC (§5, §15.2); the flag is applied before the matrix.
  *
  * A fork can be made PUBLIC only if its origin was PUBLIC when forked, or the forker was the origin's owner or
@@ -79,6 +81,8 @@ export const Action = {
   USER_REQUEST_CONNECTION: 'user.requestConnection',
   USER_RESPOND_TO_CONNECTION: 'user.respondToConnection',
   USER_REMOVE_CONNECTION: 'user.removeConnection',
+  ACCOUNT_EXPORT_DATA: 'account.exportData',
+  ACCOUNT_IMPORT_NOTES: 'account.importNotes',
   PERSONAL_STUDY_CREATE: 'study.create',
   CONTENT_REPORT: 'content.report',
 } as const
@@ -88,7 +92,8 @@ export type Action = (typeof Action)[keyof typeof Action]
 export interface Actor {
   id: string
   globalRole: GlobalRole
-  emailVerified: boolean
+  /** The college or organisation email given at registration is confirmed (ADR-0017). */
+  institutionVerified: boolean
   /** Minor without verified consent (§15.2): no PUBLIC publishing. */
   restrictedMinor?: boolean
 }
@@ -234,12 +239,34 @@ function shareTargetAllowed(actor: Actor, target: ShareTargetFacts | undefined):
   return true
 }
 
+/** Actions that reach other people need a verified account (ADR-0017, amending ADR-0005 decision 3). */
+export const NEEDS_VERIFIED_ACCOUNT: ReadonlySet<Action> = new Set<Action>([
+  Action.NOTE_PUBLISH,
+  Action.NOTE_CHANGE_VISIBILITY,
+  Action.NOTE_SHARE,
+  Action.NOTE_COMMENT,
+  Action.GROUP_CREATE,
+  Action.GROUP_JOIN,
+  Action.GROUP_REQUEST_JOIN,
+  Action.GROUP_POST,
+  Action.GROUP_ACCEPT_MENTOR_INVITE,
+  Action.GROUP_ASK_DOUBT,
+  Action.GROUP_ANSWER_DOUBT,
+  Action.CLASSROOM_CREATE,
+  Action.CLASSROOM_REQUEST_JOIN,
+  Action.CLASSROOM_ACCEPT_INVITE,
+  Action.USER_FOLLOW,
+  Action.USER_REQUEST_CONNECTION,
+  Action.USER_RESPOND_TO_CONNECTION,
+])
+
 function readable(actor: Actor | null, note: NoteFacts): boolean {
   const relations = noteRelations(actor, note)
   return NOTE_READERS[note.visibility].some((r) => relations.has(r))
 }
 
 export function can(actor: Actor | null, action: Action, resource: Resource = { kind: 'none' }): boolean {
+  if (actor && !actor.institutionVerified && NEEDS_VERIFIED_ACCOUNT.has(action)) return false
   switch (resource.kind) {
     case 'note': {
       const { note } = resource
@@ -253,7 +280,7 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           return isOwner || (actor !== null && note.visibility !== Visibility.PRIVATE && note.shareRole === NoteRole.EDITOR)
         case Action.NOTE_PUBLISH:
         case Action.NOTE_CHANGE_VISIBILITY: {
-          if (!isOwner || !actor!.emailVerified) return false
+          if (!isOwner) return false
           const goesPublic = (resource.targetVisibility ?? note.visibility) === Visibility.PUBLIC
           if (!goesPublic) return true
           if (actor!.restrictedMinor) return false
@@ -266,7 +293,7 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
         case Action.NOTE_FORK:
           return actor !== null && readable(actor, note) && (isOwner || note.forkingEnabled)
         case Action.NOTE_COMMENT:
-          return actor !== null && actor.emailVerified && readable(actor, note)
+          return actor !== null && readable(actor, note)
         case Action.NOTE_ASK_AI:
           return actor !== null && readable(actor, note)
         default:
@@ -287,9 +314,9 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
         case Action.GROUP_DELETE:
           return resource.role === GroupRole.OWNER
         case Action.GROUP_JOIN:
-          return actor.emailVerified && resource.role === undefined && openToJoin(resource)
+          return resource.role === undefined && openToJoin(resource)
         case Action.GROUP_REQUEST_JOIN:
-          return actor.emailVerified && resource.role === undefined && !resource.pendingJoinRequest && !openToJoin(resource)
+          return resource.role === undefined && !resource.pendingJoinRequest && !openToJoin(resource)
         case Action.GROUP_REVIEW_JOIN_REQUESTS:
           return atLeast(resource.role, GroupRole.ADMIN)
         case Action.GROUP_INVITE_MENTOR:
@@ -356,7 +383,7 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
         case Action.USER_UNFOLLOW:
           return resource.following === true
         case Action.USER_REQUEST_CONNECTION:
-          return teachers && actor.emailVerified && !resource.connected && resource.pendingConnection === undefined
+          return teachers && !resource.connected && resource.pendingConnection === undefined
         case Action.USER_RESPOND_TO_CONNECTION:
           return resource.pendingConnection === 'INCOMING' && !resource.blocked
         case Action.USER_REMOVE_CONNECTION:
@@ -375,6 +402,8 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
         case Action.GROUP_CREATE:
         case Action.PERSONAL_STUDY_CREATE:
         case Action.CONTENT_REPORT:
+        case Action.ACCOUNT_EXPORT_DATA:
+        case Action.ACCOUNT_IMPORT_NOTES:
           return true
         case Action.CLASSROOM_CREATE:
           return actor.globalRole === GlobalRole.TEACHER
