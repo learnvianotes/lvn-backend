@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { BoundedContext, enumValues, GlobalRole, NoteKind, Visibility } from '../domain/enums'
+import { BoundedContext, enumValues, GlobalRole, NoteKind, VerificationMethod, Visibility } from '../domain/enums'
 
 /**
  * Integration events between bounded contexts (spec §3, §6.1). Both EventBus adapters (in-process and
@@ -26,8 +26,26 @@ export const events = {
   // users
   UserRegistered: eventEnvelope('UserRegistered', 1, z.object({ userId: uuid })),
   UserDeleted: eventEnvelope('UserDeleted', 1, z.object({ userId: uuid })),
-  /** The college or organisation email was confirmed (ADR-0017); organizationId when its domain is known. */
-  InstitutionVerified: eventEnvelope('InstitutionVerified', 1, z.object({ userId: uuid, organizationId: uuid.optional() })),
+  /** The account became verified (ADR-0017, ADR-0019); organizationId when known. method is optional: additive in v1. */
+  InstitutionVerified: eventEnvelope('InstitutionVerified', 1, z.object({
+    userId: uuid,
+    organizationId: uuid.optional(),
+    method: z.enum(enumValues(VerificationMethod)).optional(),
+  })),
+  // Verification without an institutional email (ADR-0019). Documents never appear in events.
+  VerificationRequested: eventEnvelope('VerificationRequested', 1, z.object({
+    requestId: uuid,
+    userId: uuid,
+    method: z.enum(['TEACHER', 'DOCUMENTS']),
+    teacherId: uuid.optional(),
+  })),
+  VerificationDecided: eventEnvelope('VerificationDecided', 1, z.object({
+    requestId: uuid,
+    userId: uuid,
+    method: z.enum(['TEACHER', 'DOCUMENTS']),
+    decision: z.enum(['APPROVED', 'REJECTED']),
+    reviewerId: uuid,
+  })),
   // Data export (ADR-0018): users asks every context for its part, then assembles one archive.
   DataExportRequested: eventEnvelope('DataExportRequested', 1, z.object({ exportId: uuid, userId: uuid })),
   DataExportPartReady: eventEnvelope('DataExportPartReady', 1, z.object({

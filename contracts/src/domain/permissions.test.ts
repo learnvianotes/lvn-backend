@@ -1,4 +1,4 @@
-import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, Visibility } from './enums'
+import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, VerificationMethod, Visibility } from './enums'
 import { Action, can, NEEDS_VERIFIED_ACCOUNT, type Actor, type NoteFacts, type Resource } from './permissions'
 
 /**
@@ -310,13 +310,15 @@ describe('teacher network (ADR-0013)', () => {
     expect(can(anon, Action.USER_FOLLOW, towards())).toBe(false)
   })
 
-  it('students follow students, except restricted minors; teachers do not follow students (ADR-0016)', () => {
+  it('students and teachers follow students, never a restricted minor (ADR-0016, ADR-0020)', () => {
     const aStudent = (extra: object = {}) => towards(extra, GlobalRole.STUDENT)
-    expect(can(other, Action.USER_FOLLOW, aStudent())).toBe(true)
-    expect(can(other, Action.USER_FOLLOW, aStudent({ targetRestrictedMinor: true }))).toBe(false)
-    expect(can(other, Action.USER_FOLLOW, aStudent({ following: true }))).toBe(false)
-    expect(can(other, Action.USER_FOLLOW, aStudent({ blocked: true }))).toBe(false)
-    expect(can(t1, Action.USER_FOLLOW, aStudent())).toBe(false)
+    for (const actor of [other, t1]) {
+      expect(can(actor, Action.USER_FOLLOW, aStudent())).toBe(true)
+      expect(can(actor, Action.USER_FOLLOW, aStudent({ targetRestrictedMinor: true }))).toBe(false)
+      expect(can(actor, Action.USER_FOLLOW, aStudent({ following: true }))).toBe(false)
+      expect(can(actor, Action.USER_FOLLOW, aStudent({ blocked: true }))).toBe(false)
+    }
+    expect(can(t1, Action.USER_FOLLOW, towards({}, GlobalRole.PLATFORM_ADMIN))).toBe(false)
   })
 
   it('anyone removes a follower, blocks, restricts, and undoes their own block or restriction (ADR-0016)', () => {
@@ -435,11 +437,50 @@ describe('verified account (ADR-0017)', () => {
 
   it('the gated set is exactly the actions that reach other people', () => {
     expect([...NEEDS_VERIFIED_ACCOUNT].sort()).toEqual([
+      'account.reviewVerification',
       'classroom.acceptInvite', 'classroom.create', 'classroom.requestJoin',
       'group.acceptMentorInvite', 'group.answerDoubt', 'group.askDoubt', 'group.create', 'group.join', 'group.post', 'group.requestJoin',
       'note.changeVisibility', 'note.comment', 'note.publish', 'note.share',
       'user.follow', 'user.requestConnection', 'user.respondToConnection',
     ])
+  })
+})
+
+describe('verification without an institutional email (ADR-0019)', () => {
+  const unverified = student('u', { institutionVerified: false })
+  const byTeacher = (extra: object = {}): Resource => ({ kind: 'verification', method: VerificationMethod.TEACHER, ...extra })
+  const byDocuments = (extra: object = {}): Resource => ({ kind: 'verification', method: VerificationMethod.DOCUMENTS, ...extra })
+  const teacher = student('t', { globalRole: GlobalRole.TEACHER })
+  const admin = student('a', { globalRole: GlobalRole.PLATFORM_ADMIN })
+
+  it('an unverified user asks a verified teacher, or sends documents to platform admins — one request at a time', () => {
+    expect(can(unverified, Action.ACCOUNT_REQUEST_VERIFICATION, byTeacher({ targetIsVerifiedTeacher: true }))).toBe(true)
+    expect(can(unverified, Action.ACCOUNT_REQUEST_VERIFICATION, byTeacher())).toBe(false)
+    expect(can(unverified, Action.ACCOUNT_REQUEST_VERIFICATION, byDocuments())).toBe(true)
+    expect(can(unverified, Action.ACCOUNT_REQUEST_VERIFICATION, byDocuments({ pendingRequest: true }))).toBe(false)
+    expect(can(other, Action.ACCOUNT_REQUEST_VERIFICATION, byDocuments())).toBe(false)
+    expect(can(anon, Action.ACCOUNT_REQUEST_VERIFICATION, byDocuments())).toBe(false)
+  })
+
+  it('restricted minors never upload identity documents; a teacher vouches for them instead', () => {
+    const minor = student('m', { institutionVerified: false, restrictedMinor: true })
+    expect(can(minor, Action.ACCOUNT_REQUEST_VERIFICATION, byDocuments())).toBe(false)
+    expect(can(minor, Action.ACCOUNT_REQUEST_VERIFICATION, byTeacher({ targetIsVerifiedTeacher: true }))).toBe(true)
+  })
+
+  it('a verified teacher reviews only requests addressed to them, and never sees documents', () => {
+    expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher({ addressedToActor: true }))).toBe(true)
+    expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher())).toBe(false)
+    expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ addressedToActor: true }))).toBe(false)
+    expect(can(student('t2', { globalRole: GlobalRole.TEACHER, institutionVerified: false }), Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher({ addressedToActor: true }))).toBe(false)
+    expect(can(other, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher({ addressedToActor: true }))).toBe(false)
+  })
+
+  it('platform admins review every request, documents included', () => {
+    expect(can(admin, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(true)
+    expect(can(admin, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher())).toBe(true)
+    expect(can(anon, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(false)
+    expect(can(admin, Action.NOTE_READ, byDocuments())).toBe(false)
   })
 })
 

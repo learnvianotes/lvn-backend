@@ -84,11 +84,15 @@ export const FileStatus = {
 } as const
 export type FileStatus = (typeof FileStatus)[keyof typeof FileStatus]
 
-export const FileParentType = { NOTE: 'NOTE', CARD: 'CARD', GROUP_POST: 'GROUP_POST', RESOURCE: 'RESOURCE', AVATAR: 'AVATAR' } as const
+export const FileParentType = { NOTE: 'NOTE', CARD: 'CARD', GROUP_POST: 'GROUP_POST', RESOURCE: 'RESOURCE', AVATAR: 'AVATAR', VERIFICATION_REQUEST: 'VERIFICATION_REQUEST' } as const
 export type FileParentType = (typeof FileParentType)[keyof typeof FileParentType]
 
-/** IMPORT: a file to import notes from; EXPORT: a generated data export (ADR-0018). Both are temporary. */
-export const FilePurpose = { ATTACHMENT: 'ATTACHMENT', COVER: 'COVER', VOICE_NOTE: 'VOICE_NOTE', AVATAR: 'AVATAR', IMPORT: 'IMPORT', EXPORT: 'EXPORT' } as const
+/**
+ * IMPORT: a file to import notes from; EXPORT: a generated data export (ADR-0018). VERIFICATION_DOCUMENT: proof
+ * of enrolment sent to platform admins, kept in a restricted prefix and deleted 30 days after the decision
+ * (ADR-0019). All three are temporary.
+ */
+export const FilePurpose = { ATTACHMENT: 'ATTACHMENT', COVER: 'COVER', VOICE_NOTE: 'VOICE_NOTE', AVATAR: 'AVATAR', IMPORT: 'IMPORT', EXPORT: 'EXPORT', VERIFICATION_DOCUMENT: 'VERIFICATION_DOCUMENT' } as const
 export type FilePurpose = (typeof FilePurpose)[keyof typeof FilePurpose]
 
 /** Upload limits in bytes (§8.1), enforced server-side; clients use them for early feedback only. */
@@ -106,6 +110,10 @@ export const NoteArtifactType = {
   EMBEDDINGS: 'EMBEDDINGS', TRANSCRIPT: 'TRANSCRIPT',
 } as const
 export type NoteArtifactType = (typeof NoteArtifactType)[keyof typeof NoteArtifactType]
+
+/** How an account became verified (ADR-0017, ADR-0019). */
+export const VerificationMethod = { INSTITUTIONAL_EMAIL: 'INSTITUTIONAL_EMAIL', TEACHER: 'TEACHER', DOCUMENTS: 'DOCUMENTS' } as const
+export type VerificationMethod = (typeof VerificationMethod)[keyof typeof VerificationMethod]
 
 /** The five bounded contexts (spec §6.1); each contributes its part of a data export (ADR-0018). */
 export const BoundedContext = { USERS: 'users', NOTES: 'notes', CORE: 'core', AI: 'ai', COMMUNICATION: 'communication' } as const

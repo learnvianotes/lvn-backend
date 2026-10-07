@@ -53,8 +53,11 @@ type User implements Node {             # [users]
   institutionalEmail: String
   "The confirmed college or organisation, shown on the profile if the user chooses"
   institution: Institution
-  "False until registration details are given and the institutional email is confirmed"
+  "False until the registration details are given"
   registrationComplete: Boolean!
+  "Verified by institutional email, a teacher, or platform admins (ADR-0019); null method while unverified"
+  verified: Boolean!
+  verificationMethod: VerificationMethod
   globalRole: GlobalRole!
   createdAt: DateTime!
 }
@@ -74,12 +77,22 @@ type AuthPayload { session: Session, userErrors: [UserError!]! }
 type OkPayload { ok: Boolean!, userErrors: [UserError!]! }
 
 """
-Registration (ADR-0017): date of birth and a college or organisation email are required. The institutional email
-receives a 6-digit code; until it is confirmed the account can read and keep private notes only.
+Registration (ADR-0017, ADR-0019): date of birth is required. A college or organisation email is optional; it
+receives a 6-digit code. Without one, the user asks a verified teacher or sends documents to platform admins. Until
+verified, the account can use the app for itself but not reach other people.
 """
-input SignUpInput { email: String!, password: String!, displayName: String!, dateOfBirth: String!, institutionalEmail: String!, acceptedTermsVersion: String! }
+input SignUpInput { email: String!, password: String!, displayName: String!, dateOfBirth: String!, institutionalEmail: String, acceptedTermsVersion: String! }
 "After Google sign-in (no signUp call): the same details, collected once"
-input CompleteRegistrationInput { displayName: String!, dateOfBirth: String!, institutionalEmail: String!, acceptedTermsVersion: String! }
+input CompleteRegistrationInput { displayName: String!, dateOfBirth: String!, institutionalEmail: String, acceptedTermsVersion: String! }
+enum VerificationMethod { INSTITUTIONAL_EMAIL TEACHER DOCUMENTS }
+enum VerificationRequestStatus { PENDING APPROVED REJECTED WITHDRAWN }
+"Shown to the requester, the addressed teacher, and platform admins only. Documents are never exposed here."
+type VerificationRequest { id: UUID!, method: VerificationMethod!, status: VerificationRequestStatus!, createdAt: DateTime!, decidedAt: DateTime, reason: String }
+input RequestTeacherVerificationInput { teacherId: UUID! }
+"fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by platform admins only, deleted 30 days after the decision"
+input RequestDocumentVerificationInput { fileIds: [UUID!]!, message: String }
+input ReviewVerificationRequestInput { requestId: UUID!, approve: Boolean!, reason: String }
+type VerificationRequestPayload { request: VerificationRequest, userErrors: [UserError!]! }
 input VerifyInstitutionalEmailInput { code: String! }
 input SignInInput { email: String!, password: String! }
 input OAuthExchangeInput { provider: OAuthProvider!, code: String!, codeVerifier: String!, redirectUri: String! }
@@ -165,7 +178,7 @@ type NotePayload { note: Note, userErrors: [UserError!]! }
 
 # ── files ─────────────────────────────────────────────────────────────────────
 
-enum FilePurpose { ATTACHMENT COVER VOICE_NOTE AVATAR IMPORT EXPORT }
+enum FilePurpose { ATTACHMENT COVER VOICE_NOTE AVATAR IMPORT EXPORT VERIFICATION_DOCUMENT }
 input CreateUploadIntentInput { fileName: String!, mimeType: String!, sizeBytes: Int!, purpose: FilePurpose!, parentId: UUID }
 type UploadIntent { fileId: UUID!, uploadUrl: String!, expiresAt: DateTime! }
 type UploadIntentPayload { intent: UploadIntent, userErrors: [UserError!]! }
@@ -192,6 +205,9 @@ type Query {
   myNotes(first: Int, after: String): NoteConnection!
   myDataExports: [DataExport!]!
   myNotesImports: [NotesImport!]!
+  myVerificationRequests: [VerificationRequest!]!
+  "Teachers: verification requests addressed to them"
+  verificationRequestsToReview(first: Int, after: String): [VerificationRequest!]!
   subjects(first: Int, after: String): [Subject!]!
 }
 
@@ -201,6 +217,11 @@ type Mutation {
   completeRegistration(input: CompleteRegistrationInput!): OkPayload!
   verifyInstitutionalEmail(input: VerifyInstitutionalEmailInput!): OkPayload!
   resendInstitutionalEmailCode: OkPayload!
+  requestTeacherVerification(input: RequestTeacherVerificationInput!): VerificationRequestPayload!
+  requestDocumentVerification(input: RequestDocumentVerificationInput!): VerificationRequestPayload!
+  withdrawVerificationRequest(requestId: UUID!): OkPayload!
+  "Teachers: requests addressed to them. Platform admins (admin app): all, including documents."
+  reviewVerificationRequest(input: ReviewVerificationRequestInput!): VerificationRequestPayload!
   signIn(input: SignInInput!): AuthPayload!
   oauthExchange(input: OAuthExchangeInput!): AuthPayload!
   signInWithGoogle(input: SignInWithGoogleInput!): AuthPayload!

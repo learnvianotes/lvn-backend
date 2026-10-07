@@ -1,4 +1,4 @@
-import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, NoteRole, Visibility } from './enums'
+import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, NoteRole, VerificationMethod, Visibility } from './enums'
 
 /**
  * The permission matrix (spec §5), defined once. The backend's PolicyService loads the facts
@@ -12,15 +12,16 @@ import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, Gr
  *   never see an editor's change until the owner releases it (§4.3).
  * - A verified account (college or organisation email confirmed, ADR-0017) is required for every action that
  *   reaches other people — the NEEDS_VERIFIED_ACCOUNT set below. Until then an account reads, keeps private notes,
- *   imports notes, exports its data, reports and blocks.
+ *   imports notes, exports its data, reports and blocks. Without an institutional email, a student asks a verified
+ *   teacher to vouch for them, or sends proof of enrolment that only platform admins review (ADR-0019).
  * - Restricted minors cannot make a note PUBLIC (§5, §15.2); the flag is applied before the matrix.
  *
  * A fork can be made PUBLIC only if its origin was PUBLIC when forked, or the forker was the origin's owner or
  * an Editor — so a SHARED note never becomes public through someone else's fork (ADR-0010). Every reader of a
  * fork sees its attribution.
  *
- * Follows (ADR-0013, ADR-0014, ADR-0016): anyone signed in follows teachers; students follow students (never a
- * restricted minor); following shows public content only and only the followed person sees who follows them.
+ * Follows (ADR-0013, ADR-0014, ADR-0016, ADR-0020): anyone signed in follows teachers and students, never a
+ * restricted minor; following shows public content only and only the followed person sees who follows them.
  * Anyone can remove a follower, block (ends follows and connections both ways, stops new interaction) or restrict
  * (a quieter limit enforced on comments and notifications, not here). Teachers connect with other teachers (a
  * request the other accepts); a teacher shares a note directly with another teacher only if connected or
@@ -83,6 +84,8 @@ export const Action = {
   USER_REMOVE_CONNECTION: 'user.removeConnection',
   ACCOUNT_EXPORT_DATA: 'account.exportData',
   ACCOUNT_IMPORT_NOTES: 'account.importNotes',
+  ACCOUNT_REQUEST_VERIFICATION: 'account.requestVerification',
+  ACCOUNT_REVIEW_VERIFICATION: 'account.reviewVerification',
   PERSONAL_STUDY_CREATE: 'study.create',
   CONTENT_REPORT: 'content.report',
 } as const
@@ -92,7 +95,10 @@ export type Action = (typeof Action)[keyof typeof Action]
 export interface Actor {
   id: string
   globalRole: GlobalRole
-  /** The college or organisation email given at registration is confirmed (ADR-0017). */
+  /**
+   * The account is verified: its college or organisation email was confirmed, a teacher vouched for it, or a
+   * platform admin approved its documents (ADR-0017, ADR-0019).
+   */
   institutionVerified: boolean
   /** Minor without verified consent (§15.2): no PUBLIC publishing. */
   restrictedMinor?: boolean
@@ -140,6 +146,17 @@ export type Resource =
   | { kind: 'none' }
   | { kind: 'note'; note: NoteFacts; targetVisibility?: Visibility; shareTarget?: ShareTargetFacts }
   | { kind: 'newNote'; noteKind: NoteKind }
+  | {
+      kind: 'verification'
+      /** TEACHER: a verified teacher vouches. DOCUMENTS: platform admins review proof of enrolment (ADR-0019). */
+      method: typeof VerificationMethod.TEACHER | typeof VerificationMethod.DOCUMENTS
+      /** Requesting: the actor already has a verification request waiting. */
+      pendingRequest?: boolean
+      /** Requesting by TEACHER: the chosen person is a verified teacher. */
+      targetIsVerifiedTeacher?: boolean
+      /** Reviewing a TEACHER request: it is addressed to the actor. */
+      addressedToActor?: boolean
+    }
   | {
       kind: 'user'
       targetId: string
@@ -258,6 +275,7 @@ export const NEEDS_VERIFIED_ACCOUNT: ReadonlySet<Action> = new Set<Action>([
   Action.USER_FOLLOW,
   Action.USER_REQUEST_CONNECTION,
   Action.USER_RESPOND_TO_CONNECTION,
+  Action.ACCOUNT_REVIEW_VERIFICATION,
 ])
 
 function readable(actor: Actor | null, note: NoteFacts): boolean {
@@ -360,10 +378,9 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
       const self = actor.id === resource.targetId
       const reachable = !self && !resource.blocked
       const targetIsTeacher = resource.targetGlobalRole === GlobalRole.TEACHER
-      // Anyone follows a teacher; a student follows a student who is not a restricted minor (ADR-0016).
+      // Anyone follows a teacher, and any student who is not a restricted minor (ADR-0016, ADR-0020).
       const followable =
-        targetIsTeacher ||
-        (actor.globalRole === GlobalRole.STUDENT && resource.targetGlobalRole === GlobalRole.STUDENT && !resource.targetRestrictedMinor)
+        targetIsTeacher || (resource.targetGlobalRole === GlobalRole.STUDENT && !resource.targetRestrictedMinor)
       const teachers = actor.globalRole === GlobalRole.TEACHER && targetIsTeacher && reachable
       switch (action) {
         case Action.USER_FOLLOW:
@@ -388,6 +405,22 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           return resource.pendingConnection === 'INCOMING' && !resource.blocked
         case Action.USER_REMOVE_CONNECTION:
           return resource.connected === true
+        default:
+          return false
+      }
+    }
+    case 'verification': {
+      if (!actor) return false
+      const documents = resource.method === VerificationMethod.DOCUMENTS
+      switch (action) {
+        case Action.ACCOUNT_REQUEST_VERIFICATION:
+          // Restricted minors never upload identity documents; a teacher vouches for them instead.
+          if (actor.institutionVerified || resource.pendingRequest) return false
+          return documents ? !actor.restrictedMinor : resource.targetIsVerifiedTeacher === true
+        case Action.ACCOUNT_REVIEW_VERIFICATION:
+          // Documents are seen by platform admins only, never by teachers.
+          if (actor.globalRole === GlobalRole.PLATFORM_ADMIN) return true
+          return !documents && actor.globalRole === GlobalRole.TEACHER && resource.addressedToActor === true
         default:
           return false
       }
