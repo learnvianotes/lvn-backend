@@ -1,6 +1,6 @@
 # ADR-0006: Where @lvn/contracts is published
 
-- Status: Accepted
+- Status: Accepted; organisation name amended by ADR-0031 (`learnvianotes`; package published as `@learnvianotes/contracts`, imported as `@lvn/contracts`)
 - Date: 2026-10-08
 - Spec sections: §2 (Repositories, CI/CD), §3
 

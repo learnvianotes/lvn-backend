@@ -36,6 +36,9 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0025](../adr/0025-read-aloud-ai-tasks-and-pdf-engine.md) | Read aloud (device TTS); AI tasks on any readable note or PDF; PDF engine converts PDFs into editable notes (fork rule). (§10, §18) |
 | [0026](../adr/0026-student-profile-department-year-interests.md) | Student profile: department, year, interests for recommendations and AI help. (§14.3) |
 | [0027](../adr/0027-public-counts-as-milestones.md) | Public user counts only as milestones (1k, 2k, 5k, 10k, …). |
+| [0031](../adr/0031-github-org-and-package-name.md) | Repositories live in the `learnvianotes` GitHub organisation; contracts are published as `@learnvianotes/contracts` and imported as `@lvn/contracts`. (§2, §3) |
+| [0028](../adr/0028-pdf-engine-technology.md) | PDF engine: Docling (MIT) + RapidOCR on CPU in one Python `pdf-engine` service; vision AI only for hard pages, budgeted; no AGPL/GPL. (§2, §8.1) |
+| [0030](../adr/0030-rhythm-instead-of-streaks.md) | **Proposed:** Rhythm — weekly, forgiving habit system with a Today ring and Exam Readiness instead of daily streaks. (§14.2) |
 | [0008](../adr/0008-mobile-builds-without-eas.md) | Mobile is built locally (prebuild + Gradle/Xcode) without an Expo account; no EAS Build/Update, no OTA for now. (§2, §13.1, §13.3, §16.1, §16.2) |
 
 **Errata (owner-approved, 2026-10-08).** Wording conflicts inside v2, corrected in place and marked *[Erratum E#]*:
@@ -77,7 +80,7 @@ These are decided. Agents use them as-is; changing one requires an accepted ADR.
 | Concern | Decision | Why this and not the alternatives |
 | --- | --- | --- |
 | Repositories | Three repos: lvn-backend, lvn-web, lvn-mobile; lvn-backend publishes @lvn/contracts to GitHub Packages; pnpm + Turborepo inside lvn-backend | Independent release cadences per app; one versioned contract package keeps them in sync |
-| Language | TypeScript strict mode everywhere | Shared types across all three apps |
+| Language | TypeScript strict mode everywhere *[Amended: ADR-0028 — one exception, the Python `pdf-engine` converter service]* | Shared types across all three apps |
 | Backend | `NestJS 10+ modular monolith of five bounded contexts; code-first Apollo Federation 2 subgraphs composed in-process by Apollo Gateway, Apollo Router after extraction; EventBus with in-process and NATS JetStream adapters` | Service-shaped from day one so extraction is a deployment change; one schema for clients either way |
 | ORM | Prisma | Typed client, migrations, good Postgres support; fewer footguns than TypeORM |
 | Database | PostgreSQL 16 with `pgvector` and `pg_trgm` | One store for data, embeddings and fallback search in v1 |
