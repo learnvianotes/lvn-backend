@@ -1,4 +1,4 @@
-import { parseEvent } from './index'
+import { parseEvent } from '../../../src/events'
 
 const base = { id: '0199c0de-0000-7000-8000-000000000001', occurredAt: '2026-10-08T10:00:00.000Z' }
 const uuid = (n: number) => `0199c0de-0000-7000-8000-${String(n).padStart(12, '0')}`

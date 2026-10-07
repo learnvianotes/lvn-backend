@@ -1,4 +1,4 @@
-import { apiConfigSchema, ConfigError, loadConfig, mobileConfigSchema } from './index'
+import { apiConfigSchema, ConfigError, loadConfig, mobileConfigSchema } from '../../../src/config'
 
 const valid = {
   APP_ENV: 'development',

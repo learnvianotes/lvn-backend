@@ -1,1 +1,2 @@
-module.exports = { testEnvironment: 'node', roots: ['<rootDir>/src', '<rootDir>/test'], transform: { '^.+\\.ts$': 'ts-jest' } }
+/** Tests live in test/unit, test/integration and test/e2e; src/ holds no tests. */
+module.exports = { testEnvironment: 'node', testMatch: ['<rootDir>/test/**/*.test.ts'], transform: { '^.+\\.ts$': 'ts-jest' } }

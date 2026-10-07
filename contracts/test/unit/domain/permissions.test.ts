@@ -1,5 +1,5 @@
-import { AiTaskType, ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, VerificationMethod, Visibility } from './enums'
-import { Action, aiTaskAction, can, NEEDS_VERIFIED_ACCOUNT, type Actor, type NoteFacts, type Resource } from './permissions'
+import { AiTaskType, ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, VerificationMethod, Visibility } from '../../../src/domain/enums'
+import { Action, aiTaskAction, can, NEEDS_VERIFIED_ACCOUNT, type Actor, type NoteFacts, type Resource } from '../../../src/domain/permissions'
 
 /**
  * One assertion per cell of the §5 table that has a defined value. If this file and the spec disagree,

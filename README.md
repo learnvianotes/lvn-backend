@@ -36,3 +36,16 @@ DATABASE_URL=postgresql://x:y@localhost/lvn pnpm prisma:validate
 ```
 
 Postgres, Redis, MinIO and Typesense via Docker Compose arrive in Phase 1 (`infra/docker/`).
+
+## Tests
+
+Every package keeps its tests in `test/`, never in `src/` (Jest, `testMatch: <rootDir>/test/**/*.test.ts`):
+
+| Folder | What | Runs against |
+| --- | --- | --- |
+| `test/unit/` | domain rules, `PolicyService`, validators, job handlers, contracts | nothing external |
+| `test/integration/` | GraphQL resolvers, auth and upload flows, queue → worker (from Phase 1) | Testcontainers Postgres / Redis / MinIO |
+| `test/e2e/` | a composed app over HTTP (`apps/api`) | the app in-process |
+
+`contracts/` holds 80 % line coverage and 100 % branch coverage on `src/domain/permissions.ts` (spec §17).
+The security suite of spec §17.1 lands in `apps/api/test/security/` with Phase 1.

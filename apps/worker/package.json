@@ -7,7 +7,7 @@
     "dev": "nest start --watch --exec \"node --env-file-if-exists=../../.env --env-file-if-exists=../../.env.local dist/main.js\"",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src",
+    "lint": "eslint src test",
     "test": "jest"
   },
   "dependencies": {

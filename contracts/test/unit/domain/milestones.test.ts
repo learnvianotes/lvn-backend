@@ -1,4 +1,4 @@
-import { milestoneFor } from './milestones'
+import { milestoneFor } from '../../../src/domain/milestones'
 
 describe('milestoneFor', () => {
   it('shows nothing below 1,000', () => {

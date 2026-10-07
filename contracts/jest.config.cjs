@@ -1,9 +1,9 @@
 /** @type {import('jest').Config} */
 module.exports = {
   testEnvironment: 'node',
-  roots: ['<rootDir>/src'],
+  testMatch: ['<rootDir>/test/**/*.test.ts'],
   transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: { module: 'commonjs', moduleResolution: 'node10', isolatedModules: true } }] },
-  collectCoverageFrom: ['src/**/*.ts', '!src/index.ts', '!src/domain/index.ts', '!src/**/*.test.ts'],
+  collectCoverageFrom: ['src/**/*.ts', '!src/index.ts', '!src/domain/index.ts'],
   // Spec §17: 80 % lines on contracts/; the permission evaluator is held to 100 % branches.
   coverageThreshold: {
     global: { lines: 80 },

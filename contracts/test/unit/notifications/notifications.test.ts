@@ -1,4 +1,4 @@
-import { pushMessage } from './index'
+import { pushMessage } from '../../../src/notifications'
 
 const ok = {
   title: 'Priya commented on your note',

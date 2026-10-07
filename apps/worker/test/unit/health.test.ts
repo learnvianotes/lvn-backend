@@ -1,5 +1,5 @@
 import type { AddressInfo } from 'node:net'
-import { startHealthServer } from './health'
+import { startHealthServer } from '../../src/health'
 
 it('answers liveness and 404s anything else', async () => {
   const server = await startHealthServer(0, '127.0.0.1')
