@@ -38,6 +38,13 @@ export type NoteVersionKind = (typeof NoteVersionKind)[keyof typeof NoteVersionK
 export const JoinRequestStatus = { PENDING: 'PENDING', APPROVED: 'APPROVED', REJECTED: 'REJECTED', WITHDRAWN: 'WITHDRAWN' } as const
 export type JoinRequestStatus = (typeof JoinRequestStatus)[keyof typeof JoinRequestStatus]
 
+export const GroupPrivacy = { PUBLIC: 'PUBLIC', PRIVATE: 'PRIVATE' } as const
+export type GroupPrivacy = (typeof GroupPrivacy)[keyof typeof GroupPrivacy]
+
+/** How people join a group (ADR-0011). Only a PUBLIC group can be OPEN; a PRIVATE group always uses APPROVAL. */
+export const GroupJoinPolicy = { OPEN: 'OPEN', APPROVAL: 'APPROVAL' } as const
+export type GroupJoinPolicy = (typeof GroupJoinPolicy)[keyof typeof GroupJoinPolicy]
+
 export const ModerationState = { OK: 'OK', PENDING_REVIEW: 'PENDING_REVIEW', HIDDEN: 'HIDDEN', REMOVED: 'REMOVED' } as const
 export type ModerationState = (typeof ModerationState)[keyof typeof ModerationState]
 

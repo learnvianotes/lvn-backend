@@ -29,7 +29,14 @@ export const events = {
   RoleChanged: eventEnvelope('RoleChanged', 1, z.object({ userId: uuid, globalRole: z.enum(enumValues(GlobalRole)) })),
   SessionRevoked: eventEnvelope('SessionRevoked', 1, z.object({ userId: uuid, sessionId: uuid, family: z.boolean() })),
   // notes
-  NotePublished: eventEnvelope('NotePublished', 1, z.object({ noteId: uuid, versionId: uuid, ownerId: uuid, visibility: z.enum(enumValues(Visibility)) })),
+  NotePublished: eventEnvelope('NotePublished', 1, z.object({
+    noteId: uuid,
+    versionId: uuid,
+    ownerId: uuid,
+    visibility: z.enum(enumValues(Visibility)),
+    /** Set when the published note is a fork, so the origin's owner can be told (ADR-0010). Optional: additive in v1. */
+    forkedFromNoteId: uuid.optional(),
+  })),
   NoteUnpublished: eventEnvelope('NoteUnpublished', 1, z.object({ noteId: uuid, ownerId: uuid })),
   NoteForked: eventEnvelope('NoteForked', 1, z.object({ noteId: uuid, forkedFromNoteId: uuid, forkedFromVersionId: uuid, ownerId: uuid })),
   NoteShared: eventEnvelope('NoteShared', 1, z.object({ noteId: uuid, target: z.discriminatedUnion('kind', [

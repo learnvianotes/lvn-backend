@@ -1,4 +1,4 @@
-import { ClassroomRole, GlobalRole, GroupRole, NoteRole, Visibility } from './enums'
+import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, NoteRole, Visibility } from './enums'
 
 /**
  * The permission matrix (spec §5), defined once. The backend's PolicyService loads the facts
@@ -13,9 +13,14 @@ import { ClassroomRole, GlobalRole, GroupRole, NoteRole, Visibility } from './en
  * - Email verification is required to publish, request to join a group and comment (§7.1).
  * - Restricted minors cannot make a note PUBLIC (§5, §15.2); the flag is applied before the matrix.
  *
- * Membership is by approval (docs/adr/0009-membership-by-approval.md): joining a group or classroom is a
- * request that a group Admin/Owner or the classroom's Teacher/TA accepts. A classroom invite sent by staff is
- * that acceptance given in advance.
+ * A fork can be made PUBLIC only if its origin was PUBLIC when forked, or the forker was the origin's owner or
+ * an Editor — so a SHARED note never becomes public through someone else's fork (ADR-0010). Every reader of a
+ * fork sees its attribution.
+ *
+ * Membership (ADR-0009, ADR-0011): joining a classroom is always a request that its Teacher or a TA accepts; a
+ * staff invite is that acceptance given in advance and the student accepts the invite. A PUBLIC group whose
+ * admins set the join policy to OPEN can be joined directly; every other group join is a request that a group
+ * Admin/Owner accepts. Changing the join policy is a group setting (GROUP_MANAGE).
  */
 
 export const Action = {
@@ -30,6 +35,7 @@ export const Action = {
   NOTE_ASK_AI: 'note.askAi',
   FILE_READ: 'file.read',
   GROUP_CREATE: 'group.create',
+  GROUP_JOIN: 'group.join',
   GROUP_REQUEST_JOIN: 'group.requestJoin',
   GROUP_REVIEW_JOIN_REQUESTS: 'group.reviewJoinRequests',
   GROUP_POST: 'group.post',
@@ -69,6 +75,15 @@ export interface NoteFacts {
   sharedToActorsGroup?: boolean
   /** The note is shared to a classroom the actor belongs to. */
   sharedToActorsClassroom?: boolean
+  /** Set when the note is a fork: what the origin was when it was forked (ADR-0010). */
+  fork?: ForkFacts
+}
+
+export interface ForkFacts {
+  /** The origin's visibility at the moment it was forked (later changes to the origin do not matter, §4.2). */
+  originVisibilityAtFork: Visibility
+  /** The forker was the origin's owner or a share Editor of it when forking. */
+  forkedAsOwnerOrEditor: boolean
 }
 
 export type Resource =
@@ -78,6 +93,8 @@ export type Resource =
       kind: 'group'
       /** The actor's role in the group; undefined = not a member. */
       role?: GroupRole
+      privacy?: GroupPrivacy
+      joinPolicy?: GroupJoinPolicy
       /** The actor already has a pending request to join this group. */
       pendingJoinRequest?: boolean
     }
@@ -123,6 +140,9 @@ const GROUP_RANK: Record<GroupRole, number> = {
 }
 
 const atLeast = (role: GroupRole | undefined, min: GroupRole) => role !== undefined && GROUP_RANK[role] >= GROUP_RANK[min]
+/** A PUBLIC group with the OPEN join policy: no approval needed (ADR-0011). */
+const openToJoin = (group: { privacy?: GroupPrivacy; joinPolicy?: GroupJoinPolicy }) =>
+  group.privacy === GroupPrivacy.PUBLIC && group.joinPolicy === GroupJoinPolicy.OPEN
 const isClassStaff = (role?: ClassroomRole) => role === ClassroomRole.TEACHER || role === ClassroomRole.TA
 
 function readable(actor: Actor | null, note: NoteFacts): boolean {
@@ -143,9 +163,13 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           // A PRIVATE note is readable by its owner only, so share rows on it grant nothing until it is shared again.
           return isOwner || (actor !== null && note.visibility !== Visibility.PRIVATE && note.shareRole === NoteRole.EDITOR)
         case Action.NOTE_PUBLISH:
-        case Action.NOTE_CHANGE_VISIBILITY:
+        case Action.NOTE_CHANGE_VISIBILITY: {
           if (!isOwner || !actor!.emailVerified) return false
-          return !(resource.targetVisibility === Visibility.PUBLIC && actor!.restrictedMinor)
+          const goesPublic = (resource.targetVisibility ?? note.visibility) === Visibility.PUBLIC
+          if (!goesPublic) return true
+          if (actor!.restrictedMinor) return false
+          return !note.fork || note.fork.originVisibilityAtFork === Visibility.PUBLIC || note.fork.forkedAsOwnerOrEditor
+        }
         case Action.NOTE_DELETE:
         case Action.NOTE_SHARE:
           return isOwner
@@ -171,8 +195,10 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           return atLeast(resource.role, GroupRole.ADMIN)
         case Action.GROUP_DELETE:
           return resource.role === GroupRole.OWNER
+        case Action.GROUP_JOIN:
+          return actor.emailVerified && resource.role === undefined && openToJoin(resource)
         case Action.GROUP_REQUEST_JOIN:
-          return actor.emailVerified && resource.role === undefined && !resource.pendingJoinRequest
+          return actor.emailVerified && resource.role === undefined && !resource.pendingJoinRequest && !openToJoin(resource)
         case Action.GROUP_REVIEW_JOIN_REQUESTS:
           return atLeast(resource.role, GroupRole.ADMIN)
         default:

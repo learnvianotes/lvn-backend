@@ -98,7 +98,20 @@ type Note implements Node {             # [notes]
   publishedAt: DateTime
 }
 
-type NoteAttribution { note: Note, version: NoteVersion, ownerDisplayName: String! }
+"""
+Credit shown to every reader of a fork, on every platform including the public page; the forker cannot remove it
+(§4.4, ADR-0010). `note` and `version` are null when the viewer cannot open the origin or it was deleted — the
+author is still credited.
+"""
+type NoteAttribution {
+  note: Note
+  version: NoteVersion
+  "The origin's author; \"Deleted user\" after account deletion (§7.2)"
+  ownerDisplayName: String!
+  ownerHandle: String
+  "False when the origin was deleted or is no longer readable by anyone but its owner"
+  originAvailable: Boolean!
+}
 
 type Card implements Node {             # [notes]
   id: UUID!

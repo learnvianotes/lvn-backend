@@ -1,4 +1,4 @@
-import { ClassroomRole, GlobalRole, GroupRole, Visibility } from './enums'
+import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, Visibility } from './enums'
 import { Action, can, type Actor, type NoteFacts } from './permissions'
 
 /**
@@ -101,6 +101,36 @@ describe('note rows of §5', () => {
     expect(can(minor, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: note('PRIVATE'), targetVisibility: 'SHARED' })).toBe(true)
   })
 
+  describe('publishing a fork (ADR-0010)', () => {
+    // The fork belongs to its forker, so the forker is `owner` here.
+    const fork = (originVisibilityAtFork: Visibility, forkedAsOwnerOrEditor: boolean) =>
+      note('PRIVATE', { fork: { originVisibilityAtFork, forkedAsOwnerOrEditor } })
+    const toPublic = (n: NoteFacts) => can(owner, Action.NOTE_PUBLISH, { kind: 'note', note: n, targetVisibility: 'PUBLIC' })
+
+    it('a fork of a PUBLIC note can be published publicly by anyone who forked it', () => {
+      expect(toPublic(fork('PUBLIC', false))).toBe(true)
+    })
+
+    it("an Editor's fork of a SHARED note can be published publicly", () => {
+      expect(toPublic(fork('SHARED', true))).toBe(true)
+    })
+
+    it("a viewer's or group member's fork of a SHARED note can never go public, only stay private or be shared", () => {
+      expect(toPublic(fork('SHARED', false))).toBe(false)
+      expect(can(owner, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: fork('SHARED', false), targetVisibility: 'SHARED' })).toBe(true)
+    })
+
+    it('an owner forking their own PRIVATE note may publish the copy', () => {
+      expect(toPublic(fork('PRIVATE', true))).toBe(true)
+    })
+
+    it('without a target, publishing checks the current visibility', () => {
+      const publicFork = { ...fork('SHARED', false), visibility: 'PUBLIC' as const }
+      expect(can(owner, Action.NOTE_PUBLISH, { kind: 'note', note: publicFork })).toBe(false)
+      expect(can(owner, Action.NOTE_PUBLISH, { kind: 'note', note: fork('SHARED', false) })).toBe(true)
+    })
+  })
+
   it('note actions that are not note actions are denied', () => {
     expect(can(owner, Action.GROUP_POST, { kind: 'note', note: note('PUBLIC') })).toBe(false)
   })
@@ -119,6 +149,35 @@ describe('group rows of §5', () => {
   })
   it('manage members, roles, settings: admin and owner', () => allowedFrom(Action.GROUP_MANAGE, 3))
   it('delete: owner only', () => allowedFrom(Action.GROUP_DELETE, 4))
+
+  describe('join policy (ADR-0011)', () => {
+    const open = { kind: 'group' as const, privacy: GroupPrivacy.PUBLIC, joinPolicy: GroupJoinPolicy.OPEN }
+
+    it('a PUBLIC group set to OPEN is joined directly, without a request', () => {
+      expect(can(other, Action.GROUP_JOIN, open)).toBe(true)
+      expect(can(other, Action.GROUP_REQUEST_JOIN, open)).toBe(false)
+    })
+
+    it('a PUBLIC group set to APPROVAL needs a request', () => {
+      const approval = { ...open, joinPolicy: GroupJoinPolicy.APPROVAL }
+      expect(can(other, Action.GROUP_JOIN, approval)).toBe(false)
+      expect(can(other, Action.GROUP_REQUEST_JOIN, approval)).toBe(true)
+    })
+
+    it('a PRIVATE group always needs a request, whatever the stored policy says', () => {
+      const priv = { ...open, privacy: GroupPrivacy.PRIVATE }
+      expect(can(other, Action.GROUP_JOIN, priv)).toBe(false)
+      expect(can(other, Action.GROUP_REQUEST_JOIN, priv)).toBe(true)
+    })
+
+    it('members, unverified users and anonymous visitors cannot join directly', () => {
+      expect(can(other, Action.GROUP_JOIN, { ...open, role: GroupRole.MEMBER })).toBe(false)
+      expect(can(student('x', { emailVerified: false }), Action.GROUP_JOIN, open)).toBe(false)
+      expect(can(anon, Action.GROUP_JOIN, open)).toBe(false)
+    })
+
+    it('admins and the owner change the policy through group settings', () => allowedFrom(Action.GROUP_MANAGE, 3))
+  })
 
   it('request to join: verified non-members without a pending request (ADR-0009)', () => {
     expect(can(other, Action.GROUP_REQUEST_JOIN, g())).toBe(true)
