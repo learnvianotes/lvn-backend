@@ -1,4 +1,4 @@
-import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, NoteKind, NoteRole, Visibility } from './enums'
+import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, NoteRole, Visibility } from './enums'
 
 /**
  * The permission matrix (spec §5), defined once. The backend's PolicyService loads the facts
@@ -17,11 +17,17 @@ import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, No
  * an Editor — so a SHARED note never becomes public through someone else's fork (ADR-0010). Every reader of a
  * fork sees its attribution.
  *
- * Teacher network (ADR-0013, ADR-0014): any signed-in user follows teachers (one-way, public content only);
- * only the teacher sees who follows them. Teachers connect with other teachers (a request the other accepts). A
- * teacher shares a note directly with another teacher only if they are connected or teach the same classroom, and
- * can share a note with all their connections at once. Teachers also publish blogs, posts and projects, which are
- * notes of another kind and follow every note rule.
+ * Follows (ADR-0013, ADR-0014, ADR-0016): anyone signed in follows teachers; students follow students (never a
+ * restricted minor); following shows public content only and only the followed person sees who follows them.
+ * Anyone can remove a follower, block (ends follows and connections both ways, stops new interaction) or restrict
+ * (a quieter limit enforced on comments and notifications, not here). Teachers connect with other teachers (a
+ * request the other accepts); a teacher shares a note directly with another teacher only if connected or
+ * co-teaching, and can share with all connections at once. Teachers publish blogs and posts; anyone publishes
+ * projects (ADR-0015) — all are notes of another kind and follow every note rule.
+ *
+ * Project workspaces (ADR-0015) are groups of type PROJECT: the team (members up to the owner) asks doubts and
+ * answers them; a MENTOR — a teacher the admins invited and who accepted — answers and resolves doubts and
+ * moderates, but does not admit members, change settings or delete.
  *
  * Membership (ADR-0009, ADR-0011): joining a classroom is always a request that its Teacher or a TA accepts; a
  * staff invite is that acceptance given in advance and the student accepts the invite. A PUBLIC group whose
@@ -45,6 +51,11 @@ export const Action = {
   GROUP_JOIN: 'group.join',
   GROUP_REQUEST_JOIN: 'group.requestJoin',
   GROUP_REVIEW_JOIN_REQUESTS: 'group.reviewJoinRequests',
+  GROUP_INVITE_MENTOR: 'group.inviteMentor',
+  GROUP_ACCEPT_MENTOR_INVITE: 'group.acceptMentorInvite',
+  GROUP_ASK_DOUBT: 'group.askDoubt',
+  GROUP_ANSWER_DOUBT: 'group.answerDoubt',
+  GROUP_RESOLVE_DOUBT: 'group.resolveDoubt',
   GROUP_POST: 'group.post',
   GROUP_MODERATE_POSTS: 'group.moderatePosts',
   GROUP_MANAGE: 'group.manage',
@@ -60,6 +71,11 @@ export const Action = {
   USER_FOLLOW: 'user.follow',
   USER_UNFOLLOW: 'user.unfollow',
   USER_VIEW_FOLLOWERS: 'user.viewFollowers',
+  USER_REMOVE_FOLLOWER: 'user.removeFollower',
+  USER_BLOCK: 'user.block',
+  USER_UNBLOCK: 'user.unblock',
+  USER_RESTRICT: 'user.restrict',
+  USER_UNRESTRICT: 'user.unrestrict',
   USER_REQUEST_CONNECTION: 'user.requestConnection',
   USER_RESPOND_TO_CONNECTION: 'user.respondToConnection',
   USER_REMOVE_CONNECTION: 'user.removeConnection',
@@ -123,23 +139,38 @@ export type Resource =
       kind: 'user'
       targetId: string
       targetGlobalRole: GlobalRole
+      /** The target is a restricted minor (§15.2): never followable. */
+      targetRestrictedMinor?: boolean
       /** The actor follows the target. */
       following?: boolean
+      /** The target follows the actor (USER_REMOVE_FOLLOWER). */
+      followsActor?: boolean
       /** The actor and the target are connected. */
       connected?: boolean
       /** A connection request between them is pending: sent by the actor (OUTGOING) or to the actor (INCOMING). */
       pendingConnection?: 'OUTGOING' | 'INCOMING'
       /** Either of them has blocked the other (§15.1). */
       blocked?: boolean
+      /** The actor has blocked the target (USER_UNBLOCK). */
+      blockedByActor?: boolean
+      /** The actor has restricted the target (ADR-0016). */
+      restrictedByActor?: boolean
     }
   | {
       kind: 'group'
       /** The actor's role in the group; undefined = not a member. */
       role?: GroupRole
+      type?: GroupType
       privacy?: GroupPrivacy
       joinPolicy?: GroupJoinPolicy
       /** The actor already has a pending request to join this group. */
       pendingJoinRequest?: boolean
+      /** PROJECT groups: the actor holds a valid invitation to mentor this team. */
+      mentorInvitePending?: boolean
+      /** GROUP_INVITE_MENTOR: the global role of the person being invited. */
+      inviteeGlobalRole?: GlobalRole
+      /** GROUP_RESOLVE_DOUBT: the actor asked this doubt. */
+      isDoubtAuthor?: boolean
     }
   | {
       kind: 'classroom'
@@ -182,9 +213,13 @@ const GROUP_RANK: Record<GroupRole, number> = {
   [GroupRole.MODERATOR]: 2,
   [GroupRole.ADMIN]: 3,
   [GroupRole.OWNER]: 4,
+  // A mentor posts like a member; its extra powers are granted explicitly below, never through the ladder.
+  [GroupRole.MENTOR]: 1,
 }
 
 const atLeast = (role: GroupRole | undefined, min: GroupRole) => role !== undefined && GROUP_RANK[role] >= GROUP_RANK[min]
+/** The team itself: members up to the owner, not the mentor. */
+const onTeam = (role: GroupRole | undefined) => atLeast(role, GroupRole.MEMBER) && role !== GroupRole.MENTOR
 /** A PUBLIC group with the OPEN join policy: no approval needed (ADR-0011). */
 const openToJoin = (group: { privacy?: GroupPrivacy; joinPolicy?: GroupJoinPolicy }) =>
   group.privacy === GroupPrivacy.PUBLIC && group.joinPolicy === GroupJoinPolicy.OPEN
@@ -240,12 +275,13 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
     }
     case 'group': {
       if (!actor) return false
+      const isProject = resource.type === GroupType.PROJECT
       switch (action) {
         case Action.GROUP_POST:
           return atLeast(resource.role, GroupRole.MEMBER)
         case Action.GROUP_MODERATE_POSTS:
         case Action.GROUP_MODERATE_REPORTS:
-          return atLeast(resource.role, GroupRole.MODERATOR)
+          return atLeast(resource.role, GroupRole.MODERATOR) || resource.role === GroupRole.MENTOR
         case Action.GROUP_MANAGE:
           return atLeast(resource.role, GroupRole.ADMIN)
         case Action.GROUP_DELETE:
@@ -256,6 +292,20 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           return actor.emailVerified && resource.role === undefined && !resource.pendingJoinRequest && !openToJoin(resource)
         case Action.GROUP_REVIEW_JOIN_REQUESTS:
           return atLeast(resource.role, GroupRole.ADMIN)
+        case Action.GROUP_INVITE_MENTOR:
+          return isProject && atLeast(resource.role, GroupRole.ADMIN) && resource.inviteeGlobalRole === GlobalRole.TEACHER
+        case Action.GROUP_ACCEPT_MENTOR_INVITE:
+          return isProject && actor.globalRole === GlobalRole.TEACHER && resource.role === undefined && resource.mentorInvitePending === true
+        case Action.GROUP_ASK_DOUBT:
+          return isProject && onTeam(resource.role)
+        case Action.GROUP_ANSWER_DOUBT:
+          return isProject && (onTeam(resource.role) || resource.role === GroupRole.MENTOR)
+        case Action.GROUP_RESOLVE_DOUBT:
+          return isProject && (
+            resource.role === GroupRole.MENTOR ||
+            atLeast(resource.role, GroupRole.ADMIN) ||
+            (resource.isDoubtAuthor === true && onTeam(resource.role))
+          )
         default:
           return false
       }
@@ -280,14 +330,29 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
     }
     case 'user': {
       if (!actor) return false
-      const followableTeacher =
-        resource.targetGlobalRole === GlobalRole.TEACHER && actor.id !== resource.targetId && !resource.blocked
-      const teachers = actor.globalRole === GlobalRole.TEACHER && followableTeacher
+      const self = actor.id === resource.targetId
+      const reachable = !self && !resource.blocked
+      const targetIsTeacher = resource.targetGlobalRole === GlobalRole.TEACHER
+      // Anyone follows a teacher; a student follows a student who is not a restricted minor (ADR-0016).
+      const followable =
+        targetIsTeacher ||
+        (actor.globalRole === GlobalRole.STUDENT && resource.targetGlobalRole === GlobalRole.STUDENT && !resource.targetRestrictedMinor)
+      const teachers = actor.globalRole === GlobalRole.TEACHER && targetIsTeacher && reachable
       switch (action) {
         case Action.USER_FOLLOW:
-          return followableTeacher && !resource.following
+          return reachable && followable && !resource.following
         case Action.USER_VIEW_FOLLOWERS:
-          return actor.id === resource.targetId
+          return self
+        case Action.USER_REMOVE_FOLLOWER:
+          return resource.followsActor === true
+        case Action.USER_BLOCK:
+          return !self && !resource.blockedByActor
+        case Action.USER_UNBLOCK:
+          return resource.blockedByActor === true
+        case Action.USER_RESTRICT:
+          return !self && !resource.restrictedByActor && !resource.blockedByActor
+        case Action.USER_UNRESTRICT:
+          return resource.restrictedByActor === true
         case Action.USER_UNFOLLOW:
           return resource.following === true
         case Action.USER_REQUEST_CONNECTION:
@@ -301,9 +366,9 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
       }
     }
     case 'newNote':
-      // Anyone signed in writes notes; blogs, posts and projects are teacher publications (ADR-0014).
+      // Anyone signed in writes notes and projects; blogs and posts are teacher publications (ADR-0014, ADR-0015).
       if (!actor || action !== Action.NOTE_CREATE) return false
-      return resource.noteKind === NoteKind.NOTE || actor.globalRole === GlobalRole.TEACHER
+      return resource.noteKind === NoteKind.NOTE || resource.noteKind === NoteKind.PROJECT || actor.globalRole === GlobalRole.TEACHER
     case 'none': {
       if (!actor) return false
       switch (action) {

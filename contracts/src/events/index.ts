@@ -37,6 +37,13 @@ export const events = {
     userIds: z.tuple([uuid, uuid]),
     change: z.enum(['CONNECTED', 'DISCONNECTED']),
   })),
+  // Block and restrict (§15.1, ADR-0016). A block ends follows and connections both ways (users emits the
+  // matching UserUnfollowed / ConnectionChanged too); notes and core hide the blocked user's content and comments;
+  // core holds a restricted user's comments for approval; communication mutes notifications from them.
+  UserBlocked: eventEnvelope('UserBlocked', 1, z.object({ blockerId: uuid, blockedId: uuid })),
+  UserUnblocked: eventEnvelope('UserUnblocked', 1, z.object({ blockerId: uuid, blockedId: uuid })),
+  UserRestricted: eventEnvelope('UserRestricted', 1, z.object({ restricterId: uuid, restrictedId: uuid })),
+  UserUnrestricted: eventEnvelope('UserUnrestricted', 1, z.object({ restricterId: uuid, restrictedId: uuid })),
   // notes
   NotePublished: eventEnvelope('NotePublished', 1, z.object({
     noteId: uuid,
@@ -73,6 +80,11 @@ export const events = {
     reviewerId: uuid,
     decision: z.enum(['APPROVED', 'REJECTED']),
   })),
+  // Project workspaces (ADR-0015).
+  MentorInvited: eventEnvelope('MentorInvited', 1, z.object({ groupId: uuid, teacherId: uuid, invitedBy: uuid })),
+  DoubtAsked: eventEnvelope('DoubtAsked', 1, z.object({ doubtId: uuid, groupId: uuid, askedBy: uuid })),
+  DoubtAnswered: eventEnvelope('DoubtAnswered', 1, z.object({ doubtId: uuid, groupId: uuid, answerId: uuid, answeredBy: uuid, byMentor: z.boolean() })),
+  DoubtResolved: eventEnvelope('DoubtResolved', 1, z.object({ doubtId: uuid, groupId: uuid, resolvedBy: uuid })),
   CommentAdded: eventEnvelope('CommentAdded', 1, z.object({ commentId: uuid, targetType: z.string(), targetId: uuid, authorId: uuid })),
   QuizPublished: eventEnvelope('QuizPublished', 1, z.object({ quizId: uuid, classroomId: uuid.optional() })),
   ContentReported: eventEnvelope('ContentReported', 1, z.object({ reportId: uuid, entityType: z.string(), entityId: uuid })),

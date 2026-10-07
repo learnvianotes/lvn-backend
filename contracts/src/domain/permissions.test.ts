@@ -1,5 +1,5 @@
-import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, NoteKind, Visibility } from './enums'
-import { Action, can, type Actor, type NoteFacts } from './permissions'
+import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, Visibility } from './enums'
+import { Action, can, type Actor, type NoteFacts, type Resource } from './permissions'
 
 /**
  * One assertion per cell of the §5 table that has a defined value. If this file and the spec disagree,
@@ -195,6 +195,63 @@ describe('group rows of §5', () => {
   })
 })
 
+describe('project workspaces (ADR-0015)', () => {
+  const teacherActor = student('t', { globalRole: GlobalRole.TEACHER })
+  const ws = (role?: GroupRole, extra: object = {}): Resource => ({ kind: 'group', type: GroupType.PROJECT, role, ...extra })
+  const community = (role?: GroupRole, extra: object = {}): Resource => ({ kind: 'group', type: GroupType.COMMUNITY, role, ...extra })
+  const team = [GroupRole.MEMBER, GroupRole.MODERATOR, GroupRole.ADMIN, GroupRole.OWNER]
+
+  it('admins and the owner invite a teacher as mentor; only to project workspaces, never a student', () => {
+    const invite = (role: GroupRole, inviteeGlobalRole: GlobalRole, scope = ws) =>
+      can(other, Action.GROUP_INVITE_MENTOR, scope(role, { inviteeGlobalRole }))
+    expect(invite(GroupRole.ADMIN, GlobalRole.TEACHER)).toBe(true)
+    expect(invite(GroupRole.OWNER, GlobalRole.TEACHER)).toBe(true)
+    expect(invite(GroupRole.MODERATOR, GlobalRole.TEACHER)).toBe(false)
+    expect(invite(GroupRole.ADMIN, GlobalRole.STUDENT)).toBe(false)
+    expect(invite(GroupRole.ADMIN, GlobalRole.TEACHER, community)).toBe(false)
+  })
+
+  it('the invited teacher accepts to become mentor', () => {
+    expect(can(teacherActor, Action.GROUP_ACCEPT_MENTOR_INVITE, ws(undefined, { mentorInvitePending: true }))).toBe(true)
+    expect(can(teacherActor, Action.GROUP_ACCEPT_MENTOR_INVITE, ws())).toBe(false)
+    expect(can(other, Action.GROUP_ACCEPT_MENTOR_INVITE, ws(undefined, { mentorInvitePending: true }))).toBe(false)
+    expect(can(teacherActor, Action.GROUP_ACCEPT_MENTOR_INVITE, ws(GroupRole.MEMBER, { mentorInvitePending: true }))).toBe(false)
+    expect(can(teacherActor, Action.GROUP_ACCEPT_MENTOR_INVITE, community(undefined, { mentorInvitePending: true }))).toBe(false)
+  })
+
+  it('the team asks doubts; the team and the mentor answer them', () => {
+    for (const role of team) {
+      expect(can(other, Action.GROUP_ASK_DOUBT, ws(role))).toBe(true)
+      expect(can(other, Action.GROUP_ANSWER_DOUBT, ws(role))).toBe(true)
+    }
+    expect(can(teacherActor, Action.GROUP_ASK_DOUBT, ws(GroupRole.MENTOR))).toBe(false)
+    expect(can(teacherActor, Action.GROUP_ANSWER_DOUBT, ws(GroupRole.MENTOR))).toBe(true)
+    for (const a of [Action.GROUP_ASK_DOUBT, Action.GROUP_ANSWER_DOUBT]) {
+      expect(can(other, a, ws())).toBe(false)
+      expect(can(other, a, community(GroupRole.MEMBER))).toBe(false)
+    }
+  })
+
+  it('the mentor, admins, the owner and the asker resolve a doubt', () => {
+    expect(can(teacherActor, Action.GROUP_RESOLVE_DOUBT, ws(GroupRole.MENTOR))).toBe(true)
+    expect(can(other, Action.GROUP_RESOLVE_DOUBT, ws(GroupRole.ADMIN))).toBe(true)
+    expect(can(other, Action.GROUP_RESOLVE_DOUBT, ws(GroupRole.MEMBER, { isDoubtAuthor: true }))).toBe(true)
+    expect(can(other, Action.GROUP_RESOLVE_DOUBT, ws(GroupRole.MEMBER))).toBe(false)
+    expect(can(other, Action.GROUP_RESOLVE_DOUBT, ws(undefined, { isDoubtAuthor: true }))).toBe(false)
+    expect(can(other, Action.GROUP_RESOLVE_DOUBT, community(GroupRole.ADMIN))).toBe(false)
+  })
+
+  it('the mentor posts and moderates but never admits members, changes settings or deletes', () => {
+    const mentor = ws(GroupRole.MENTOR)
+    expect(can(teacherActor, Action.GROUP_POST, mentor)).toBe(true)
+    expect(can(teacherActor, Action.GROUP_MODERATE_POSTS, mentor)).toBe(true)
+    expect(can(teacherActor, Action.GROUP_MODERATE_REPORTS, mentor)).toBe(true)
+    for (const a of [Action.GROUP_REVIEW_JOIN_REQUESTS, Action.GROUP_MANAGE, Action.GROUP_DELETE, Action.GROUP_INVITE_MENTOR]) {
+      expect(can(teacherActor, a, ws(GroupRole.MENTOR, { inviteeGlobalRole: GlobalRole.TEACHER }))).toBe(false)
+    }
+  })
+})
+
 describe('classroom rows of §5', () => {
   const c = (role?: ClassroomRole, targetUserId?: string) => ({ kind: 'classroom' as const, role, targetUserId })
 
@@ -245,15 +302,43 @@ describe('teacher network (ADR-0013)', () => {
     expect(can(t1, Action.USER_UNFOLLOW, towards())).toBe(false)
   })
 
-  it('students and teachers follow teachers; nobody follows a student, themselves, or across a block (ADR-0014)', () => {
+  it('students and teachers follow teachers; never themselves or across a block (ADR-0014)', () => {
     expect(can(other, Action.USER_FOLLOW, towards())).toBe(true)
     expect(can(t1, Action.USER_FOLLOW, towards())).toBe(true)
-    for (const actor of [other, t1]) {
-      expect(can(actor, Action.USER_FOLLOW, towards({}, GlobalRole.STUDENT))).toBe(false)
-      expect(can(actor, Action.USER_FOLLOW, towards({ blocked: true }))).toBe(false)
-    }
+    for (const actor of [other, t1]) expect(can(actor, Action.USER_FOLLOW, towards({ blocked: true }))).toBe(false)
     expect(can(t1, Action.USER_FOLLOW, { ...towards(), targetId: 't1' })).toBe(false)
     expect(can(anon, Action.USER_FOLLOW, towards())).toBe(false)
+  })
+
+  it('students follow students, except restricted minors; teachers do not follow students (ADR-0016)', () => {
+    const aStudent = (extra: object = {}) => towards(extra, GlobalRole.STUDENT)
+    expect(can(other, Action.USER_FOLLOW, aStudent())).toBe(true)
+    expect(can(other, Action.USER_FOLLOW, aStudent({ targetRestrictedMinor: true }))).toBe(false)
+    expect(can(other, Action.USER_FOLLOW, aStudent({ following: true }))).toBe(false)
+    expect(can(other, Action.USER_FOLLOW, aStudent({ blocked: true }))).toBe(false)
+    expect(can(t1, Action.USER_FOLLOW, aStudent())).toBe(false)
+  })
+
+  it('anyone removes a follower, blocks, restricts, and undoes their own block or restriction (ADR-0016)', () => {
+    for (const actor of [other, t1]) {
+      expect(can(actor, Action.USER_REMOVE_FOLLOWER, towards({ followsActor: true }))).toBe(true)
+      expect(can(actor, Action.USER_REMOVE_FOLLOWER, towards())).toBe(false)
+      expect(can(actor, Action.USER_BLOCK, towards())).toBe(true)
+      expect(can(actor, Action.USER_BLOCK, towards({ blocked: true, blockedByActor: true }))).toBe(false)
+      expect(can(actor, Action.USER_UNBLOCK, towards({ blocked: true, blockedByActor: true }))).toBe(true)
+      expect(can(actor, Action.USER_UNBLOCK, towards({ blocked: true }))).toBe(false)
+      expect(can(actor, Action.USER_RESTRICT, towards())).toBe(true)
+      expect(can(actor, Action.USER_RESTRICT, towards({ restrictedByActor: true }))).toBe(false)
+      expect(can(actor, Action.USER_RESTRICT, towards({ blocked: true, blockedByActor: true }))).toBe(false)
+      expect(can(actor, Action.USER_UNRESTRICT, towards({ restrictedByActor: true }))).toBe(true)
+      expect(can(actor, Action.USER_UNRESTRICT, towards())).toBe(false)
+    }
+  })
+
+  it('you can block someone who blocked you, but never yourself', () => {
+    expect(can(other, Action.USER_BLOCK, towards({ blocked: true }))).toBe(true)
+    for (const a of [Action.USER_BLOCK, Action.USER_RESTRICT]) expect(can(t1, a, { ...towards(), targetId: 't1' })).toBe(false)
+    expect(can(anon, Action.USER_BLOCK, towards())).toBe(false)
   })
 
   it('connect is teacher-to-teacher only, never yourself, never across a block', () => {
@@ -269,10 +354,11 @@ describe('teacher network (ADR-0013)', () => {
     expect(can(other, Action.USER_VIEW_FOLLOWERS, towards())).toBe(false)
   })
 
-  it('anyone signed in writes notes; blogs, posts and projects are for teachers (ADR-0014)', () => {
+  it('anyone signed in writes notes and projects; blogs and posts are for teachers (ADR-0014, ADR-0015)', () => {
     const create = (actor: Actor | null, noteKind: NoteKind) => can(actor, Action.NOTE_CREATE, { kind: 'newNote', noteKind })
     expect(create(other, NoteKind.NOTE)).toBe(true)
-    for (const k of [NoteKind.BLOG, NoteKind.POST, NoteKind.PROJECT]) {
+    expect(create(other, NoteKind.PROJECT)).toBe(true)
+    for (const k of [NoteKind.BLOG, NoteKind.POST]) {
       expect(create(t1, k)).toBe(true)
       expect(create(other, k)).toBe(false)
     }

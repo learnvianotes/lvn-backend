@@ -26,6 +26,15 @@ describe('events', () => {
     expect(() => parseEvent('ConnectionChanged', { ...ok, payload: { ...ok.payload, userIds: [uuid(2)] } })).toThrow()
   })
 
+  it('says whether a doubt was answered by the mentor', () => {
+    const e = parseEvent('DoubtAnswered', {
+      ...base, type: 'DoubtAnswered', version: 1,
+      payload: { doubtId: uuid(2), groupId: uuid(3), answerId: uuid(4), answeredBy: uuid(5), byMentor: true },
+    })
+    expect(e.payload.byMentor).toBe(true)
+    expect(() => parseEvent('DoubtAnswered', { ...e, payload: { ...e.payload, byMentor: undefined } })).toThrow()
+  })
+
   it('rejects a wrong version or payload', () => {
     expect(() => parseEvent('UserDeleted', { ...base, type: 'UserDeleted', version: 2, payload: { userId: uuid(2) } })).toThrow()
     expect(() => parseEvent('UserDeleted', { ...base, type: 'UserDeleted', version: 1, payload: {} })).toThrow()

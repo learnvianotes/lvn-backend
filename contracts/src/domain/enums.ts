@@ -11,7 +11,8 @@ export type Visibility = (typeof Visibility)[keyof typeof Visibility]
 export const GlobalRole = { STUDENT: 'STUDENT', TEACHER: 'TEACHER', PLATFORM_ADMIN: 'PLATFORM_ADMIN' } as const
 export type GlobalRole = (typeof GlobalRole)[keyof typeof GlobalRole]
 
-export const GroupRole = { OWNER: 'GROUP_OWNER', ADMIN: 'GROUP_ADMIN', MODERATOR: 'GROUP_MODERATOR', MEMBER: 'GROUP_MEMBER' } as const
+/** MENTOR exists only in PROJECT groups: a teacher the team invited (ADR-0015). */
+export const GroupRole = { OWNER: 'GROUP_OWNER', ADMIN: 'GROUP_ADMIN', MODERATOR: 'GROUP_MODERATOR', MEMBER: 'GROUP_MEMBER', MENTOR: 'GROUP_MENTOR' } as const
 export type GroupRole = (typeof GroupRole)[keyof typeof GroupRole]
 
 export const ClassroomRole = { TEACHER: 'CLASSROOM_TEACHER', TA: 'CLASSROOM_TA', STUDENT: 'CLASSROOM_STUDENT' } as const
@@ -32,8 +33,8 @@ export const CardType = {
 export type CardType = (typeof CardType)[keyof typeof CardType]
 
 /**
- * What a note is presented as (ADR-0014). Every kind is a Note — same editor, versions, visibility, moderation,
- * search and permissions. BLOG, POST and PROJECT are published by teachers for their followers and the public.
+ * What a note is presented as (ADR-0014, ADR-0015). Every kind is a Note — same editor, versions, visibility,
+ * moderation, search and permissions. Anyone writes NOTE and PROJECT; BLOG and POST are teacher publications.
  */
 export const NoteKind = { NOTE: 'NOTE', BLOG: 'BLOG', POST: 'POST', PROJECT: 'PROJECT' } as const
 export type NoteKind = (typeof NoteKind)[keyof typeof NoteKind]
@@ -44,6 +45,18 @@ export type NoteVersionKind = (typeof NoteVersionKind)[keyof typeof NoteVersionK
 /** A request to join a group or classroom (ADR-0009). */
 export const JoinRequestStatus = { PENDING: 'PENDING', APPROVED: 'APPROVED', REJECTED: 'REJECTED', WITHDRAWN: 'WITHDRAWN' } as const
 export type JoinRequestStatus = (typeof JoinRequestStatus)[keyof typeof JoinRequestStatus]
+
+/** COMMUNITY: a study group. PROJECT: a team workspace with a linked repository, ideas, doubts and a mentor (ADR-0015). */
+export const GroupType = { COMMUNITY: 'COMMUNITY', PROJECT: 'PROJECT' } as const
+export type GroupType = (typeof GroupType)[keyof typeof GroupType]
+
+/** Posts in a group; IDEA posts make up a project workspace's ideas board (ADR-0015). */
+export const GroupPostKind = { POST: 'POST', IDEA: 'IDEA' } as const
+export type GroupPostKind = (typeof GroupPostKind)[keyof typeof GroupPostKind]
+
+/** A question a project team asks; the mentor or a teammate answers it (ADR-0015). */
+export const DoubtStatus = { OPEN: 'OPEN', ANSWERED: 'ANSWERED', RESOLVED: 'RESOLVED' } as const
+export type DoubtStatus = (typeof DoubtStatus)[keyof typeof DoubtStatus]
 
 export const GroupPrivacy = { PUBLIC: 'PUBLIC', PRIVATE: 'PRIVATE' } as const
 export type GroupPrivacy = (typeof GroupPrivacy)[keyof typeof GroupPrivacy]
