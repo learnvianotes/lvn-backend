@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      # Every URL and connection string comes from .env (ADR-0022); CI uses the documented development values.
+      - run: cp .env.example .env
       - run: pnpm build
       - run: pnpm lint
       - run: pnpm typecheck
@@ -28,8 +30,6 @@ jobs:
         run: pnpm boundaries
       - name: Prisma schema
         run: pnpm prisma:validate
-        env:
-          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
 
   secrets:
     runs-on: ubuntu-latest

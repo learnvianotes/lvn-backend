@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "nest start --watch --exec \"node --env-file-if-exists=../../.env.local dist/main.js\"",
+    "dev": "nest start --watch --exec \"node --env-file-if-exists=../../.env --env-file-if-exists=../../.env.local dist/main.js\"",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
