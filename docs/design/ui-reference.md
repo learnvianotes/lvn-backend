@@ -40,7 +40,9 @@ They are **references, not specs**: anything they show that the architecture spe
 | --- | --- | --- | --- |
 | Landing: hero, feature tiles, sign-up CTA (A) | Web `(public)/` | §12.1 | 0 (exists, restyle) – 1 (CTA) |
 | Onboarding / welcome, Get started, Log in (B) | Mobile | §7, §13 | 1 |
-| Registration: name, date of birth, college or organisation email, 6-digit code; "verify to post, follow and join" banner until confirmed (owner request) | Both | ADR-0017 | 1 |
+| Registration: name, date of birth, optional college or organisation email, 6-digit code; "verify to post, follow and join" banner until verified (owner request) | Both | ADR-0017, ADR-0019 | 1 |
+| Settings → **Verification**: institutional email, or "Ask a teacher" (search, message), or "Send proof to LearnViaNotes" (upload with masking guidance); request status (owner request) | Both | ADR-0019 | 1 |
+| Teacher: **Verification requests** list — approve / decline, no documents (owner request) | Both | ADR-0019 | 1 |
 | **Settings → Data**: Export all my data (history, download for 7 days), Import notes (file picker, progress, report) (owner request) | Both | ADR-0018 | 2 |
 | App shell with sidebar: Home, My Notes, Explore, Subjects, Groups, Classrooms, Calendar, Quizzes, Contests, Community, AI Assistant, Bookmarks, Upload, Create Note (A) | Web `(app)/` | §12.1 | 1 (shell) – grows per phase |
 | Home dashboard: greeting, day streak, continue learning, upcoming exam, weekly goal, recommended, your rooms (A) | Web + mobile | §14.2, §14.3 | 6 (streak, exam, recommendations); 3 (rooms = groups) |

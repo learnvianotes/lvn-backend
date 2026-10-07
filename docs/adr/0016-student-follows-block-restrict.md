@@ -1,6 +1,6 @@
 # ADR-0016: Students follow students; block, restrict and remove follower
 
-- Status: Accepted (owner decision, 2026-10-08)
+- Status: Accepted (owner decision, 2026-10-08); amended by ADR-0020 (teachers can follow students)
 - Date: 2026-10-08
 - Spec sections: §5, §15.1, §15.2
 - Amends: ADR-0014 (nobody followed students); §15.1 blocking detail

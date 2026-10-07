@@ -1,6 +1,6 @@
 # ADR-0007: Firebase Authentication for Google sign-in only
 
-- Status: Accepted (owner decision, 2026-10-08) — one follow-up question on push, below
+- Status: Accepted (owner decision, 2026-10-08); the push question is answered by ADR-0021 (FCM for push delivery only)
 - Date: 2026-10-08
 - Spec sections: §2 (Auth, Auth providers), §7, §7.1, §16.1
 - Amends: §2 Auth row, §7 client calls, §7.1 OAuth bullet

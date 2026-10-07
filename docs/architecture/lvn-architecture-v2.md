@@ -27,6 +27,9 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0016](../adr/0016-student-follows-block-restrict.md) | Students follow students (never restricted minors); block, restrict and remove follower. (§5, §15.1) |
 | [0017](../adr/0017-registration-birth-date-and-institutional-email.md) | Registration needs a date of birth and a verified college or organisation email; a verified account is required for every action that reaches other people. (§7, §7.1, §15.2) |
 | [0018](../adr/0018-data-export-and-notes-import.md) | Settings → Data: export all personal data from every context in one archive; import notes only (LVN export, Markdown, ZIP), always PRIVATE. (§15.2, §18, §19) |
+| [0019](../adr/0019-verification-without-institutional-email.md) | The institutional email is optional; without it a verified teacher vouches, or platform admins review proof of enrolment (documents: admins only, audited, deleted after 30 days). (§7, §15.2) |
+| [0020](../adr/0020-teachers-follow-students.md) | Teachers can follow students (never restricted minors). (§5) |
+| [0021](../adr/0021-push-notifications-via-fcm.md) | Push through FCM only (Android direct, iOS via APNs); payload carries ids only; Firebase = Google sign-in + push delivery. (§2, §9.3) |
 | [0008](../adr/0008-mobile-builds-without-eas.md) | Mobile is built locally (prebuild + Gradle/Xcode) without an Expo account; no EAS Build/Update, no OTA for now. (§2, §13.1, §13.3, §16.1, §16.2) |
 
 ## 1. Product boundaries
@@ -73,7 +76,7 @@ These are decided. Agents use them as-is; changing one requires an accepted ADR.
 | Auth | Backend-issued JWT access token (15 min) + opaque rotating refresh token (30 days, stored hashed in Postgres); OAuth via Passport strategies *[Amended: ADR-0007 — Google via Firebase Authentication, exchanged for an LVN session]* | Standard, revocable, works for web and mobile |
 | Auth providers | Email + password, Google, GitHub, LinkedIn | As specified |
 | Email | Resend (or SES) via a `MailService` abstraction; React Email templates | Transactional email for verification, reset, notifications |
-| Push | Firebase Cloud Messaging (Android, iOS via APNs) | Single provider for both platforms |
+| Push | Firebase Cloud Messaging (Android, iOS via APNs) *[Amended: ADR-0021 — ids-only payloads; the only Firebase product besides Google sign-in]* | Single provider for both platforms |
 | Real-time | GraphQL subscriptions over WebSocket (`graphql-ws`) backed by Redis pub/sub | Notifications, comments, classroom activity |
 | AI providers | Backend `AiGateway` with provider adapters (OpenAI, Anthropic, local via Ollama); embeddings `text-embedding-3-small` | Swappable, cost-controlled, never called from clients |
 | Transcription | Whisper (API or self-hosted) behind the gateway | Voice notes |
@@ -245,7 +248,8 @@ Authorization is enforced in the backend by a single `PolicyService` (`can(user,
 | Publish / change visibility / delete | ✓ | – | – | – | – | – | – | – | – |
 | Share note (user, group, class) *[Amended: ADR-0013 — teacher→teacher needs a connection or a shared classroom; teachers can also share with all connections]* | ✓ | – | – | – | – | – | – | – | – |
 | Follow a teacher *[Added: ADR-0013, ADR-0014]* |  |  |  |  |  |  |  | ✓ any signed-in user | – |
-| Follow a student *[Added: ADR-0016]* |  |  |  |  |  |  |  | ✓ students, never a restricted minor | – |
+| Follow a student *[Added: ADR-0016, ADR-0020]* |  |  |  |  |  |  |  | ✓ students and teachers, never a restricted minor | – |
+| Ask for verification; review it *[Added: ADR-0019]* |  |  |  |  |  |  |  | ask: unverified users; review: the addressed verified teacher (no documents) or platform admins | – |
 | Block, restrict, remove a follower *[Added: ADR-0016]* |  |  |  |  |  |  |  | ✓ | – |
 | Send or answer a connection request *[Added: ADR-0013]* |  |  |  |  |  |  |  | ✓ TEACHER role, to other teachers | – |
 | Create a blog or post *[Added: ADR-0014]* |  |  |  |  |  |  |  | ✓ TEACHER role | – |
@@ -353,7 +357,7 @@ The backend owns identity, sessions, roles and verification. Clients call `signU
 - Access token: JWT, RS256, 15 min, claims `sub`, `roles`, `sid`. Refresh token: 256-bit random, 30 days, rotated on every use, stored as SHA-256 hash in `Session` with device info; reuse of a rotated token revokes the whole session family.
 - Web stores the refresh token in an `HttpOnly; Secure; SameSite=Lax` cookie and the access token in memory. Mobile stores both in `expo-secure-store`. Nothing auth-related in `localStorage` or `AsyncStorage`.
 - OAuth (Google, GitHub, LinkedIn) uses Authorization Code + PKCE. The client receives the provider code and sends it to `oauthExchange`; the backend verifies it and issues LVN tokens. Account linking by verified email only. *[Amended: ADR-0007 — Google sign-in runs through Firebase Authentication on the client; the Firebase ID token is sent once to `signInWithGoogle`, verified by the backend, and exchanged for LVN tokens. GitHub and LinkedIn stay as written.]*
-- Email verification required before publishing, joining groups or commenting. *[Amended: ADR-0017 — "verified" means the college or organisation email given at registration is confirmed, and it is required for every action that reaches other people.]* Password policy: minimum 10 characters, checked against a breached-password list, hashed with Argon2id.
+- Email verification required before publishing, joining groups or commenting. *[Amended: ADR-0017, ADR-0019 — "verified" means a confirmed college or organisation email, a teacher's vouch, or platform-admin approval of proof of enrolment; it is required for every action that reaches other people.]* Password policy: minimum 10 characters, checked against a breached-password list, hashed with Argon2id.
 - Rate limits (Redis sliding window): 5 sign-in attempts per account per 15 min, 3 password resets per hour, 100 GraphQL operations per minute per user, 20 AI requests per minute per user.
 
 ### 7.2 Security requirements
@@ -442,7 +446,7 @@ GraphQL subscriptions via `graphql-ws`, fan-out through Redis pub/sub so multipl
 | Channel | Used for | Notes |
 | --- | --- | --- |
 | In-app (`Notification` table + subscription) | Everything | Always written first |
-| Push (FCM) | Comments, shares, classroom posts, quiz published, revision reminders, streak at risk | Per-category user setting; quiet hours default 22:00–07:00 local |
+| Push (FCM) | Comments, shares, classroom posts, quiz published, revision reminders, streak at risk | Per-category user setting; quiet hours default 22:00–07:00 local. *[Amended: ADR-0021 — payload is ids + category + deep link only (`@lvn/contracts/notifications`); text never quotes user content]* |
 | Email | Verification, reset, weekly digest, classroom announcements | React Email templates; one-click unsubscribe per category |
 
 `DeviceToken` rows are refreshed on app launch and pruned on FCM `NotRegistered`. Deep links use `learnvianotes://` and universal links to `https://learnvianotes.com/...` resolved by Expo Router.
@@ -605,7 +609,7 @@ A student community with public content and minors needs human moderation and a 
 
 | Requirement | Implementation |
 | --- | --- |
-| Age | Date of birth at signup *[Amended: ADR-0017 — required, together with a verified college or organisation email]*. Under 13 (or local digital-consent age: 16 in parts of the EU, 18 under India's DPDP Act) requires verifiable parental or institutional consent; without it the account is limited to private notes and classroom content, no public publishing, no DMs, no behavioural recommendations |
+| Age | Date of birth at signup *[Amended: ADR-0017, ADR-0019 — required; a college or organisation email is optional and verifies the account]*. Under 13 (or local digital-consent age: 16 in parts of the EU, 18 under India's DPDP Act) requires verifiable parental or institutional consent; without it the account is limited to private notes and classroom content, no public publishing, no DMs, no behavioural recommendations |
 | Consent and terms | Versioned Terms, Privacy Policy and public-content licence; acceptance recorded with version and timestamp; re-prompt on material change |
 | Data export | `requestDataExport` produces a ZIP (notes as Markdown + media + JSON) within 24 h via a job; downloadable for 7 days *[Amended: ADR-0018 — covers all personal data from every context; Settings → Data also imports notes only, always PRIVATE]* |
 | Deletion | Section 7.2; a deletion also purges search index, embeddings, S3 objects and FCM tokens, and anonymises comments |
@@ -726,7 +730,7 @@ Work proceeds strictly in order. A phase is closed only when its exit criteria p
 | Phase | Scope | Exit criteria |
 | --- | --- | --- |
 | 0 Architecture | Inspect existing repo; write `existing-state.md`, this document's app-specific addenda, ERD, env reference, ADR-0001…; GraphQL schema skeleton; permission matrix encoded in `@lvn/contracts/domain` | Three agents sign off on the same documents; empty monorepo builds and CI runs |
-| 1 Foundation | Monorepo, `packages/config`, NestJS + Prisma + Redis + MinIO, auth (email + 3 OAuth), registration with date of birth and institutional email verification *[Added: ADR-0017]*, sessions, roles, `PolicyService`, upload flow, logging, error codes, Testcontainers, Docker Compose, Terraform for sandbox, CI, Sentry, OTel | Web and mobile sign in on all providers in dev and sandbox; migration deploys; file upload round-trips; security suite scaffold passes |
+| 1 Foundation | Monorepo, `packages/config`, NestJS + Prisma + Redis + MinIO, auth (email + 3 OAuth), registration with date of birth and institutional email verification *[Added: ADR-0017]*, verification by teacher or by platform-admin document review with an interim admin queue *[Added: ADR-0019]*, sessions, roles, `PolicyService`, upload flow, logging, error codes, Testcontainers, Docker Compose, Terraform for sandbox, CI, Sentry, OTel | Web and mobile sign in on all providers in dev and sandbox; migration deploys; file upload round-trips; security suite scaffold passes |
 | 2 Content | Subjects, topics, folders, tags, notes, cards (all types), data export and notes import *[Added: ADR-0018]*, editor web + mobile, autosave, drafts, versions, visibility, user sharing, forking, soft delete, public note SEO page, Postgres search, moderation gate, Terms/consent, age gate | Full note lifecycle E2E on web and mobile incl. offline edit and sync; leakage tests pass; Lighthouse ≥ 90 on public note |
 | 3 Community | Groups + roles, classrooms + teacher role, teacher profile Skills tab (manual) *[Added: ADR-0012]*, teacher follows and connections *[Added: ADR-0013]*, students follow teachers, teacher blogs/posts/projects and the Following feed *[Added: ADR-0014]*, student projects and project workspaces with mentors *[Added: ADR-0015]*, student follows, block and restrict *[Added: ADR-0016]*, group/class sharing, comments, reactions, activity feed, notifications (in-app, push, email), reporting + moderation queue | Join/post/moderate flows E2E; subscription fan-out across 2 api tasks; permission matrix fully tested |
 | 4 Search | Typesense provider, Cmd/K, mobile search, filters, re-index job, hybrid ranking flag | Index parity test vs Postgres provider; permission filter test; p95 < 150 ms |

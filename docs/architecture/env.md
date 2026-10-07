@@ -35,6 +35,7 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 
 Phase 1 adds JWT keys, OAuth client ids/secrets (GitHub, LinkedIn), S3/MinIO, mail and Sentry variables here first,
 plus `FIREBASE_PROJECT_ID` for verifying Google sign-in ID tokens (ADR-0007; no service account needed to verify).
+Phase 3 adds `FCM_SERVICE_ACCOUNT_JSON` (secret) for push delivery through the FCM HTTP v1 API (ADR-0021).
 
 ## lvn-mobile
 
@@ -49,3 +50,5 @@ in lvn-mobile `env/<variant>.env` (public, committed) with per-machine overrides
 | `EXPO_PUBLIC_WEB_URL` | yes | `http://100.70.234.41:3000` | `https://sandbox.learnvianotes.com` | `https://learnvianotes.com` | Links into lvn-web |
 
 Phase 1 (ADR-0007): `EXPO_PUBLIC_FIREBASE_*` and the Google OAuth client ids used by native Google Sign-In.
+Phase 3 (ADR-0021): `GOOGLE_SERVICES_JSON` and `GOOGLE_SERVICE_INFO_PLIST` — build-time paths to the Firebase config
+files used for FCM device tokens.

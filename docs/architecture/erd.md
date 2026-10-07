@@ -17,6 +17,7 @@ erDiagram
   Organization ||--o{ Membership : has
   User ||--o{ ConsentRecord : accepts
   User ||--o| InstitutionalEmail : "verifies (ADR-0017)"
+  User ||--o{ VerificationRequest : "asks (ADR-0019)"
   User ||--o{ Follow : "follows (teacher, or student → student)"
   User ||--o{ Block : blocks
   User ||--o{ Restriction : restricts
@@ -63,6 +64,17 @@ erDiagram
     uuid id PK "read model from the admin app"
     text name
     text_array emailDomains "ADR-0017"
+  }
+  VerificationRequest {
+    uuid id PK
+    uuid userId FK
+    enum method "TEACHER | DOCUMENTS"
+    uuid teacherId "TEACHER method"
+    enum status "PENDING | APPROVED | REJECTED | WITHDRAWN"
+    text message
+    uuid decidedBy
+    timestamptz decidedAt
+    text reason
   }
   InstitutionalEmail {
     uuid userId FK
