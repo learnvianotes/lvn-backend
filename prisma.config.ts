@@ -1,7 +1,8 @@
 import { defineConfig, env } from 'prisma/config'
 
-// Same files the apps read: .env, then .env.local overrides it (ADR-0022). Real deployments set variables directly.
-for (const file of ['.env', '.env.local']) {
+// Same files the apps read, .env.local overriding .env (ADR-0022). process.loadEnvFile never overwrites a variable
+// that is already set, so the overriding file loads first. Real deployments set variables directly.
+for (const file of ['.env.local', '.env']) {
   try {
     process.loadEnvFile(file)
   } catch {

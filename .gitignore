@@ -9,4 +9,4 @@ coverage/
 .DS_Store
 .idea/
 .vscode/settings.json
-libs/prisma-base/generated/
+libs/prisma-base/src/generated/

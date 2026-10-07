@@ -40,10 +40,30 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `API_PORT` | api | no | `4000` | HTTP + WebSocket port |
 | `CORS_ORIGINS` | api | yes | — | Comma-separated allow-list (§7.2) |
 | `WORKER_HEALTH_PORT` | worker | no | `4001` | `/health/live` for the ECS health check |
+| `S3_ENDPOINT` | api, worker | no | — (AWS) | S3-compatible endpoint; `http://localhost:59000` for RustFS locally (ADR-0032); unset on AWS |
+| `S3_REGION` | api, worker | yes | — | `us-east-1` locally; `ap-south-1` in India deployments (§15.2) |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | api, worker | no (secret) | — | Local credentials; on AWS the task role is used instead |
+| `S3_FORCE_PATH_STYLE` | api, worker | no | `false` | `true` for RustFS |
+| `S3_BUCKET` | api, worker | yes | — | Uploads and media (§8) |
+| `S3_RESTRICTED_BUCKET` | api, worker | yes | — | Identity documents (ADR-0019) and old-site snapshots (ADR-0023), own encryption key, never behind the CDN |
+| `MAIL_FROM` | api, worker | yes | — | Sender, e.g. `LearnViaNotes <no-reply@learnvianotes.in>` |
+| `MAIL_TRANSPORT` | api, worker | yes | — | `smtp` (Mailpit locally) or `resend` |
+| `SMTP_URL` | api, worker | when `smtp` | — | `smtp://localhost:51025` for Mailpit |
+| `RESEND_API_KEY` | api, worker | when `resend` (secret) | — | Resend API key |
+| `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | api | yes (secret) | — | RS256 key pair for access tokens (§7.1), PEM with `\n` escapes; `pnpm keys:dev` writes a pair to `.env.local` |
+| `JWT_ISSUER` | api | yes | — | The API's public origin (`iss` claim) |
+| `WEB_URL` | api | yes | — | lvn-web origin for links in emails and OAuth redirects |
+| `CODE_HMAC_SECRET` | api | yes (secret, ≥ 32 chars) | — | HMAC key for short codes (institutional email) |
+| `PASSWORD_BREACH_API_URL` | api | no | — (check off) | k-anonymity range API, `https://api.pwnedpasswords.com/range` (§7.1) |
+| `FIREBASE_PROJECT_ID` | api | no | — (Google off) | Project whose ID tokens `signInWithGoogle` accepts (ADR-0007); no service account needed to verify |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | api | no (secret) | — (GitHub off) | OAuth app for `oauthExchange` |
+| `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | api | no (secret) | — (LinkedIn off) | OAuth app for `oauthExchange` |
 
-Phase 1 adds JWT keys, OAuth client ids/secrets (GitHub, LinkedIn), S3/MinIO, mail and Sentry variables here first,
-plus `FIREBASE_PROJECT_ID` for verifying Google sign-in ID tokens (ADR-0007; no service account needed to verify).
-Phase 3 adds `FCM_SERVICE_ACCOUNT_JSON` (secret) for push delivery through the FCM HTTP v1 API (ADR-0021).
+Local services (`pnpm infra:up`, `infra/docker/compose.yaml`) listen on 55432 (Postgres), 56379 (Redis), 59000/59001
+(RustFS API/console) and 51025/58025 (Mailpit SMTP/UI) so other projects on the same machine keep the default ports.
+
+Still to come: Sentry variables (Phase 1 hardening) and, in Phase 3, `FCM_SERVICE_ACCOUNT_JSON` (secret) for push
+delivery through the FCM HTTP v1 API (ADR-0021).
 
 ## lvn-mobile
 
