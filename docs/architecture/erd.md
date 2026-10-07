@@ -79,6 +79,10 @@ erDiagram
   }
 ```
 
+Later (ADR-0012, Phase 3 manual / Phase 7 import), also in `users`: `TeacherProfile(userId, headline, bio, topicIds[])`,
+`TeacherSkill(id, userId, kind, name, detail, source, sourceUrl, fetchedAt, status)` and
+`ExternalIdentity(id, userId, kind, value, verifiedAt)`.
+
 ## notes (schema `notes`)
 
 ```mermaid
@@ -126,6 +130,8 @@ erDiagram
     bool forkingEnabled
     uuid forkedFromNoteId FK
     uuid forkedFromVersionId FK
+    enum forkedFromVisibility "origin visibility at fork time (ADR-0010)"
+    enum forkedAsRole "OWNER | EDITOR | READER (ADR-0010)"
     timestamptz deletedAt
   }
   Card {
@@ -215,6 +221,7 @@ erDiagram
     uuid id PK
     text name
     enum privacy "PUBLIC | PRIVATE"
+    enum joinPolicy "OPEN | APPROVAL (ADR-0011)"
     timestamptz deletedAt
   }
   GroupMember {

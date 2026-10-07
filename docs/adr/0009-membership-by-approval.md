@@ -1,6 +1,6 @@
 # ADR-0009: Group and classroom membership is by approval
 
-- Status: Accepted (owner decision, 2026-10-08) — one detail to confirm, below
+- Status: Accepted (owner decision, 2026-10-08); amended by ADR-0011 for groups (public groups may allow direct joining)
 - Date: 2026-10-08
 - Spec sections: §4.1, §5 (Join rows), §6.1 (core events), §9.3
 - Amends: §5 "Join public group / request private" and "Join classroom" rows

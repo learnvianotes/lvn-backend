@@ -52,6 +52,9 @@ They are **references, not specs**: anything they show that the architecture spe
 | AI Assistant chat with sources, generate quiz / flashcards (A, B) | Both | §10.1–10.2 | 5 |
 | Quiz player (A) | Both | §4.1 Quiz | 3 (classroom) / 5 (generated) |
 | Profile: avatar, stats, achievements, My Notes / Saved / Groups / Classrooms / Learning history (A, B) | Both | §14.2, Phase 8 achievements | 2 – 8 |
+| Teacher profile **Skills** tab: subjects, skills, qualifications, imported items with source (owner request, not on the boards) | Both | ADR-0012 | 3 (manual) – 7 (import) |
+| Group settings: join policy Open / Approval; join-request queue (not on the boards) | Both | ADR-0009, ADR-0011 | 3 |
+| Fork credit line "Forked from … by …" on every fork (not on the boards) | Both | ADR-0010 | 2 |
 | Focus mode (Pomodoro timer) (A) | Mobile + web | §18 Phase 6 "focus mode" | 6 |
 | Exam preparation: upcoming exam, study plan, today's tasks (A) | Both | §14.2 exam planner | 6 |
 | Weekly contest (A) | Both | §18 Phase 8 | 8 |

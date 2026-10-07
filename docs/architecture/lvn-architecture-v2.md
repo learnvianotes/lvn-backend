@@ -18,6 +18,9 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0005](../adr/0005-permission-matrix-encoding.md) | Owners may fork their own PRIVATE notes; share Editors edit drafts of PUBLIC notes (only the Owner publishes); verified email to comment, publish and request to join a group. (§4.2, §4.4, §5) |
 | [0007](../adr/0007-firebase-for-google-sign-in-only.md) | Google sign-in uses Firebase Authentication; the backend exchanges the Firebase ID token for a normal LVN session. No other Firebase product for LVN data. (§2, §7, §7.1) |
 | [0009](../adr/0009-membership-by-approval.md) | Joining any group or classroom is a request accepted by group Admins/Owner or the classroom's Teacher/TA; a staff invite is pre-approved. (§5, §6.1) |
+| [0010](../adr/0010-publishing-forks-and-attribution.md) | A fork can go PUBLIC only if its origin was PUBLIC when forked or the forker was its Owner/Editor; every reader sees the fork's credit line. (§4.4) |
+| [0011](../adr/0011-group-join-policy.md) | Groups get a join policy: a PUBLIC group set to OPEN is joined directly; otherwise Admin/Owner approve. Classroom TAs approve; staff invites need the student's acceptance. (§5) |
+| [0012](../adr/0012-teacher-skills-tab.md) | Teacher profile Skills tab: manual in Phase 3, filled from verified public identifiers in Phase 7. (§18) |
 | [0008](../adr/0008-mobile-builds-without-eas.md) | Mobile is built locally (prebuild + Gradle/Xcode) without an Expo account; no EAS Build/Update, no OTA for now. (§2, §13.1, §13.3, §16.1, §16.2) |
 
 ## 1. Product boundaries
@@ -205,6 +208,7 @@ Transitions: `PRIVATE ⇄ SHARED ⇄ PUBLIC`. Moving **to** `PUBLIC` requires a 
 - A fork copies the **published version's** cards into a new `PRIVATE` note owned by the forker, with `forkedFromNoteId`, `forkedFromVersionId` and an attribution line that the fork UI shows and the forker cannot remove.
 - Media attachments are referenced, not duplicated in S3; the `FileObject` gets a new permission grant for the forker.
 - Forks do not sync with upstream. "Upstream has a newer version" is shown as information only.
+- *[Added: ADR-0010]* A fork can be made PUBLIC only if its origin was PUBLIC when forked, or the forker was the origin's Owner or an Editor (a co-author publishing their own version). The credit line is shown to every reader; when a reader cannot open the origin, the author is credited without revealing the origin's title.
 - Content licence: by publishing publicly, a user grants LVN and other users a licence to view and fork with attribution. State this in Terms and in the publish dialog.
 
 ### 4.5 Soft delete and audit
@@ -233,7 +237,7 @@ Authorization is enforced in the backend by a single `PolicyService` (`can(user,
 | Fork | ✓ | ✓ | ✓ | ✓ if readable | ✓ if readable | ✓ if readable | ✓ if readable | ✓ PUBLIC only | – |
 | Comment / react on note | ✓ | ✓ | ✓ | ✓ if readable | ✓ if readable | ✓ if readable | ✓ if readable | ✓ PUBLIC only | – |
 | Create group |  |  |  |  |  |  |  | ✓ | – |
-| Join public group / request private *[Amended: ADR-0009 — every group join is a request; Admin/Owner accept]* |  |  |  |  |  |  |  | ✓ | – |
+| Join public group / request private *[Amended: ADR-0009, ADR-0011 — a PUBLIC group set to OPEN is joined directly; every other group join is a request Admin/Owner accept; Admin/Owner set the policy]* |  |  |  |  |  |  |  | ✓ | – |
 | Accept or reject group join requests *[Added: ADR-0009]* |  |  |  | – | ✓ (Admin/Owner) |  |  | – | – |
 | Post in group |  |  |  | ✓ | ✓ |  |  | – | – |
 | Remove post, mute member |  |  |  | – | ✓ |  |  | – | – |
@@ -706,11 +710,11 @@ Work proceeds strictly in order. A phase is closed only when its exit criteria p
 | 0 Architecture | Inspect existing repo; write `existing-state.md`, this document's app-specific addenda, ERD, env reference, ADR-0001…; GraphQL schema skeleton; permission matrix encoded in `@lvn/contracts/domain` | Three agents sign off on the same documents; empty monorepo builds and CI runs |
 | 1 Foundation | Monorepo, `packages/config`, NestJS + Prisma + Redis + MinIO, auth (email + 3 OAuth), sessions, roles, `PolicyService`, upload flow, logging, error codes, Testcontainers, Docker Compose, Terraform for sandbox, CI, Sentry, OTel | Web and mobile sign in on all providers in dev and sandbox; migration deploys; file upload round-trips; security suite scaffold passes |
 | 2 Content | Subjects, topics, folders, tags, notes, cards (all types), editor web + mobile, autosave, drafts, versions, visibility, user sharing, forking, soft delete, public note SEO page, Postgres search, moderation gate, Terms/consent, age gate | Full note lifecycle E2E on web and mobile incl. offline edit and sync; leakage tests pass; Lighthouse ≥ 90 on public note |
-| 3 Community | Groups + roles, classrooms + teacher role, group/class sharing, comments, reactions, activity feed, notifications (in-app, push, email), reporting + moderation queue | Join/post/moderate flows E2E; subscription fan-out across 2 api tasks; permission matrix fully tested |
+| 3 Community | Groups + roles, classrooms + teacher role, teacher profile Skills tab (manual) *[Added: ADR-0012]*, group/class sharing, comments, reactions, activity feed, notifications (in-app, push, email), reporting + moderation queue | Join/post/moderate flows E2E; subscription fan-out across 2 api tasks; permission matrix fully tested |
 | 4 Search | Typesense provider, Cmd/K, mobile search, filters, re-index job, hybrid ranking flag | Index parity test vs Postgres provider; permission filter test; p95 < 150 ms |
 | 5 AI | `AiGateway`, usage + quotas, summaries, quick notes, RAG Ask AI with sources, quiz + flashcard generation, code explanation, transcription, public-note pipeline | RAG leakage test 0/1,000; budget breaker verified; all artifacts stored separately from notes |
 | 6 Learning intelligence | `trackEvents`, partitioned events, history, streaks, FSRS flashcards, exam planner, weak-topic detection, rule-based recommendations, focus mode | Recommendations respect visibility; streak timezone tests; events survive offline |
-| 7 Resources | Resource model, submission + approval, search, save, share, recommend, discuss | Moderation on submissions; no commerce surface |
+| 7 Resources | Resource model, submission + approval, search, save, share, recommend, discuss; Skills import from verified public identifiers *[Added: ADR-0012]* | Moderation on submissions; no commerce surface |
 | 8 Engagement | Achievements, points ledger, contributor levels, tasks, leaderboards (opt-in), weekly contests, mock-interview data model only | Leaderboards exclude minors by default; no company features |
 | 9 Hardening | Security audit (external if possible), k6 load, query analysis, index review, Redis review, S3 policy review, offline chaos tests, accessibility audit, error/empty states review, runbooks, on-call, restore drill | SLOs met for 7 days in sandbox under load; audit findings closed |
 
