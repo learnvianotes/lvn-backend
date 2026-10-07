@@ -1,4 +1,4 @@
-import { apiConfigSchema, ConfigError, loadConfig } from './index'
+import { apiConfigSchema, ConfigError, loadConfig, mobileConfigSchema } from './index'
 
 const valid = {
   APP_ENV: 'development',
@@ -20,5 +20,12 @@ describe('loadConfig', () => {
     expect(run).toThrow(/APP_ENV/)
     expect(run).toThrow(/DATABASE_URL/)
     expect(run).not.toThrow(/secret/)
+  })
+})
+
+describe('mobileConfigSchema', () => {
+  it('requires the environment and the web origin', () => {
+    expect(loadConfig(mobileConfigSchema, { EXPO_PUBLIC_APP_ENV: 'sandbox', EXPO_PUBLIC_WEB_URL: 'https://sandbox.learnvianotes.com' }).EXPO_PUBLIC_APP_ENV).toBe('sandbox')
+    expect(() => loadConfig(mobileConfigSchema, { EXPO_PUBLIC_APP_ENV: 'sandbox' })).toThrow(/EXPO_PUBLIC_WEB_URL/)
   })
 })

@@ -40,6 +40,8 @@ export type WebConfig = z.infer<typeof webConfigSchema>
 
 export const mobileConfigSchema = z.object({
   EXPO_PUBLIC_APP_ENV: AppEnv,
+  /** lvn-web origin, for links into the site. */
+  EXPO_PUBLIC_WEB_URL: z.url(),
 })
 export type MobileConfig = z.infer<typeof mobileConfigSchema>
 
