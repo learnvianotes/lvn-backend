@@ -480,7 +480,7 @@ erDiagram
   }
 ```
 
-Also in `core`: `Streak`, `PointsLedger`, `Reaction`, `JobStatus` (per context that runs jobs).
+Also in `core`: `RhythmWeek(userId, weekStart, targetDays, countedDays, comebacks, paused)`, `RhythmPause`, `ExamReadiness` (ADR-0030, replacing `Streak`), `PointsLedger`, `Reaction`, `JobStatus` (per context that runs jobs).
 
 ## ai (schema `ai`) and communication (schema `comms`)
 

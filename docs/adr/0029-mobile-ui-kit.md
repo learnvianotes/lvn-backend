@@ -1,9 +1,9 @@
 # ADR-0029: Mobile UI — Uniwind + react-native-reusables + our own brand components, animated with Reanimated 4
 
-- Status: **Proposed** — recommended to the owner, 2026-10-08; awaiting acceptance
+- Status: Accepted (owner, 2026-10-08)
 - Date: 2026-10-08
 - Spec sections: §2 (Mobile: "React Native Paper or Tamagui"), §12.2, §13.3
-- Would amend: §2 Mobile row (UI kit)
+- Amends: §2 Mobile row (UI kit)
 
 ## Context
 
@@ -24,7 +24,7 @@ Research (2026-10-08; versions and dates from the npm registry and GitHub):
 | React Native Paper | Material 3 — the look the owner wants to avoid. |
 | gluestack-ui v5, Unistyles 3, Restyle, UI Kitten, Dripsy | Generic look, no components, stagnant, unproven revival, or dormant. |
 
-## Decision (proposed)
+## Decision
 
 - **Styling:** Uniwind (free edition), Tailwind 4 `className` on React Native, versions pinned exactly.
 - **Components:** react-native-reusables (Uniwind variant), copied into `components/ui/` — buttons, inputs, dialogs,

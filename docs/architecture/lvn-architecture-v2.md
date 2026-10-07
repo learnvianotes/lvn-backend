@@ -38,8 +38,8 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0027](../adr/0027-public-counts-as-milestones.md) | Public user counts only as milestones (1k, 2k, 5k, 10k, …). |
 | [0031](../adr/0031-github-org-and-package-name.md) | Repositories live in the `learnvianotes` GitHub organisation; contracts are published as `@learnvianotes/contracts` and imported as `@lvn/contracts`. (§2, §3) |
 | [0028](../adr/0028-pdf-engine-technology.md) | PDF engine: Docling (MIT) + RapidOCR on CPU in one Python `pdf-engine` service; vision AI only for hard pages, budgeted; no AGPL/GPL. (§2, §8.1) |
-| [0029](../adr/0029-mobile-ui-kit.md) | **Proposed:** mobile UI = Uniwind + react-native-reusables + our brand components, Reanimated 4; one token source for web and mobile. (§2) |
-| [0030](../adr/0030-rhythm-instead-of-streaks.md) | **Proposed:** Rhythm — weekly, forgiving habit system with a Today ring and Exam Readiness instead of daily streaks. (§14.2) |
+| [0029](../adr/0029-mobile-ui-kit.md) | Mobile UI = Uniwind + react-native-reusables + our brand components, Reanimated 4; one token source for web and mobile. (§2) |
+| [0030](../adr/0030-rhythm-instead-of-streaks.md) | Rhythm — weekly, forgiving habit system with a Today ring and Exam Readiness instead of daily streaks. (§14.2) |
 | [0008](../adr/0008-mobile-builds-without-eas.md) | Mobile is built locally (prebuild + Gradle/Xcode) without an Expo account; no EAS Build/Update, no OTA for now. (§2, §13.1, §13.3, §16.1, §16.2) |
 
 **Errata (owner-approved, 2026-10-08).** Wording conflicts inside v2, corrected in place and marked *[Erratum E#]*:
@@ -97,7 +97,7 @@ These are decided. Agents use them as-is; changing one requires an accepted ADR.
 | AI providers | Backend `AiGateway` with provider adapters (OpenAI, Anthropic, local via Ollama); embeddings `text-embedding-3-small` | Swappable, cost-controlled, never called from clients |
 | Transcription | Whisper (API or self-hosted) behind the gateway | Voice notes |
 | Web | Next.js 15 App Router, React 19, Tailwind, shadcn/ui, Apollo Client, React Hook Form + Zod, Tiptap editor, Zustand for global state | SSR/ISR for public notes; Tiptap is the most mature block editor |
-| Mobile | Expo (SDK 52+ — a minimum; the repositories run SDK 57, and upgrades of pinned versions go through an ADR *[Erratum E10]*) with dev client + EAS Build/Update *[Amended: ADR-0008 — local prebuild + Gradle/Xcode builds, no EAS]*, Expo Router, React Native Paper or Tamagui, Apollo Client, WatermelonDB (SQLite), expo-secure-store, MMKV for small key-value | Expo gives environments, OTA and native modules without ejecting; WatermelonDB is built for offline sync |
+| Mobile | Expo (SDK 52+ — a minimum; the repositories run SDK 57, and upgrades of pinned versions go through an ADR *[Erratum E10]*) with dev client + EAS Build/Update *[Amended: ADR-0008 — local prebuild + Gradle/Xcode builds, no EAS]*, Expo Router, React Native Paper or Tamagui *[Amended: ADR-0029 — Uniwind + react-native-reusables + our own brand components, Reanimated 4]*, Apollo Client, WatermelonDB (SQLite), expo-secure-store, MMKV for small key-value | Expo gives environments, OTA and native modules without ejecting; WatermelonDB is built for offline sync |
 | Validation | Zod schemas in `@lvn/contracts/validation`, used by all three apps | One source for input rules |
 | GraphQL codegen | `graphql-codegen` producing typed hooks for web and mobile from the backend schema | Replaces hand-written shared types |
 | Testing | Vitest (unit), Testing Library, Playwright (web E2E), Maestro (mobile E2E), Jest + Supertest (backend), Testcontainers (Postgres/Redis/MinIO) | Fast, standard, isolated |
@@ -203,7 +203,7 @@ Quiz ──< Question ──< Choice;  QuizAttempt ──< Answer
 FlashcardDeck ──< Flashcard;  FlashcardReview (SRS state per user)
 Exam (per user: name, date, topics) 
 LearningEvent (append-only)
-Streak, Achievement, UserAchievement, Points ledger
+Streak, Achievement, UserAchievement, Points ledger   [Amended: ADR-0030 — Streak is replaced by RhythmWeek, RhythmPause, ExamReadiness]
 Resource ──< ResourceSave, ResourceRecommendation, Comment
 Comment (polymorphic: Note, Card, Resource, Group post), Reaction
 Notification, DeviceToken
@@ -325,7 +325,7 @@ Web · Mobile · Admin                                    Web · Mobile · Admin
 | --- | --- | --- | --- | --- |
 | `users` | auth, sessions, users, profiles, roles, `PolicyService`, device tokens, organizations (read model from admin app), teacher follows and connections *[Added: ADR-0013]* | `users` | `UserRegistered`, `UserDeleted`, `RoleChanged`, `SessionRevoked`, `UserFollowed`, `UserUnfollowed`, `ConnectionRequested`, `ConnectionChanged` *[Added: ADR-0013]* | `GroupMembershipChanged`, `ClassroomMembershipChanged` |
 | `notes` | subjects, topics, folders, tags, notes, cards, versions, shares, forks, `FileObject`, search indexing, Postgres/Typesense `SearchProvider` | `notes` | `NotePublished`, `NoteUnpublished`, `NoteForked`, `NoteShared`, `FileReady` | `UserDeleted`, `GroupMembershipChanged`, `ClassroomMembershipChanged`, `NoteArtifactReady` |
-| `core` | groups, classrooms, quizzes, flashcards, exams, learning events, streaks, recommendations, resources, achievements, moderation, reports | `core` | `GroupMembershipChanged`, `ClassroomMembershipChanged`, `GroupJoinRequested`, `ClassroomJoinRequested`, `JoinRequestReviewed` *[Added: ADR-0009]*, `CommentAdded`, `QuizPublished`, `ContentReported`, `LearningEventRecorded` | `NotePublished`, `UserDeleted` |
+| `core` | groups, classrooms, quizzes, flashcards, exams, learning events, streaks *[Amended: ADR-0030 — Rhythm]*, recommendations, resources, achievements, moderation, reports | `core` | `GroupMembershipChanged`, `ClassroomMembershipChanged`, `GroupJoinRequested`, `ClassroomJoinRequested`, `JoinRequestReviewed` *[Added: ADR-0009]*, `CommentAdded`, `QuizPublished`, `ContentReported`, `LearningEventRecorded` | `NotePublished`, `UserDeleted` |
 | `ai` | `AiGateway`, providers, usage and quotas, `NoteChunk` embeddings, RAG, public-note pipeline, transcription, moderation scoring | `ai` | `NoteArtifactReady`, `ModerationScored`, `AiBudgetThreshold` | `NotePublished`, `NoteUnpublished`, `FileReady`, `UserDeleted` |
 | `communication` | notifications, preferences, push (FCM), email, digests, WebSocket fan-out for subscriptions | `comms` | `NotificationDelivered` | nearly everything above |
 
@@ -448,7 +448,7 @@ The API responds in under 300 ms p95; anything slower than a database transactio
 | `ai` | summarise, generate-quiz, generate-flashcards, embed, transcribe, moderate | 3, exponential, 10 min timeout | `noteVersionId:task` |
 | `search` | index-note, remove-note, index-resource, reindex-all | 5 | `entityId:version` |
 | `notifications` | push, email, digest | 3 | `notificationId` |
-| `learning` | aggregate-events, compute-streaks, recommendations | 1, scheduled | `userId:date` |
+| `learning` | aggregate-events, compute-streaks *[Amended: ADR-0030 — compute-rhythm, exam-readiness]*, recommendations | 1, scheduled | `userId:date` |
 | `housekeeping` | prune-versions, empty-trash, delete-accounts, orphan-s3 | 1, nightly | date |
 
 Every job is idempotent, writes its state to a `JobStatus` row the client can query (`noteProcessingStatus` subscription), and goes to a dead-letter queue after final failure with an alert. Jobs are enqueued **after** the Postgres transaction commits (transactional outbox table polled by the worker) so a rolled-back write never leaves a job behind.
@@ -462,7 +462,7 @@ GraphQL subscriptions via `graphql-ws`, fan-out through Redis pub/sub so multipl
 | Channel | Used for | Notes |
 | --- | --- | --- |
 | In-app (`Notification` table + subscription) | Everything | Always written first |
-| Push (FCM) | Comments, shares, classroom posts, quiz published, revision reminders, streak at risk | Per-category user setting; quiet hours default 22:00–07:00 local. *[Amended: ADR-0021 — payload is ids + category + deep link only (`@lvn/contracts/notifications`); text never quotes user content]* |
+| Push (FCM) | Comments, shares, classroom posts, quiz published, revision reminders, streak at risk *[Amended: ADR-0030 — Rhythm plan reminders and comeback nudges, never loss-framed]* | Per-category user setting; quiet hours default 22:00–07:00 local. *[Amended: ADR-0021 — payload is ids + category + deep link only (`@lvn/contracts/notifications`); text never quotes user content]* |
 | Email | Verification, reset, weekly digest, classroom announcements | React Email templates; one-click unsubscribe per category |
 
 `DeviceToken` rows are refreshed on app launch and pruned on FCM `NotRegistered`. Deep links use `learnvianotes://` and universal links to `https://learnvianotes.com/...` resolved by Expo Router. *[Amended: ADR-0022 — universal links use the web origin from the environment (`https://www.learnvianotes.in` in production); notifications carry in-app paths only.]*
@@ -595,9 +595,9 @@ Every outbox op carries a `clientOpId` (UUID) so retries are idempotent. Media u
 
 One append-only `LearningEvent(id, userId, type, entityType, entityId, topicIds[], durationMs, metadata JSONB, clientTs, serverTs, sessionId, platform)` table, partitioned monthly, feeds history, streaks, recommendations, analytics and notifications. Clients emit through a single `trackEvents(batch)` mutation (batched every 10 s or 20 events, queued offline); no UI component calls analytics directly. Event types are an enum in `@lvn/contracts/domain`: `NOTE_OPENED`, `NOTE_CREATED`, `NOTE_PUBLISHED`, `NOTE_FORKED`, `CARD_VIEWED`, `TOPIC_VIEWED`, `VIDEO_STARTED`, `VIDEO_COMPLETED`, `QUIZ_STARTED`, `QUIZ_COMPLETED`, `FLASHCARD_REVIEWED`, `TIME_SPENT`, `NOTE_SAVED`, `TOPIC_REVISITED`, `EXAM_CREATED`, `RESOURCE_VIEWED`, `RESOURCE_SAVED`, `AI_REQUESTED`, `SEARCH_PERFORMED`, `TOPIC_COMPLETED`, `PROBLEM_MARKED` *[Added: ADR-0023]*. Product analytics (PostHog, self-hosted) receives a derived, pseudonymous copy from the worker, never from clients.
 
-### 14.2 Streaks, history and exams
+### 14.2 Streaks, history and exams *[Amended: ADR-0030 — Rhythm replaces streaks]*
 
-- Streak = a day with ≥ 1 qualifying event (note opened ≥ 2 min, quiz completed, flashcards reviewed, note created) in the user's time zone; one freeze per week earned by a 7-day streak. Computed nightly and incrementally on event ingest.
+- *[Amended: ADR-0030 — replaced by **Rhythm**: a Today ring filled only by learning actions, a weekly target of 3–6 days with rest days, "never miss twice" comebacks, pauses, counters that never reset, and Exam Readiness per exam. The text below is superseded.]* Streak = a day with ≥ 1 qualifying event (note opened ≥ 2 min, quiz completed, flashcards reviewed, note created) in the user's time zone; one freeze per week earned by a 7-day streak. Computed nightly and incrementally on event ingest.
 - Learning history is a paginated view over events grouped by day and topic; weak-topic detection = topics with quiz accuracy < 60 % over the last 3 attempts or no revisit in 14 days before an exam.
 - Exam planning: user enters exam name, date and topics; the planner distributes revision sessions backward from the date and emits reminders through the notification system.
 - Flashcards use FSRS scheduling; review state is per user per card.
@@ -752,9 +752,9 @@ Work proceeds strictly in order. A phase is closed only when its exit criteria p
 | 3 Community | Groups + roles, classrooms + teacher role, teacher profile Skills tab (manual) *[Added: ADR-0012]*, teacher follows and connections *[Added: ADR-0013]*, students follow teachers, teacher blogs/posts/projects and the Following feed *[Added: ADR-0014]*, student projects and project workspaces with mentors *[Added: ADR-0015]*, student follows, block and restrict *[Added: ADR-0016]*, group/class sharing, comments, reactions, activity feed, notifications (in-app, push, email), reporting + moderation queue | Join/post/moderate flows E2E; subscription fan-out across 2 api tasks; permission matrix fully tested |
 | 4 Search | Typesense provider, Cmd/K, mobile search, filters, re-index job, hybrid ranking flag | Index parity test vs Postgres provider; permission filter test; p95 < 150 ms |
 | 5 AI | `AiGateway`, usage + quotas, summaries, quick notes, RAG Ask AI with sources, Ask AI on workspace doubts *[Added: ADR-0015]*, AI tasks and the PDF engine's OCR and AI clean-up *[Added: ADR-0025]*, quiz + flashcard generation, code explanation, transcription, public-note pipeline | RAG leakage test 0/1,000; budget breaker verified; all artifacts stored separately from notes |
-| 6 Learning intelligence | `trackEvents`, partitioned events, history, streaks, FSRS flashcards, exam planner, weak-topic detection, rule-based recommendations, focus mode | Recommendations respect visibility; streak timezone tests; events survive offline |
+| 6 Learning intelligence | `trackEvents`, partitioned events, history, streaks *[Amended: ADR-0030 — Rhythm and Exam Readiness]*, FSRS flashcards, exam planner, weak-topic detection, rule-based recommendations, focus mode | Recommendations respect visibility; streak timezone tests; events survive offline |
 | 7 Resources | Resource model, submission + approval, search, save, share, recommend, discuss; Skills import from verified public identifiers *[Added: ADR-0012]*; GitHub App repository activity for project workspaces *[Added: ADR-0015]* | Moderation on submissions; no commerce surface |
-| 8 Engagement | Achievements, points ledger, contributor levels, tasks, leaderboards (opt-in), weekly contests, mock-interview data model only | Leaderboards exclude minors by default; no company features |
+| 8 Engagement | Achievements, points ledger, contributor levels, tasks, leaderboards (opt-in) *[Amended: ADR-0030 — no global leaderboards; cooperative class and buddy goals instead]*, weekly contests, mock-interview data model only | Leaderboards exclude minors by default; no company features |
 | 9 Hardening | Security audit (external if possible), k6 load, query analysis, index review, Redis review, S3 policy review, offline chaos tests, accessibility audit, error/empty states review, runbooks, on-call, restore drill | SLOs met for 7 days in sandbox under load; audit findings closed |
 
 Each phase ends with a `docs/releases/phase-N.md` listing what shipped, test evidence, known gaps and the GraphQL schema version.

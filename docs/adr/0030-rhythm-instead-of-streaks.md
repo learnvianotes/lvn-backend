@@ -1,9 +1,9 @@
 # ADR-0030: Rhythm — a weekly, forgiving habit system instead of daily streaks
 
-- Status: **Proposed** — recommended to the owner, 2026-10-08; awaiting acceptance
+- Status: Accepted (owner, 2026-10-08)
 - Date: 2026-10-08
 - Spec sections: §14.2 (streaks), §18 Phase 6 and Phase 8
-- Would amend: §14.2 "Streak = …" bullet; Phase 6 "streaks"; Phase 8 leaderboards
+- Amends: §14.2 "Streak = …" bullet; §9.1 and §9.3 streak jobs and pushes; Phase 6 "streaks"; Phase 8 leaderboards
 
 ## Context
 
@@ -26,7 +26,7 @@ responsive with good animations. Research summary (full sources in the research 
   exposure to top peers' work raised drop-out). Cooperative goals work best for behaviour (gamification meta-analysis).
 - Apple let users **pause** rings without losing awards (watchOS 11); Headspace lets users hide the streak.
 
-## Decision (proposed)
+## Decision
 
 **Rhythm** has three layers.
 
