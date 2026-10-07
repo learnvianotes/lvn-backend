@@ -14,8 +14,12 @@ They are **references, not specs**: anything they show that the architecture spe
 
 ## Brand
 
-- **Name:** LearnViaNotes — app name, web title, store listing, emails. Short mark: **LVN** wordmark (board A).
-  Development builds are "LearnViaNotes Dev" and "LearnViaNotes Sandbox".
+- **Name:** LearnViaNotes — app name, web title, store listing, emails — always written in full in headers, with
+  "Notes" in the brand colour. Development builds are "LearnViaNotes Dev" and "LearnViaNotes Sandbox".
+- **Logo (2026-10-08):** an open notebook with smooth curved pages, note lines, a check ("learned") and a small spark
+  ("insight") on the indigo gradient tile. One set of shapes, `logo-paths.json`, lives in lvn-mobile
+  (`assets/brand/`, renders the app icon, adaptive/monochrome icons and splash) and lvn-web (`branding/`, renders the
+  favicons and PWA icons); both copies stay identical until the shapes move into `@lvn/contracts`.
 - **Feel:** light, soft and rounded; lavender-tinted backgrounds, white cards, one indigo accent, warm illustrations,
   dark night-sky hero cards for focus and live moments.
 - **Tokens** (read off the boards; confirm against the source files):
