@@ -16,7 +16,9 @@ erDiagram
   User ||--o{ Membership : "belongs to"
   Organization ||--o{ Membership : has
   User ||--o{ ConsentRecord : accepts
-  User ||--o{ Follow : "follows a teacher"
+  User ||--o{ Follow : "follows (teacher, or student → student)"
+  User ||--o{ Block : blocks
+  User ||--o{ Restriction : restricts
   User ||--o{ Connection : "connected (teachers)"
   User ||--o{ ConnectionRequest : sends
   User ||--o{ AuditLog : "acts in"
@@ -66,7 +68,7 @@ erDiagram
   }
   Follow {
     uuid followerId FK "any user"
-    uuid followeeId FK "a teacher"
+    uuid followeeId FK "a teacher, or a student followed by a student"
     timestamptz createdAt
   }
   Connection {
@@ -81,6 +83,16 @@ erDiagram
     enum status "PENDING | ACCEPTED | DECLINED | WITHDRAWN"
     timestamptz createdAt
     timestamptz respondedAt
+  }
+  Block {
+    uuid blockerId FK
+    uuid blockedId FK
+    timestamptz createdAt
+  }
+  Restriction {
+    uuid restricterId FK
+    uuid restrictedId FK
+    timestamptz createdAt
   }
   ConsentRecord {
     uuid id PK
@@ -227,6 +239,10 @@ erDiagram
   Group ||--o{ GroupMember : ""
   Group ||--o{ GroupJoinRequest : "awaiting Admin/Owner"
   Group ||--o{ GroupPost : ""
+  Group ||--o| GroupRepository : "PROJECT type"
+  Group ||--o{ Doubt : "PROJECT type"
+  Doubt ||--o{ DoubtAnswer : ""
+  Group ||--o{ MentorInvite : ""
   Classroom ||--o{ ClassroomMember : ""
   Classroom ||--o{ ClassroomJoinRequest : "awaiting Teacher/TA"
   Classroom ||--o{ ClassroomInvite : "pre-approved"
@@ -244,6 +260,7 @@ erDiagram
   Group {
     uuid id PK
     text name
+    enum type "COMMUNITY | PROJECT (ADR-0015)"
     enum privacy "PUBLIC | PRIVATE"
     enum joinPolicy "OPEN | APPROVAL (ADR-0011)"
     timestamptz deletedAt
@@ -251,7 +268,7 @@ erDiagram
   GroupMember {
     uuid groupId FK
     uuid userId
-    enum role "OWNER | ADMIN | MODERATOR | MEMBER"
+    enum role "OWNER | ADMIN | MODERATOR | MEMBER | MENTOR"
     timestamptz mutedUntil
   }
   GroupJoinRequest {
@@ -263,6 +280,39 @@ erDiagram
     uuid reviewedBy
     timestamptz reviewedAt
     timestamptz createdAt
+  }
+  GroupRepository {
+    uuid groupId FK
+    enum provider "GITHUB | GITLAB"
+    text url
+    bool isPrivate
+    jsonb metadata "public API snapshot"
+    timestamptz refreshedAt
+  }
+  Doubt {
+    uuid id PK
+    uuid groupId FK
+    uuid askedBy
+    text title
+    jsonb body "cards"
+    text repoRef "file:line or commit, optional"
+    enum status "OPEN | ANSWERED | RESOLVED"
+    uuid resolvedBy
+  }
+  DoubtAnswer {
+    uuid id PK
+    uuid doubtId FK
+    uuid answeredBy
+    bool byMentor
+    jsonb body
+  }
+  MentorInvite {
+    uuid id PK
+    uuid groupId FK
+    uuid teacherId
+    uuid invitedBy
+    timestamptz expiresAt
+    timestamptz acceptedAt
   }
   Classroom {
     uuid id PK

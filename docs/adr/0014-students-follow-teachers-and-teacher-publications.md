@@ -1,6 +1,6 @@
 # ADR-0014: Students follow teachers; teachers publish blogs, posts and projects
 
-- Status: Accepted (owner decision, 2026-10-08)
+- Status: Accepted (owner decision, 2026-10-08); amended by ADR-0015 (anyone creates projects) and ADR-0016 (students follow students)
 - Date: 2026-10-08
 - Spec sections: §4.1, §5, §11, §14.3, §15, §18
 - Amends: ADR-0013 (who may follow); §4.1 Note vs Card; §5 follow row

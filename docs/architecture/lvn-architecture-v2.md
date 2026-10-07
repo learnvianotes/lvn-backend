@@ -23,6 +23,8 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0012](../adr/0012-teacher-skills-tab.md) | Teacher profile Skills tab: manual in Phase 3, filled from verified public identifiers in Phase 7. (§18) |
 | [0013](../adr/0013-teacher-follows-and-connections.md) | Teachers follow (one-way) and connect (request + accept) with other teachers; a teacher shares a note with another teacher only when connected or co-teaching, and can share with all connections. (§4.1, §5, §6.1, §18) |
 | [0014](../adr/0014-students-follow-teachers-and-teacher-publications.md) | Any signed-in user follows teachers; teachers publish blogs, posts and projects as notes of another `kind`; Following feed of followed teachers' PUBLIC content. (§4.1, §5, §18) |
+| [0015](../adr/0015-student-projects-and-project-workspaces.md) | Students create projects; project workspaces (groups of type PROJECT) with a linked repo, ideas board, doubts and a teacher mentor. (§4.1, §5, §18) |
+| [0016](../adr/0016-student-follows-block-restrict.md) | Students follow students (never restricted minors); block, restrict and remove follower. (§5, §15.1) |
 | [0008](../adr/0008-mobile-builds-without-eas.md) | Mobile is built locally (prebuild + Gradle/Xcode) without an Expo account; no EAS Build/Update, no OTA for now. (§2, §13.1, §13.3, §16.1, §16.2) |
 
 ## 1. Product boundaries
@@ -160,7 +162,9 @@ The backend owns these definitions. Clients render them; they never reinterpret 
 
 ```text
 User ──< Membership >── Organization
-User ──< Follow >── User (followee is a teacher; follower anyone)   [Added: ADR-0013, ADR-0014]
+User ──< Follow >── User (anyone → teacher; student → student)   [Added: ADR-0013, ADR-0014, ADR-0016]
+User ──< Block, Restriction >── User   [Added: ADR-0016]
+Group (type COMMUNITY | PROJECT) ──< GroupRepository, Doubt ──< DoubtAnswer, MentorInvite   [Added: ADR-0015]
 User ──< Connection, ConnectionRequest >── User   (teachers only)  [Added: ADR-0013]
 User ──< GroupMember >── Group ──< GroupShare >── Note
 User ──< ClassroomMember >── Classroom ──< ClassroomShare >── Note
@@ -239,8 +243,13 @@ Authorization is enforced in the backend by a single `PolicyService` (`can(user,
 | Publish / change visibility / delete | ✓ | – | – | – | – | – | – | – | – |
 | Share note (user, group, class) *[Amended: ADR-0013 — teacher→teacher needs a connection or a shared classroom; teachers can also share with all connections]* | ✓ | – | – | – | – | – | – | – | – |
 | Follow a teacher *[Added: ADR-0013, ADR-0014]* |  |  |  |  |  |  |  | ✓ any signed-in user | – |
+| Follow a student *[Added: ADR-0016]* |  |  |  |  |  |  |  | ✓ students, never a restricted minor | – |
+| Block, restrict, remove a follower *[Added: ADR-0016]* |  |  |  |  |  |  |  | ✓ | – |
 | Send or answer a connection request *[Added: ADR-0013]* |  |  |  |  |  |  |  | ✓ TEACHER role, to other teachers | – |
-| Create a blog, post or project *[Added: ADR-0014]* |  |  |  |  |  |  |  | ✓ TEACHER role | – |
+| Create a blog or post *[Added: ADR-0014]* |  |  |  |  |  |  |  | ✓ TEACHER role | – |
+| Create a project note *[Added: ADR-0015]* |  |  |  |  |  |  |  | ✓ | – |
+| Project workspace: invite a mentor *[Added: ADR-0015]* |  |  |  | – | ✓ (Admin/Owner) |  |  | – | – |
+| Project workspace: ask / answer / resolve doubts — the Mentor (a teacher) answers, resolves and moderates *[Added: ADR-0015]* |  |  |  | ask, answer; resolve own | ask, answer; resolve (Admin/Owner) |  |  | – | – |
 | Fork | ✓ | ✓ | ✓ | ✓ if readable | ✓ if readable | ✓ if readable | ✓ if readable | ✓ PUBLIC only | – |
 | Comment / react on note | ✓ | ✓ | ✓ | ✓ if readable | ✓ if readable | ✓ if readable | ✓ if readable | ✓ PUBLIC only | – |
 | Create group |  |  |  |  |  |  |  | ✓ | – |
@@ -717,11 +726,11 @@ Work proceeds strictly in order. A phase is closed only when its exit criteria p
 | 0 Architecture | Inspect existing repo; write `existing-state.md`, this document's app-specific addenda, ERD, env reference, ADR-0001…; GraphQL schema skeleton; permission matrix encoded in `@lvn/contracts/domain` | Three agents sign off on the same documents; empty monorepo builds and CI runs |
 | 1 Foundation | Monorepo, `packages/config`, NestJS + Prisma + Redis + MinIO, auth (email + 3 OAuth), sessions, roles, `PolicyService`, upload flow, logging, error codes, Testcontainers, Docker Compose, Terraform for sandbox, CI, Sentry, OTel | Web and mobile sign in on all providers in dev and sandbox; migration deploys; file upload round-trips; security suite scaffold passes |
 | 2 Content | Subjects, topics, folders, tags, notes, cards (all types), editor web + mobile, autosave, drafts, versions, visibility, user sharing, forking, soft delete, public note SEO page, Postgres search, moderation gate, Terms/consent, age gate | Full note lifecycle E2E on web and mobile incl. offline edit and sync; leakage tests pass; Lighthouse ≥ 90 on public note |
-| 3 Community | Groups + roles, classrooms + teacher role, teacher profile Skills tab (manual) *[Added: ADR-0012]*, teacher follows and connections *[Added: ADR-0013]*, students follow teachers, teacher blogs/posts/projects and the Following feed *[Added: ADR-0014]*, group/class sharing, comments, reactions, activity feed, notifications (in-app, push, email), reporting + moderation queue | Join/post/moderate flows E2E; subscription fan-out across 2 api tasks; permission matrix fully tested |
+| 3 Community | Groups + roles, classrooms + teacher role, teacher profile Skills tab (manual) *[Added: ADR-0012]*, teacher follows and connections *[Added: ADR-0013]*, students follow teachers, teacher blogs/posts/projects and the Following feed *[Added: ADR-0014]*, student projects and project workspaces with mentors *[Added: ADR-0015]*, student follows, block and restrict *[Added: ADR-0016]*, group/class sharing, comments, reactions, activity feed, notifications (in-app, push, email), reporting + moderation queue | Join/post/moderate flows E2E; subscription fan-out across 2 api tasks; permission matrix fully tested |
 | 4 Search | Typesense provider, Cmd/K, mobile search, filters, re-index job, hybrid ranking flag | Index parity test vs Postgres provider; permission filter test; p95 < 150 ms |
-| 5 AI | `AiGateway`, usage + quotas, summaries, quick notes, RAG Ask AI with sources, quiz + flashcard generation, code explanation, transcription, public-note pipeline | RAG leakage test 0/1,000; budget breaker verified; all artifacts stored separately from notes |
+| 5 AI | `AiGateway`, usage + quotas, summaries, quick notes, RAG Ask AI with sources, Ask AI on workspace doubts *[Added: ADR-0015]*, quiz + flashcard generation, code explanation, transcription, public-note pipeline | RAG leakage test 0/1,000; budget breaker verified; all artifacts stored separately from notes |
 | 6 Learning intelligence | `trackEvents`, partitioned events, history, streaks, FSRS flashcards, exam planner, weak-topic detection, rule-based recommendations, focus mode | Recommendations respect visibility; streak timezone tests; events survive offline |
-| 7 Resources | Resource model, submission + approval, search, save, share, recommend, discuss; Skills import from verified public identifiers *[Added: ADR-0012]* | Moderation on submissions; no commerce surface |
+| 7 Resources | Resource model, submission + approval, search, save, share, recommend, discuss; Skills import from verified public identifiers *[Added: ADR-0012]*; GitHub App repository activity for project workspaces *[Added: ADR-0015]* | Moderation on submissions; no commerce surface |
 | 8 Engagement | Achievements, points ledger, contributor levels, tasks, leaderboards (opt-in), weekly contests, mock-interview data model only | Leaderboards exclude minors by default; no company features |
 | 9 Hardening | Security audit (external if possible), k6 load, query analysis, index review, Redis review, S3 policy review, offline chaos tests, accessibility audit, error/empty states review, runbooks, on-call, restore drill | SLOs met for 7 days in sandbox under load; audit findings closed |
 

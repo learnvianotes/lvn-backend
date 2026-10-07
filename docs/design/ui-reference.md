@@ -52,6 +52,8 @@ They are **references, not specs**: anything they show that the architecture spe
 | AI Assistant chat with sources, generate quiz / flashcards (A, B) | Both | §10.1–10.2 | 5 |
 | Quiz player (A) | Both | §4.1 Quiz | 3 (classroom) / 5 (generated) |
 | Profile: avatar, stats, achievements, My Notes / Saved / Groups / Classrooms / Learning history (A, B) | Both | §14.2, Phase 8 achievements | 2 – 8 |
+| Student profile tabs **Notes · Projects**, follower count, Follow; block / restrict / remove follower in the profile menu (owner request) | Both | ADR-0015, ADR-0016 | 3 |
+| **Project workspace**: repo card, members and mentor, Ideas board, Doubts (open / answered / resolved), shared notes, showcase (owner request) | Both | ADR-0015 | 3 (AI on doubts 5, repo activity 7) |
 | Teacher profile tabs **Notes · Blog · Projects · Posts · Skills**, follower count, Follow / Connect buttons (owner request) | Both | ADR-0012, ADR-0013, ADR-0014 | 3 (Skills import 7) |
 | Following feed: followed teachers' public content (owner request; board A's "Following" tab) | Both | ADR-0014 | 3 |
 | Teacher profile **Skills** tab: subjects, skills, qualifications, imported items with source (owner request, not on the boards) | Both | ADR-0012 | 3 (manual) – 7 (import) |
@@ -68,7 +70,7 @@ They are **references, not specs**: anything they show that the architecture spe
 | # | Shown on the boards | Conflict with the spec | Options |
 | --- | --- | --- | --- |
 | 1 | "Pricing" in the landing nav | Payments are out of scope (§1, §20) | Remove the link (recommended) |
-| 2 | Followers / Following counts, a "Following" feed tab | **Decided** (ADR-0013, ADR-0014): anyone follows teachers, teachers connect with teachers; follower counts on teacher profiles only; the Following feed shows followed teachers' public notes, blogs, posts and projects | Students do not follow students |
+| 2 | Followers / Following counts, a "Following" feed tab | **Decided** (ADR-0013, ADR-0014): anyone follows teachers, teachers connect with teachers; follower counts on teacher profiles only; the Following feed shows followed teachers' public notes, blogs, posts and projects | Students follow students too (ADR-0016), with block and restrict |
 | 3 | Group "Events" tab, upcoming events with Register, live study rooms (B) | No event or live-room entity; live rooms need real-time audio/video | ADR for events (core); live rooms out of scope for now |
 | 4 | "Problems" filter in global search | "Problems" removed from scope; Sheet 150 is read-only content under `/core` | Search `/core` content as Topics, no Problems filter |
 | 5 | PDF-first notes with download counts | Notes are card documents; PDFs are attachment cards (§4.1, §8); downloads are not tracked | Show attachments as file cards; add a `FILE_DOWNLOADED` learning event if counts are wanted |
