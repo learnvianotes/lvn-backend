@@ -93,10 +93,12 @@ Nothing was migrated from the Flutter app on `platform/monorepo-foundation`. See
 
 ## Cut-over from the old site
 
-The old site keeps running on Firebase Hosting at learnvianotes.in until this app is deployed to learnvianotes.com.
+The old site keeps running on Firebase Hosting at www.learnvianotes.in until this app replaces it on the same domain
+(ADR-0022).
 At cut-over:
 
-1. Point learnvianotes.in at the new deployment (or 301 the whole domain to learnvianotes.com).
+1. Point www.learnvianotes.in at the new deployment; the bare domain redirects to `www`. Old URLs keep working through
+   lvn-web's redirects into `/core`.
 2. Keep the Firebase project: its Authentication (Google provider only) is how LVN does Google sign-in (ADR-0007).
    Returning Google users keep their Firebase UID and are recognised on first sign-in. Old-site email + password
    users sign up again or use Google with the same email. Firestore, Functions and Hosting are retired after
@@ -115,7 +117,7 @@ These are wording conflicts inside lvn-architecture-v2.md, not deviations. Each 
 | 2 | §18 Phase 0/1 | "empty monorepo builds", "Monorepo, `packages/config`" — contradicts three repos and `@lvn/contracts/config` (§2, §3). | Read as "three repos build"; config lives in `@lvn/contracts/config`. |
 | 3 | §10.1 | Prompts in `apps/api/src/modules/ai/prompts/` — contradicts the `contexts/ai/` layout (§3). | `contexts/ai/prompts/`. |
 | 4 | §12 | "It owns `apps/web` only"; §13 "owns `apps/mobile`" — paths from the monorepo era. | The `lvn-web` / `lvn-mobile` repositories. |
-| 5 | §1 | Domain is learnvianotes.com; the live site is learnvianotes.in. | Confirm learnvianotes.com is registered; plan the .in → .com redirect. |
+| 5 | §1 | Domain is learnvianotes.com; the live site is learnvianotes.in. | **Resolved by ADR-0022:** learnvianotes.in, URLs from `.env`. |
 | 6 | §1 vs §2 | Admin, college and company platforms listed with domains, but §1 also says "Two applications". | "Student platform now; three separate apps later". |
 | 7 | §1 changelog | "Problems" removed from scope, but the existing Sheet 150 problem set is live content. | Kept read-only under `/core` (ADR-0002); no new problem features. |
 | 8 | §8 | Subsection order 8.1, 8.3, 8.2. | Renumber. |

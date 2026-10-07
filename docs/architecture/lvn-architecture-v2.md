@@ -30,13 +30,14 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0019](../adr/0019-verification-without-institutional-email.md) | The institutional email is optional; without it a verified teacher vouches, or platform admins review proof of enrolment (documents: admins only, audited, deleted after 30 days). (§7, §15.2) |
 | [0020](../adr/0020-teachers-follow-students.md) | Teachers can follow students (never restricted minors). (§5) |
 | [0021](../adr/0021-push-notifications-via-fcm.md) | Push through FCM only (Android direct, iOS via APNs); payload carries ids only; Firebase = Google sign-in + push delivery. (§2, §9.3) |
+| [0022](../adr/0022-domain-learnvianotes-in-and-urls-from-env.md) | The domain is **learnvianotes.in** (canonical `www.learnvianotes.in`); every URL comes from `.env` / the deploy environment, never from code. (§1, §9.3, §16.1) |
 | [0008](../adr/0008-mobile-builds-without-eas.md) | Mobile is built locally (prebuild + Gradle/Xcode) without an Expo account; no EAS Build/Update, no OTA for now. (§2, §13.1, §13.3, §16.1, §16.2) |
 
 ## 1. Product boundaries
 
 LearnViaNotes (LVN) is a student-first learning community: personal and public notes, a block-based editor, groups, classrooms, quizzes, flashcards, exam prep, AI learning tools, learning history, recommendations, search and learning-resource discovery. It is built as one scalable product, not a set of screens.
 
-**Two applications, one backend.**
+**Two applications, one backend.** *[Amended: ADR-0022 — the domain is `learnvianotes.in` (web `www.learnvianotes.in`); read every `.com` below as `.in`.]*
 
 | Application | Domain | Users | Status |
 | --- | --- | --- | --- |
@@ -449,7 +450,7 @@ GraphQL subscriptions via `graphql-ws`, fan-out through Redis pub/sub so multipl
 | Push (FCM) | Comments, shares, classroom posts, quiz published, revision reminders, streak at risk | Per-category user setting; quiet hours default 22:00–07:00 local. *[Amended: ADR-0021 — payload is ids + category + deep link only (`@lvn/contracts/notifications`); text never quotes user content]* |
 | Email | Verification, reset, weekly digest, classroom announcements | React Email templates; one-click unsubscribe per category |
 
-`DeviceToken` rows are refreshed on app launch and pruned on FCM `NotRegistered`. Deep links use `learnvianotes://` and universal links to `https://learnvianotes.com/...` resolved by Expo Router.
+`DeviceToken` rows are refreshed on app launch and pruned on FCM `NotRegistered`. Deep links use `learnvianotes://` and universal links to `https://learnvianotes.com/...` resolved by Expo Router. *[Amended: ADR-0022 — universal links use the web origin from the environment (`https://www.learnvianotes.in` in production); notifications carry in-app paths only.]*
 
 ## 10. AI gateway and RAG
 
@@ -633,6 +634,7 @@ Three fully isolated environments, infrastructure as code, immutable container i
 | Infra | Docker Compose: Postgres, Redis, MinIO, Typesense, Mailpit, Ollama (optional) | Terraform, separate AWS account | Terraform, separate AWS account |
 | Data | Seed script, deterministic | Synthetic + anonymised fixtures, reset weekly | Real; never copied downward |
 | Domains | `localhost`, `*.lvn.local` | `sandbox.learnvianotes.com`, `api.sandbox…` | `learnvianotes.com`, `api.learnvianotes.com` |
+| Domains *[Amended: ADR-0022]* | from `.env` (`localhost`, the dev machine's address for phones) | `sandbox.learnvianotes.in`, `api.sandbox.learnvianotes.in` | `www.learnvianotes.in`, `api.learnvianotes.in` — all set in the environment, never in code |
 | OAuth apps | Dev credentials | Sandbox credentials | Production credentials |
 | AI | Ollama or capped dev keys | Capped keys, cheap models | Production keys, budget cap |
 | Mobile | `com.learnvianotes.dev`, EAS `development` profile | `.sandbox`, EAS `preview`, TestFlight / internal track | store build, EAS `production` |

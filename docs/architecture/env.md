@@ -3,6 +3,11 @@
 Canonical list (section 16.1). CI fails if code reads a variable that is missing here or from `.env.example`.
 Every value is validated with Zod at start-up; a missing or malformed value stops the process.
 
+**Rule (ADR-0022): every URL, origin, host and connection string comes from the environment — never from code, and
+never as a default in a schema.** Each repository commits `.env.example` with development values; developers copy it to
+`.env` (git-ignored) and override in `.env.local`; CI copies `.env.example` to `.env`; sandbox and production set
+variables in the deploy environment. lvn-mobile uses `env/<variant>.env` per build variant (ADR-0008).
+
 ## lvn-web
 
 Validated in lvn-web `lib/env.ts` until `@lvn/contracts/config` is published (ADR-0003); the same schema is `webConfigSchema`.
@@ -10,7 +15,7 @@ Validated in lvn-web `lib/env.ts` until `@lvn/contracts/config` is published (AD
 | Variable | Required | Default | Development | Sandbox | Production | Purpose |
 | --- | --- | --- | --- | --- | --- | --- |
 | `NEXT_PUBLIC_APP_ENV` | yes | `development` | `development` | `sandbox` | `production` | Gates indexing (`robots`, `noindex`) and, later, feature defaults |
-| `NEXT_PUBLIC_SITE_URL` | yes | `http://localhost:3000` | `http://localhost:3000` | `https://sandbox.learnvianotes.com` | `https://learnvianotes.com` | Canonical URLs, sitemap, Open Graph |
+| `NEXT_PUBLIC_SITE_URL` | yes | — | `http://localhost:3000` | `https://sandbox.learnvianotes.in` | `https://www.learnvianotes.in` | Canonical URLs, sitemap, Open Graph |
 
 Added in Phase 1 (names proposed, owned by `@lvn/contracts/config`): `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`,
 `NEXT_PUBLIC_SENTRY_DSN`, `REVALIDATE_SECRET` (server-only, for the API's on-demand ISR webhook), and for Google
@@ -47,7 +52,7 @@ in lvn-mobile `env/<variant>.env` (public, committed) with per-machine overrides
 | --- | --- | --- | --- | --- | --- |
 | `APP_VARIANT` | build time | `development` | `sandbox` | `production` | App name and bundle id in `app.config.ts` (not readable by app code) |
 | `EXPO_PUBLIC_APP_ENV` | yes | `development` | `sandbox` | `production` | Environment badge; later feature defaults |
-| `EXPO_PUBLIC_WEB_URL` | yes | `http://100.70.234.41:3000` | `https://sandbox.learnvianotes.com` | `https://learnvianotes.com` | Links into lvn-web |
+| `EXPO_PUBLIC_WEB_URL` | yes | `http://100.70.234.41:3000` | `https://sandbox.learnvianotes.in` | `https://www.learnvianotes.in` | Links into lvn-web |
 
 Phase 1 (ADR-0007): `EXPO_PUBLIC_FIREBASE_*` and the Google OAuth client ids used by native Google Sign-In.
 Phase 3 (ADR-0021): `GOOGLE_SERVICES_JSON` and `GOOGLE_SERVICE_INFO_PLIST` — build-time paths to the Firebase config
