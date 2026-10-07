@@ -34,7 +34,8 @@ enum Visibility { PRIVATE SHARED PUBLIC }
 enum GlobalRole { STUDENT TEACHER PLATFORM_ADMIN }
 enum NoteRole { OWNER EDITOR VIEWER }
 enum CardType { text heading markdown code image video audio file diagram quote callout checklist table question quiz flashcard }
-enum AuthProvider { GOOGLE GITHUB LINKEDIN }
+"Providers exchanged through oauthExchange. Google uses signInWithGoogle (ADR-0007)."
+enum OAuthProvider { GITHUB LINKEDIN }
 
 # ── users ─────────────────────────────────────────────────────────────────────
 
@@ -64,7 +65,9 @@ type OkPayload { ok: Boolean!, userErrors: [UserError!]! }
 
 input SignUpInput { email: String!, password: String!, displayName: String!, dateOfBirth: String!, acceptedTermsVersion: String! }
 input SignInInput { email: String!, password: String! }
-input OAuthExchangeInput { provider: AuthProvider!, code: String!, codeVerifier: String!, redirectUri: String! }
+input OAuthExchangeInput { provider: OAuthProvider!, code: String!, codeVerifier: String!, redirectUri: String! }
+"Firebase ID token from a Google sign-in; verified by the API and exchanged for an LVN session (ADR-0007)"
+input SignInWithGoogleInput { idToken: String! }
 input RefreshSessionInput { "Mobile only; web sends the cookie" refreshToken: String }
 input VerifyEmailInput { token: String! }
 input RequestPasswordResetInput { email: String! }
@@ -150,6 +153,7 @@ type Mutation {
   signUp(input: SignUpInput!): AuthPayload!
   signIn(input: SignInInput!): AuthPayload!
   oauthExchange(input: OAuthExchangeInput!): AuthPayload!
+  signInWithGoogle(input: SignInWithGoogleInput!): AuthPayload!
   refreshSession(input: RefreshSessionInput!): AuthPayload!
   signOut: OkPayload!
   verifyEmail(input: VerifyEmailInput!): OkPayload!
