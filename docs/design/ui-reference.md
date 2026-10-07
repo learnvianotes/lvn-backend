@@ -66,7 +66,7 @@ They are **references, not specs**: anything they show that the architecture spe
 | # | Shown on the boards | Conflict with the spec | Options |
 | --- | --- | --- | --- |
 | 1 | "Pricing" in the landing nav | Payments are out of scope (§1, §20) | Remove the link (recommended) |
-| 2 | Followers / Following counts, a "Following" feed tab | No follow relationship in the domain model (§4) | ADR adding `Follow` to `core`, or drop |
+| 2 | Followers / Following counts, a "Following" feed tab | **Decided for teachers** (ADR-0013): teachers follow and connect with teachers; the Following feed shows followed teachers' public notes | Open: should students follow teachers, or each other? |
 | 3 | Group "Events" tab, upcoming events with Register, live study rooms (B) | No event or live-room entity; live rooms need real-time audio/video | ADR for events (core); live rooms out of scope for now |
 | 4 | "Problems" filter in global search | "Problems" removed from scope; Sheet 150 is read-only content under `/core` | Search `/core` content as Topics, no Problems filter |
 | 5 | PDF-first notes with download counts | Notes are card documents; PDFs are attachment cards (§4.1, §8); downloads are not tracked | Show attachments as file cards; add a `FILE_DOWNLOADED` learning event if counts are wanted |

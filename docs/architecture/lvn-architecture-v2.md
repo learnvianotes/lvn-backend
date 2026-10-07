@@ -21,6 +21,7 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0010](../adr/0010-publishing-forks-and-attribution.md) | A fork can go PUBLIC only if its origin was PUBLIC when forked or the forker was its Owner/Editor; every reader sees the fork's credit line. (§4.4) |
 | [0011](../adr/0011-group-join-policy.md) | Groups get a join policy: a PUBLIC group set to OPEN is joined directly; otherwise Admin/Owner approve. Classroom TAs approve; staff invites need the student's acceptance. (§5) |
 | [0012](../adr/0012-teacher-skills-tab.md) | Teacher profile Skills tab: manual in Phase 3, filled from verified public identifiers in Phase 7. (§18) |
+| [0013](../adr/0013-teacher-follows-and-connections.md) | Teachers follow (one-way) and connect (request + accept) with other teachers; a teacher shares a note with another teacher only when connected or co-teaching, and can share with all connections. (§4.1, §5, §6.1, §18) |
 | [0008](../adr/0008-mobile-builds-without-eas.md) | Mobile is built locally (prebuild + Gradle/Xcode) without an Expo account; no EAS Build/Update, no OTA for now. (§2, §13.1, §13.3, §16.1, §16.2) |
 
 ## 1. Product boundaries
@@ -158,6 +159,7 @@ The backend owns these definitions. Clients render them; they never reinterpret 
 
 ```text
 User ──< Membership >── Organization
+User ──< Follow, Connection, ConnectionRequest >── User   (teachers only)  [Added: ADR-0013]
 User ──< GroupMember >── Group ──< GroupShare >── Note
 User ──< ClassroomMember >── Classroom ──< ClassroomShare >── Note
 User ──< Note ──< Card (ordered blocks)
@@ -233,7 +235,8 @@ Authorization is enforced in the backend by a single `PolicyService` (`can(user,
 | Read PUBLIC note | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Edit draft | ✓ | ✓ | – | – | – | – | – | – | – |
 | Publish / change visibility / delete | ✓ | – | – | – | – | – | – | – | – |
-| Share note (user, group, class) | ✓ | – | – | – | – | – | – | – | – |
+| Share note (user, group, class) *[Amended: ADR-0013 — teacher→teacher needs a connection or a shared classroom; teachers can also share with all connections]* | ✓ | – | – | – | – | – | – | – | – |
+| Follow a teacher; send or answer a connection request *[Added: ADR-0013]* |  |  |  |  |  |  |  | ✓ TEACHER role, to other teachers | – |
 | Fork | ✓ | ✓ | ✓ | ✓ if readable | ✓ if readable | ✓ if readable | ✓ if readable | ✓ PUBLIC only | – |
 | Comment / react on note | ✓ | ✓ | ✓ | ✓ if readable | ✓ if readable | ✓ if readable | ✓ if readable | ✓ PUBLIC only | – |
 | Create group |  |  |  |  |  |  |  | ✓ | – |
@@ -285,7 +288,7 @@ Web · Mobile · Admin                                    Web · Mobile · Admin
 
 | Context | Owns | Postgres schema | Emits | Consumes (read models) |
 | --- | --- | --- | --- | --- |
-| `users` | auth, sessions, users, profiles, roles, `PolicyService`, device tokens, organizations (read model from admin app) | `users` | `UserRegistered`, `UserDeleted`, `RoleChanged`, `SessionRevoked` | `GroupMembershipChanged`, `ClassroomMembershipChanged` |
+| `users` | auth, sessions, users, profiles, roles, `PolicyService`, device tokens, organizations (read model from admin app), teacher follows and connections *[Added: ADR-0013]* | `users` | `UserRegistered`, `UserDeleted`, `RoleChanged`, `SessionRevoked`, `UserFollowed`, `UserUnfollowed`, `ConnectionRequested`, `ConnectionChanged` *[Added: ADR-0013]* | `GroupMembershipChanged`, `ClassroomMembershipChanged` |
 | `notes` | subjects, topics, folders, tags, notes, cards, versions, shares, forks, `FileObject`, search indexing, Postgres/Typesense `SearchProvider` | `notes` | `NotePublished`, `NoteUnpublished`, `NoteForked`, `NoteShared`, `FileReady` | `UserDeleted`, `GroupMembershipChanged`, `ClassroomMembershipChanged`, `NoteArtifactReady` |
 | `core` | groups, classrooms, quizzes, flashcards, exams, learning events, streaks, recommendations, resources, achievements, moderation, reports | `core` | `GroupMembershipChanged`, `ClassroomMembershipChanged`, `GroupJoinRequested`, `ClassroomJoinRequested`, `JoinRequestReviewed` *[Added: ADR-0009]*, `CommentAdded`, `QuizPublished`, `ContentReported`, `LearningEventRecorded` | `NotePublished`, `UserDeleted` |
 | `ai` | `AiGateway`, providers, usage and quotas, `NoteChunk` embeddings, RAG, public-note pipeline, transcription, moderation scoring | `ai` | `NoteArtifactReady`, `ModerationScored`, `AiBudgetThreshold` | `NotePublished`, `NoteUnpublished`, `FileReady`, `UserDeleted` |
@@ -710,7 +713,7 @@ Work proceeds strictly in order. A phase is closed only when its exit criteria p
 | 0 Architecture | Inspect existing repo; write `existing-state.md`, this document's app-specific addenda, ERD, env reference, ADR-0001…; GraphQL schema skeleton; permission matrix encoded in `@lvn/contracts/domain` | Three agents sign off on the same documents; empty monorepo builds and CI runs |
 | 1 Foundation | Monorepo, `packages/config`, NestJS + Prisma + Redis + MinIO, auth (email + 3 OAuth), sessions, roles, `PolicyService`, upload flow, logging, error codes, Testcontainers, Docker Compose, Terraform for sandbox, CI, Sentry, OTel | Web and mobile sign in on all providers in dev and sandbox; migration deploys; file upload round-trips; security suite scaffold passes |
 | 2 Content | Subjects, topics, folders, tags, notes, cards (all types), editor web + mobile, autosave, drafts, versions, visibility, user sharing, forking, soft delete, public note SEO page, Postgres search, moderation gate, Terms/consent, age gate | Full note lifecycle E2E on web and mobile incl. offline edit and sync; leakage tests pass; Lighthouse ≥ 90 on public note |
-| 3 Community | Groups + roles, classrooms + teacher role, teacher profile Skills tab (manual) *[Added: ADR-0012]*, group/class sharing, comments, reactions, activity feed, notifications (in-app, push, email), reporting + moderation queue | Join/post/moderate flows E2E; subscription fan-out across 2 api tasks; permission matrix fully tested |
+| 3 Community | Groups + roles, classrooms + teacher role, teacher profile Skills tab (manual) *[Added: ADR-0012]*, teacher follows and connections *[Added: ADR-0013]*, group/class sharing, comments, reactions, activity feed, notifications (in-app, push, email), reporting + moderation queue | Join/post/moderate flows E2E; subscription fan-out across 2 api tasks; permission matrix fully tested |
 | 4 Search | Typesense provider, Cmd/K, mobile search, filters, re-index job, hybrid ranking flag | Index parity test vs Postgres provider; permission filter test; p95 < 150 ms |
 | 5 AI | `AiGateway`, usage + quotas, summaries, quick notes, RAG Ask AI with sources, quiz + flashcard generation, code explanation, transcription, public-note pipeline | RAG leakage test 0/1,000; budget breaker verified; all artifacts stored separately from notes |
 | 6 Learning intelligence | `trackEvents`, partitioned events, history, streaks, FSRS flashcards, exam planner, weak-topic detection, rule-based recommendations, focus mode | Recommendations respect visibility; streak timezone tests; events survive offline |

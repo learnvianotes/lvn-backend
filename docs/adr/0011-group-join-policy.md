@@ -1,6 +1,6 @@
 # ADR-0011: Group join policy; classroom approvals confirmed
 
-- Status: Accepted (owner decisions, 2026-10-08) — one point to clarify, below
+- Status: Accepted (owner decisions, 2026-10-08); the point to clarify is answered by ADR-0013
 - Date: 2026-10-08
 - Spec sections: §5 (group and classroom join rows)
 - Amends: ADR-0009 for groups (public groups may allow direct joining); §5 group join row

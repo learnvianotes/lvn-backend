@@ -16,6 +16,9 @@ erDiagram
   User ||--o{ Membership : "belongs to"
   Organization ||--o{ Membership : has
   User ||--o{ ConsentRecord : accepts
+  User ||--o{ Follow : "follows (teachers)"
+  User ||--o{ Connection : "connected (teachers)"
+  User ||--o{ ConnectionRequest : sends
   User ||--o{ AuditLog : "acts in"
 
   User {
@@ -60,6 +63,24 @@ erDiagram
     uuid userId FK
     uuid organizationId FK
     enum role "ORG_ADMIN | TEACHER | STUDENT"
+  }
+  Follow {
+    uuid followerId FK
+    uuid followeeId FK
+    timestamptz createdAt
+  }
+  Connection {
+    uuid userLowId FK "ordered pair, one row per connection"
+    uuid userHighId FK
+    timestamptz createdAt
+  }
+  ConnectionRequest {
+    uuid id PK
+    uuid fromUserId FK
+    uuid toUserId FK
+    enum status "PENDING | ACCEPTED | DECLINED | WITHDRAWN"
+    timestamptz createdAt
+    timestamptz respondedAt
   }
   ConsentRecord {
     uuid id PK
@@ -128,6 +149,7 @@ erDiagram
     uuid publishedVersionId FK
     timestamptz publishedAt
     bool forkingEnabled
+    bool sharedWithConnections "owner's connections can read (ADR-0013)"
     uuid forkedFromNoteId FK
     uuid forkedFromVersionId FK
     enum forkedFromVisibility "origin visibility at fork time (ADR-0010)"
@@ -194,7 +216,8 @@ erDiagram
   }
 ```
 
-Read models kept by `notes`: `membership_read_model(userId, groupId | classroomId)` for `visibleNotesWhere`.
+Read models kept by `notes`: `membership_read_model(userId, groupId | classroomId)` and
+`connection_read_model(userId, connectedUserId)` (ADR-0013) for `visibleNotesWhere`.
 
 ## core (schema `core`)
 
