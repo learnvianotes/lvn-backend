@@ -1,0 +1,16 @@
+{
+  "name": "@lvn-backend/errors",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@lvn/contracts": "workspace:@learnvianotes/contracts@*"
+  }
+}

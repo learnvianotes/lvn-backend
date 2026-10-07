@@ -28,14 +28,24 @@ Requires Node 22 and pnpm 10.
 
 ```bash
 pnpm install
-cp .env.example .env.local
+cp .env.example .env           # every URL and port; personal overrides go in .env.local
+pnpm keys:dev                  # JWT key pair + code secret → .env.local
+pnpm infra:up                  # Postgres 16 + pgvector, Redis 7, RustFS (S3), Mailpit — infra/docker/compose.yaml
+pnpm db:migrate                # apply prisma/migrations
 pnpm build
-pnpm dev                       # api on :4000, worker health on :4001
+pnpm dev                       # GraphQL gateway on :4000/graphql, worker health on :4001
 pnpm lint && pnpm typecheck && pnpm test && pnpm boundaries
-DATABASE_URL=postgresql://x:y@localhost/lvn pnpm prisma:validate
 ```
 
-Postgres, Redis, MinIO and Typesense via Docker Compose arrive in Phase 1 (`infra/docker/`).
+Emails the API sends locally are at http://localhost:58025 (Mailpit); stored files at http://localhost:59001 (RustFS).
+Docker must be running for the integration and e2e tests: they start their own containers (Testcontainers).
+
+## GraphQL
+
+One public endpoint, `/graphql`: Apollo Gateway composing each context's federation subgraph in-process (§6,
+ADR-0033). A context's schema is SDL in `contexts/<ctx>/src/graphql/*.graphql`; its TypeScript types are generated
+(`schema.types.ts`, by the context's build); `pnpm graphql:export` writes the composed `contracts/graphql/schema.graphql`
+(client codegen input) and `supergraph.graphql`, and CI fails if they are stale (`pnpm graphql:check`).
 
 ## Tests
 

@@ -1,0 +1,45 @@
+# LearnViaNotes API schema — composed from contexts/*/src/graphql/*.graphql by scripts/export-supergraph.mjs. Do not edit.
+scalar DateTime
+
+enum GlobalRole {
+  PLATFORM_ADMIN
+  STUDENT
+  TEACHER
+}
+
+type Query {
+  """The signed-in user, null for anonymous visitors"""
+  viewer: User
+}
+
+scalar UUID
+
+"""
+A person on LVN (§4.1). Fields marked viewer-only are null for anyone else.
+"""
+type User {
+  createdAt: DateTime!
+  displayName: String!
+
+  """Viewer only"""
+  email: String
+  emailVerified: Boolean!
+  globalRole: GlobalRole!
+  handle: String!
+  id: UUID!
+
+  """False until the registration details are given (ADR-0017)"""
+  registrationComplete: Boolean!
+  verificationMethod: VerificationMethod
+
+  """
+  Verified by institutional email, a teacher, or platform admins (ADR-0019)
+  """
+  verified: Boolean!
+}
+
+enum VerificationMethod {
+  DOCUMENTS
+  INSTITUTIONAL_EMAIL
+  TEACHER
+}

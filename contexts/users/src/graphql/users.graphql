@@ -1,0 +1,31 @@
+# Subgraph of the `users` context (spec §6.1, ADR-0033). Owns: User, sessions and sign-in, registration and
+# verification, profile, plans and limits, old-site data. Conventions: §6.2.
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.6", import: ["@key", "@shareable"])
+
+scalar DateTime
+scalar UUID
+
+enum GlobalRole { STUDENT TEACHER PLATFORM_ADMIN }
+enum VerificationMethod { INSTITUTIONAL_EMAIL TEACHER DOCUMENTS }
+
+"A person on LVN (§4.1). Fields marked viewer-only are null for anyone else."
+type User @key(fields: "id") {
+  id: UUID!
+  handle: String!
+  displayName: String!
+  "Viewer only"
+  email: String
+  emailVerified: Boolean!
+  "False until the registration details are given (ADR-0017)"
+  registrationComplete: Boolean!
+  "Verified by institutional email, a teacher, or platform admins (ADR-0019)"
+  verified: Boolean!
+  verificationMethod: VerificationMethod
+  globalRole: GlobalRole!
+  createdAt: DateTime!
+}
+
+type Query {
+  "The signed-in user, null for anonymous visitors"
+  viewer: User
+}

@@ -3,3 +3,10 @@ packages:
   - contexts/*
   - libs/*
   - contracts
+
+# One graphql-js in the process: Apollo Gateway, the subgraphs and Nest must share its classes.
+# Federation packages stay on one release so the gateway, composition and subgraphs agree.
+overrides:
+  graphql: 16.14.2
+  '@apollo/subgraph': 2.14.4
+  '@apollo/federation-internals': 2.14.4

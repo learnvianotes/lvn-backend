@@ -1,0 +1,17 @@
+import type { INestApplication } from '@nestjs/common'
+import type { ApiConfig } from '@lvn-backend/config'
+import { SUBGRAPH_PATH_PREFIX } from '@lvn-backend/graphql'
+import cookieParser from 'cookie-parser'
+import type { NextFunction, Request, Response } from 'express'
+import helmet from 'helmet'
+
+/** HTTP hardening shared by main.ts and the e2e tests (§7.2). */
+export function configureHttp(app: INestApplication, config: Pick<ApiConfig, 'CORS_ORIGINS'>): void {
+  app.use(helmet())
+  app.use(cookieParser())
+  app.enableCors({ origin: config.CORS_ORIGINS, credentials: true })
+  // Subgraphs are composed in-process; only the gateway at /graphql is public.
+  app.use(SUBGRAPH_PATH_PREFIX, (_req: Request, res: Response, _next: NextFunction) => {
+    res.status(404).end()
+  })
+}

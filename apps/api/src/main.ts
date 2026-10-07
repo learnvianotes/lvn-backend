@@ -1,14 +1,14 @@
 import 'reflect-metadata'
 import { NestFactory } from '@nestjs/core'
+import type { NestExpressApplication } from '@nestjs/platform-express'
 import { loadApiConfig } from '@lvn-backend/config'
-import helmet from 'helmet'
+import { configureHttp } from './http'
 import { AppModule } from './app.module'
 
 async function bootstrap() {
   const config = loadApiConfig()
-  const app = await NestFactory.create(AppModule, { bufferLogs: false })
-  app.use(helmet())
-  app.enableCors({ origin: config.CORS_ORIGINS, credentials: true })
+  const app = await NestFactory.create<NestExpressApplication>(AppModule.forRoot(config), { bufferLogs: false })
+  configureHttp(app, config)
   app.enableShutdownHooks()
   await app.listen(config.API_PORT, config.API_HOST)
 }

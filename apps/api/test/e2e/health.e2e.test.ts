@@ -1,19 +1,20 @@
-import { Test } from '@nestjs/testing'
-import type { INestApplication } from '@nestjs/common'
 import request from 'supertest'
-import { AppModule } from '../../src/app.module'
+import { createTestApp, type TestApp } from '../support/app'
 
 describe('health', () => {
-  let app: INestApplication
+  let t: TestApp
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile()
-    app = moduleRef.createNestApplication()
-    await app.init()
+    t = await createTestApp()
   })
 
-  afterAll(() => app.close())
+  afterAll(() => t.close())
 
-  it('reports liveness', () => request(app.getHttpServer()).get('/health/live').expect(200, { status: 'ok' }))
-  it('reports readiness', () => request(app.getHttpServer()).get('/health/ready').expect(200))
+  it('reports liveness', () => request(t.app.getHttpServer()).get('/health/live').expect(200, { status: 'ok' }))
+  it('reports readiness', () => request(t.app.getHttpServer()).get('/health/ready').expect(200))
+  it('sends security headers (Helmet)', async () => {
+    const res = await request(t.app.getHttpServer()).get('/health/live')
+    expect(res.headers['x-content-type-options']).toBe('nosniff')
+    expect(res.headers['strict-transport-security']).toBeDefined()
+  })
 })

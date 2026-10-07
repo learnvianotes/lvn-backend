@@ -32,7 +32,7 @@ module.exports = {
   ],
   options: {
     doNotFollow: { path: 'node_modules' },
-    exclude: { path: '^(apps|contexts|libs)/[^/]+/(dist|coverage)/|^contracts/(dist|coverage)/|\\.test\\.ts$' },
+    exclude: { path: '^(apps|contexts|libs)/[^/]+/(dist|coverage)/|^contracts/(dist|coverage)/|^libs/prisma-base/src/generated/|\\.test\\.ts$' },
     preserveSymlinks: true,
     tsPreCompilationDeps: true,
     tsConfig: { fileName: 'tsconfig.base.json' },

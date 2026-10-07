@@ -16,6 +16,7 @@ export default tseslint.config(
       'no-restricted-properties': ['error', { object: 'process', property: 'env', message: 'Read configuration through @lvn-backend/config.' }],
     },
   },
-  { files: ['libs/config/**', '**/*.test.ts', 'prisma.config.ts'], rules: { 'no-restricted-properties': 'off' } },
+  // Config loading, test tooling and scripts are where the environment is read.
+  { files: ['libs/config/**', 'libs/testing/**', '**/test/**', 'prisma.config.ts'], rules: { 'no-restricted-properties': 'off' } },
   { files: ['**/*.cjs'], languageOptions: { sourceType: 'commonjs', globals: globals.node } },
 )
