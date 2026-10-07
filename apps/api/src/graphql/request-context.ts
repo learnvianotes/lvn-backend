@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import type { AccessTokenVerifier, RequestContext, Viewer } from '@lvn-backend/auth-guard'
 
+/** Answers whether a session family was revoked within the access-token lifetime (Redis in apps/api). */
+export interface RevocationCheck {
+  isRevoked(sessionFamilyId: string): Promise<boolean>
+}
+
 const REQUEST_ID = /^[A-Za-z0-9._-]{8,64}$/
 
 type Req = RequestContext['req'] & { headers: Record<string, string | string[] | undefined> }
@@ -22,9 +27,12 @@ export function requestIdOf(req: Req): string {
   return value && REQUEST_ID.test(value) ? value : randomUUID()
 }
 
-export function buildRequestContext(verifier: AccessTokenVerifier) {
-  return ({ req, res }: { req: unknown; res: unknown }): RequestContext => {
+/** The viewer is dropped when their session was revoked (sign-out, reuse, reset) even if the token has not expired. */
+export function buildRequestContext(verifier: AccessTokenVerifier, revocations: RevocationCheck) {
+  return async ({ req, res }: { req: unknown; res: unknown }): Promise<RequestContext> => {
     const r = req as Req
-    return { req: r, res: res as RequestContext['res'], requestId: requestIdOf(r), viewer: viewerFromRequest(r, verifier) }
+    let viewer = viewerFromRequest(r, verifier)
+    if (viewer && (await revocations.isRevoked(viewer.sessionId))) viewer = null
+    return { req: r, res: res as RequestContext['res'], requestId: requestIdOf(r), viewer }
   }
 }

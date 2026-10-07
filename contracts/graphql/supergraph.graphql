@@ -4,6 +4,7 @@ schema
   @link(url: "https://specs.apollo.dev/join/v0.3", for: EXECUTION)
 {
   query: Query
+  mutation: Mutation
 }
 
 directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
@@ -20,8 +21,28 @@ directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on
 
 directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
 
+type AuthPayload
+  @join__type(graph: USERS)
+{
+  session: Session
+  userErrors: [UserError!]!
+}
+
 scalar DateTime
   @join__type(graph: USERS)
+
+"""Fixed error vocabulary (§6.2)"""
+enum ErrorCode
+  @join__type(graph: USERS)
+{
+  UNAUTHENTICATED @join__enumValue(graph: USERS)
+  FORBIDDEN @join__enumValue(graph: USERS)
+  NOT_FOUND @join__enumValue(graph: USERS)
+  VALIDATION @join__enumValue(graph: USERS)
+  CONFLICT @join__enumValue(graph: USERS)
+  RATE_LIMITED @join__enumValue(graph: USERS)
+  INTERNAL @join__enumValue(graph: USERS)
+}
 
 enum GlobalRole
   @join__type(graph: USERS)
@@ -51,11 +72,99 @@ enum link__Purpose {
   EXECUTION
 }
 
+type Mutation
+  @join__type(graph: USERS)
+{
+  signUp(input: SignUpInput!): AuthPayload!
+  signIn(input: SignInInput!): AuthPayload!
+  refreshSession(input: RefreshSessionInput!): AuthPayload!
+
+  """Ends this device's session (its whole refresh-token family)"""
+  signOut: OkPayload!
+  verifyEmail(input: VerifyEmailInput!): OkPayload!
+
+  """Always ok, whether or not an account exists"""
+  requestPasswordReset(input: RequestPasswordResetInput!): OkPayload!
+
+  """Sets the password and signs out every device"""
+  resetPassword(input: ResetPasswordInput!): OkPayload!
+}
+
+type OkPayload
+  @join__type(graph: USERS)
+{
+  ok: Boolean!
+  userErrors: [UserError!]!
+}
+
 type Query
   @join__type(graph: USERS)
 {
   """The signed-in user, null for anonymous visitors"""
   viewer: User
+
+  """
+  Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2)
+  """
+  termsVersion: String!
+}
+
+input RefreshSessionInput
+  @join__type(graph: USERS)
+{
+  """Mobile only; web sends the cookie"""
+  refreshToken: String
+}
+
+input RequestPasswordResetInput
+  @join__type(graph: USERS)
+{
+  email: String!
+}
+
+input ResetPasswordInput
+  @join__type(graph: USERS)
+{
+  token: String!
+  password: String!
+}
+
+type Session
+  @join__type(graph: USERS)
+{
+  """
+  15-minute RS256 JWT. Web keeps it in memory; mobile in expo-secure-store.
+  """
+  accessToken: String!
+  accessTokenExpiresAt: DateTime!
+
+  """
+  Mobile only (header X-LVN-Client: mobile). Web receives it as an HttpOnly cookie and this field is null.
+  """
+  refreshToken: String
+  user: User!
+}
+
+input SignInInput
+  @join__type(graph: USERS)
+{
+  email: String!
+  password: String!
+}
+
+"""
+Registration (ADR-0017, ADR-0019): date of birth is required (YYYY-MM-DD). A college or organisation email is
+optional; it receives a 6-digit code. `acceptedTermsVersion` must be Query.termsVersion.
+"""
+input SignUpInput
+  @join__type(graph: USERS)
+{
+  email: String!
+  password: String!
+  displayName: String!
+  dateOfBirth: String!
+  institutionalEmail: String
+  acceptedTermsVersion: String!
 }
 
 """
@@ -84,6 +193,17 @@ type User
   createdAt: DateTime!
 }
 
+"""
+An expected failure of a mutation; `field` is the dotted input path, e.g. ["input", "email"]
+"""
+type UserError
+  @join__type(graph: USERS)
+{
+  field: [String!]
+  message: String!
+  code: ErrorCode!
+}
+
 scalar UUID
   @join__type(graph: USERS)
 
@@ -93,4 +213,10 @@ enum VerificationMethod
   INSTITUTIONAL_EMAIL @join__enumValue(graph: USERS)
   TEACHER @join__enumValue(graph: USERS)
   DOCUMENTS @join__enumValue(graph: USERS)
+}
+
+input VerifyEmailInput
+  @join__type(graph: USERS)
+{
+  token: String!
 }

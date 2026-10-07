@@ -1,18 +1,19 @@
 import { Module, type DynamicModule } from '@nestjs/common'
 import type { ApiConfig } from '@lvn-backend/config'
 import { AccessTokenVerifier } from '@lvn-backend/auth-guard'
+import { EventBusModule } from '@lvn-backend/event-bus'
 import { graphqlModules } from '@lvn-backend/graphql'
 import { PrismaModule } from '@lvn-backend/prisma-base'
-import { CONTEXT_MODULES, SUBGRAPHS } from './contexts'
+import { RedisModule, SessionRevocations } from '@lvn-backend/redis'
+import { contextModules, SUBGRAPHS, TOKEN_AUDIENCE } from './contexts'
 import { buildRequestContext } from './graphql/request-context'
 import { HealthController } from './health/health.controller'
 
-/** Audience of LVN access tokens. */
-export const TOKEN_AUDIENCE = 'lvn'
+export { TOKEN_AUDIENCE }
 
 /**
- * Composition root for the GraphQL API (spec §3 apps/api): the five contexts, one federation subgraph per context
- * that has a schema, and the Apollo Gateway composing them in-process at /graphql.
+ * Composition root for the GraphQL API (spec §3 apps/api): shared infrastructure, the five contexts, one federation
+ * subgraph per context that has a schema, and the Apollo Gateway composing them in-process at /graphql.
  */
 @Module({})
 export class AppModule {
@@ -22,10 +23,12 @@ export class AppModule {
       module: AppModule,
       imports: [
         PrismaModule.forRoot(config.DATABASE_URL),
-        ...CONTEXT_MODULES,
+        RedisModule.forRoot(config.REDIS_URL),
+        EventBusModule,
+        ...contextModules(config),
         ...graphqlModules({
           subgraphs: SUBGRAPHS,
-          context: buildRequestContext(verifier),
+          context: { inject: [SessionRevocations], useFactory: (revocations: SessionRevocations) => buildRequestContext(verifier, revocations) },
           introspection: config.APP_ENV === 'development',
         }),
       ],

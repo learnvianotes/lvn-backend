@@ -41,7 +41,7 @@ function inner(type) {
 }
 const doc = (d, indent = '') => (d ? `${indent}/** ${d.replace(/\*\//g, '*\\/').split('\n').join(`\n${indent} * `)} */\n` : '')
 
-const out = ["// Generated from this folder's *.graphql by scripts/graphql-types.mjs (ADR-0033). Do not edit.", '/* eslint-disable */', '']
+const out = ["// Generated from this folder's *.graphql by scripts/graphql-types.mjs (ADR-0033). Do not edit.", '']
 const types = Object.values(schema.getTypeMap())
   .filter((t) => !t.name.startsWith('__') && !FEDERATION.test(t.name) && !SCALARS[t.name])
   .sort((a, b) => a.name.localeCompare(b.name))

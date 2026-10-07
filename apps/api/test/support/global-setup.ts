@@ -12,7 +12,6 @@ export default async function globalSetup(): Promise<void> {
   const infra = await startInfra()
   globalThis.__LVN_INFRA__ = infra
   const file = path.join(os.tmpdir(), `lvn-api-test-infra-${process.pid}.json`)
-  const { stop: _stop, ...urls } = infra
-  writeFileSync(file, JSON.stringify(urls))
+  writeFileSync(file, JSON.stringify({ databaseUrl: infra.databaseUrl, redisUrl: infra.redisUrl, s3: infra.s3, mail: infra.mail }))
   process.env.LVN_TEST_INFRA = file
 }

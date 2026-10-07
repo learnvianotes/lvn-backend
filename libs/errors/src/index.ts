@@ -20,7 +20,7 @@ export class AppError extends Error {
 
 /** One expected failure returned in a mutation payload's `userErrors` (§6.2). */
 export interface UserError {
-  field?: string[]
+  field: string[] | null
   message: string
   code: ErrorCode
 }
@@ -35,18 +35,21 @@ export const Errors = {
 }
 
 /** An AppError as a payload entry. */
-export const toUserError = (e: AppError): UserError => ({ code: e.code, message: e.message, ...(e.field ? { field: e.field } : {}) })
+export const toUserError = (e: AppError): UserError => ({ code: e.code, message: e.message, field: e.field ?? null })
+
+type Body<P> = Omit<P, 'userErrors'>
 
 /**
- * Runs a mutation body and turns expected failures into `userErrors`; UNAUTHENTICATED, FORBIDDEN and anything
- * unexpected still throw, so clients handle them in one place.
+ * Runs a mutation body and turns expected failures (VALIDATION, CONFLICT, NOT_FOUND, RATE_LIMITED) into the payload's
+ * `userErrors`; UNAUTHENTICATED, FORBIDDEN and anything unexpected still throw, so clients handle them in one place.
+ * `P` is the payload type, e.g. `withUserErrors<AuthPayload>(…)`.
  */
-export async function withUserErrors<T extends object>(run: () => Promise<T>, empty: T): Promise<T & { userErrors: UserError[] }> {
+export async function withUserErrors<P extends { userErrors: UserError[] }>(run: () => Promise<Body<P>>, empty: Body<P>): Promise<P> {
   try {
-    return { ...(await run()), userErrors: [] }
+    return { ...(await run()), userErrors: [] } as unknown as P
   } catch (e) {
     if (e instanceof AppError && (e.code === ErrorCode.VALIDATION || e.code === ErrorCode.CONFLICT || e.code === ErrorCode.NOT_FOUND || e.code === ErrorCode.RATE_LIMITED)) {
-      return { ...empty, userErrors: [toUserError(e)] }
+      return { ...empty, userErrors: [toUserError(e)] } as unknown as P
     }
     throw e
   }

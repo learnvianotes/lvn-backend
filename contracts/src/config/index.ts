@@ -64,6 +64,11 @@ const auth = z.object({
   WEB_URL: z.url(),
   /** Secret for HMAC-hashing short codes (institutional email codes), so a database leak does not reveal them. */
   CODE_HMAC_SECRET: z.string().min(32),
+  /**
+   * Age below which an account needs verified guardian or institutional consent, or is a restricted minor (§15.2):
+   * 18 under India's DPDP Act (the default for learnvianotes.in), 16 in parts of the EU, at least 13 everywhere.
+   */
+  DIGITAL_CONSENT_AGE: z.coerce.number().int().min(13).max(21).default(18),
   /** k-anonymity range API for the breached-password check (§7.1); unset only in tests. */
   PASSWORD_BREACH_API_URL: z.url().optional(),
   /** Firebase project whose ID tokens signInWithGoogle accepts (ADR-0007). */

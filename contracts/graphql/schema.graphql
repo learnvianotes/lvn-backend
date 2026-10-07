@@ -1,5 +1,21 @@
 # LearnViaNotes API schema — composed from contexts/*/src/graphql/*.graphql by scripts/export-supergraph.mjs. Do not edit.
+type AuthPayload {
+  session: Session
+  userErrors: [UserError!]!
+}
+
 scalar DateTime
+
+"""Fixed error vocabulary (§6.2)"""
+enum ErrorCode {
+  CONFLICT
+  FORBIDDEN
+  INTERNAL
+  NOT_FOUND
+  RATE_LIMITED
+  UNAUTHENTICATED
+  VALIDATION
+}
 
 enum GlobalRole {
   PLATFORM_ADMIN
@@ -7,9 +23,81 @@ enum GlobalRole {
   TEACHER
 }
 
+type Mutation {
+  refreshSession(input: RefreshSessionInput!): AuthPayload!
+
+  """Always ok, whether or not an account exists"""
+  requestPasswordReset(input: RequestPasswordResetInput!): OkPayload!
+
+  """Sets the password and signs out every device"""
+  resetPassword(input: ResetPasswordInput!): OkPayload!
+  signIn(input: SignInInput!): AuthPayload!
+
+  """Ends this device's session (its whole refresh-token family)"""
+  signOut: OkPayload!
+  signUp(input: SignUpInput!): AuthPayload!
+  verifyEmail(input: VerifyEmailInput!): OkPayload!
+}
+
+type OkPayload {
+  ok: Boolean!
+  userErrors: [UserError!]!
+}
+
 type Query {
+  """
+  Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2)
+  """
+  termsVersion: String!
+
   """The signed-in user, null for anonymous visitors"""
   viewer: User
+}
+
+input RefreshSessionInput {
+  """Mobile only; web sends the cookie"""
+  refreshToken: String
+}
+
+input RequestPasswordResetInput {
+  email: String!
+}
+
+input ResetPasswordInput {
+  password: String!
+  token: String!
+}
+
+type Session {
+  """
+  15-minute RS256 JWT. Web keeps it in memory; mobile in expo-secure-store.
+  """
+  accessToken: String!
+  accessTokenExpiresAt: DateTime!
+
+  """
+  Mobile only (header X-LVN-Client: mobile). Web receives it as an HttpOnly cookie and this field is null.
+  """
+  refreshToken: String
+  user: User!
+}
+
+input SignInInput {
+  email: String!
+  password: String!
+}
+
+"""
+Registration (ADR-0017, ADR-0019): date of birth is required (YYYY-MM-DD). A college or organisation email is
+optional; it receives a 6-digit code. `acceptedTermsVersion` must be Query.termsVersion.
+"""
+input SignUpInput {
+  acceptedTermsVersion: String!
+  dateOfBirth: String!
+  displayName: String!
+  email: String!
+  institutionalEmail: String
+  password: String!
 }
 
 scalar UUID
@@ -38,8 +126,21 @@ type User {
   verified: Boolean!
 }
 
+"""
+An expected failure of a mutation; `field` is the dotted input path, e.g. ["input", "email"]
+"""
+type UserError {
+  code: ErrorCode!
+  field: [String!]
+  message: String!
+}
+
 enum VerificationMethod {
   DOCUMENTS
   INSTITUTIONAL_EMAIL
   TEACHER
+}
+
+input VerifyEmailInput {
+  token: String!
 }

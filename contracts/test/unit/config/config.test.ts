@@ -66,6 +66,12 @@ describe('apiConfigSchema (Phase 1)', () => {
     expect(cfg.GITHUB_CLIENT_ID).toBeUndefined()
   })
 
+  it('defaults the digital consent age to 18 (DPDP) and bounds it', () => {
+    expect(loadConfig(apiConfigSchema, valid).DIGITAL_CONSENT_AGE).toBe(18)
+    expect(loadConfig(apiConfigSchema, { ...valid, DIGITAL_CONSENT_AGE: '16' }).DIGITAL_CONSENT_AGE).toBe(16)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, DIGITAL_CONSENT_AGE: '10' })).toThrow(/DIGITAL_CONSENT_AGE/)
+  })
+
   it('requires a long code secret', () => {
     expect(() => loadConfig(apiConfigSchema, { ...valid, CODE_HMAC_SECRET: 'short' })).toThrow(/CODE_HMAC_SECRET/)
   })

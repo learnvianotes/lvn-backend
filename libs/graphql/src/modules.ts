@@ -1,6 +1,7 @@
 import { IntrospectAndCompose, LocalGraphQLDataSource, type SupergraphSdlHook } from '@apollo/gateway'
+import { ApolloServerPluginInlineTraceDisabled } from '@apollo/server/plugin/disabled'
 import { ApolloFederationDriver, ApolloGatewayDriver, type ApolloFederationDriverConfig, type ApolloGatewayDriverConfig } from '@nestjs/apollo'
-import { Module, type DynamicModule, type Type } from '@nestjs/common'
+import { Module, type DynamicModule, type InjectionToken, type Type } from '@nestjs/common'
 import { GraphQLModule } from '@nestjs/graphql'
 import { composeSupergraph } from './compose'
 import { formatError } from './errors'
@@ -31,6 +32,8 @@ function subgraphModule(registry: SubgraphRegistry, { name, typeDefs, modules }:
     path: `${SUBGRAPH_PATH_PREFIX}/${name}`,
     playground: false,
     introspection: false,
+    // Traces are for Apollo's cloud; ours come from OpenTelemetry (§16.5).
+    plugins: [ApolloServerPluginInlineTraceDisabled()],
     transformSchema: (schema) => {
       registry.register(name, schema)
       return schema
@@ -50,8 +53,9 @@ export interface SubgraphDefinition {
 export interface GraphqlOptions {
   /** Every context that serves GraphQL, in a stable order. */
   subgraphs: readonly SubgraphDefinition[]
-  /** Builds the per-request context (the authenticated viewer, request id, …). */
-  context: RequestContextFactory
+  /** Builds the per-request context (the authenticated viewer, request id, …) from injected providers. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Nest's factory signature
+  context: { inject?: InjectionToken[]; useFactory: (...deps: any[]) => RequestContextFactory }
   /** Introspection and the landing page: development only. */
   introspection: boolean
 }
@@ -70,21 +74,24 @@ const localSupergraph = (registry: SubgraphRegistry, names: readonly string[]): 
 export function graphqlModules(options: GraphqlOptions): DynamicModule[] {
   const registry = new SubgraphRegistry()
   const names = options.subgraphs.map((s) => s.name)
-  const gateway = GraphQLModule.forRoot<ApolloGatewayDriverConfig>({
+  const gateway = GraphQLModule.forRootAsync<ApolloGatewayDriverConfig>({
     driver: ApolloGatewayDriver,
-    server: {
-      path: '/graphql',
-      context: options.context,
-      formatError,
-      introspection: options.introspection,
-      plugins: [limitsPlugin()],
-      csrfPrevention: true,
-      includeStacktraceInErrorResponses: false,
-    },
-    gateway: {
-      supergraphSdl: localSupergraph(registry, names),
-      buildService: ({ name }) => new LocalGraphQLDataSource(registry.get(name)),
-    },
+    inject: options.context.inject ?? [],
+    useFactory: (...deps: unknown[]) => ({
+      server: {
+        path: '/graphql',
+        context: options.context.useFactory(...deps),
+        formatError,
+        introspection: options.introspection,
+        plugins: [limitsPlugin()],
+        csrfPrevention: true,
+        includeStacktraceInErrorResponses: false,
+      },
+      gateway: {
+        supergraphSdl: localSupergraph(registry, names),
+        buildService: ({ name }) => new LocalGraphQLDataSource(registry.get(name)),
+      },
+    }),
   })
   return [...options.subgraphs.map((definition) => subgraphModule(registry, definition)), gateway]
 }

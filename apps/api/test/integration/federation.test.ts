@@ -1,14 +1,19 @@
 import { Module } from '@nestjs/common'
 import { Query, ResolveField, Resolver, ResolveReference } from '@nestjs/graphql'
 import { Test } from '@nestjs/testing'
-import { UsersModule, usersSubgraph } from '@lvn-backend/users'
+import { usersSubgraph } from '@lvn-backend/users'
 import { graphqlModules } from '@lvn-backend/graphql'
 import { PrismaModule } from '@lvn-backend/prisma-base'
+import { EventBusModule } from '@lvn-backend/event-bus'
+import { RedisModule, SessionRevocations } from '@lvn-backend/redis'
+import { MAILER } from '@lvn-backend/facades'
+import { Global } from '@nestjs/common'
 import { AccessTokenVerifier } from '@lvn-backend/auth-guard'
 import { resetDatabase } from '@lvn-backend/testing'
 import request from 'supertest'
 import { buildRequestContext } from '../../src/graphql/request-context'
 import { TOKEN_AUDIENCE } from '../../src/app.module'
+import { contextModules } from '../../src/contexts'
 import { testConfig } from '../support/app'
 import { seedUser, tokenFor } from '../support/seed'
 
@@ -52,6 +57,11 @@ class ProbeQueryResolver {
 @Module({ providers: [ProbeUserResolver, ProbeQueryResolver] })
 class ProbeModule {}
 
+/** users needs a mailer binding; this test sends no email. */
+@Global()
+@Module({ providers: [{ provide: MAILER, useValue: { send: async () => undefined } }], exports: [MAILER] })
+class NoMailModule {}
+
 describe('federation across in-process subgraphs', () => {
   it('composes users + a second subgraph and resolves one entity across both', async () => {
     const config = testConfig()
@@ -59,11 +69,17 @@ describe('federation across in-process subgraphs', () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         PrismaModule.forRoot(config.DATABASE_URL),
-        UsersModule,
+        RedisModule.forRoot(config.REDIS_URL),
+        EventBusModule,
+        NoMailModule,
+        contextModules(config)[0]!,
         ProbeModule,
         ...graphqlModules({
           subgraphs: [usersSubgraph, { name: 'probe', typeDefs: probeTypeDefs, modules: [ProbeModule] }],
-          context: buildRequestContext(new AccessTokenVerifier(config.JWT_PUBLIC_KEY, config.JWT_ISSUER, TOKEN_AUDIENCE)),
+          context: {
+            inject: [SessionRevocations],
+            useFactory: (r: SessionRevocations) => buildRequestContext(new AccessTokenVerifier(config.JWT_PUBLIC_KEY, config.JWT_ISSUER, TOKEN_AUDIENCE), r),
+          },
           introspection: false,
         }),
       ],

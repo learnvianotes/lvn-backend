@@ -1,0 +1,84 @@
+# Sign-in and sessions (spec §7, ADR-0007, ADR-0017).
+
+"Fixed error vocabulary (§6.2)"
+enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL }
+
+"An expected failure of a mutation; `field` is the dotted input path, e.g. [\"input\", \"email\"]"
+type UserError @shareable {
+  field: [String!]
+  message: String!
+  code: ErrorCode!
+}
+
+type OkPayload @shareable {
+  ok: Boolean!
+  userErrors: [UserError!]!
+}
+
+type Session {
+  "15-minute RS256 JWT. Web keeps it in memory; mobile in expo-secure-store."
+  accessToken: String!
+  accessTokenExpiresAt: DateTime!
+  "Mobile only (header X-LVN-Client: mobile). Web receives it as an HttpOnly cookie and this field is null."
+  refreshToken: String
+  user: User!
+}
+
+type AuthPayload {
+  session: Session
+  userErrors: [UserError!]!
+}
+
+"""
+Registration (ADR-0017, ADR-0019): date of birth is required (YYYY-MM-DD). A college or organisation email is
+optional; it receives a 6-digit code. `acceptedTermsVersion` must be Query.termsVersion.
+"""
+input SignUpInput {
+  email: String!
+  password: String!
+  displayName: String!
+  dateOfBirth: String!
+  institutionalEmail: String
+  acceptedTermsVersion: String!
+}
+
+input SignInInput {
+  email: String!
+  password: String!
+}
+
+input RefreshSessionInput {
+  "Mobile only; web sends the cookie"
+  refreshToken: String
+}
+
+input VerifyEmailInput {
+  token: String!
+}
+
+input RequestPasswordResetInput {
+  email: String!
+}
+
+input ResetPasswordInput {
+  token: String!
+  password: String!
+}
+
+extend type Query {
+  "Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2)"
+  termsVersion: String!
+}
+
+type Mutation {
+  signUp(input: SignUpInput!): AuthPayload!
+  signIn(input: SignInInput!): AuthPayload!
+  refreshSession(input: RefreshSessionInput!): AuthPayload!
+  "Ends this device's session (its whole refresh-token family)"
+  signOut: OkPayload!
+  verifyEmail(input: VerifyEmailInput!): OkPayload!
+  "Always ok, whether or not an account exists"
+  requestPasswordReset(input: RequestPasswordResetInput!): OkPayload!
+  "Sets the password and signs out every device"
+  resetPassword(input: ResetPasswordInput!): OkPayload!
+}

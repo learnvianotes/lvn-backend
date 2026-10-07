@@ -7,10 +7,15 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['**/*.ts'],
-    languageOptions: { globals: { ...globals.node, ...globals.jest } },
+    files: ['**/*.ts', '**/*.tsx'],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.jest },
+      // Nest injects constructor parameters by their runtime class (decorator metadata), so type-only imports of
+      // injected classes would break DI; telling the parser lets consistent-type-imports leave them alone.
+      parserOptions: { emitDecoratorMetadata: true, experimentalDecorators: true },
+    },
     rules: {
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', destructuredArrayIgnorePattern: '^_' }],
       '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
       // Contexts never read process.env directly; config comes from libs/config (§16.1).
       'no-restricted-properties': ['error', { object: 'process', property: 'env', message: 'Read configuration through @lvn-backend/config.' }],

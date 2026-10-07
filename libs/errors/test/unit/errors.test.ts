@@ -1,8 +1,10 @@
-import { AppError, ErrorCode, Errors, toUserError, withUserErrors } from '../../src'
+import { AppError, ErrorCode, Errors, toUserError, withUserErrors, type UserError } from '../../src'
+
+type Ok = { ok: boolean; userErrors: UserError[] }
 
 describe('withUserErrors', () => {
   it('returns the result with no userErrors on success', async () => {
-    expect(await withUserErrors(async () => ({ ok: true }), { ok: false })).toEqual({ ok: true, userErrors: [] })
+    expect(await withUserErrors<Ok>(async () => ({ ok: true }), { ok: false })).toEqual({ ok: true, userErrors: [] })
   })
 
   it.each([
@@ -11,12 +13,12 @@ describe('withUserErrors', () => {
     Errors.notFound(),
     Errors.rateLimited(60),
   ])('turns $code into a userError', async (err) => {
-    const out = await withUserErrors(async () => { throw err }, { ok: false })
+    const out = await withUserErrors<Ok>(async () => { throw err }, { ok: false })
     expect(out).toEqual({ ok: false, userErrors: [toUserError(err)] })
   })
 
   it.each([Errors.unauthenticated(), Errors.forbidden(), new Error('boom')])('rethrows %p', async (err) => {
-    await expect(withUserErrors(async () => { throw err }, { ok: false })).rejects.toBe(err)
+    await expect(withUserErrors<Ok>(async () => { throw err }, { ok: false })).rejects.toBe(err)
   })
 })
 
