@@ -16,6 +16,9 @@ Validated in lvn-web `lib/env.ts` until `@lvn/contracts/config` is published (AD
 | --- | --- | --- | --- | --- | --- | --- |
 | `NEXT_PUBLIC_APP_ENV` | yes | `development` | `development` | `sandbox` | `production` | Gates indexing (`robots`, `noindex`) and, later, feature defaults |
 | `NEXT_PUBLIC_SITE_URL` | yes | — | `http://localhost:3000` | `https://sandbox.learnvianotes.in` | `https://www.learnvianotes.in` | Canonical URLs, sitemap, Open Graph |
+| `NEXT_PUBLIC_FEEDBACK_URL` | no | — (sending disabled) | the old site's Apps Script URL | same | same | `/core` help-centre feedback reports (Google Apps Script → Sheet) |
+| `NEXT_PUBLIC_APP_VERSION` | no | `package.json` version | — | — | — | Version shown in the `/core` help centre and sent with feedback |
+| `NEXT_DIST_DIR` | no | `.next` | — | — | — | Build output folder; Playwright builds to `.next-e2e` so it never clobbers `next dev` |
 
 Added in Phase 1 (names proposed, owned by `@lvn/contracts/config`): `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`,
 `NEXT_PUBLIC_SENTRY_DSN`, `REVALIDATE_SECRET` (server-only, for the API's on-demand ISR webhook), and for Google
