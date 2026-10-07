@@ -137,7 +137,11 @@ input UpdateNoteDraftInput { noteId: UUID!, baseRevision: Int!, title: String, c
 input CardDraftInput { id: UUID, type: CardType!, position: String!, content: JSON!, deleted: Boolean }
 input PublishNoteInput { noteId: UUID!, visibility: Visibility! }
 input ForkNoteInput { noteId: UUID! }
-input ShareNoteInput { noteId: UUID!, userId: UUID, groupId: UUID, classroomId: UUID, role: NoteRole }
+"""
+Exactly one target. A teacher shares with another teacher only when connected or co-teaching a classroom;
+`toConnections` (teachers only) shares read access with all current connections (ADR-0013).
+"""
+input ShareNoteInput { noteId: UUID!, userId: UUID, groupId: UUID, classroomId: UUID, toConnections: Boolean, role: NoteRole }
 
 type NotePayload { note: Note, userErrors: [UserError!]! }
 

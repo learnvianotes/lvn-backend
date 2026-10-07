@@ -19,6 +19,12 @@ describe('events', () => {
     expect(() => parseEvent('JoinRequestReviewed', { ...e, payload: { ...e.payload, decision: 'MAYBE' } })).toThrow()
   })
 
+  it('a connection always names exactly two users', () => {
+    const ok = { ...base, type: 'ConnectionChanged', version: 1, payload: { userIds: [uuid(2), uuid(3)], change: 'CONNECTED' } }
+    expect(parseEvent('ConnectionChanged', ok).payload.change).toBe('CONNECTED')
+    expect(() => parseEvent('ConnectionChanged', { ...ok, payload: { ...ok.payload, userIds: [uuid(2)] } })).toThrow()
+  })
+
   it('rejects a wrong version or payload', () => {
     expect(() => parseEvent('UserDeleted', { ...base, type: 'UserDeleted', version: 2, payload: { userId: uuid(2) } })).toThrow()
     expect(() => parseEvent('UserDeleted', { ...base, type: 'UserDeleted', version: 1, payload: {} })).toThrow()

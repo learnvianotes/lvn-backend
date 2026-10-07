@@ -17,6 +17,10 @@ import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, No
  * an Editor — so a SHARED note never becomes public through someone else's fork (ADR-0010). Every reader of a
  * fork sees its attribution.
  *
+ * Teacher network (ADR-0013): teachers follow other teachers (one-way, public content only) and connect with
+ * them (a request the other accepts). A teacher shares a note directly with another teacher only if they are
+ * connected or teach the same classroom, and can share a note with all their connections at once.
+ *
  * Membership (ADR-0009, ADR-0011): joining a classroom is always a request that its Teacher or a TA accepts; a
  * staff invite is that acceptance given in advance and the student accepts the invite. A PUBLIC group whose
  * admins set the join policy to OPEN can be joined directly; every other group join is a request that a group
@@ -50,6 +54,11 @@ export const Action = {
   CLASSROOM_PUBLISH_QUIZ: 'classroom.publishQuiz',
   CLASSROOM_VIEW_PERFORMANCE: 'classroom.viewPerformance',
   CLASSROOM_MODERATE_REPORTS: 'classroom.moderateReports',
+  USER_FOLLOW: 'user.follow',
+  USER_UNFOLLOW: 'user.unfollow',
+  USER_REQUEST_CONNECTION: 'user.requestConnection',
+  USER_RESPOND_TO_CONNECTION: 'user.respondToConnection',
+  USER_REMOVE_CONNECTION: 'user.removeConnection',
   PERSONAL_STUDY_CREATE: 'study.create',
   CONTENT_REPORT: 'content.report',
 } as const
@@ -75,6 +84,8 @@ export interface NoteFacts {
   sharedToActorsGroup?: boolean
   /** The note is shared to a classroom the actor belongs to. */
   sharedToActorsClassroom?: boolean
+  /** The owner shared the note with all their connections and the actor is one of them (ADR-0013). */
+  sharedToActorAsConnection?: boolean
   /** Set when the note is a fork: what the origin was when it was forked (ADR-0010). */
   fork?: ForkFacts
 }
@@ -86,9 +97,36 @@ export interface ForkFacts {
   forkedAsOwnerOrEditor: boolean
 }
 
+/** Who a note is being shared with (NOTE_SHARE). Group and classroom targets need no extra facts yet. */
+export type ShareTargetFacts =
+  | {
+      kind: 'USER'
+      recipientIsTeacher: boolean
+      /** The actor and the recipient are connected (ADR-0013). */
+      connectedToRecipient?: boolean
+      /** The actor and the recipient are Teachers or TAs of the same classroom. */
+      coTeachesWithRecipient?: boolean
+    }
+  | { kind: 'CONNECTIONS' }
+  | { kind: 'GROUP' }
+  | { kind: 'CLASSROOM' }
+
 export type Resource =
   | { kind: 'none' }
-  | { kind: 'note'; note: NoteFacts; targetVisibility?: Visibility }
+  | { kind: 'note'; note: NoteFacts; targetVisibility?: Visibility; shareTarget?: ShareTargetFacts }
+  | {
+      kind: 'user'
+      targetId: string
+      targetGlobalRole: GlobalRole
+      /** The actor follows the target. */
+      following?: boolean
+      /** The actor and the target are connected. */
+      connected?: boolean
+      /** A connection request between them is pending: sent by the actor (OUTGOING) or to the actor (INCOMING). */
+      pendingConnection?: 'OUTGOING' | 'INCOMING'
+      /** Either of them has blocked the other (§15.1). */
+      blocked?: boolean
+    }
   | {
       kind: 'group'
       /** The actor's role in the group; undefined = not a member. */
@@ -111,7 +149,8 @@ export type Resource =
     }
 
 /** Note-level relationship, from strongest to weakest — the columns of the §5 table. */
-export type NoteRelation = 'OWNER' | 'EDITOR' | 'VIEWER' | 'GROUP_SHARE' | 'CLASSROOM_SHARE' | 'ANY_USER' | 'ANONYMOUS'
+export type NoteRelation =
+  | 'OWNER' | 'EDITOR' | 'VIEWER' | 'GROUP_SHARE' | 'CLASSROOM_SHARE' | 'CONNECTION_SHARE' | 'ANY_USER' | 'ANONYMOUS'
 
 export function noteRelations(actor: Actor | null, note: NoteFacts): Set<NoteRelation> {
   const r = new Set<NoteRelation>()
@@ -122,14 +161,15 @@ export function noteRelations(actor: Actor | null, note: NoteFacts): Set<NoteRel
   if (note.shareRole === NoteRole.VIEWER) r.add('VIEWER')
   if (note.sharedToActorsGroup) r.add('GROUP_SHARE')
   if (note.sharedToActorsClassroom) r.add('CLASSROOM_SHARE')
+  if (note.sharedToActorAsConnection) r.add('CONNECTION_SHARE')
   return r
 }
 
 /** Read access per visibility — the first three rows of §5. Everything note-related builds on it. */
 export const NOTE_READERS: Record<Visibility, readonly NoteRelation[]> = {
   PRIVATE: ['OWNER'],
-  SHARED: ['OWNER', 'EDITOR', 'VIEWER', 'GROUP_SHARE', 'CLASSROOM_SHARE'],
-  PUBLIC: ['OWNER', 'EDITOR', 'VIEWER', 'GROUP_SHARE', 'CLASSROOM_SHARE', 'ANY_USER', 'ANONYMOUS'],
+  SHARED: ['OWNER', 'EDITOR', 'VIEWER', 'GROUP_SHARE', 'CLASSROOM_SHARE', 'CONNECTION_SHARE'],
+  PUBLIC: ['OWNER', 'EDITOR', 'VIEWER', 'GROUP_SHARE', 'CLASSROOM_SHARE', 'CONNECTION_SHARE', 'ANY_USER', 'ANONYMOUS'],
 }
 
 const GROUP_RANK: Record<GroupRole, number> = {
@@ -144,6 +184,15 @@ const atLeast = (role: GroupRole | undefined, min: GroupRole) => role !== undefi
 const openToJoin = (group: { privacy?: GroupPrivacy; joinPolicy?: GroupJoinPolicy }) =>
   group.privacy === GroupPrivacy.PUBLIC && group.joinPolicy === GroupJoinPolicy.OPEN
 const isClassStaff = (role?: ClassroomRole) => role === ClassroomRole.TEACHER || role === ClassroomRole.TA
+
+/** Teacher-to-teacher sharing needs a connection or a shared classroom; only teachers have connections (ADR-0013). */
+function shareTargetAllowed(actor: Actor, target: ShareTargetFacts | undefined): boolean {
+  if (target?.kind === 'CONNECTIONS') return actor.globalRole === GlobalRole.TEACHER
+  if (target?.kind === 'USER' && actor.globalRole === GlobalRole.TEACHER && target.recipientIsTeacher) {
+    return target.connectedToRecipient === true || target.coTeachesWithRecipient === true
+  }
+  return true
+}
 
 function readable(actor: Actor | null, note: NoteFacts): boolean {
   const relations = noteRelations(actor, note)
@@ -171,8 +220,9 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           return !note.fork || note.fork.originVisibilityAtFork === Visibility.PUBLIC || note.fork.forkedAsOwnerOrEditor
         }
         case Action.NOTE_DELETE:
-        case Action.NOTE_SHARE:
           return isOwner
+        case Action.NOTE_SHARE:
+          return isOwner && shareTargetAllowed(actor!, resource.shareTarget)
         case Action.NOTE_FORK:
           return actor !== null && readable(actor, note) && (isOwner || note.forkingEnabled)
         case Action.NOTE_COMMENT:
@@ -219,6 +269,28 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
         case Action.CLASSROOM_VIEW_PERFORMANCE:
           if (isClassStaff(resource.role)) return true
           return resource.role === ClassroomRole.STUDENT && resource.targetUserId === actor.id
+        default:
+          return false
+      }
+    }
+    case 'user': {
+      if (!actor) return false
+      const teachers =
+        actor.globalRole === GlobalRole.TEACHER &&
+        resource.targetGlobalRole === GlobalRole.TEACHER &&
+        actor.id !== resource.targetId &&
+        !resource.blocked
+      switch (action) {
+        case Action.USER_FOLLOW:
+          return teachers && !resource.following
+        case Action.USER_UNFOLLOW:
+          return resource.following === true
+        case Action.USER_REQUEST_CONNECTION:
+          return teachers && actor.emailVerified && !resource.connected && resource.pendingConnection === undefined
+        case Action.USER_RESPOND_TO_CONNECTION:
+          return resource.pendingConnection === 'INCOMING' && !resource.blocked
+        case Action.USER_REMOVE_CONNECTION:
+          return resource.connected === true
         default:
           return false
       }

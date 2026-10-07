@@ -28,6 +28,15 @@ export const events = {
   UserDeleted: eventEnvelope('UserDeleted', 1, z.object({ userId: uuid })),
   RoleChanged: eventEnvelope('RoleChanged', 1, z.object({ userId: uuid, globalRole: z.enum(enumValues(GlobalRole)) })),
   SessionRevoked: eventEnvelope('SessionRevoked', 1, z.object({ userId: uuid, sessionId: uuid, family: z.boolean() })),
+  // Teacher network (ADR-0013). notes keeps a connections read model for "shared with my connections"; core
+  // builds the Following feed; communication notifies.
+  UserFollowed: eventEnvelope('UserFollowed', 1, z.object({ followerId: uuid, followeeId: uuid })),
+  UserUnfollowed: eventEnvelope('UserUnfollowed', 1, z.object({ followerId: uuid, followeeId: uuid })),
+  ConnectionRequested: eventEnvelope('ConnectionRequested', 1, z.object({ requestId: uuid, fromUserId: uuid, toUserId: uuid })),
+  ConnectionChanged: eventEnvelope('ConnectionChanged', 1, z.object({
+    userIds: z.tuple([uuid, uuid]),
+    change: z.enum(['CONNECTED', 'DISCONNECTED']),
+  })),
   // notes
   NotePublished: eventEnvelope('NotePublished', 1, z.object({
     noteId: uuid,

@@ -13,8 +13,8 @@ const anon = null
 
 const note = (visibility: Visibility, extra: Partial<NoteFacts> = {}): NoteFacts => ({ ownerId: 'owner', visibility, forkingEnabled: true, ...extra })
 
-type Relation = 'owner' | 'editor' | 'viewer' | 'groupShare' | 'classShare' | 'anyUser' | 'anonymous'
-const RELATIONS: Relation[] = ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'anyUser', 'anonymous']
+type Relation = 'owner' | 'editor' | 'viewer' | 'groupShare' | 'classShare' | 'connectionShare' | 'anyUser' | 'anonymous'
+const RELATIONS: Relation[] = ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare', 'anyUser', 'anonymous']
 
 function as(relation: Relation, n: NoteFacts): [Actor | null, NoteFacts] {
   switch (relation) {
@@ -23,6 +23,7 @@ function as(relation: Relation, n: NoteFacts): [Actor | null, NoteFacts] {
     case 'viewer': return [other, { ...n, shareRole: 'VIEWER' }]
     case 'groupShare': return [other, { ...n, sharedToActorsGroup: true }]
     case 'classShare': return [other, { ...n, sharedToActorsClassroom: true }]
+    case 'connectionShare': return [other, { ...n, sharedToActorAsConnection: true }]
     case 'anyUser': return [other, n]
     case 'anonymous': return [anon, n]
   }
@@ -39,7 +40,7 @@ function expectRow(action: Action, visibility: Visibility, allowed: Relation[]) 
 describe('note rows of §5', () => {
   it('read', () => {
     expectRow(Action.NOTE_READ, 'PRIVATE', ['owner'])
-    expectRow(Action.NOTE_READ, 'SHARED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare'])
+    expectRow(Action.NOTE_READ, 'SHARED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare'])
     expectRow(Action.NOTE_READ, 'PUBLIC', RELATIONS)
   })
 
@@ -71,8 +72,8 @@ describe('note rows of §5', () => {
 
   it('fork: anyone who can read it and is signed in; owners fork their own PRIVATE notes (ADR-0005)', () => {
     expectRow(Action.NOTE_FORK, 'PRIVATE', ['owner'])
-    expectRow(Action.NOTE_FORK, 'SHARED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare'])
-    expectRow(Action.NOTE_FORK, 'PUBLIC', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'anyUser'])
+    expectRow(Action.NOTE_FORK, 'SHARED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare'])
+    expectRow(Action.NOTE_FORK, 'PUBLIC', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare', 'anyUser'])
   })
 
   it('fork: disabled forking blocks everyone but the owner (§4.4)', () => {
@@ -84,8 +85,8 @@ describe('note rows of §5', () => {
   it('comment and ask AI: readable and signed in', () => {
     for (const a of [Action.NOTE_COMMENT, Action.NOTE_ASK_AI]) {
       expectRow(a, 'PRIVATE', ['owner'])
-      expectRow(a, 'SHARED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare'])
-      expectRow(a, 'PUBLIC', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'anyUser'])
+      expectRow(a, 'SHARED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare'])
+      expectRow(a, 'PUBLIC', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare', 'anyUser'])
     }
   })
 
@@ -228,6 +229,72 @@ describe('classroom rows of §5', () => {
   it('anonymous visitors and unrelated actions are denied', () => {
     expect(can(anon, Action.CLASSROOM_REQUEST_JOIN, c())).toBe(false)
     expect(can(other, Action.GROUP_POST, c(ClassroomRole.TEACHER))).toBe(false)
+  })
+})
+
+describe('teacher network (ADR-0013)', () => {
+  const teacher = (id: string, extra: Partial<Actor> = {}) => student(id, { globalRole: GlobalRole.TEACHER, ...extra })
+  const t1 = teacher('t1')
+  const towards = (extra: object = {}, targetGlobalRole: GlobalRole = GlobalRole.TEACHER) =>
+    ({ kind: 'user' as const, targetId: 't2', targetGlobalRole, ...extra })
+
+  it('teachers follow other teachers, once', () => {
+    expect(can(t1, Action.USER_FOLLOW, towards())).toBe(true)
+    expect(can(t1, Action.USER_FOLLOW, towards({ following: true }))).toBe(false)
+    expect(can(t1, Action.USER_UNFOLLOW, towards({ following: true }))).toBe(true)
+    expect(can(t1, Action.USER_UNFOLLOW, towards())).toBe(false)
+  })
+
+  it('follow and connect are teacher-to-teacher only, never yourself, never across a block', () => {
+    for (const a of [Action.USER_FOLLOW, Action.USER_REQUEST_CONNECTION]) {
+      expect(can(other, a, towards())).toBe(false)
+      expect(can(t1, a, towards({}, GlobalRole.STUDENT))).toBe(false)
+      expect(can(t1, a, { ...towards(), targetId: 't1' })).toBe(false)
+      expect(can(t1, a, towards({ blocked: true }))).toBe(false)
+      expect(can(anon, a, towards())).toBe(false)
+    }
+  })
+
+  it('connection requests: verified, not already connected, nothing pending either way', () => {
+    expect(can(t1, Action.USER_REQUEST_CONNECTION, towards())).toBe(true)
+    expect(can(teacher('t1', { emailVerified: false }), Action.USER_REQUEST_CONNECTION, towards())).toBe(false)
+    expect(can(t1, Action.USER_REQUEST_CONNECTION, towards({ connected: true }))).toBe(false)
+    expect(can(t1, Action.USER_REQUEST_CONNECTION, towards({ pendingConnection: 'OUTGOING' }))).toBe(false)
+    expect(can(t1, Action.USER_REQUEST_CONNECTION, towards({ pendingConnection: 'INCOMING' }))).toBe(false)
+  })
+
+  it('only the recipient answers a request; either side removes a connection', () => {
+    expect(can(t1, Action.USER_RESPOND_TO_CONNECTION, towards({ pendingConnection: 'INCOMING' }))).toBe(true)
+    expect(can(t1, Action.USER_RESPOND_TO_CONNECTION, towards({ pendingConnection: 'OUTGOING' }))).toBe(false)
+    expect(can(t1, Action.USER_RESPOND_TO_CONNECTION, towards({ pendingConnection: 'INCOMING', blocked: true }))).toBe(false)
+    expect(can(t1, Action.USER_REMOVE_CONNECTION, towards({ connected: true }))).toBe(true)
+    expect(can(t1, Action.USER_REMOVE_CONNECTION, towards())).toBe(false)
+    expect(can(t1, Action.NOTE_READ, towards())).toBe(false)
+  })
+
+  describe('sharing a note', () => {
+    const own = note('SHARED', { ownerId: 't1' })
+    const share = (actor: Actor, shareTarget?: object) => can(actor, Action.NOTE_SHARE, { kind: 'note', note: { ...own, ownerId: actor.id }, shareTarget: shareTarget as never })
+
+    it('a teacher shares with another teacher only when connected or co-teaching', () => {
+      expect(share(t1, { kind: 'USER', recipientIsTeacher: true })).toBe(false)
+      expect(share(t1, { kind: 'USER', recipientIsTeacher: true, connectedToRecipient: true })).toBe(true)
+      expect(share(t1, { kind: 'USER', recipientIsTeacher: true, coTeachesWithRecipient: true })).toBe(true)
+    })
+
+    it('other user shares, group and classroom shares are unchanged', () => {
+      expect(share(t1, { kind: 'USER', recipientIsTeacher: false })).toBe(true)
+      expect(share(owner, { kind: 'USER', recipientIsTeacher: true })).toBe(true)
+      expect(share(t1, { kind: 'GROUP' })).toBe(true)
+      expect(share(t1, { kind: 'CLASSROOM' })).toBe(true)
+      expect(share(t1)).toBe(true)
+    })
+
+    it('"all my connections" is for teachers, and only the owner shares', () => {
+      expect(share(t1, { kind: 'CONNECTIONS' })).toBe(true)
+      expect(share(owner, { kind: 'CONNECTIONS' })).toBe(false)
+      expect(can(other, Action.NOTE_SHARE, { kind: 'note', note: own, shareTarget: { kind: 'CONNECTIONS' } })).toBe(false)
+    })
   })
 })
 
