@@ -1,0 +1,174 @@
+# LearnViaNotes — GraphQL schema skeleton (Phase 0 draft, for agent sign-off)
+#
+# Hand-written to agree on shapes before code exists (spec §18 Phase 0). From Phase 1 the schema is
+# code-first in each context's subgraph and exported to graphql/supergraph.graphql on every build;
+# this file is then deleted. Conventions (§6.2): Relay cursor pagination (max 100), one `input` per
+# mutation, payloads with `userErrors`, errors carry extensions.code from ErrorCode.
+#
+# Owner context of each type is noted as  # [context]
+
+scalar DateTime
+scalar UUID
+scalar JSON
+
+interface Node {
+  id: UUID!
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type UserError {
+  "Dotted path of the input field, e.g. input.title"
+  field: [String!]
+  message: String!
+  code: ErrorCode!
+}
+
+enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL }
+enum Visibility { PRIVATE SHARED PUBLIC }
+enum GlobalRole { STUDENT TEACHER PLATFORM_ADMIN }
+enum NoteRole { OWNER EDITOR VIEWER }
+enum CardType { text heading markdown code image video audio file diagram quote callout checklist table question quiz flashcard }
+enum AuthProvider { GOOGLE GITHUB LINKEDIN }
+
+# ── users ─────────────────────────────────────────────────────────────────────
+
+type User implements Node {             # [users]
+  id: UUID!
+  handle: String!
+  displayName: String!
+  avatarUrl: String
+  "Only for the viewer themself"
+  email: String
+  emailVerified: Boolean!
+  globalRole: GlobalRole!
+  createdAt: DateTime!
+}
+
+type Session {                          # [users]
+  "15-minute RS256 JWT. Web keeps it in memory; mobile in expo-secure-store."
+  accessToken: String!
+  accessTokenExpiresAt: DateTime!
+  "Mobile only — web receives it as an HttpOnly cookie and this field is null."
+  refreshToken: String
+  user: User!
+}
+
+type AuthPayload { session: Session, userErrors: [UserError!]! }
+type OkPayload { ok: Boolean!, userErrors: [UserError!]! }
+
+input SignUpInput { email: String!, password: String!, displayName: String!, dateOfBirth: String!, acceptedTermsVersion: String! }
+input SignInInput { email: String!, password: String! }
+input OAuthExchangeInput { provider: AuthProvider!, code: String!, codeVerifier: String!, redirectUri: String! }
+input RefreshSessionInput { "Mobile only; web sends the cookie" refreshToken: String }
+input VerifyEmailInput { token: String! }
+input RequestPasswordResetInput { email: String! }
+input ResetPasswordInput { token: String!, password: String! }
+
+# ── notes ─────────────────────────────────────────────────────────────────────
+
+type Subject implements Node { id: UUID!, slug: String!, title: String!, topics(first: Int, after: String): TopicConnection! }   # [notes]
+type Topic implements Node { id: UUID!, slug: String!, title: String!, subject: Subject!, parent: Topic }                         # [notes]
+
+type Note implements Node {             # [notes]
+  id: UUID!
+  slug: String!
+  title: String!
+  owner: User!
+  visibility: Visibility!
+  "The viewer's role, null if they only read it publicly"
+  viewerRole: NoteRole
+  topics: [Topic!]!
+  "Draft cards for editors; published cards for everyone else (§4.3)"
+  cards(first: Int, after: String): CardConnection!
+  publishedVersion: NoteVersion
+  draftRevision: Int!
+  forkingEnabled: Boolean!
+  forkedFrom: NoteAttribution
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  publishedAt: DateTime
+}
+
+type NoteAttribution { note: Note, version: NoteVersion, ownerDisplayName: String! }
+
+type Card implements Node {             # [notes]
+  id: UUID!
+  type: CardType!
+  "Fractional index (§13.2)"
+  position: String!
+  "Tiptap JSON validated per card type by @lvn/contracts/validation"
+  content: JSON!
+  revision: Int!
+}
+
+type NoteVersion implements Node { id: UUID!, number: Int!, createdAt: DateTime! }   # [notes]
+
+type NoteEdge { cursor: String!, node: Note! }
+type NoteConnection { edges: [NoteEdge!]!, pageInfo: PageInfo! }
+type CardEdge { cursor: String!, node: Card! }
+type CardConnection { edges: [CardEdge!]!, pageInfo: PageInfo! }
+type TopicEdge { cursor: String!, node: Topic! }
+type TopicConnection { edges: [TopicEdge!]!, pageInfo: PageInfo! }
+
+input CreateNoteInput { title: String!, topicIds: [UUID!], folderId: UUID }
+input UpdateNoteDraftInput { noteId: UUID!, baseRevision: Int!, title: String, cards: [CardDraftInput!] }
+input CardDraftInput { id: UUID, type: CardType!, position: String!, content: JSON!, deleted: Boolean }
+input PublishNoteInput { noteId: UUID!, visibility: Visibility! }
+input ForkNoteInput { noteId: UUID! }
+input ShareNoteInput { noteId: UUID!, userId: UUID, groupId: UUID, classroomId: UUID, role: NoteRole }
+
+type NotePayload { note: Note, userErrors: [UserError!]! }
+
+# ── files ─────────────────────────────────────────────────────────────────────
+
+enum FilePurpose { ATTACHMENT COVER VOICE_NOTE AVATAR IMPORT }
+input CreateUploadIntentInput { fileName: String!, mimeType: String!, sizeBytes: Int!, purpose: FilePurpose!, parentId: UUID }
+type UploadIntent { fileId: UUID!, uploadUrl: String!, expiresAt: DateTime! }
+type UploadIntentPayload { intent: UploadIntent, userErrors: [UserError!]! }
+
+# ── roots ─────────────────────────────────────────────────────────────────────
+
+type Query {
+  "The signed-in user, null for anonymous visitors"
+  viewer: User
+  node(id: UUID!): Node
+  note(id: UUID!): Note
+  "Anonymous-safe: PUBLIC notes only (§5)"
+  publicNote(slug: String!, id: UUID!): Note
+  myNotes(first: Int, after: String): NoteConnection!
+  subjects(first: Int, after: String): [Subject!]!
+}
+
+type Mutation {
+  # Phase 1 — auth (§7)
+  signUp(input: SignUpInput!): AuthPayload!
+  signIn(input: SignInInput!): AuthPayload!
+  oauthExchange(input: OAuthExchangeInput!): AuthPayload!
+  refreshSession(input: RefreshSessionInput!): AuthPayload!
+  signOut: OkPayload!
+  verifyEmail(input: VerifyEmailInput!): OkPayload!
+  requestPasswordReset(input: RequestPasswordResetInput!): OkPayload!
+  resetPassword(input: ResetPasswordInput!): OkPayload!
+  # Phase 1 — uploads (§8.1)
+  createUploadIntent(input: CreateUploadIntentInput!): UploadIntentPayload!
+  completeUpload(fileId: UUID!): OkPayload!
+  # Phase 2 — notes (§4)
+  createNote(input: CreateNoteInput!): NotePayload!
+  updateNoteDraft(input: UpdateNoteDraftInput!): NotePayload!
+  publishNote(input: PublishNoteInput!): NotePayload!
+  forkNote(input: ForkNoteInput!): NotePayload!
+  shareNote(input: ShareNoteInput!): NotePayload!
+}
+
+type Subscription {
+  notificationReceived: UUID!
+  commentAdded(noteId: UUID!): UUID!
+  classroomActivity(classroomId: UUID!): UUID!
+  noteProcessingStatus(noteId: UUID!): UUID!
+}
