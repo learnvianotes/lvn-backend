@@ -15,7 +15,9 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 
 | ADR | Changes |
 | --- | --- |
+| [0005](../adr/0005-permission-matrix-encoding.md) | Owners may fork their own PRIVATE notes; share Editors edit drafts of PUBLIC notes (only the Owner publishes); verified email to comment, publish and request to join a group. (§4.2, §4.4, §5) |
 | [0007](../adr/0007-firebase-for-google-sign-in-only.md) | Google sign-in uses Firebase Authentication; the backend exchanges the Firebase ID token for a normal LVN session. No other Firebase product for LVN data. (§2, §7, §7.1) |
+| [0009](../adr/0009-membership-by-approval.md) | Joining any group or classroom is a request accepted by group Admins/Owner or the classroom's Teacher/TA; a staff invite is pre-approved. (§5, §6.1) |
 | [0008](../adr/0008-mobile-builds-without-eas.md) | Mobile is built locally (prebuild + Gradle/Xcode) without an Expo account; no EAS Build/Update, no OTA for now. (§2, §13.1, §13.3, §16.1, §16.2) |
 
 ## 1. Product boundaries
@@ -186,7 +188,7 @@ A note has exactly one `visibility`:
 | --- | --- | --- |
 | `PRIVATE` | Owner | Owner |
 | `SHARED` | Owner + users in `NoteShare` + members of groups/classrooms in `GroupShare`/`ClassroomShare` | Owner + `NoteShare` rows with `EDITOR` |
-| `PUBLIC` | Everyone, including anonymous web visitors (SEO pages) | Owner |
+| `PUBLIC` | Everyone, including anonymous web visitors (SEO pages) | Owner *[Amended: ADR-0005 — Owner + `NoteShare` EDITORs edit the draft; only the Owner publishes]* |
 
 Transitions: `PRIVATE ⇄ SHARED ⇄ PUBLIC`. Moving **to** `PUBLIC` requires a published version, runs moderation and starts the public-note AI pipeline (section 10). Moving **away** from `PUBLIC` keeps the note URL resolving to a 404 page and removes it from search and recommendations within 60 seconds (synchronous DB update, async index removal). Existing forks are unaffected.
 
@@ -199,7 +201,7 @@ Transitions: `PRIVATE ⇄ SHARED ⇄ PUBLIC`. Moving **to** `PUBLIC` requires a 
 
 ### 4.4 Forking
 
-- Only `PUBLIC` notes and `SHARED` notes the user can read are forkable; the owner can disable forking per note.
+- Only `PUBLIC` notes and `SHARED` notes the user can read are forkable; the owner can disable forking per note. *[Amended: ADR-0005 — the owner may also fork their own PRIVATE note.]*
 - A fork copies the **published version's** cards into a new `PRIVATE` note owned by the forker, with `forkedFromNoteId`, `forkedFromVersionId` and an attribution line that the fork UI shows and the forker cannot remove.
 - Media attachments are referenced, not duplicated in S3; the `FileObject` gets a new permission grant for the forker.
 - Forks do not sync with upstream. "Upstream has a newer version" is shown as information only.
@@ -231,13 +233,15 @@ Authorization is enforced in the backend by a single `PolicyService` (`can(user,
 | Fork | ✓ | ✓ | ✓ | ✓ if readable | ✓ if readable | ✓ if readable | ✓ if readable | ✓ PUBLIC only | – |
 | Comment / react on note | ✓ | ✓ | ✓ | ✓ if readable | ✓ if readable | ✓ if readable | ✓ if readable | ✓ PUBLIC only | – |
 | Create group |  |  |  |  |  |  |  | ✓ | – |
-| Join public group / request private |  |  |  |  |  |  |  | ✓ | – |
+| Join public group / request private *[Amended: ADR-0009 — every group join is a request; Admin/Owner accept]* |  |  |  |  |  |  |  | ✓ | – |
+| Accept or reject group join requests *[Added: ADR-0009]* |  |  |  | – | ✓ (Admin/Owner) |  |  | – | – |
 | Post in group |  |  |  | ✓ | ✓ |  |  | – | – |
 | Remove post, mute member |  |  |  | – | ✓ |  |  | – | – |
 | Manage members, roles, settings |  |  |  | – | ✓ (Admin/Owner) |  |  | – | – |
 | Delete group |  |  |  | – | Owner only |  |  | – | – |
 | Create classroom |  |  |  |  |  | – | ✓ (TEACHER role) | – | – |
-| Join classroom |  |  |  |  |  | ✓ via code/invite |  | – | – |
+| Join classroom *[Amended: ADR-0009 — a code/link sends a request the Teacher/TA accept; a staff invite is pre-approved]* |  |  |  |  |  | ✓ via code/invite |  | – | – |
+| Accept or reject classroom join requests, invite students *[Added: ADR-0009]* |  |  |  |  |  | – | ✓ | – | – |
 | Publish quiz to classroom |  |  |  |  |  | – | ✓ | – | – |
 | View class member performance |  |  |  |  |  | own only | ✓ | – | – |
 | Create personal quiz / deck / exam |  |  |  |  |  |  |  | ✓ | – |
@@ -279,7 +283,7 @@ Web · Mobile · Admin                                    Web · Mobile · Admin
 | --- | --- | --- | --- | --- |
 | `users` | auth, sessions, users, profiles, roles, `PolicyService`, device tokens, organizations (read model from admin app) | `users` | `UserRegistered`, `UserDeleted`, `RoleChanged`, `SessionRevoked` | `GroupMembershipChanged`, `ClassroomMembershipChanged` |
 | `notes` | subjects, topics, folders, tags, notes, cards, versions, shares, forks, `FileObject`, search indexing, Postgres/Typesense `SearchProvider` | `notes` | `NotePublished`, `NoteUnpublished`, `NoteForked`, `NoteShared`, `FileReady` | `UserDeleted`, `GroupMembershipChanged`, `ClassroomMembershipChanged`, `NoteArtifactReady` |
-| `core` | groups, classrooms, quizzes, flashcards, exams, learning events, streaks, recommendations, resources, achievements, moderation, reports | `core` | `GroupMembershipChanged`, `ClassroomMembershipChanged`, `CommentAdded`, `QuizPublished`, `ContentReported`, `LearningEventRecorded` | `NotePublished`, `UserDeleted` |
+| `core` | groups, classrooms, quizzes, flashcards, exams, learning events, streaks, recommendations, resources, achievements, moderation, reports | `core` | `GroupMembershipChanged`, `ClassroomMembershipChanged`, `GroupJoinRequested`, `ClassroomJoinRequested`, `JoinRequestReviewed` *[Added: ADR-0009]*, `CommentAdded`, `QuizPublished`, `ContentReported`, `LearningEventRecorded` | `NotePublished`, `UserDeleted` |
 | `ai` | `AiGateway`, providers, usage and quotas, `NoteChunk` embeddings, RAG, public-note pipeline, transcription, moderation scoring | `ai` | `NoteArtifactReady`, `ModerationScored`, `AiBudgetThreshold` | `NotePublished`, `NoteUnpublished`, `FileReady`, `UserDeleted` |
 | `communication` | notifications, preferences, push (FCM), email, digests, WebSocket fan-out for subscriptions | `comms` | `NotificationDelivered` | nearly everything above |
 

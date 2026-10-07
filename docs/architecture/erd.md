@@ -195,8 +195,11 @@ Read models kept by `notes`: `membership_read_model(userId, groupId | classroomI
 ```mermaid
 erDiagram
   Group ||--o{ GroupMember : ""
+  Group ||--o{ GroupJoinRequest : "awaiting Admin/Owner"
   Group ||--o{ GroupPost : ""
   Classroom ||--o{ ClassroomMember : ""
+  Classroom ||--o{ ClassroomJoinRequest : "awaiting Teacher/TA"
+  Classroom ||--o{ ClassroomInvite : "pre-approved"
   Quiz ||--o{ Question : ""
   Question ||--o{ Choice : ""
   Quiz ||--o{ QuizAttempt : ""
@@ -220,6 +223,16 @@ erDiagram
     enum role "OWNER | ADMIN | MODERATOR | MEMBER"
     timestamptz mutedUntil
   }
+  GroupJoinRequest {
+    uuid id PK
+    uuid groupId FK
+    uuid userId
+    enum status "PENDING | APPROVED | REJECTED | WITHDRAWN"
+    text message
+    uuid reviewedBy
+    timestamptz reviewedAt
+    timestamptz createdAt
+  }
   Classroom {
     uuid id PK
     uuid organizationId
@@ -231,6 +244,24 @@ erDiagram
     uuid classroomId FK
     uuid userId
     enum role "TEACHER | TA | STUDENT"
+  }
+  ClassroomJoinRequest {
+    uuid id PK
+    uuid classroomId FK
+    uuid userId
+    enum via "CODE | LINK"
+    enum status "PENDING | APPROVED | REJECTED | WITHDRAWN"
+    uuid reviewedBy
+    timestamptz reviewedAt
+    timestamptz createdAt
+  }
+  ClassroomInvite {
+    uuid id PK
+    uuid classroomId FK
+    uuid invitedUserId
+    uuid invitedBy "Teacher or TA"
+    timestamptz expiresAt
+    timestamptz acceptedAt
   }
   Quiz {
     uuid id PK
