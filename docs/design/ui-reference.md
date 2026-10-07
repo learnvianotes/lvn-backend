@@ -85,8 +85,8 @@ They are **references, not specs**: anything they show that the architecture spe
 
 ## Implications
 
-- **Mobile UI kit (open):** the boards' soft, rounded, non-Material look is closer to Tamagui (or a small custom set on
-  plain React Native) than to React Native Paper's Material 3. Recommendation: Tamagui — decided in the UI-kit ADR
-  before the first Phase 1 screen.
+- **Mobile UI kit:** proposed in ADR-0029 — Uniwind + react-native-reusables + our own brand components, animated
+  with Reanimated 4, sharing one token source with the web. (Research ruled out Tamagui — tokens don't map to the
+  web's Tailwind and v3 changes syntax again — and React Native Paper, which is Material 3.)
 - **Web:** Tailwind tokens in `app/globals.css` carry the palette above; shadcn primitives take their colours from it.
 - Screens are built in the phase listed above, each with its backend (§20) — the boards do not move work earlier.

@@ -38,6 +38,7 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0027](../adr/0027-public-counts-as-milestones.md) | Public user counts only as milestones (1k, 2k, 5k, 10k, …). |
 | [0031](../adr/0031-github-org-and-package-name.md) | Repositories live in the `learnvianotes` GitHub organisation; contracts are published as `@learnvianotes/contracts` and imported as `@lvn/contracts`. (§2, §3) |
 | [0028](../adr/0028-pdf-engine-technology.md) | PDF engine: Docling (MIT) + RapidOCR on CPU in one Python `pdf-engine` service; vision AI only for hard pages, budgeted; no AGPL/GPL. (§2, §8.1) |
+| [0029](../adr/0029-mobile-ui-kit.md) | **Proposed:** mobile UI = Uniwind + react-native-reusables + our brand components, Reanimated 4; one token source for web and mobile. (§2) |
 | [0030](../adr/0030-rhythm-instead-of-streaks.md) | **Proposed:** Rhythm — weekly, forgiving habit system with a Today ring and Exam Readiness instead of daily streaks. (§14.2) |
 | [0008](../adr/0008-mobile-builds-without-eas.md) | Mobile is built locally (prebuild + Gradle/Xcode) without an Expo account; no EAS Build/Update, no OTA for now. (§2, §13.1, §13.3, §16.1, §16.2) |
 
