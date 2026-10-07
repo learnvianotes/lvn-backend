@@ -1,6 +1,6 @@
 # ADR-0005: Encoding the permission matrix
 
-- Status: Accepted (owner decisions, 2026-10-08)
+- Status: Accepted (owner decisions, 2026-10-08); decision 3 amended by ADR-0017 (verification = confirmed college or organisation email, for every action that reaches other people)
 - Date: 2026-10-08
 - Spec sections: §4.2, §4.4, §5, §7.1, §15.2
 - Amends: §4.2 visibility table (PUBLIC row), §4.4 first bullet

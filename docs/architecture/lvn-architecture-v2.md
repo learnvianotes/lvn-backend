@@ -25,6 +25,8 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0014](../adr/0014-students-follow-teachers-and-teacher-publications.md) | Any signed-in user follows teachers; teachers publish blogs, posts and projects as notes of another `kind`; Following feed of followed teachers' PUBLIC content. (§4.1, §5, §18) |
 | [0015](../adr/0015-student-projects-and-project-workspaces.md) | Students create projects; project workspaces (groups of type PROJECT) with a linked repo, ideas board, doubts and a teacher mentor. (§4.1, §5, §18) |
 | [0016](../adr/0016-student-follows-block-restrict.md) | Students follow students (never restricted minors); block, restrict and remove follower. (§5, §15.1) |
+| [0017](../adr/0017-registration-birth-date-and-institutional-email.md) | Registration needs a date of birth and a verified college or organisation email; a verified account is required for every action that reaches other people. (§7, §7.1, §15.2) |
+| [0018](../adr/0018-data-export-and-notes-import.md) | Settings → Data: export all personal data from every context in one archive; import notes only (LVN export, Markdown, ZIP), always PRIVATE. (§15.2, §18, §19) |
 | [0008](../adr/0008-mobile-builds-without-eas.md) | Mobile is built locally (prebuild + Gradle/Xcode) without an Expo account; no EAS Build/Update, no OTA for now. (§2, §13.1, §13.3, §16.1, §16.2) |
 
 ## 1. Product boundaries
@@ -344,14 +346,14 @@ Things that make this cheap, and that are therefore non-negotiable from Phase 1:
 
 ## 7. Authentication and security
 
-The backend owns identity, sessions, roles and verification. Clients call `signUp`, `signIn`, `oauthExchange`, `signInWithGoogle` *[Amended: ADR-0007]*, `refreshSession`, `signOut`, `verifyEmail`, `requestPasswordReset`, `resetPassword` and contain no auth business logic.
+The backend owns identity, sessions, roles and verification. Clients call `signUp`, `signIn`, `oauthExchange`, `signInWithGoogle` *[Amended: ADR-0007]*, `completeRegistration`, `verifyInstitutionalEmail` *[Amended: ADR-0017]*, `refreshSession`, `signOut`, `verifyEmail`, `requestPasswordReset`, `resetPassword` and contain no auth business logic.
 
 ### 7.1 Sessions
 
 - Access token: JWT, RS256, 15 min, claims `sub`, `roles`, `sid`. Refresh token: 256-bit random, 30 days, rotated on every use, stored as SHA-256 hash in `Session` with device info; reuse of a rotated token revokes the whole session family.
 - Web stores the refresh token in an `HttpOnly; Secure; SameSite=Lax` cookie and the access token in memory. Mobile stores both in `expo-secure-store`. Nothing auth-related in `localStorage` or `AsyncStorage`.
 - OAuth (Google, GitHub, LinkedIn) uses Authorization Code + PKCE. The client receives the provider code and sends it to `oauthExchange`; the backend verifies it and issues LVN tokens. Account linking by verified email only. *[Amended: ADR-0007 — Google sign-in runs through Firebase Authentication on the client; the Firebase ID token is sent once to `signInWithGoogle`, verified by the backend, and exchanged for LVN tokens. GitHub and LinkedIn stay as written.]*
-- Email verification required before publishing, joining groups or commenting. Password policy: minimum 10 characters, checked against a breached-password list, hashed with Argon2id.
+- Email verification required before publishing, joining groups or commenting. *[Amended: ADR-0017 — "verified" means the college or organisation email given at registration is confirmed, and it is required for every action that reaches other people.]* Password policy: minimum 10 characters, checked against a breached-password list, hashed with Argon2id.
 - Rate limits (Redis sliding window): 5 sign-in attempts per account per 15 min, 3 password resets per hour, 100 GraphQL operations per minute per user, 20 AI requests per minute per user.
 
 ### 7.2 Security requirements
@@ -603,9 +605,9 @@ A student community with public content and minors needs human moderation and a 
 
 | Requirement | Implementation |
 | --- | --- |
-| Age | Date of birth at signup. Under 13 (or local digital-consent age: 16 in parts of the EU, 18 under India's DPDP Act) requires verifiable parental or institutional consent; without it the account is limited to private notes and classroom content, no public publishing, no DMs, no behavioural recommendations |
+| Age | Date of birth at signup *[Amended: ADR-0017 — required, together with a verified college or organisation email]*. Under 13 (or local digital-consent age: 16 in parts of the EU, 18 under India's DPDP Act) requires verifiable parental or institutional consent; without it the account is limited to private notes and classroom content, no public publishing, no DMs, no behavioural recommendations |
 | Consent and terms | Versioned Terms, Privacy Policy and public-content licence; acceptance recorded with version and timestamp; re-prompt on material change |
-| Data export | `requestDataExport` produces a ZIP (notes as Markdown + media + JSON) within 24 h via a job; downloadable for 7 days |
+| Data export | `requestDataExport` produces a ZIP (notes as Markdown + media + JSON) within 24 h via a job; downloadable for 7 days *[Amended: ADR-0018 — covers all personal data from every context; Settings → Data also imports notes only, always PRIVATE]* |
 | Deletion | Section 7.2; a deletion also purges search index, embeddings, S3 objects and FCM tokens, and anonymises comments |
 | Data residency | One primary region per deployment (India: `ap-south-1`); no cross-region replication of personal data except encrypted backups |
 | Retention | Learning events raw 24 months then aggregated; audit log 7 years; AI usage 12 months; logs 30 days |
@@ -724,8 +726,8 @@ Work proceeds strictly in order. A phase is closed only when its exit criteria p
 | Phase | Scope | Exit criteria |
 | --- | --- | --- |
 | 0 Architecture | Inspect existing repo; write `existing-state.md`, this document's app-specific addenda, ERD, env reference, ADR-0001…; GraphQL schema skeleton; permission matrix encoded in `@lvn/contracts/domain` | Three agents sign off on the same documents; empty monorepo builds and CI runs |
-| 1 Foundation | Monorepo, `packages/config`, NestJS + Prisma + Redis + MinIO, auth (email + 3 OAuth), sessions, roles, `PolicyService`, upload flow, logging, error codes, Testcontainers, Docker Compose, Terraform for sandbox, CI, Sentry, OTel | Web and mobile sign in on all providers in dev and sandbox; migration deploys; file upload round-trips; security suite scaffold passes |
-| 2 Content | Subjects, topics, folders, tags, notes, cards (all types), editor web + mobile, autosave, drafts, versions, visibility, user sharing, forking, soft delete, public note SEO page, Postgres search, moderation gate, Terms/consent, age gate | Full note lifecycle E2E on web and mobile incl. offline edit and sync; leakage tests pass; Lighthouse ≥ 90 on public note |
+| 1 Foundation | Monorepo, `packages/config`, NestJS + Prisma + Redis + MinIO, auth (email + 3 OAuth), registration with date of birth and institutional email verification *[Added: ADR-0017]*, sessions, roles, `PolicyService`, upload flow, logging, error codes, Testcontainers, Docker Compose, Terraform for sandbox, CI, Sentry, OTel | Web and mobile sign in on all providers in dev and sandbox; migration deploys; file upload round-trips; security suite scaffold passes |
+| 2 Content | Subjects, topics, folders, tags, notes, cards (all types), data export and notes import *[Added: ADR-0018]*, editor web + mobile, autosave, drafts, versions, visibility, user sharing, forking, soft delete, public note SEO page, Postgres search, moderation gate, Terms/consent, age gate | Full note lifecycle E2E on web and mobile incl. offline edit and sync; leakage tests pass; Lighthouse ≥ 90 on public note |
 | 3 Community | Groups + roles, classrooms + teacher role, teacher profile Skills tab (manual) *[Added: ADR-0012]*, teacher follows and connections *[Added: ADR-0013]*, students follow teachers, teacher blogs/posts/projects and the Following feed *[Added: ADR-0014]*, student projects and project workspaces with mentors *[Added: ADR-0015]*, student follows, block and restrict *[Added: ADR-0016]*, group/class sharing, comments, reactions, activity feed, notifications (in-app, push, email), reporting + moderation queue | Join/post/moderate flows E2E; subscription fan-out across 2 api tasks; permission matrix fully tested |
 | 4 Search | Typesense provider, Cmd/K, mobile search, filters, re-index job, hybrid ranking flag | Index parity test vs Postgres provider; permission filter test; p95 < 150 ms |
 | 5 AI | `AiGateway`, usage + quotas, summaries, quick notes, RAG Ask AI with sources, Ask AI on workspace doubts *[Added: ADR-0015]*, quiz + flashcard generation, code explanation, transcription, public-note pipeline | RAG leakage test 0/1,000; budget breaker verified; all artifacts stored separately from notes |
@@ -752,6 +754,7 @@ A feature is done when a user can complete it end-to-end on every platform in sc
 - [ ] Observability: span names, metric or log line that lets you see the feature working in production
 - [ ] Feature flag if the feature is user-visible and not yet complete across platforms
 - [ ] Documentation: ADR for any decision, README section for any new module, runbook if operations change
+- [ ] *[Added: ADR-0018]* New personal data is included in its context's data-export part
 
 **Coordination protocol.** Before implementing: read this document, the current `schema.graphql`, the domain model and the permission matrix. The Backend agent lands the schema and migration first; the Web and Mobile agents build against the generated types, using schema mocks (MSW) until the real resolvers land. No agent edits another agent's app directory except through a reviewed PR. Disagreements are settled by an ADR, not by divergent code. Every PR description states which section of this document it implements.
 

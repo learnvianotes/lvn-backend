@@ -16,6 +16,7 @@ erDiagram
   User ||--o{ Membership : "belongs to"
   Organization ||--o{ Membership : has
   User ||--o{ ConsentRecord : accepts
+  User ||--o| InstitutionalEmail : "verifies (ADR-0017)"
   User ||--o{ Follow : "follows (teacher, or student → student)"
   User ||--o{ Block : blocks
   User ||--o{ Restriction : restricts
@@ -29,7 +30,8 @@ erDiagram
     text handle UK
     text passwordHash "Argon2id, nullable for OAuth-only"
     timestamptz emailVerifiedAt
-    date dateOfBirth
+    date dateOfBirth "required (ADR-0017)"
+    timestamptz institutionVerifiedAt
     enum globalRole "STUDENT | TEACHER | PLATFORM_ADMIN"
     timestamptz deletionRequestedAt
     timestamptz deletedAt
@@ -60,6 +62,17 @@ erDiagram
   Organization {
     uuid id PK "read model from the admin app"
     text name
+    text_array emailDomains "ADR-0017"
+  }
+  InstitutionalEmail {
+    uuid userId FK
+    citext email UK
+    text domain
+    uuid organizationId FK
+    bytea codeHash
+    timestamptz codeExpiresAt
+    int attempts
+    timestamptz verifiedAt
   }
   Membership {
     uuid userId FK
