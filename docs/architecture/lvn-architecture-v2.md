@@ -6,9 +6,9 @@ Oct 8, 2026 · @manideep
 
 This is the single source of truth for the Web, Mobile and Backend agents building LearnViaNotes. Every decision below is pinned; an agent that wants to deviate writes an ADR in `docs/adr/` and gets it accepted before implementing.
 
-Give each agent two things: this whole document, and a one-page role brief (sections 13, 14 or 7–12) telling it which agent it is. Do not paste a different architecture to each agent.
+Give each agent two things: this whole document, and a one-page role brief (section 12 for Web, 13 for Mobile, 6–11 and 14 for Backend) *[Erratum E1]* telling it which agent it is. Do not paste a different architecture to each agent.
 
-**What changed from v1.** Technology choices are pinned instead of "or equivalent". The domain model, visibility states, forking, versioning and offline conflict rules are defined. A permission matrix replaces the list of permission questions. Admin-platform tenancy, SEO for public notes, push/email delivery, upload hardening, moderation, compliance, AI cost control, backups and schema-change checks are added. Teacher is a role, not a client. "Problems" and "Stories" are removed from scope. Monetization and company recruitment are explicitly out of scope. Three repositories replace the monorepo; the backend is a modular monolith of five bounded contexts (users, notes, core, ai, communication) with a step-by-step extraction playbook to microservices and a per-context Grafana observability stack.
+**What changed from v1.** Technology choices are pinned instead of "or equivalent". The domain model, visibility states, forking, versioning and offline conflict rules are defined. A permission matrix replaces the list of permission questions. Admin-platform tenancy, SEO for public notes, push/email delivery, upload hardening, moderation, compliance, AI cost control, backups and schema-change checks are added. Teacher is a role, not a client. "Problems" and "Stories" are removed from scope *[Erratum E7 — the existing Sheet 150 problem set stays as read-only content under `/core` (ADR-0002); no new problem features]*. Monetization and company recruitment are explicitly out of scope. Three repositories replace the monorepo; the backend is a modular monolith of five bounded contexts (users, notes, core, ai, communication) with a step-by-step extraction playbook to microservices and a per-context Grafana observability stack.
 
 **Amendments (accepted ADRs, `docs/adr/`).** The text below is the v2 text; lines changed by an accepted ADR carry
 an *[Amended: ADR-NNNN]* note, and the ADR wins.
@@ -38,11 +38,17 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0027](../adr/0027-public-counts-as-milestones.md) | Public user counts only as milestones (1k, 2k, 5k, 10k, …). |
 | [0008](../adr/0008-mobile-builds-without-eas.md) | Mobile is built locally (prebuild + Gradle/Xcode) without an Expo account; no EAS Build/Update, no OTA for now. (§2, §13.1, §13.3, §16.1, §16.2) |
 
+**Errata (owner-approved, 2026-10-08).** Wording conflicts inside v2, corrected in place and marked *[Erratum E#]*:
+E1 role-brief sections · E2 three repositories, not a monorepo · E3 AI prompts path · E4 web/mobile own repositories,
+not `apps/*` folders · E5 domain — see ADR-0022 · E6 one student platform now, three apps later · E7 Sheet 150 stays
+read-only under `/core` · E8 §8 subsections renumbered · E9 production bundle id · E10 version pins are minimums,
+upgraded by ADR.
+
 ## 1. Product boundaries
 
 LearnViaNotes (LVN) is a student-first learning community: personal and public notes, a block-based editor, groups, classrooms, quizzes, flashcards, exam prep, AI learning tools, learning history, recommendations, search and learning-resource discovery. It is built as one scalable product, not a set of screens.
 
-**Two applications, one backend.** *[Amended: ADR-0022 — the domain is `learnvianotes.in` (web `www.learnvianotes.in`); read every `.com` below as `.in`.]*
+**One student platform now, three separate apps later — all on one backend.** *[Erratum E6]* *[Amended: ADR-0022 — the domain is `learnvianotes.in` (web `www.learnvianotes.in`); read every `.com` below as `.in`.]*
 
 | Application | Domain | Users | Status |
 | --- | --- | --- | --- |
@@ -51,7 +57,7 @@ LearnViaNotes (LVN) is a student-first learning community: personal and public n
 | college platform | org.learnvianotes.com | College, org admin | seperate app |
 | company platform | company.learnvianotes.com | Company | seperate admin app |
 
-Both applications call the **same NestJS GraphQL API and the same PostgreSQL database**. The `Organization` and `Classroom` tables live in the shared schema now; only the admin *UI and admin mutations* are deferred. The student app reads organization and classroom data when a student is a member of them. It never contains organization, college, company or platform-admin registration or dashboards.
+All of them call the **same NestJS GraphQL API and the same PostgreSQL database** *[Erratum E6]*. The `Organization` and `Classroom` tables live in the shared schema now; only the admin *UI and admin mutations* are deferred. The student app reads organization and classroom data when a student is a member of them. It never contains organization, college, company or platform-admin registration or dashboards.
 
 **Roles are not clients.** Teacher and Group Admin are roles on a `User`, served by the same web and mobile apps with role-gated routes.
 
@@ -87,7 +93,7 @@ These are decided. Agents use them as-is; changing one requires an accepted ADR.
 | AI providers | Backend `AiGateway` with provider adapters (OpenAI, Anthropic, local via Ollama); embeddings `text-embedding-3-small` | Swappable, cost-controlled, never called from clients |
 | Transcription | Whisper (API or self-hosted) behind the gateway | Voice notes |
 | Web | Next.js 15 App Router, React 19, Tailwind, shadcn/ui, Apollo Client, React Hook Form + Zod, Tiptap editor, Zustand for global state | SSR/ISR for public notes; Tiptap is the most mature block editor |
-| Mobile | Expo (SDK 52+) with dev client + EAS Build/Update *[Amended: ADR-0008 — local prebuild + Gradle/Xcode builds, no EAS]*, Expo Router, React Native Paper or Tamagui, Apollo Client, WatermelonDB (SQLite), expo-secure-store, MMKV for small key-value | Expo gives environments, OTA and native modules without ejecting; WatermelonDB is built for offline sync |
+| Mobile | Expo (SDK 52+ — a minimum; the repositories run SDK 57, and upgrades of pinned versions go through an ADR *[Erratum E10]*) with dev client + EAS Build/Update *[Amended: ADR-0008 — local prebuild + Gradle/Xcode builds, no EAS]*, Expo Router, React Native Paper or Tamagui, Apollo Client, WatermelonDB (SQLite), expo-secure-store, MMKV for small key-value | Expo gives environments, OTA and native modules without ejecting; WatermelonDB is built for offline sync |
 | Validation | Zod schemas in `@lvn/contracts/validation`, used by all three apps | One source for input rules |
 | GraphQL codegen | `graphql-codegen` producing typed hooks for web and mobile from the backend schema | Replaces hand-written shared types |
 | Testing | Vitest (unit), Testing Library, Playwright (web E2E), Maestro (mobile E2E), Jest + Supertest (backend), Testcontainers (Postgres/Redis/MinIO) | Fast, standard, isolated |
@@ -394,7 +400,7 @@ Each store has one job. PostgreSQL is the only source of truth; Redis holds noth
 
 Limits: images 20 MB, audio 100 MB, video 500 MB, documents 50 MB; 5 GB per student, 20 GB per teacher, enforced server-side. Keys are `{env}/{ownerId}/{fileId}/{variant}` with no original filename in the key.
 
-### 8.3 Asset metadata (every S3 object has a `FileObject` row)
+### 8.2 Asset metadata (every S3 object has a `FileObject` row) *[Erratum E8: renumbered]*
 
 No object is written to S3 without a `FileObject` row created first, and no `FileObject` reaches `READY` without a verified object. A nightly reconciliation job lists both sides and flags drift. Clients never receive raw S3 keys; they receive `fileId` and resolve URLs through the API.
 
@@ -422,7 +428,7 @@ S3 object metadata and tags mirror the identity fields (`x-amz-meta-file-id`, `x
 
 Dedup: identical `checksumSha256` within one owner reuses the object with a new `FileObject` row (metadata is per use, bytes are shared); cross-owner dedup is not done, to avoid leaking existence of private files.
 
-### 8.2 Backups
+### 8.3 Backups *[Erratum E8: renumbered]*
 
 RDS automated backups with 30-day point-in-time recovery; S3 versioning + cross-region replication for production; weekly restore drill into the sandbox account, documented in `docs/runbooks/restore.md`.
 
@@ -475,7 +481,7 @@ Client ─► GraphQL (askAi, summariseNote, generateQuiz, …)
 
 - Task → default model table lives in the database (feature-flag style) so models can be swapped without a deploy. Cheap model for summaries and flashcards, stronger model for RAG answers and code explanation.
 - Every call writes `AiUsage` (`userId`, `task`, `model`, `promptTokens`, `completionTokens`, `costMicroUsd`, `latencyMs`). Quotas: students 200k tokens/day, teachers 1M/day, enforced before the call; a per-environment monthly budget cap trips a circuit breaker and degrades to "AI temporarily unavailable".
-- Prompts are versioned templates in `apps/api/src/modules/ai/prompts/`; outputs that must be structured use JSON schema / tool-calling and are validated with Zod before storage.
+- Prompts are versioned templates in `contexts/ai/prompts/` *[Erratum E3]*; outputs that must be structured use JSON schema / tool-calling and are validated with Zod before storage.
 - Content sent to third-party providers excludes user identity; a per-provider data-processing flag decides which providers may receive private notes (default: only providers with zero-retention agreements; otherwise private notes use the self-hosted model).
 
 ### 10.2 Permission-aware RAG
@@ -508,7 +514,7 @@ Search is one `search` module with a `SearchProvider` interface and two implemen
 
 ## 12. Web agent
 
-Web is the power-user surface: create, organise, research, manage. It owns `apps/web` only — UI, routing, web state, the editor, teacher and group-admin screens, web tests. It owns no business rules, no auth logic, no direct storage or AI access.
+Web is the power-user surface: create, organise, research, manage. It owns the `lvn-web` repository only *[Erratum E4]* — UI, routing, web state, the editor, teacher and group-admin screens, web tests. It owns no business rules, no auth logic, no direct storage or AI access.
 
 ### 12.1 Structure
 
@@ -538,13 +544,13 @@ state/             Zustand stores: session, theme, command palette, notification
 
 ## 13. Mobile agent
 
-Mobile answers "what should I learn right now?": quick capture, reading, AI, community, notifications, exam prep, focus mode, voice notes. It owns `apps/mobile` only — navigation, mobile UX, local storage, offline sync, push handling, media capture, mobile tests. Native Expo app, not a web wrapper.
+Mobile answers "what should I learn right now?": quick capture, reading, AI, community, notifications, exam prep, focus mode, voice notes. It owns the `lvn-mobile` repository only *[Erratum E4]* — navigation, mobile UX, local storage, offline sync, push handling, media capture, mobile tests. Native Expo app, not a web wrapper.
 
 ### 13.1 Navigation and storage
 
 - Expo Router tabs: Home · Explore · Create (centre sheet: Note, Quick Note, Voice Note, Photo, Upload, Quiz, Flashcard) · Community · Profile. Teacher and group-admin actions appear inside the relevant classroom/group screens, not as extra tabs.
 - Storage tiers: `expo-secure-store` for tokens and encryption keys; WatermelonDB (SQLite) for notes, cards, subjects, groups, drafts and the sync queue; MMKV for small preferences and last-opened state; `expo-file-system` cache directory for media with an LRU cap of 500 MB.
-- Three environments via EAS build profiles *[Amended: ADR-0008 — via `env/<variant>.env` and local build scripts]* and `app.config.ts` reading `EXPO_PUBLIC_*` from `@lvn/contracts/config`; bundle ids `com.learnvianotes.dev`, `.sandbox`, \`\` (prod) so all three install side by side. No URL or key is hardcoded.
+- Three environments via EAS build profiles *[Amended: ADR-0008 — via `env/<variant>.env` and local build scripts]* and `app.config.ts` reading `EXPO_PUBLIC_*` from `@lvn/contracts/config`; bundle ids `com.learnvianotes.dev`, `com.learnvianotes.sandbox`, `com.learnvianotes` (prod) *[Erratum E9]* so all three install side by side. No URL or key is hardcoded.
 
 ### 13.2 Offline and sync
 
@@ -736,8 +742,8 @@ Work proceeds strictly in order. A phase is closed only when its exit criteria p
 
 | Phase | Scope | Exit criteria |
 | --- | --- | --- |
-| 0 Architecture | Inspect existing repo; write `existing-state.md`, this document's app-specific addenda, ERD, env reference, ADR-0001…; GraphQL schema skeleton; permission matrix encoded in `@lvn/contracts/domain` | Three agents sign off on the same documents; empty monorepo builds and CI runs |
-| 1 Foundation | Monorepo, `packages/config`, NestJS + Prisma + Redis + MinIO, auth (email + 3 OAuth), registration with date of birth and institutional email verification *[Added: ADR-0017]*, verification by teacher or by platform-admin document review with an interim admin queue *[Added: ADR-0019]*, old-site data snapshot and claim with `coreProgress` *[Added: ADR-0023]*, student profile *[Added: ADR-0026]*, plan entitlements *[Added: ADR-0024]*, sessions, roles, `PolicyService`, upload flow, logging, error codes, Testcontainers, Docker Compose, Terraform for sandbox, CI, Sentry, OTel | Web and mobile sign in on all providers in dev and sandbox; migration deploys; file upload round-trips; security suite scaffold passes |
+| 0 Architecture | Inspect existing repo; write `existing-state.md`, this document's app-specific addenda, ERD, env reference, ADR-0001…; GraphQL schema skeleton; permission matrix encoded in `@lvn/contracts/domain` | Three agents sign off on the same documents; the three repositories build and CI runs *[Erratum E2]* |
+| 1 Foundation | Three repositories, `@lvn/contracts/config` *[Erratum E2]*, NestJS + Prisma + Redis + MinIO, auth (email + 3 OAuth), registration with date of birth and institutional email verification *[Added: ADR-0017]*, verification by teacher or by platform-admin document review with an interim admin queue *[Added: ADR-0019]*, old-site data snapshot and claim with `coreProgress` *[Added: ADR-0023]*, student profile *[Added: ADR-0026]*, plan entitlements *[Added: ADR-0024]*, sessions, roles, `PolicyService`, upload flow, logging, error codes, Testcontainers, Docker Compose, Terraform for sandbox, CI, Sentry, OTel | Web and mobile sign in on all providers in dev and sandbox; migration deploys; file upload round-trips; security suite scaffold passes |
 | 2 Content | Subjects, topics, folders, tags, notes, cards (all types), data export and notes import *[Added: ADR-0018]*, PDF engine for text-layer PDFs and read aloud *[Added: ADR-0025]*, editor web + mobile, autosave, drafts, versions, visibility, user sharing, forking, soft delete, public note SEO page, Postgres search, moderation gate, Terms/consent, age gate | Full note lifecycle E2E on web and mobile incl. offline edit and sync; leakage tests pass; Lighthouse ≥ 90 on public note |
 | 3 Community | Groups + roles, classrooms + teacher role, teacher profile Skills tab (manual) *[Added: ADR-0012]*, teacher follows and connections *[Added: ADR-0013]*, students follow teachers, teacher blogs/posts/projects and the Following feed *[Added: ADR-0014]*, student projects and project workspaces with mentors *[Added: ADR-0015]*, student follows, block and restrict *[Added: ADR-0016]*, group/class sharing, comments, reactions, activity feed, notifications (in-app, push, email), reporting + moderation queue | Join/post/moderate flows E2E; subscription fan-out across 2 api tasks; permission matrix fully tested |
 | 4 Search | Typesense provider, Cmd/K, mobile search, filters, re-index job, hybrid ranking flag | Index parity test vs Postgres provider; permission filter test; p95 < 150 ms |

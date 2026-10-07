@@ -106,10 +106,10 @@ At cut-over:
    claimed in Phase 1, and served to the web through `coreProgress`.
 3. Leave `public/sw.js` deployed for at least 6 months so every returning browser drops the old service worker.
 
-## Inconsistencies in the spec to settle before Phase 1
+## Inconsistencies in the spec — resolved
 
-These are wording conflicts inside lvn-architecture-v2.md, not deviations. Each needs a one-line fix in the spec
-(or an ADR) before agents rely on it.
+These were wording conflicts inside lvn-architecture-v2.md, not deviations. The owner accepted every suggested fix on
+2026-10-08; they are applied in the spec as errata E1–E10 (E5 through ADR-0022).
 
 | # | Where | Conflict | Suggested resolution |
 | --- | --- | --- | --- |
