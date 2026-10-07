@@ -1,7 +1,7 @@
 {
-  "name": "@lvn/contracts",
+  "name": "@learnvianotes/contracts",
   "version": "0.10.0",
-  "description": "LearnViaNotes shared contracts: domain enums, permission matrix, config and event schemas, GraphQL schema",
+  "description": "LearnViaNotes shared contracts: domain enums, permission matrix, config, event and notification schemas, GraphQL schema. Imported as @lvn/contracts (ADR-0031).",
   "license": "UNLICENSED",
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
@@ -79,5 +79,10 @@
   "devDependencies": {
     "tsup": "^8.5.1",
     "zod": "^4.6.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/learnvianotes/lvn-backend.git",
+    "directory": "contracts"
   }
 }

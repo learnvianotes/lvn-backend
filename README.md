@@ -1,7 +1,8 @@
 # lvn-backend
 
 LearnViaNotes backend: a NestJS modular monolith of five bounded contexts, built so each context can be extracted
-into its own service (spec §3, §6). Also publishes **`@lvn/contracts`**, the package web and mobile build against.
+into its own service (spec §3, §6). Also publishes **`@learnvianotes/contracts`** — imported everywhere as
+`@lvn/contracts` (ADR-0031) — the package web and mobile build against.
 
 **Start here:** [docs/architecture/lvn-architecture-v2.md](docs/architecture/lvn-architecture-v2.md) — the single
 source of truth for all three repositories. Status: [Phase 0](docs/releases/phase-0.md).

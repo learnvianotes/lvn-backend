@@ -1,5 +1,5 @@
-# Publishes @lvn/contracts to GitHub Packages when a `contracts-v<semver>` tag is pushed (spec §2, §3).
-# The tag must equal contracts/package.json's version. Blocked on ADR-0006 (package scope).
+# Publishes @learnvianotes/contracts (imported as @lvn/contracts, ADR-0031) to GitHub Packages when a
+# `contracts-v<semver>` tag is pushed (spec §2, §3). The tag must equal contracts/package.json's version.
 name: contracts-publish
 
 on:
@@ -21,8 +21,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Tag matches package version
         run: test "contracts-v$(node -p "require('./contracts/package.json').version")" = "$GITHUB_REF_NAME"
-      - run: pnpm --filter @lvn/contracts test
-      - run: pnpm --filter @lvn/contracts build
-      - run: pnpm --filter @lvn/contracts publish --no-git-checks
+      - run: pnpm --filter @learnvianotes/contracts test
+      - run: pnpm --filter @learnvianotes/contracts build
+      - run: pnpm --filter @learnvianotes/contracts publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
