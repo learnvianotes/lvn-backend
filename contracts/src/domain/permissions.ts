@@ -1,4 +1,4 @@
-import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, NoteRole, VerificationMethod, Visibility } from './enums'
+import { type AiTaskType, ClassroomRole, DERIVATIVE_AI_TASKS, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, NoteRole, VerificationMethod, Visibility } from './enums'
 
 /**
  * The permission matrix (spec §5), defined once. The backend's PolicyService loads the facts
@@ -50,6 +50,8 @@ export const Action = {
   NOTE_COMMENT: 'note.comment',
   NOTE_ASK_AI: 'note.askAi',
   FILE_READ: 'file.read',
+  /** Turn a PDF attached to a note into an editable note of one's own (ADR-0025); follows the fork rule. */
+  FILE_CONVERT_TO_NOTE: 'file.convertToNote',
   GROUP_CREATE: 'group.create',
   GROUP_JOIN: 'group.join',
   GROUP_REQUEST_JOIN: 'group.requestJoin',
@@ -84,6 +86,7 @@ export const Action = {
   USER_REMOVE_CONNECTION: 'user.removeConnection',
   ACCOUNT_EXPORT_DATA: 'account.exportData',
   ACCOUNT_IMPORT_NOTES: 'account.importNotes',
+  ACCOUNT_CLAIM_LEGACY_DATA: 'account.claimLegacyData',
   ACCOUNT_REQUEST_VERIFICATION: 'account.requestVerification',
   ACCOUNT_REVIEW_VERIFICATION: 'account.reviewVerification',
   PERSONAL_STUDY_CREATE: 'study.create',
@@ -247,6 +250,14 @@ const openToJoin = (group: { privacy?: GroupPrivacy; joinPolicy?: GroupJoinPolic
   group.privacy === GroupPrivacy.PUBLIC && group.joinPolicy === GroupJoinPolicy.OPEN
 const isClassStaff = (role?: ClassroomRole) => role === ClassroomRole.TEACHER || role === ClassroomRole.TA
 
+/**
+ * Which permission an AI task needs on its source (ADR-0025): tasks that create a note of one's own from the source
+ * follow the fork rule (so forking-disabled content cannot be copied out through AI); the rest follow Ask-AI.
+ */
+export function aiTaskAction(task: AiTaskType): Action {
+  return DERIVATIVE_AI_TASKS.has(task) ? Action.NOTE_FORK : Action.NOTE_ASK_AI
+}
+
 /** Teacher-to-teacher sharing needs a connection or a shared classroom; only teachers have connections (ADR-0013). */
 function shareTargetAllowed(actor: Actor, target: ShareTargetFacts | undefined): boolean {
   if (target?.kind === 'CONNECTIONS') return actor.globalRole === GlobalRole.TEACHER
@@ -309,6 +320,7 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
         case Action.NOTE_SHARE:
           return isOwner && shareTargetAllowed(actor!, resource.shareTarget)
         case Action.NOTE_FORK:
+        case Action.FILE_CONVERT_TO_NOTE:
           return actor !== null && readable(actor, note) && (isOwner || note.forkingEnabled)
         case Action.NOTE_COMMENT:
           return actor !== null && readable(actor, note)
@@ -437,6 +449,7 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
         case Action.CONTENT_REPORT:
         case Action.ACCOUNT_EXPORT_DATA:
         case Action.ACCOUNT_IMPORT_NOTES:
+        case Action.ACCOUNT_CLAIM_LEGACY_DATA:
           return true
         case Action.CLASSROOM_CREATE:
           return actor.globalRole === GlobalRole.TEACHER

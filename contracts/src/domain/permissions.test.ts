@@ -1,5 +1,5 @@
-import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, VerificationMethod, Visibility } from './enums'
-import { Action, can, NEEDS_VERIFIED_ACCOUNT, type Actor, type NoteFacts, type Resource } from './permissions'
+import { AiTaskType, ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, VerificationMethod, Visibility } from './enums'
+import { Action, aiTaskAction, can, NEEDS_VERIFIED_ACCOUNT, type Actor, type NoteFacts, type Resource } from './permissions'
 
 /**
  * One assertion per cell of the §5 table that has a defined value. If this file and the spec disagree,
@@ -74,6 +74,21 @@ describe('note rows of §5', () => {
     expectRow(Action.NOTE_FORK, 'PRIVATE', ['owner'])
     expectRow(Action.NOTE_FORK, 'SHARED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare'])
     expectRow(Action.NOTE_FORK, 'PUBLIC', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare', 'anyUser'])
+  })
+
+  it('converting an attached PDF into an editable note follows the fork rule (ADR-0025)', () => {
+    for (const v of Object.values(Visibility)) {
+      for (const r of RELATIONS) {
+        const [actor, facts] = as(r, note(v, { forkingEnabled: r === 'editor' }))
+        expect(can(actor, Action.FILE_CONVERT_TO_NOTE, { kind: 'note', note: facts })).toBe(can(actor, Action.NOTE_FORK, { kind: 'note', note: facts }))
+      }
+    }
+  })
+
+  it('AI tasks that create a copy need the fork right; the others need Ask-AI (ADR-0025)', () => {
+    expect(aiTaskAction(AiTaskType.CREATE_NOTES)).toBe(Action.NOTE_FORK)
+    expect(aiTaskAction(AiTaskType.OUTLINE_TO_NOTE)).toBe(Action.NOTE_FORK)
+    for (const t of [AiTaskType.SUMMARIZE, AiTaskType.QUIZ, AiTaskType.TRANSLATE, AiTaskType.FLASHCARDS]) expect(aiTaskAction(t)).toBe(Action.NOTE_ASK_AI)
   })
 
   it('fork: disabled forking blocks everyone but the owner (§4.4)', () => {
@@ -486,7 +501,7 @@ describe('verification without an institutional email (ADR-0019)', () => {
 
 describe('actions without a resource', () => {
   it('any signed-in user creates groups, personal study items and reports, and exports and imports', () => {
-    for (const a of [Action.GROUP_CREATE, Action.PERSONAL_STUDY_CREATE, Action.CONTENT_REPORT, Action.ACCOUNT_EXPORT_DATA, Action.ACCOUNT_IMPORT_NOTES]) {
+    for (const a of [Action.GROUP_CREATE, Action.PERSONAL_STUDY_CREATE, Action.CONTENT_REPORT, Action.ACCOUNT_EXPORT_DATA, Action.ACCOUNT_IMPORT_NOTES, Action.ACCOUNT_CLAIM_LEGACY_DATA]) {
       expect(can(other, a)).toBe(true)
       expect(can(anon, a)).toBe(false)
     }

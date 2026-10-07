@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { BoundedContext, enumValues, GlobalRole, NoteKind, VerificationMethod, Visibility } from '../domain/enums'
+import { BoundedContext, enumValues, GlobalRole, NoteKind, VerificationMethod, Visibility, YearOfStudy } from '../domain/enums'
 
 /**
  * Integration events between bounded contexts (spec §3, §6.1). Both EventBus adapters (in-process and
@@ -54,6 +54,20 @@ export const events = {
     fileId: uuid,
   })),
   DataExportReady: eventEnvelope('DataExportReady', 1, z.object({ exportId: uuid, userId: uuid, fileId: uuid, expiresAt: z.iso.datetime() })),
+  /** A user claimed their old learnvianotes.in data; core and notes import their parts from the snapshot (ADR-0023). */
+  LegacyDataClaimed: eventEnvelope('LegacyDataClaimed', 1, z.object({ userId: uuid, legacyUid: z.string().min(1) })),
+  LegacyImportPartDone: eventEnvelope('LegacyImportPartDone', 1, z.object({
+    userId: uuid,
+    context: z.enum(enumValues(BoundedContext)),
+    items: z.number().int().min(0),
+  })),
+  /** Department, year and interests changed (ADR-0026); core keeps a read model for recommendations. */
+  ProfileUpdated: eventEnvelope('ProfileUpdated', 1, z.object({
+    userId: uuid,
+    department: z.string().max(80).optional(),
+    yearOfStudy: z.enum(enumValues(YearOfStudy)).optional(),
+    interestTopicIds: z.array(uuid).max(50),
+  })),
   /** A notes import finished (ADR-0018): counts for the report shown in Settings → Data. */
   NotesImportCompleted: eventEnvelope('NotesImportCompleted', 1, z.object({
     importId: uuid,

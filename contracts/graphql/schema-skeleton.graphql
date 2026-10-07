@@ -55,6 +55,11 @@ type User implements Node {             # [users]
   institution: Institution
   "False until the registration details are given"
   registrationComplete: Boolean!
+  profile: StudentProfile
+  "Viewer only"
+  limits: [Limit!]!
+  "Viewer only: data from the old learnvianotes.in site (ADR-0023)"
+  legacyImport: LegacyImport
   "Verified by institutional email, a teacher, or platform admins (ADR-0019); null method while unverified"
   verified: Boolean!
   verificationMethod: VerificationMethod
@@ -183,6 +188,44 @@ input CreateUploadIntentInput { fileName: String!, mimeType: String!, sizeBytes:
 type UploadIntent { fileId: UUID!, uploadUrl: String!, expiresAt: DateTime! }
 type UploadIntentPayload { intent: UploadIntent, userErrors: [UserError!]! }
 
+# ── profile, limits, public stats (ADR-0024, ADR-0026, ADR-0027) ───────────────
+
+enum YearOfStudy { YEAR_1 YEAR_2 YEAR_3 YEAR_4 YEAR_5 POSTGRADUATE GRADUATED SCHOOL NOT_STUDYING }
+"Used to personalise recommendations and AI help. Department and year appear on the profile only if showOnProfile."
+type StudentProfile { department: String, yearOfStudy: YearOfStudy, interests: [Topic!]!, showOnProfile: Boolean! }
+input UpdateProfileInput { department: String, yearOfStudy: YearOfStudy, interestTopicIds: [UUID!], showOnProfile: Boolean }
+type ProfilePayload { profile: StudentProfile, userErrors: [UserError!]! }
+
+enum LimitKey { STORAGE_BYTES AI_TOKENS_DAILY PDF_PAGES_MONTHLY GROUPS_OWNED GROUP_MEMBERS CLASSROOMS_OWNED CLASSROOM_MEMBERS PROJECT_WORKSPACES EXPORTS_DAILY IMPORTS_DAILY ORG_SEATS }
+"From the user's plan (only FREE today). limit null = unlimited."
+type Limit { key: LimitKey!, limit: Float, used: Float! }
+
+"Anonymous-safe. Exact counts never leave the API; null until the first milestone (1,000)."
+type PublicStats { activeLearnersMilestone: Int }
+
+# ── old learnvianotes.in data (ADR-0023) ───────────────────────────────────────
+
+enum LegacyImportStatus { NOT_FOUND AVAILABLE CLAIMED DECLINED }
+type LegacyCounts { notes: Int!, completedTopics: Int!, markedProblems: Int!, studyDays: Int!, studyMinutes: Int! }
+type LegacyImport { status: LegacyImportStatus!, counts: LegacyCounts, claimedAt: DateTime }
+enum ProblemMark { SOLVED REVISIT }
+"Progress on /core content — the old site's history plus everything recorded since. topicKey = subjectId/topicId."
+type CoreTopicProgress { topicKey: String!, completed: Boolean!, revisit: Boolean!, secondsStudied: Int!, lastStudiedAt: DateTime }
+type CoreProblemMark { problemId: String!, mark: ProblemMark! }
+type CoreSubjectProgress { subjectId: String!, topics: [CoreTopicProgress!]!, problems: [CoreProblemMark!]! }
+
+# ── AI tasks and the PDF engine (ADR-0025) ─────────────────────────────────────
+
+enum AiTaskType { SUMMARIZE KEY_CONCEPTS EXPLAIN_SIMPLY FLASHCARDS QUIZ PRACTICE_QUESTIONS TRANSLATE FIND_MISTAKES CREATE_NOTES OUTLINE_TO_NOTE }
+"Exactly one source. CREATE_NOTES / OUTLINE_TO_NOTE make a note of your own and follow the fork rule."
+input RunAiTaskInput { task: AiTaskType!, noteId: UUID, fileId: UUID, targetLanguage: String }
+type AiTaskRun { id: UUID!, task: AiTaskType!, status: JobState!, resultNote: Note, startedAt: DateTime! }
+type AiTaskPayload { run: AiTaskRun, userErrors: [UserError!]! }
+"The PDF must be attached to a note you may fork; the result is a PRIVATE note of yours with credit to the source."
+input ConvertPdfInput { fileId: UUID! }
+type PdfConversion { id: UUID!, status: JobState!, note: Note, pages: Int!, pagesNeedingReview: [Int!]! }
+type PdfConversionPayload { conversion: PdfConversion, userErrors: [UserError!]! }
+
 # ── data: export everything, import notes (ADR-0018) ──────────────────────────
 
 enum JobState { QUEUED RUNNING SUCCEEDED FAILED DEAD }
@@ -209,6 +252,11 @@ type Query {
   "Teachers: verification requests addressed to them"
   verificationRequestsToReview(first: Int, after: String): [VerificationRequest!]!
   subjects(first: Int, after: String): [Subject!]!
+  publicStats: PublicStats!
+  "Signed-in users: their progress on a /core subject (web reads it on /core pages)"
+  coreProgress(subjectId: String!): CoreSubjectProgress!
+  aiTaskRun(id: UUID!): AiTaskRun
+  pdfConversion(id: UUID!): PdfConversion
 }
 
 type Mutation {
@@ -233,6 +281,13 @@ type Mutation {
   # Phase 1 — uploads (§8.1)
   createUploadIntent(input: CreateUploadIntentInput!): UploadIntentPayload!
   completeUpload(fileId: UUID!): OkPayload!
+  # Phase 1 — profile and old data (ADR-0023, ADR-0026)
+  updateProfile(input: UpdateProfileInput!): ProfilePayload!
+  claimLegacyData: OkPayload!
+  declineLegacyData: OkPayload!
+  # Phase 2 — PDF engine; Phase 5 — AI tasks (ADR-0025)
+  convertPdfToNote(input: ConvertPdfInput!): PdfConversionPayload!
+  runAiTask(input: RunAiTaskInput!): AiTaskPayload!
   # Phase 2 — data (ADR-0018)
   requestDataExport: DataExportPayload!
   importNotes(input: ImportNotesInput!): NotesImportPayload!

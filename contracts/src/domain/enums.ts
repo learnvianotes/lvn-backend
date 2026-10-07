@@ -115,6 +115,41 @@ export type NoteArtifactType = (typeof NoteArtifactType)[keyof typeof NoteArtifa
 export const VerificationMethod = { INSTITUTIONAL_EMAIL: 'INSTITUTIONAL_EMAIL', TEACHER: 'TEACHER', DOCUMENTS: 'DOCUMENTS' } as const
 export type VerificationMethod = (typeof VerificationMethod)[keyof typeof VerificationMethod]
 
+/** The old learnvianotes.in data waiting for its owner (ADR-0023). */
+export const LegacyImportStatus = { NOT_FOUND: 'NOT_FOUND', AVAILABLE: 'AVAILABLE', CLAIMED: 'CLAIMED', DECLINED: 'DECLINED' } as const
+export type LegacyImportStatus = (typeof LegacyImportStatus)[keyof typeof LegacyImportStatus]
+
+/**
+ * Every usage limit, read from the user's (or organisation's) plan — never written in code (ADR-0024). Only the
+ * FREE plan exists today; paid plans and organisation seat limits come later without code changes.
+ */
+export const LimitKey = {
+  STORAGE_BYTES: 'STORAGE_BYTES', AI_TOKENS_DAILY: 'AI_TOKENS_DAILY', PDF_PAGES_MONTHLY: 'PDF_PAGES_MONTHLY',
+  GROUPS_OWNED: 'GROUPS_OWNED', GROUP_MEMBERS: 'GROUP_MEMBERS', CLASSROOMS_OWNED: 'CLASSROOMS_OWNED',
+  CLASSROOM_MEMBERS: 'CLASSROOM_MEMBERS', PROJECT_WORKSPACES: 'PROJECT_WORKSPACES', EXPORTS_DAILY: 'EXPORTS_DAILY',
+  IMPORTS_DAILY: 'IMPORTS_DAILY', ORG_SEATS: 'ORG_SEATS',
+} as const
+export type LimitKey = (typeof LimitKey)[keyof typeof LimitKey]
+
+/**
+ * AI tasks a user runs on something they can read (ADR-0025). Tasks that produce a new note of their own from someone
+ * else's content are "derivative" and follow the fork rule; the rest follow the Ask-AI rule.
+ */
+export const AiTaskType = {
+  SUMMARIZE: 'SUMMARIZE', KEY_CONCEPTS: 'KEY_CONCEPTS', EXPLAIN_SIMPLY: 'EXPLAIN_SIMPLY', FLASHCARDS: 'FLASHCARDS',
+  QUIZ: 'QUIZ', PRACTICE_QUESTIONS: 'PRACTICE_QUESTIONS', TRANSLATE: 'TRANSLATE', FIND_MISTAKES: 'FIND_MISTAKES',
+  CREATE_NOTES: 'CREATE_NOTES', OUTLINE_TO_NOTE: 'OUTLINE_TO_NOTE',
+} as const
+export type AiTaskType = (typeof AiTaskType)[keyof typeof AiTaskType]
+export const DERIVATIVE_AI_TASKS: ReadonlySet<AiTaskType> = new Set([AiTaskType.CREATE_NOTES, AiTaskType.OUTLINE_TO_NOTE])
+
+/** Year of study on a student profile (ADR-0026). */
+export const YearOfStudy = {
+  YEAR_1: 'YEAR_1', YEAR_2: 'YEAR_2', YEAR_3: 'YEAR_3', YEAR_4: 'YEAR_4', YEAR_5: 'YEAR_5',
+  POSTGRADUATE: 'POSTGRADUATE', GRADUATED: 'GRADUATED', SCHOOL: 'SCHOOL', NOT_STUDYING: 'NOT_STUDYING',
+} as const
+export type YearOfStudy = (typeof YearOfStudy)[keyof typeof YearOfStudy]
+
 /** The five bounded contexts (spec §6.1); each contributes its part of a data export (ADR-0018). */
 export const BoundedContext = { USERS: 'users', NOTES: 'notes', CORE: 'core', AI: 'ai', COMMUNICATION: 'communication' } as const
 export type BoundedContext = (typeof BoundedContext)[keyof typeof BoundedContext]
@@ -130,6 +165,8 @@ export const LearningEventType = {
   TIME_SPENT: 'TIME_SPENT', NOTE_SAVED: 'NOTE_SAVED', TOPIC_REVISITED: 'TOPIC_REVISITED', EXAM_CREATED: 'EXAM_CREATED',
   RESOURCE_VIEWED: 'RESOURCE_VIEWED', RESOURCE_SAVED: 'RESOURCE_SAVED', AI_REQUESTED: 'AI_REQUESTED',
   SEARCH_PERFORMED: 'SEARCH_PERFORMED',
+  /** Read a /core topic to the end, and marked a /core problem — the old site's progress, carried on (ADR-0023). */
+  TOPIC_COMPLETED: 'TOPIC_COMPLETED', PROBLEM_MARKED: 'PROBLEM_MARKED',
 } as const
 export type LearningEventType = (typeof LearningEventType)[keyof typeof LearningEventType]
 
