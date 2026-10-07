@@ -73,14 +73,14 @@ They are **references, not specs**: anything they show that the architecture spe
 
 | # | Shown on the boards | Conflict with the spec | Options |
 | --- | --- | --- | --- |
-| 1 | "Pricing" in the landing nav | Payments are out of scope (§1, §20) | Remove the link (recommended) |
+| 1 | "Pricing" in the landing nav | Payments are out of scope (§1, §20) | **Decided** (ADR-0024): removed; plans with limits later, limits already stored as data |
 | 2 | Followers / Following counts, a "Following" feed tab | **Decided** (ADR-0013, ADR-0014): anyone follows teachers, teachers connect with teachers; follower counts on teacher profiles only; the Following feed shows followed teachers' public notes, blogs, posts and projects | Students follow students too (ADR-0016), with block and restrict |
-| 3 | Group "Events" tab, upcoming events with Register, live study rooms (B) | No event or live-room entity; live rooms need real-time audio/video | ADR for events (core); live rooms out of scope for now |
-| 4 | "Problems" filter in global search | "Problems" removed from scope; Sheet 150 is read-only content under `/core` | Search `/core` content as Topics, no Problems filter |
-| 5 | PDF-first notes with download counts | Notes are card documents; PDFs are attachment cards (§4.1, §8); downloads are not tracked | Show attachments as file cards; add a `FILE_DOWNLOADED` learning event if counts are wanted |
-| 6 | "Translate" and "Read aloud" quick actions | Not in the spec; English-only UI (§12.2) | ADR for read-aloud (device TTS, no backend) and translate (AI task) |
-| 7 | Branch chips (CSE, ECE, ME…) and "CSE · 3rd Year" under names | No department / year on `User` (§4) | Profile fields in `users`, or derive from classroom/organisation membership |
-| 8 | "Join 50,000+ students" | Must be a real number | Show live counts only, or no figure |
+| 3 | Group "Events" tab, upcoming events with Register, live study rooms (B) | No event or live-room entity; live rooms need real-time audio/video | **Decided:** no live rooms — Google Meet links can be attached to events and posts; events need their own ADR when wanted |
+| 4 | "Problems" filter in global search | "Problems" removed from scope; Sheet 150 is read-only content under `/core` | **Decided:** dropped; `/core` content is searched as Topics |
+| 5 | PDF-first notes with download counts | Notes are card documents; PDFs are attachment cards (§4.1, §8); downloads are not tracked | **Decided** (ADR-0025): file cards with download counts, plus the PDF engine that converts PDFs into editable notes |
+| 6 | "Translate" and "Read aloud" quick actions | Not in the spec; English-only UI (§12.2) | **Decided** (ADR-0025): read aloud with device TTS (Phase 2); Translate and more as AI tasks (Phase 5) |
+| 7 | Branch chips (CSE, ECE, ME…) and "CSE · 3rd Year" under names | No department / year on `User` (§4) | **Decided** (ADR-0026): department, year and interests on the student profile |
+| 8 | "Join 50,000+ students" | Must be a real number | **Decided** (ADR-0027): nothing until 1,000 active learners, then milestones only |
 | 9 | "Weekly goal" tile | Not specified | Fold into §14.2 streaks/exam planner, or ADR |
 
 ## Implications

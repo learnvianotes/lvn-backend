@@ -18,6 +18,10 @@ erDiagram
   User ||--o{ ConsentRecord : accepts
   User ||--o| InstitutionalEmail : "verifies (ADR-0017)"
   User ||--o{ VerificationRequest : "asks (ADR-0019)"
+  User ||--o| StudentProfile : "ADR-0026"
+  User ||--o| UserPlan : "ADR-0024"
+  Plan ||--o{ Entitlement : "ADR-0024"
+  User ||--o| LegacyImport : "ADR-0023"
   User ||--o{ Follow : "follows (teacher, or student → student)"
   User ||--o{ Block : blocks
   User ||--o{ Restriction : restricts
@@ -64,6 +68,33 @@ erDiagram
     uuid id PK "read model from the admin app"
     text name
     text_array emailDomains "ADR-0017"
+  }
+  StudentProfile {
+    uuid userId FK
+    text department
+    enum yearOfStudy
+    uuid_array interestTopicIds
+    bool showOnProfile
+  }
+  Plan {
+    uuid id PK
+    text code "FREE today"
+  }
+  Entitlement {
+    uuid planId FK
+    enum key "LimitKey"
+    bigint limit "null = unlimited"
+    enum appliesToRole "optional: STUDENT | TEACHER"
+  }
+  UserPlan {
+    uuid userId FK
+    uuid planId FK
+  }
+  LegacyImport {
+    uuid userId FK
+    text legacyUid "Firebase UID"
+    enum status "NOT_FOUND | AVAILABLE | CLAIMED | DECLINED"
+    timestamptz claimedAt
   }
   VerificationRequest {
     uuid id PK
@@ -136,6 +167,11 @@ erDiagram
     timestamptz at
   }
 ```
+
+Also in `users`: `OrganizationPlan(organizationId, planId, seats)` (ADR-0024). In `notes`:
+`PdfConversion(id, userId, fileId, noteId, status, pages, pagesNeedingReview[])` (ADR-0025). In `ai`:
+`AiTaskRun(id, userId, task, sourceNoteId | sourceFileId, status, resultNoteId, artifactId)` (ADR-0025). In `core`:
+`LegacyEvent` archive (24 months, ADR-0023).
 
 Later (ADR-0012, Phase 3 manual / Phase 7 import), also in `users`: `TeacherProfile(userId, headline, bio, topicIds[])`,
 `TeacherSkill(id, userId, kind, name, detail, source, sourceUrl, fetchedAt, status)` and

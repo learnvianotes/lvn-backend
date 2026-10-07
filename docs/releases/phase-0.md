@@ -9,7 +9,7 @@ Spec: [lvn-architecture-v2.md](../architecture/lvn-architecture-v2.md) §18
 | Item | Where |
 | --- | --- |
 | Spec, existing-state inventory, ERD, env reference | `docs/architecture/` |
-| ADR-0001 … ADR-0022 (0005 permission decisions, 0006 package scope, 0007 Firebase for Google sign-in only, 0008 local mobile builds, 0009 membership by approval, 0010 fork publishing and credit, 0011 group join policy, 0012 teacher Skills tab, 0013 teacher follows and connections, 0014 students follow teachers and teacher publications, 0015 student projects and project workspaces, 0016 student follows, block and restrict, 0017 registration with birth date and institutional email, 0018 data export and notes import, 0019 verification without institutional email, 0020 teachers follow students, 0021 push via FCM, 0022 learnvianotes.in and URLs from .env) | `docs/adr/` |
+| ADR-0001 … ADR-0027 (0005 permission decisions, 0006 package scope, 0007 Firebase for Google sign-in only, 0008 local mobile builds, 0009 membership by approval, 0010 fork publishing and credit, 0011 group join policy, 0012 teacher Skills tab, 0013 teacher follows and connections, 0014 students follow teachers and teacher publications, 0015 student projects and project workspaces, 0016 student follows, block and restrict, 0017 registration with birth date and institutional email, 0018 data export and notes import, 0019 verification without institutional email, 0020 teachers follow students, 0021 push via FCM, 0022 learnvianotes.in and URLs from .env, 0023 old-site data, 0024 plans and limits, 0025 read aloud, AI tasks and PDF engine, 0026 student profile, 0027 milestones) | `docs/adr/` |
 | UI reference: brand tokens, screen → phase map, open design questions | `docs/design/ui-reference.md` |
 | pnpm + Turborepo workspace; api + worker composition roots; five empty context packages; `libs/config` | `apps/`, `contexts/`, `libs/` |
 | Permission matrix + domain enums in `@lvn/contracts/domain` | `contracts/src/domain/` |
@@ -35,7 +35,7 @@ Expo SDK 57 app with Expo Router, three side-by-side build variants built locall
 | --- | --- | --- | --- |
 | Build | 9/9 packages | 805 static pages, 106 kB first-load JS | JS bundles exported (Android 3.4 MB, iOS 3 MB); local release APK built with Gradle, no Expo account: `com.learnvianotes.dev`, 42 MB arm64, 2 min 53 s |
 | Lint, typecheck | clean | clean | clean |
-| Unit / integration | 75 tests (contracts 72, api health 2, worker 1); `permissions.ts` 100 % branches | 7 unit tests | 3 tests |
+| Unit / integration | 80 tests (contracts 77, api health 2, worker 1); `permissions.ts` 100 % branches | 7 unit tests | 3 tests |
 | E2E | — | 12/12 Playwright (desktop + Pixel 7), axe: 0 serious/critical (re-run after the palette change) | Maestro flow written; not run (no emulator image on the dev machine, no phone attached) |
 | Health checks | boundaries clean, a deliberate cross-context import fails; Prisma valid | — | expo-doctor 21/21 |
 | `pnpm audit --prod --audit-level high` | no known vulnerabilities | no known vulnerabilities | 2 build-tool highs with no fix, ignored and documented |

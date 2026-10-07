@@ -102,8 +102,8 @@ At cut-over:
 2. Keep the Firebase project: its Authentication (Google provider only) is how LVN does Google sign-in (ADR-0007).
    Returning Google users keep their Firebase UID and are recognised on first sign-in. Old-site email + password
    users sign up again or use Google with the same email. Firestore, Functions and Hosting are retired after
-   cut-over. **Open question for the owner:** import returning users' old Firestore data (streaks, history,
-   personal notes) into Postgres in Phase 1, or announce a fresh start.
+   cut-over. **Decided (ADR-0023):** returning users' old data (progress, history, personal notes) is snapshotted and
+   claimed in Phase 1, and served to the web through `coreProgress`.
 3. Leave `public/sw.js` deployed for at least 6 months so every returning browser drops the old service worker.
 
 ## Inconsistencies in the spec to settle before Phase 1
