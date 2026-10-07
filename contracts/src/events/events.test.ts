@@ -8,6 +8,7 @@ describe('events', () => {
     const e = parseEvent('NotePublished', { ...base, type: 'NotePublished', version: 1, payload: { noteId: uuid(2), versionId: uuid(3), ownerId: uuid(4), visibility: 'PUBLIC' } })
     expect(e.payload.visibility).toBe('PUBLIC')
     expect(e.payload.forkedFromNoteId).toBeUndefined()
+    expect(e.payload.kind).toBeUndefined()
   })
 
   it('carries the scope of a reviewed join request', () => {

@@ -1,4 +1,4 @@
-import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, NoteRole, Visibility } from './enums'
+import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, NoteKind, NoteRole, Visibility } from './enums'
 
 /**
  * The permission matrix (spec §5), defined once. The backend's PolicyService loads the facts
@@ -17,9 +17,11 @@ import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, No
  * an Editor — so a SHARED note never becomes public through someone else's fork (ADR-0010). Every reader of a
  * fork sees its attribution.
  *
- * Teacher network (ADR-0013): teachers follow other teachers (one-way, public content only) and connect with
- * them (a request the other accepts). A teacher shares a note directly with another teacher only if they are
- * connected or teach the same classroom, and can share a note with all their connections at once.
+ * Teacher network (ADR-0013, ADR-0014): any signed-in user follows teachers (one-way, public content only);
+ * only the teacher sees who follows them. Teachers connect with other teachers (a request the other accepts). A
+ * teacher shares a note directly with another teacher only if they are connected or teach the same classroom, and
+ * can share a note with all their connections at once. Teachers also publish blogs, posts and projects, which are
+ * notes of another kind and follow every note rule.
  *
  * Membership (ADR-0009, ADR-0011): joining a classroom is always a request that its Teacher or a TA accepts; a
  * staff invite is that acceptance given in advance and the student accepts the invite. A PUBLIC group whose
@@ -28,6 +30,7 @@ import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, No
  */
 
 export const Action = {
+  NOTE_CREATE: 'note.create',
   NOTE_READ: 'note.read',
   NOTE_EDIT_DRAFT: 'note.editDraft',
   NOTE_PUBLISH: 'note.publish',
@@ -56,6 +59,7 @@ export const Action = {
   CLASSROOM_MODERATE_REPORTS: 'classroom.moderateReports',
   USER_FOLLOW: 'user.follow',
   USER_UNFOLLOW: 'user.unfollow',
+  USER_VIEW_FOLLOWERS: 'user.viewFollowers',
   USER_REQUEST_CONNECTION: 'user.requestConnection',
   USER_RESPOND_TO_CONNECTION: 'user.respondToConnection',
   USER_REMOVE_CONNECTION: 'user.removeConnection',
@@ -114,6 +118,7 @@ export type ShareTargetFacts =
 export type Resource =
   | { kind: 'none' }
   | { kind: 'note'; note: NoteFacts; targetVisibility?: Visibility; shareTarget?: ShareTargetFacts }
+  | { kind: 'newNote'; noteKind: NoteKind }
   | {
       kind: 'user'
       targetId: string
@@ -275,14 +280,14 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
     }
     case 'user': {
       if (!actor) return false
-      const teachers =
-        actor.globalRole === GlobalRole.TEACHER &&
-        resource.targetGlobalRole === GlobalRole.TEACHER &&
-        actor.id !== resource.targetId &&
-        !resource.blocked
+      const followableTeacher =
+        resource.targetGlobalRole === GlobalRole.TEACHER && actor.id !== resource.targetId && !resource.blocked
+      const teachers = actor.globalRole === GlobalRole.TEACHER && followableTeacher
       switch (action) {
         case Action.USER_FOLLOW:
-          return teachers && !resource.following
+          return followableTeacher && !resource.following
+        case Action.USER_VIEW_FOLLOWERS:
+          return actor.id === resource.targetId
         case Action.USER_UNFOLLOW:
           return resource.following === true
         case Action.USER_REQUEST_CONNECTION:
@@ -295,6 +300,10 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           return false
       }
     }
+    case 'newNote':
+      // Anyone signed in writes notes; blogs, posts and projects are teacher publications (ADR-0014).
+      if (!actor || action !== Action.NOTE_CREATE) return false
+      return resource.noteKind === NoteKind.NOTE || actor.globalRole === GlobalRole.TEACHER
     case 'none': {
       if (!actor) return false
       switch (action) {

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { enumValues, GlobalRole, Visibility } from '../domain/enums'
+import { enumValues, GlobalRole, NoteKind, Visibility } from '../domain/enums'
 
 /**
  * Integration events between bounded contexts (spec §3, §6.1). Both EventBus adapters (in-process and
@@ -45,6 +45,8 @@ export const events = {
     visibility: z.enum(enumValues(Visibility)),
     /** Set when the published note is a fork, so the origin's owner can be told (ADR-0010). Optional: additive in v1. */
     forkedFromNoteId: uuid.optional(),
+    /** NOTE, BLOG, POST or PROJECT, for the Following feed (ADR-0014). Optional: additive in v1; absent means NOTE. */
+    kind: z.enum(enumValues(NoteKind)).optional(),
   })),
   NoteUnpublished: eventEnvelope('NoteUnpublished', 1, z.object({ noteId: uuid, ownerId: uuid })),
   NoteForked: eventEnvelope('NoteForked', 1, z.object({ noteId: uuid, forkedFromNoteId: uuid, forkedFromVersionId: uuid, ownerId: uuid })),

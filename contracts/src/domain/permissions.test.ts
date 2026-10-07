@@ -1,4 +1,4 @@
-import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, Visibility } from './enums'
+import { ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, NoteKind, Visibility } from './enums'
 import { Action, can, type Actor, type NoteFacts } from './permissions'
 
 /**
@@ -245,14 +245,39 @@ describe('teacher network (ADR-0013)', () => {
     expect(can(t1, Action.USER_UNFOLLOW, towards())).toBe(false)
   })
 
-  it('follow and connect are teacher-to-teacher only, never yourself, never across a block', () => {
-    for (const a of [Action.USER_FOLLOW, Action.USER_REQUEST_CONNECTION]) {
-      expect(can(other, a, towards())).toBe(false)
-      expect(can(t1, a, towards({}, GlobalRole.STUDENT))).toBe(false)
-      expect(can(t1, a, { ...towards(), targetId: 't1' })).toBe(false)
-      expect(can(t1, a, towards({ blocked: true }))).toBe(false)
-      expect(can(anon, a, towards())).toBe(false)
+  it('students and teachers follow teachers; nobody follows a student, themselves, or across a block (ADR-0014)', () => {
+    expect(can(other, Action.USER_FOLLOW, towards())).toBe(true)
+    expect(can(t1, Action.USER_FOLLOW, towards())).toBe(true)
+    for (const actor of [other, t1]) {
+      expect(can(actor, Action.USER_FOLLOW, towards({}, GlobalRole.STUDENT))).toBe(false)
+      expect(can(actor, Action.USER_FOLLOW, towards({ blocked: true }))).toBe(false)
     }
+    expect(can(t1, Action.USER_FOLLOW, { ...towards(), targetId: 't1' })).toBe(false)
+    expect(can(anon, Action.USER_FOLLOW, towards())).toBe(false)
+  })
+
+  it('connect is teacher-to-teacher only, never yourself, never across a block', () => {
+    expect(can(other, Action.USER_REQUEST_CONNECTION, towards())).toBe(false)
+    expect(can(t1, Action.USER_REQUEST_CONNECTION, towards({}, GlobalRole.STUDENT))).toBe(false)
+    expect(can(t1, Action.USER_REQUEST_CONNECTION, { ...towards(), targetId: 't1' })).toBe(false)
+    expect(can(t1, Action.USER_REQUEST_CONNECTION, towards({ blocked: true }))).toBe(false)
+    expect(can(anon, Action.USER_REQUEST_CONNECTION, towards())).toBe(false)
+  })
+
+  it('only the teacher sees who follows them; everyone else sees a count', () => {
+    expect(can(t1, Action.USER_VIEW_FOLLOWERS, { ...towards(), targetId: 't1' })).toBe(true)
+    expect(can(other, Action.USER_VIEW_FOLLOWERS, towards())).toBe(false)
+  })
+
+  it('anyone signed in writes notes; blogs, posts and projects are for teachers (ADR-0014)', () => {
+    const create = (actor: Actor | null, noteKind: NoteKind) => can(actor, Action.NOTE_CREATE, { kind: 'newNote', noteKind })
+    expect(create(other, NoteKind.NOTE)).toBe(true)
+    for (const k of [NoteKind.BLOG, NoteKind.POST, NoteKind.PROJECT]) {
+      expect(create(t1, k)).toBe(true)
+      expect(create(other, k)).toBe(false)
+    }
+    expect(create(anon, NoteKind.NOTE)).toBe(false)
+    expect(can(t1, Action.NOTE_READ, { kind: 'newNote', noteKind: NoteKind.BLOG })).toBe(false)
   })
 
   it('connection requests: verified, not already connected, nothing pending either way', () => {

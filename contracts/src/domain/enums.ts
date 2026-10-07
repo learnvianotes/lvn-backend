@@ -31,6 +31,13 @@ export const CardType = {
 } as const
 export type CardType = (typeof CardType)[keyof typeof CardType]
 
+/**
+ * What a note is presented as (ADR-0014). Every kind is a Note — same editor, versions, visibility, moderation,
+ * search and permissions. BLOG, POST and PROJECT are published by teachers for their followers and the public.
+ */
+export const NoteKind = { NOTE: 'NOTE', BLOG: 'BLOG', POST: 'POST', PROJECT: 'PROJECT' } as const
+export type NoteKind = (typeof NoteKind)[keyof typeof NoteKind]
+
 export const NoteVersionKind = { PUBLISHED: 'PUBLISHED', CONFLICT: 'CONFLICT' } as const
 export type NoteVersionKind = (typeof NoteVersionKind)[keyof typeof NoteVersionKind]
 
