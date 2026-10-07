@@ -5,6 +5,9 @@ import { enumValues } from '../domain/enums'
  * Push notifications (spec §9.3, ADR-0021). Delivered through Firebase Cloud Messaging — Android directly, iOS via
  * APNs — and nothing else of Firebase. The payload carries ids only: the app fetches the content over the API, so
  * permission checks happen on that fetch (§9.2) and no note, comment or message text passes through Google.
+ *
+ * Links are in-app paths ("/n/os-notes-0199…"), never full URLs: each app joins them to its own scheme or origin
+ * from its environment, so no domain is written into the contract (ADR-0022).
  */
 
 export const NotificationCategory = {
@@ -16,14 +19,15 @@ export const NotificationCategory = {
 } as const
 export type NotificationCategory = (typeof NotificationCategory)[keyof typeof NotificationCategory]
 
-const DEEP_LINK = /^(learnvianotes:\/\/|https:\/\/(sandbox\.)?learnvianotes\.com\/)/
+/** An absolute in-app path: starts with a single "/", no scheme, host or "//". */
+const IN_APP_PATH = /^\/(?!\/)[A-Za-z0-9\-._~!$&'()*+,;=:@%/?#]*$/
 
 /** The FCM `data` block. Strict: any extra key (for example, smuggled content) is rejected. */
 export const pushData = z
   .object({
     notificationId: z.uuid(),
     category: z.enum(enumValues(NotificationCategory)),
-    deepLink: z.string().regex(DEEP_LINK, 'must be a learnvianotes:// or learnvianotes.com link'),
+    path: z.string().max(512).regex(IN_APP_PATH, 'must be an in-app path such as /n/<slug>-<id>'),
   })
   .strict()
 export type PushData = z.infer<typeof pushData>

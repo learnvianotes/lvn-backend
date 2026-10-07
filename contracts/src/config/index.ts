@@ -3,6 +3,9 @@ import { z } from 'zod'
 /**
  * Environment contract for every LVN process (spec §16.1). Each app validates its variables at start-up
  * and exits on a missing or malformed value. The canonical list is docs/architecture/env.md.
+ *
+ * URLs, origins and hosts never have defaults here: every one comes from the environment (.env files locally,
+ * the deploy environment in sandbox and production — ADR-0022).
  */
 
 export const AppEnv = z.enum(['development', 'sandbox', 'production'])
@@ -34,7 +37,8 @@ export type WorkerConfig = z.infer<typeof workerConfigSchema>
 /** Public (browser-visible) web variables. Server-only web secrets get their own schema in Phase 1. */
 export const webConfigSchema = z.object({
   NEXT_PUBLIC_APP_ENV: AppEnv.default('development'),
-  NEXT_PUBLIC_SITE_URL: z.url().default('http://localhost:3000'),
+  /** Canonical web origin, e.g. https://www.learnvianotes.in in production. */
+  NEXT_PUBLIC_SITE_URL: z.url(),
 })
 export type WebConfig = z.infer<typeof webConfigSchema>
 
