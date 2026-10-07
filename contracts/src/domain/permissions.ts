@@ -5,13 +5,17 @@ import { ClassroomRole, GlobalRole, GroupRole, NoteRole, Visibility } from './en
  * (ownership, shares, memberships) and calls `can()`; web and mobile call the same function only to
  * hide controls. A client answer is never trusted by the server.
  *
- * Interpretations of the §5 table, recorded in docs/adr/0005-permission-matrix-encoding.md:
- * - Fork requires a PUBLIC or SHARED note (§4.4) — a PRIVATE note is not forkable, even by its owner —
- *   and forking enabled unless the actor owns the note.
- * - Email verification is required to publish, join groups and comment (§7.1).
+ * Owner decisions where the spec's sections disagree (docs/adr/0005-permission-matrix-encoding.md):
+ * - Owners may fork their own notes at any visibility, PRIVATE included; anyone else needs read access and
+ *   forking enabled.
+ * - A share EDITOR edits the draft while the note is SHARED or PUBLIC; only the owner publishes, so readers
+ *   never see an editor's change until the owner releases it (§4.3).
+ * - Email verification is required to publish, request to join a group and comment (§7.1).
  * - Restricted minors cannot make a note PUBLIC (§5, §15.2); the flag is applied before the matrix.
- * - A share EDITOR edits only while the note is SHARED (§4.2); §5 does not qualify it by visibility,
- *   so the stricter rule applies until the owner decides otherwise.
+ *
+ * Membership is by approval (docs/adr/0009-membership-by-approval.md): joining a group or classroom is a
+ * request that a group Admin/Owner or the classroom's Teacher/TA accepts. A classroom invite sent by staff is
+ * that acceptance given in advance.
  */
 
 export const Action = {
@@ -26,14 +30,17 @@ export const Action = {
   NOTE_ASK_AI: 'note.askAi',
   FILE_READ: 'file.read',
   GROUP_CREATE: 'group.create',
-  GROUP_JOIN: 'group.join',
+  GROUP_REQUEST_JOIN: 'group.requestJoin',
+  GROUP_REVIEW_JOIN_REQUESTS: 'group.reviewJoinRequests',
   GROUP_POST: 'group.post',
   GROUP_MODERATE_POSTS: 'group.moderatePosts',
   GROUP_MANAGE: 'group.manage',
   GROUP_DELETE: 'group.delete',
   GROUP_MODERATE_REPORTS: 'group.moderateReports',
   CLASSROOM_CREATE: 'classroom.create',
-  CLASSROOM_JOIN: 'classroom.join',
+  CLASSROOM_REQUEST_JOIN: 'classroom.requestJoin',
+  CLASSROOM_ACCEPT_INVITE: 'classroom.acceptInvite',
+  CLASSROOM_REVIEW_JOIN_REQUESTS: 'classroom.reviewJoinRequests',
   CLASSROOM_PUBLISH_QUIZ: 'classroom.publishQuiz',
   CLASSROOM_VIEW_PERFORMANCE: 'classroom.viewPerformance',
   CLASSROOM_MODERATE_REPORTS: 'classroom.moderateReports',
@@ -67,8 +74,24 @@ export interface NoteFacts {
 export type Resource =
   | { kind: 'none' }
   | { kind: 'note'; note: NoteFacts; targetVisibility?: Visibility }
-  | { kind: 'group'; role?: GroupRole }
-  | { kind: 'classroom'; role?: ClassroomRole; targetUserId?: string }
+  | {
+      kind: 'group'
+      /** The actor's role in the group; undefined = not a member. */
+      role?: GroupRole
+      /** The actor already has a pending request to join this group. */
+      pendingJoinRequest?: boolean
+    }
+  | {
+      kind: 'classroom'
+      /** The actor's role in the classroom; undefined = not a member. */
+      role?: ClassroomRole
+      /** Whose results are being viewed (CLASSROOM_VIEW_PERFORMANCE). */
+      targetUserId?: string
+      /** The actor already has a pending request to join this classroom. */
+      pendingJoinRequest?: boolean
+      /** The classroom's Teacher or TA has invited the actor and the invite is still valid. */
+      invitedByStaff?: boolean
+    }
 
 /** Note-level relationship, from strongest to weakest — the columns of the §5 table. */
 export type NoteRelation = 'OWNER' | 'EDITOR' | 'VIEWER' | 'GROUP_SHARE' | 'CLASSROOM_SHARE' | 'ANY_USER' | 'ANONYMOUS'
@@ -117,7 +140,8 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
         case Action.FILE_READ:
           return readable(actor, note)
         case Action.NOTE_EDIT_DRAFT:
-          return isOwner || (actor !== null && note.visibility === Visibility.SHARED && note.shareRole === NoteRole.EDITOR)
+          // A PRIVATE note is readable by its owner only, so share rows on it grant nothing until it is shared again.
+          return isOwner || (actor !== null && note.visibility !== Visibility.PRIVATE && note.shareRole === NoteRole.EDITOR)
         case Action.NOTE_PUBLISH:
         case Action.NOTE_CHANGE_VISIBILITY:
           if (!isOwner || !actor!.emailVerified) return false
@@ -126,7 +150,7 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
         case Action.NOTE_SHARE:
           return isOwner
         case Action.NOTE_FORK:
-          return actor !== null && note.visibility !== Visibility.PRIVATE && readable(actor, note) && (isOwner || note.forkingEnabled)
+          return actor !== null && readable(actor, note) && (isOwner || note.forkingEnabled)
         case Action.NOTE_COMMENT:
           return actor !== null && actor.emailVerified && readable(actor, note)
         case Action.NOTE_ASK_AI:
@@ -147,8 +171,10 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           return atLeast(resource.role, GroupRole.ADMIN)
         case Action.GROUP_DELETE:
           return resource.role === GroupRole.OWNER
-        case Action.GROUP_JOIN:
-          return actor.emailVerified && resource.role === undefined
+        case Action.GROUP_REQUEST_JOIN:
+          return actor.emailVerified && resource.role === undefined && !resource.pendingJoinRequest
+        case Action.GROUP_REVIEW_JOIN_REQUESTS:
+          return atLeast(resource.role, GroupRole.ADMIN)
         default:
           return false
       }
@@ -156,8 +182,11 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
     case 'classroom': {
       if (!actor) return false
       switch (action) {
-        case Action.CLASSROOM_JOIN:
-          return resource.role === undefined
+        case Action.CLASSROOM_REQUEST_JOIN:
+          return resource.role === undefined && !resource.pendingJoinRequest
+        case Action.CLASSROOM_ACCEPT_INVITE:
+          return resource.role === undefined && resource.invitedByStaff === true
+        case Action.CLASSROOM_REVIEW_JOIN_REQUESTS:
         case Action.CLASSROOM_PUBLISH_QUIZ:
         case Action.CLASSROOM_MODERATE_REPORTS:
           return isClassStaff(resource.role)

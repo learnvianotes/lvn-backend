@@ -52,10 +52,15 @@ describe('note rows of §5', () => {
     }
   })
 
-  it('edit draft: owner always, share editor only while SHARED (§4.2)', () => {
+  it('edit draft: owner always, share editor while SHARED or PUBLIC (ADR-0005)', () => {
     expectRow(Action.NOTE_EDIT_DRAFT, 'PRIVATE', ['owner'])
     expectRow(Action.NOTE_EDIT_DRAFT, 'SHARED', ['owner', 'editor'])
-    expectRow(Action.NOTE_EDIT_DRAFT, 'PUBLIC', ['owner'])
+    expectRow(Action.NOTE_EDIT_DRAFT, 'PUBLIC', ['owner', 'editor'])
+  })
+
+  it('a share editor still cannot publish what they edited', () => {
+    const [actor, facts] = as('editor', note('PUBLIC'))
+    expect(can(actor, Action.NOTE_PUBLISH, { kind: 'note', note: facts })).toBe(false)
   })
 
   it('publish / change visibility / delete / share: owner only', () => {
@@ -64,8 +69,8 @@ describe('note rows of §5', () => {
     }
   })
 
-  it('fork: readable, never PRIVATE, any signed-in user for PUBLIC', () => {
-    expectRow(Action.NOTE_FORK, 'PRIVATE', [])
+  it('fork: anyone who can read it and is signed in; owners fork their own PRIVATE notes (ADR-0005)', () => {
+    expectRow(Action.NOTE_FORK, 'PRIVATE', ['owner'])
     expectRow(Action.NOTE_FORK, 'SHARED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare'])
     expectRow(Action.NOTE_FORK, 'PUBLIC', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'anyUser'])
   })
@@ -115,11 +120,14 @@ describe('group rows of §5', () => {
   it('manage members, roles, settings: admin and owner', () => allowedFrom(Action.GROUP_MANAGE, 3))
   it('delete: owner only', () => allowedFrom(Action.GROUP_DELETE, 4))
 
-  it('join: verified non-members only', () => {
-    expect(can(other, Action.GROUP_JOIN, g())).toBe(true)
-    expect(can(other, Action.GROUP_JOIN, g(GroupRole.MEMBER))).toBe(false)
-    expect(can(student('x', { emailVerified: false }), Action.GROUP_JOIN, g())).toBe(false)
+  it('request to join: verified non-members without a pending request (ADR-0009)', () => {
+    expect(can(other, Action.GROUP_REQUEST_JOIN, g())).toBe(true)
+    expect(can(other, Action.GROUP_REQUEST_JOIN, g(GroupRole.MEMBER))).toBe(false)
+    expect(can(other, Action.GROUP_REQUEST_JOIN, { kind: 'group', pendingJoinRequest: true })).toBe(false)
+    expect(can(student('x', { emailVerified: false }), Action.GROUP_REQUEST_JOIN, g())).toBe(false)
   })
+
+  it('review join requests: admin and owner only (ADR-0009)', () => allowedFrom(Action.GROUP_REVIEW_JOIN_REQUESTS, 3))
 
   it('anonymous visitors and unrelated actions are denied', () => {
     expect(can(anon, Action.GROUP_POST, g(GroupRole.OWNER))).toBe(false)
@@ -130,13 +138,20 @@ describe('group rows of §5', () => {
 describe('classroom rows of §5', () => {
   const c = (role?: ClassroomRole, targetUserId?: string) => ({ kind: 'classroom' as const, role, targetUserId })
 
-  it('join: non-members via code or invite', () => {
-    expect(can(other, Action.CLASSROOM_JOIN, c())).toBe(true)
-    expect(can(other, Action.CLASSROOM_JOIN, c(ClassroomRole.STUDENT))).toBe(false)
+  it('request to join: non-members without a pending request (ADR-0009)', () => {
+    expect(can(other, Action.CLASSROOM_REQUEST_JOIN, c())).toBe(true)
+    expect(can(other, Action.CLASSROOM_REQUEST_JOIN, c(ClassroomRole.STUDENT))).toBe(false)
+    expect(can(other, Action.CLASSROOM_REQUEST_JOIN, { kind: 'classroom', pendingJoinRequest: true })).toBe(false)
   })
 
-  it('publish quiz and moderate reports: teacher and TA', () => {
-    for (const a of [Action.CLASSROOM_PUBLISH_QUIZ, Action.CLASSROOM_MODERATE_REPORTS]) {
+  it('accept invite: only a non-member the staff invited (ADR-0009)', () => {
+    expect(can(other, Action.CLASSROOM_ACCEPT_INVITE, { kind: 'classroom', invitedByStaff: true })).toBe(true)
+    expect(can(other, Action.CLASSROOM_ACCEPT_INVITE, c())).toBe(false)
+    expect(can(other, Action.CLASSROOM_ACCEPT_INVITE, { kind: 'classroom', role: ClassroomRole.STUDENT, invitedByStaff: true })).toBe(false)
+  })
+
+  it('review join requests, publish quiz and moderate reports: teacher and TA', () => {
+    for (const a of [Action.CLASSROOM_REVIEW_JOIN_REQUESTS, Action.CLASSROOM_PUBLISH_QUIZ, Action.CLASSROOM_MODERATE_REPORTS]) {
       expect(can(other, a, c(ClassroomRole.TEACHER))).toBe(true)
       expect(can(other, a, c(ClassroomRole.TA))).toBe(true)
       expect(can(other, a, c(ClassroomRole.STUDENT))).toBe(false)
@@ -152,7 +167,7 @@ describe('classroom rows of §5', () => {
   })
 
   it('anonymous visitors and unrelated actions are denied', () => {
-    expect(can(anon, Action.CLASSROOM_JOIN, c())).toBe(false)
+    expect(can(anon, Action.CLASSROOM_REQUEST_JOIN, c())).toBe(false)
     expect(can(other, Action.GROUP_POST, c(ClassroomRole.TEACHER))).toBe(false)
   })
 })

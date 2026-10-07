@@ -41,6 +41,20 @@ export const events = {
   // core
   GroupMembershipChanged: eventEnvelope('GroupMembershipChanged', 1, membership.extend({ groupId: uuid })),
   ClassroomMembershipChanged: eventEnvelope('ClassroomMembershipChanged', 1, membership.extend({ classroomId: uuid })),
+  // Membership is by approval (ADR-0009): reviewers are notified of requests, requesters of the decision.
+  // An approval is followed by Group/ClassroomMembershipChanged (JOINED).
+  GroupJoinRequested: eventEnvelope('GroupJoinRequested', 1, z.object({ requestId: uuid, groupId: uuid, userId: uuid })),
+  ClassroomJoinRequested: eventEnvelope('ClassroomJoinRequested', 1, z.object({ requestId: uuid, classroomId: uuid, userId: uuid })),
+  JoinRequestReviewed: eventEnvelope('JoinRequestReviewed', 1, z.object({
+    requestId: uuid,
+    scope: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('GROUP'), groupId: uuid }),
+      z.object({ kind: z.literal('CLASSROOM'), classroomId: uuid }),
+    ]),
+    userId: uuid,
+    reviewerId: uuid,
+    decision: z.enum(['APPROVED', 'REJECTED']),
+  })),
   CommentAdded: eventEnvelope('CommentAdded', 1, z.object({ commentId: uuid, targetType: z.string(), targetId: uuid, authorId: uuid })),
   QuizPublished: eventEnvelope('QuizPublished', 1, z.object({ quizId: uuid, classroomId: uuid.optional() })),
   ContentReported: eventEnvelope('ContentReported', 1, z.object({ reportId: uuid, entityType: z.string(), entityId: uuid })),

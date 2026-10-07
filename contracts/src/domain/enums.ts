@@ -34,6 +34,10 @@ export type CardType = (typeof CardType)[keyof typeof CardType]
 export const NoteVersionKind = { PUBLISHED: 'PUBLISHED', CONFLICT: 'CONFLICT' } as const
 export type NoteVersionKind = (typeof NoteVersionKind)[keyof typeof NoteVersionKind]
 
+/** A request to join a group or classroom (ADR-0009). */
+export const JoinRequestStatus = { PENDING: 'PENDING', APPROVED: 'APPROVED', REJECTED: 'REJECTED', WITHDRAWN: 'WITHDRAWN' } as const
+export type JoinRequestStatus = (typeof JoinRequestStatus)[keyof typeof JoinRequestStatus]
+
 export const ModerationState = { OK: 'OK', PENDING_REVIEW: 'PENDING_REVIEW', HIDDEN: 'HIDDEN', REMOVED: 'REMOVED' } as const
 export type ModerationState = (typeof ModerationState)[keyof typeof ModerationState]
 

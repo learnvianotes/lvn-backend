@@ -9,6 +9,15 @@ describe('events', () => {
     expect(e.payload.visibility).toBe('PUBLIC')
   })
 
+  it('carries the scope of a reviewed join request', () => {
+    const e = parseEvent('JoinRequestReviewed', {
+      ...base, type: 'JoinRequestReviewed', version: 1,
+      payload: { requestId: uuid(2), scope: { kind: 'CLASSROOM', classroomId: uuid(3) }, userId: uuid(4), reviewerId: uuid(5), decision: 'APPROVED' },
+    })
+    expect(e.payload.scope.kind).toBe('CLASSROOM')
+    expect(() => parseEvent('JoinRequestReviewed', { ...e, payload: { ...e.payload, decision: 'MAYBE' } })).toThrow()
+  })
+
   it('rejects a wrong version or payload', () => {
     expect(() => parseEvent('UserDeleted', { ...base, type: 'UserDeleted', version: 2, payload: { userId: uuid(2) } })).toThrow()
     expect(() => parseEvent('UserDeleted', { ...base, type: 'UserDeleted', version: 1, payload: {} })).toThrow()
