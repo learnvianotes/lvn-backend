@@ -1,0 +1,5 @@
+packages:
+  - apps/*
+  - contexts/*
+  - libs/*
+  - contracts

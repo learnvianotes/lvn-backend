@@ -1,0 +1,32 @@
+{
+  "name": "lvn-backend",
+  "private": true,
+  "packageManager": "pnpm@10.18.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --filter=@lvn-backend/api --filter=@lvn-backend/worker",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "boundaries": "depcruise apps contexts libs contracts/src --config .dependency-cruiser.cjs",
+    "prisma:validate": "prisma validate",
+    "prisma:format": "prisma format"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.20.5",
+    "dependency-cruiser": "^18.5.0",
+    "eslint": "^9.39.5",
+    "globals": "^17.13.0",
+    "jest": "^30.5.2",
+    "prisma": "7.10.0",
+    "ts-jest": "^29.4.14",
+    "turbo": "^2.11.7",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.71.1"
+  }
+}
