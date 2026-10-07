@@ -64,11 +64,18 @@ Nothing existed before; nothing was migrated. See its `README.md`.
 - Prisma schema with the five Postgres schemas and extensions; no models yet.
 - dependency-cruiser boundary rules (cross-context imports fail CI), ESLint, Jest, CI and contracts publish workflow.
 
-## Not yet started
+## lvn-mobile now (new repository, 2026-10-08)
 
-| Repository | Phase 0 items still open |
-| --- | --- |
-| `lvn-mobile` | Create the Expo repo with the three EAS profiles; CI. |
+Nothing was migrated from the Flutter app on `platform/monorepo-foundation`. See its
+`docs/architecture/mobile-addendum.md`.
+
+- Expo SDK 57 + Expo Router, TypeScript strict, pnpm (hoisted linker).
+- Three variants that install side by side (`com.learnvianotes.dev`, `.sandbox`, `com.learnvianotes`), mapped to
+  EAS profiles `development`, `preview`, `production` with their own update channels.
+- One start screen linking to the web notes; config validated at start-up.
+- jest-expo + RNTL tests, a Maestro smoke flow, CI (lint, typecheck, tests, expo-doctor, JS bundle export for
+  Android and iOS, gitleaks, audit).
+- Not yet: Expo account / EAS project id, UI kit choice (Paper vs Tamagui), dev client.
 
 ## Cut-over from the old site
 

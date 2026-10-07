@@ -35,4 +35,11 @@ Phase 1 adds JWT keys, OAuth client ids/secrets, S3/MinIO, mail and Sentry varia
 
 ## lvn-mobile
 
-`mobileConfigSchema`: `EXPO_PUBLIC_APP_ENV` today; the rest arrive with the Expo repo.
+Schema: `mobileConfigSchema`, mirrored by lvn-mobile `lib/parse-env.ts` until the package is published. EAS build
+profiles set these in `eas.json`; local runs read `.env.local`.
+
+| Variable | Required | Development | Sandbox (`preview`) | Production | Purpose |
+| --- | --- | --- | --- | --- | --- |
+| `APP_VARIANT` | build time | `development` | `sandbox` | `production` | App name and bundle id in `app.config.ts` (not readable by app code) |
+| `EXPO_PUBLIC_APP_ENV` | yes | `development` | `sandbox` | `production` | Environment badge; later feature defaults |
+| `EXPO_PUBLIC_WEB_URL` | yes | `http://100.70.234.41:3000` | `https://sandbox.learnvianotes.com` | `https://learnvianotes.com` | Links into lvn-web |

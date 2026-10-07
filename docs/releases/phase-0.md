@@ -23,22 +23,27 @@ Spec: [lvn-architecture-v2.md](../architecture/lvn-architecture-v2.md) §18
 Next.js 15 skeleton per §12.1, landing page, existing study content at `/core` (ADR-0002), redirects from old URLs,
 old service worker removal, Playwright + axe, CI. Details in lvn-web `docs/architecture/web-addendum.md`.
 
+### lvn-mobile
+
+Expo SDK 57 app with Expo Router, three side-by-side build variants and EAS profiles, a start screen, validated
+config, Maestro smoke flow and CI. Details in lvn-mobile `docs/architecture/mobile-addendum.md`.
+
 ## Test evidence (2026-10-08, local)
 
-| Check | lvn-backend | lvn-web |
-| --- | --- | --- |
-| Build | 9/9 packages | 805 static pages, 106 kB first-load JS |
-| Lint, typecheck | clean | clean |
-| Unit / integration | 30 tests (contracts 27, api health 2, worker 1); `permissions.ts` 100 % branches | 7 unit tests |
-| E2E | — | 12/12 Playwright (desktop + Pixel 7), axe: 0 serious/critical |
-| Boundaries | clean; a deliberate cross-context import (package name and relative path) fails | — |
-| Prisma validate | valid | — |
-| `pnpm audit --prod --audit-level high` | no known vulnerabilities | no known vulnerabilities |
-| Smoke | api `/health/live` 200 with Helmet headers; worker health 200; bad env exits 1 listing every bad variable | — |
+| Check | lvn-backend | lvn-web | lvn-mobile |
+| --- | --- | --- | --- |
+| Build | 9/9 packages | 805 static pages, 106 kB first-load JS | JS bundles exported: Android 3.4 MB, iOS 3 MB (Hermes) |
+| Lint, typecheck | clean | clean | clean |
+| Unit / integration | 31 tests (contracts 28, api health 2, worker 1); `permissions.ts` 100 % branches | 7 unit tests | 3 tests |
+| E2E | — | 12/12 Playwright (desktop + Pixel 7), axe: 0 serious/critical | Maestro flow written; not run (no emulator or EAS build yet) |
+| Health checks | boundaries clean, a deliberate cross-context import fails; Prisma valid | — | expo-doctor 21/21 |
+| `pnpm audit --prod --audit-level high` | no known vulnerabilities | no known vulnerabilities | 2 build-tool highs with no fix, ignored and documented |
+| Smoke | api `/health/live` 200 with Helmet headers; worker health 200; bad env exits 1 listing every bad variable | — | each variant resolves its own name and bundle id; an unknown variant fails |
 
 ## Exit criteria still open
 
-- [ ] lvn-mobile created (Expo, three EAS profiles), CI green.
+- [ ] Expo account + EAS project (`eas init`); first development build on a device; Maestro run.
+- [ ] Mobile UI kit chosen by ADR (React Native Paper or Tamagui) before the first Phase 1 screen.
 - [ ] ADR-0005 (three permission interpretations) and ADR-0006 (package scope) decided.
 - [ ] Spec inconsistencies in `existing-state.md` resolved.
 - [ ] Backend, Web and Mobile agents sign off on the spec, ERD, permission matrix and GraphQL skeleton.
