@@ -1,6 +1,19 @@
 # Existing state — Phase 0 inventory
 
-Date: 2026-10-08 · Covers: `learnvianotes` (now **lvn-web**, branch `platform/v2-rewrite`) and **lvn-backend** (new)
+Date: 2026-10-08 · Covers: `learnvianotes` → **lvn-web**, and the new **lvn-backend** and **lvn-mobile**
+
+All three repositories are local, side by side in one folder, until they are published to the `lvn` GitHub
+organisation (ADR-0006):
+
+```text
+LVN/
+  lvn-backend/   new repository
+  lvn-web/       clone of learnvianotes, branch platform/v2-rewrite renamed to main; full history kept, no remote
+  lvn-mobile/    new repository
+```
+
+The original `learnvianotes` repository (with `main` = the live site and the `platform/v2-rewrite` branch) is left
+untouched.
 
 The architecture spec ([lvn-architecture-v2.md](lvn-architecture-v2.md), section 3) asks Phase 0 to record what already
 exists and whether it is **kept**, **migrated** or **deleted**. Nothing below is rewritten blindly: the old code stays
@@ -20,7 +33,7 @@ A Vite + React 19 single-page app on Firebase (Auth, Firestore, Cloud Functions)
 | Firestore seeder | `scripts/content/seed/` | **Deleted** | Wrote content into Firestore; v2 has no Firestore. Subjects/Topics move to Postgres (`notes` context) in Phase 2. |
 | Web app | `src/`, `index.html`, `vite.config.ts`, `tsconfig*.json`, `eslint.config.js` | **Deleted** (rewritten) | Replaced by the Next.js 15 app (section 12). Reading pages are re-implemented under `/core`. |
 | Sign-in, sync, history, streaks, focus timer, read-aloud, study kit, help centre, personal notes | `src/features/{auth,progress,focus,voice,study/kit,help,settings}` | **Deleted** | Accounts and learner data are owned by the backend from Phase 1 (section 7); learning features return in Phases 2–6 on the new model. Old routes redirect to `/` (see lvn-web `next.config.ts`). |
-| Firestore rules, indexes, Cloud Functions, Firebase config | `firestore.*`, `functions/`, `firebase.json`, `.firebaserc` | **Deleted** | v2 pins NestJS + Postgres (section 2). Production Firebase resources are untouched until cut-over (see "Cut-over" below). |
+| Firestore rules, indexes, Cloud Functions, Firebase config | `firestore.*`, `functions/`, `firebase.json`, `.firebaserc` | **Deleted** | v2 pins NestJS + Postgres (section 2). Firebase stays only for Google sign-in (ADR-0007). Production Firebase resources are untouched until cut-over (see "Cut-over" below). |
 | Firestore document schema | `schema/` | **Deleted** | Replaced by Zod schemas for `content-build/` (`features/core-content/schema.ts`) and, later, `@lvn/contracts`. |
 | Old docs | `docs/*.md` | **Deleted** | Described the Firebase app; still readable on `main`. |
 | Icons, branding | `public/icons/`, `branding/` | **Kept** | Same brand. |
@@ -42,7 +55,7 @@ npm-workspaces monorepo: `apps/legacy-web` (the Vite app), `apps/web` (Next.js 1
 
 The branch is left as-is on the remote for reference. Delete it once `lvn-mobile` has reviewed it.
 
-## lvn-web now (branch `platform/v2-rewrite`)
+## lvn-web now
 
 See lvn-web's `docs/architecture/web-addendum.md` for the route map and how it implements section 12.
 
@@ -70,12 +83,13 @@ Nothing was migrated from the Flutter app on `platform/monorepo-foundation`. See
 `docs/architecture/mobile-addendum.md`.
 
 - Expo SDK 57 + Expo Router, TypeScript strict, pnpm (hoisted linker).
-- Three variants that install side by side (`com.learnvianotes.dev`, `.sandbox`, `com.learnvianotes`), mapped to
-  EAS profiles `development`, `preview`, `production` with their own update channels.
+- Three variants that install side by side (LearnViaNotes Dev `com.learnvianotes.dev`, LearnViaNotes Sandbox
+  `com.learnvianotes.sandbox`, LearnViaNotes `com.learnvianotes`), configured by `env/<variant>.env` and built
+  locally without an Expo account (ADR-0008).
 - One start screen linking to the web notes; config validated at start-up.
 - jest-expo + RNTL tests, a Maestro smoke flow, CI (lint, typecheck, tests, expo-doctor, JS bundle export for
   Android and iOS, gitleaks, audit).
-- Not yet: Expo account / EAS project id, UI kit choice (Paper vs Tamagui), dev client.
+- Not yet: store signing keys, UI kit choice (Paper vs Tamagui), dev client.
 
 ## Cut-over from the old site
 
@@ -83,9 +97,11 @@ The old site keeps running on Firebase Hosting at learnvianotes.in until this ap
 At cut-over:
 
 1. Point learnvianotes.in at the new deployment (or 301 the whole domain to learnvianotes.com).
-2. Keep the Firebase project until Phase 1 decides what happens to existing Firebase Auth users and their Firestore
-   data (streaks, history, personal notes). **Open question for the owner** — options: import into Postgres in
-   Phase 1, or announce a fresh start.
+2. Keep the Firebase project: its Authentication (Google provider only) is how LVN does Google sign-in (ADR-0007).
+   Returning Google users keep their Firebase UID and are recognised on first sign-in. Old-site email + password
+   users sign up again or use Google with the same email. Firestore, Functions and Hosting are retired after
+   cut-over. **Open question for the owner:** import returning users' old Firestore data (streaks, history,
+   personal notes) into Postgres in Phase 1, or announce a fresh start.
 3. Leave `public/sw.js` deployed for at least 6 months so every returning browser drops the old service worker.
 
 ## Inconsistencies in the spec to settle before Phase 1
