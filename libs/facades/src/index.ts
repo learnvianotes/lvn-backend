@@ -1,0 +1,3 @@
+// Interfaces through which contexts call each other in-process (spec §6.1, §6.5 step 5). Only tokens and types live
+// here; each implementation belongs to the owning context and is bound by the composition roots.
+export { MAILER, type Mailer, type MailTemplate, type MailTemplates } from './mail'
