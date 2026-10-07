@@ -1,0 +1,20 @@
+{
+  "name": "@lvn-backend/prisma-base",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "generate": "prisma generate --schema ../../prisma/schema.prisma",
+    "build": "pnpm generate && tsc -p tsconfig.build.json",
+    "typecheck": "pnpm generate && tsc --noEmit",
+    "lint": "eslint src test",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.2.7",
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "pg": "^8.23.1"
+  }
+}
