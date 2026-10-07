@@ -13,7 +13,9 @@ Validated in lvn-web `lib/env.ts` until `@lvn/contracts/config` is published (AD
 | `NEXT_PUBLIC_SITE_URL` | yes | `http://localhost:3000` | `http://localhost:3000` | `https://sandbox.learnvianotes.com` | `https://learnvianotes.com` | Canonical URLs, sitemap, Open Graph |
 
 Added in Phase 1 (names proposed, owned by `@lvn/contracts/config`): `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`,
-`NEXT_PUBLIC_SENTRY_DSN`, `REVALIDATE_SECRET` (server-only, for the API's on-demand ISR webhook).
+`NEXT_PUBLIC_SENTRY_DSN`, `REVALIDATE_SECRET` (server-only, for the API's on-demand ISR webhook), and for Google
+sign-in (ADR-0007) `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`,
+`NEXT_PUBLIC_FIREBASE_APP_ID` (public identifiers, not secrets).
 
 ## lvn-backend
 
@@ -31,15 +33,19 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `CORS_ORIGINS` | api | yes | — | Comma-separated allow-list (§7.2) |
 | `WORKER_HEALTH_PORT` | worker | no | `4001` | `/health/live` for the ECS health check |
 
-Phase 1 adds JWT keys, OAuth client ids/secrets, S3/MinIO, mail and Sentry variables here first.
+Phase 1 adds JWT keys, OAuth client ids/secrets (GitHub, LinkedIn), S3/MinIO, mail and Sentry variables here first,
+plus `FIREBASE_PROJECT_ID` for verifying Google sign-in ID tokens (ADR-0007; no service account needed to verify).
 
 ## lvn-mobile
 
-Schema: `mobileConfigSchema`, mirrored by lvn-mobile `lib/parse-env.ts` until the package is published. EAS build
-profiles set these in `eas.json`; local runs read `.env.local`.
+Schema: `mobileConfigSchema`, mirrored by lvn-mobile `lib/parse-env.ts` until the package is published. Values live
+in lvn-mobile `env/<variant>.env` (public, committed) with per-machine overrides in `env/<variant>.local.env`
+(git-ignored), applied by its build scripts (ADR-0008).
 
 | Variable | Required | Development | Sandbox (`preview`) | Production | Purpose |
 | --- | --- | --- | --- | --- | --- |
 | `APP_VARIANT` | build time | `development` | `sandbox` | `production` | App name and bundle id in `app.config.ts` (not readable by app code) |
 | `EXPO_PUBLIC_APP_ENV` | yes | `development` | `sandbox` | `production` | Environment badge; later feature defaults |
 | `EXPO_PUBLIC_WEB_URL` | yes | `http://100.70.234.41:3000` | `https://sandbox.learnvianotes.com` | `https://learnvianotes.com` | Links into lvn-web |
+
+Phase 1 (ADR-0007): `EXPO_PUBLIC_FIREBASE_*` and the Google OAuth client ids used by native Google Sign-In.

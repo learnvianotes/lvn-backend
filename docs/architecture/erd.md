@@ -42,7 +42,7 @@ erDiagram
     uuid id PK
     uuid userId FK
     enum provider "GOOGLE | GITHUB | LINKEDIN"
-    text providerUserId
+    text providerUserId "GOOGLE: Firebase UID (ADR-0007)"
     bytea encryptedRefreshToken
   }
   DeviceToken {

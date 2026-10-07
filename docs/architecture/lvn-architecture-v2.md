@@ -10,6 +10,14 @@ Give each agent two things: this whole document, and a one-page role brief (sect
 
 **What changed from v1.** Technology choices are pinned instead of "or equivalent". The domain model, visibility states, forking, versioning and offline conflict rules are defined. A permission matrix replaces the list of permission questions. Admin-platform tenancy, SEO for public notes, push/email delivery, upload hardening, moderation, compliance, AI cost control, backups and schema-change checks are added. Teacher is a role, not a client. "Problems" and "Stories" are removed from scope. Monetization and company recruitment are explicitly out of scope. Three repositories replace the monorepo; the backend is a modular monolith of five bounded contexts (users, notes, core, ai, communication) with a step-by-step extraction playbook to microservices and a per-context Grafana observability stack.
 
+**Amendments (accepted ADRs, `docs/adr/`).** The text below is the v2 text; lines changed by an accepted ADR carry
+an *[Amended: ADR-NNNN]* note, and the ADR wins.
+
+| ADR | Changes |
+| --- | --- |
+| [0007](../adr/0007-firebase-for-google-sign-in-only.md) | Google sign-in uses Firebase Authentication; the backend exchanges the Firebase ID token for a normal LVN session. No other Firebase product for LVN data. (§2, §7, §7.1) |
+| [0008](../adr/0008-mobile-builds-without-eas.md) | Mobile is built locally (prebuild + Gradle/Xcode) without an Expo account; no EAS Build/Update, no OTA for now. (§2, §13.1, §13.3, §16.1, §16.2) |
+
 ## 1. Product boundaries
 
 LearnViaNotes (LVN) is a student-first learning community: personal and public notes, a block-based editor, groups, classrooms, quizzes, flashcards, exam prep, AI learning tools, learning history, recommendations, search and learning-resource discovery. It is built as one scalable product, not a set of screens.
@@ -51,7 +59,7 @@ These are decided. Agents use them as-is; changing one requires an accepted ADR.
 | Object storage | S3 (prod) / MinIO (dev, test); pre-signed URLs | Same API locally and in production |
 | Search | PostgreSQL full-text (Phase 2–3) → Typesense (Phase 4) | Avoid a second system until search is a real feature; Typesense is self-hostable and typo-tolerant |
 | Vector store | pgvector | Removes a separate vector DB; adequate to millions of chunks |
-| Auth | Backend-issued JWT access token (15 min) + opaque rotating refresh token (30 days, stored hashed in Postgres); OAuth via Passport strategies | Standard, revocable, works for web and mobile |
+| Auth | Backend-issued JWT access token (15 min) + opaque rotating refresh token (30 days, stored hashed in Postgres); OAuth via Passport strategies *[Amended: ADR-0007 — Google via Firebase Authentication, exchanged for an LVN session]* | Standard, revocable, works for web and mobile |
 | Auth providers | Email + password, Google, GitHub, LinkedIn | As specified |
 | Email | Resend (or SES) via a `MailService` abstraction; React Email templates | Transactional email for verification, reset, notifications |
 | Push | Firebase Cloud Messaging (Android, iOS via APNs) | Single provider for both platforms |
@@ -59,7 +67,7 @@ These are decided. Agents use them as-is; changing one requires an accepted ADR.
 | AI providers | Backend `AiGateway` with provider adapters (OpenAI, Anthropic, local via Ollama); embeddings `text-embedding-3-small` | Swappable, cost-controlled, never called from clients |
 | Transcription | Whisper (API or self-hosted) behind the gateway | Voice notes |
 | Web | Next.js 15 App Router, React 19, Tailwind, shadcn/ui, Apollo Client, React Hook Form + Zod, Tiptap editor, Zustand for global state | SSR/ISR for public notes; Tiptap is the most mature block editor |
-| Mobile | Expo (SDK 52+) with dev client + EAS Build/Update, Expo Router, React Native Paper or Tamagui, Apollo Client, WatermelonDB (SQLite), expo-secure-store, MMKV for small key-value | Expo gives environments, OTA and native modules without ejecting; WatermelonDB is built for offline sync |
+| Mobile | Expo (SDK 52+) with dev client + EAS Build/Update *[Amended: ADR-0008 — local prebuild + Gradle/Xcode builds, no EAS]*, Expo Router, React Native Paper or Tamagui, Apollo Client, WatermelonDB (SQLite), expo-secure-store, MMKV for small key-value | Expo gives environments, OTA and native modules without ejecting; WatermelonDB is built for offline sync |
 | Validation | Zod schemas in `@lvn/contracts/validation`, used by all three apps | One source for input rules |
 | GraphQL codegen | `graphql-codegen` producing typed hooks for web and mobile from the backend schema | Replaces hand-written shared types |
 | Testing | Vitest (unit), Testing Library, Playwright (web E2E), Maestro (mobile E2E), Jest + Supertest (backend), Testcontainers (Postgres/Redis/MinIO) | Fast, standard, isolated |
@@ -312,13 +320,13 @@ Things that make this cheap, and that are therefore non-negotiable from Phase 1:
 
 ## 7. Authentication and security
 
-The backend owns identity, sessions, roles and verification. Clients call `signUp`, `signIn`, `oauthExchange`, `refreshSession`, `signOut`, `verifyEmail`, `requestPasswordReset`, `resetPassword` and contain no auth business logic.
+The backend owns identity, sessions, roles and verification. Clients call `signUp`, `signIn`, `oauthExchange`, `signInWithGoogle` *[Amended: ADR-0007]*, `refreshSession`, `signOut`, `verifyEmail`, `requestPasswordReset`, `resetPassword` and contain no auth business logic.
 
 ### 7.1 Sessions
 
 - Access token: JWT, RS256, 15 min, claims `sub`, `roles`, `sid`. Refresh token: 256-bit random, 30 days, rotated on every use, stored as SHA-256 hash in `Session` with device info; reuse of a rotated token revokes the whole session family.
 - Web stores the refresh token in an `HttpOnly; Secure; SameSite=Lax` cookie and the access token in memory. Mobile stores both in `expo-secure-store`. Nothing auth-related in `localStorage` or `AsyncStorage`.
-- OAuth (Google, GitHub, LinkedIn) uses Authorization Code + PKCE. The client receives the provider code and sends it to `oauthExchange`; the backend verifies it and issues LVN tokens. Account linking by verified email only.
+- OAuth (Google, GitHub, LinkedIn) uses Authorization Code + PKCE. The client receives the provider code and sends it to `oauthExchange`; the backend verifies it and issues LVN tokens. Account linking by verified email only. *[Amended: ADR-0007 — Google sign-in runs through Firebase Authentication on the client; the Firebase ID token is sent once to `signInWithGoogle`, verified by the backend, and exchanged for LVN tokens. GitHub and LinkedIn stay as written.]*
 - Email verification required before publishing, joining groups or commenting. Password policy: minimum 10 characters, checked against a breached-password list, hashed with Argon2id.
 - Rate limits (Redis sliding window): 5 sign-in attempts per account per 15 min, 3 password resets per hour, 100 GraphQL operations per minute per user, 20 AI requests per minute per user.
 
@@ -500,7 +508,7 @@ Mobile answers "what should I learn right now?": quick capture, reading, AI, com
 
 - Expo Router tabs: Home · Explore · Create (centre sheet: Note, Quick Note, Voice Note, Photo, Upload, Quiz, Flashcard) · Community · Profile. Teacher and group-admin actions appear inside the relevant classroom/group screens, not as extra tabs.
 - Storage tiers: `expo-secure-store` for tokens and encryption keys; WatermelonDB (SQLite) for notes, cards, subjects, groups, drafts and the sync queue; MMKV for small preferences and last-opened state; `expo-file-system` cache directory for media with an LRU cap of 500 MB.
-- Three environments via EAS build profiles and `app.config.ts` reading `EXPO_PUBLIC_*` from `@lvn/contracts/config`; bundle ids `com.learnvianotes.dev`, `.sandbox`, \`\` (prod) so all three install side by side. No URL or key is hardcoded.
+- Three environments via EAS build profiles *[Amended: ADR-0008 — via `env/<variant>.env` and local build scripts]* and `app.config.ts` reading `EXPO_PUBLIC_*` from `@lvn/contracts/config`; bundle ids `com.learnvianotes.dev`, `.sandbox`, \`\` (prod) so all three install side by side. No URL or key is hardcoded.
 
 ### 13.2 Offline and sync
 
@@ -531,7 +539,7 @@ Every outbox op carries a `clientOpId` (UUID) so retries are idempotent. Media u
 - Push via FCM with notification channels on Android and provisional authorisation on iOS; tapping opens the deep link.
 - Voice notes: record with `expo-av`, upload, transcription returns as a `NoteArtifact`; the user accepts or edits before it becomes a card.
 - Biometric unlock (optional) guards the app, not the tokens.
-- OTA updates via EAS Update for JS-only changes; native changes go through store builds. Runtime version policy `appVersion`.
+- OTA updates via EAS Update for JS-only changes; native changes go through store builds. Runtime version policy `appVersion`. *[Amended: ADR-0008 — no OTA for now; every change is a new build.]*
 - Performance: cold start < 2 s on a mid-range Android device, lists virtualised with FlashList, images via `expo-image` with disk cache.
 - Accessibility: labels on every control, dynamic type, reduced-motion respected.
 
@@ -598,6 +606,7 @@ Three fully isolated environments, infrastructure as code, immutable container i
 | OAuth apps | Dev credentials | Sandbox credentials | Production credentials |
 | AI | Ollama or capped dev keys | Capped keys, cheap models | Production keys, budget cap |
 | Mobile | `com.learnvianotes.dev`, EAS `development` profile | `.sandbox`, EAS `preview`, TestFlight / internal track | store build, EAS `production` |
+| Mobile *[Amended: ADR-0008]* | `com.learnvianotes.dev`, `pnpm android` / `pnpm build:android development` | `com.learnvianotes.sandbox`, `pnpm build:android sandbox`, Play internal track / TestFlight | `com.learnvianotes`, `pnpm build:android production`, store upload by hand |
 
 All configuration is read through `@lvn/contracts/config`, which validates every variable with Zod at process start and fails fast on a missing or malformed value. The canonical list lives in `docs/architecture/env.md` and `.env.example`; CI fails if a variable is used in code but missing from the example. Secrets come from AWS Secrets Manager (injected as ECS task secrets) in sandbox/prod and from git-ignored `.env.local` in dev. Nothing is ever hardcoded.
 
@@ -626,7 +635,7 @@ Requirements:
 - Migrations run as a one-off ECS task **before** the new api tasks start; expand/contract pattern (add column → deploy code → backfill → drop) so old and new code run together during rollout. Rollback = redeploy previous image; destructive migrations only after the following release.
 - Private subnets for all compute and data; only ALB and CloudFront are public. Security groups allow api→RDS/Redis only.
 - Production deploy requires: green CI on `main`, sandbox soak of ≥ 1 h with no new Sentry errors, manual approval, deployment window outside Indian evening peak unless hotfix.
-- Mobile releases: EAS Update for JS changes after sandbox verification; native builds through TestFlight / Play internal track → staged rollout 10 % → 50 % → 100 % with crash-rate gate (< 0.5 %).
+- Mobile releases *[Amended: ADR-0008 — no EAS Update; every release is a store build]*: EAS Update for JS changes after sandbox verification; native builds through TestFlight / Play internal track → staged rollout 10 % → 50 % → 100 % with crash-rate gate (< 0.5 %).
 
 ### 16.3 Scaling plan
 
