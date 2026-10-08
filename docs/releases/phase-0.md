@@ -37,14 +37,14 @@ Expo SDK 57 app with Expo Router, three side-by-side build variants built locall
 | Build | 9/9 packages | 805 static pages, 106 kB first-load JS | JS bundles exported (Android 3.4 MB, iOS 3 MB); local release APK built with Gradle, no Expo account: `com.learnvianotes.dev`, 42 MB arm64, 2 min 53 s |
 | Lint, typecheck | clean | clean | clean |
 | Unit / integration | 80 tests (contracts 77, api health 2, worker 1); `permissions.ts` 100 % branches | 7 unit tests | 3 tests |
-| E2E | — | 12/12 Playwright (desktop + Pixel 7), axe: 0 serious/critical (re-run after the palette change) | Maestro flow written; not run (no emulator image on the dev machine, no phone attached) |
+| E2E | — | 12/12 Playwright (desktop + Pixel 7), axe: 0 serious/critical (re-run after the palette change) | Maestro flows (smoke, Home, tabs, create sheet) 4/4 on the `lvn_pixel_7` emulator (Android 36, x86_64) with `pnpm test:e2e`; the development APK also installed and opened on a phone over adb |
 | Health checks | boundaries clean, a deliberate cross-context import fails; Prisma valid | — | expo-doctor 21/21 |
 | `pnpm audit --prod --audit-level high` | no known vulnerabilities | no known vulnerabilities | 2 build-tool highs with no fix, ignored and documented |
 | Smoke | api `/health/live` 200 with Helmet headers; worker health 200; bad env exits 1 listing every bad variable | — | each variant resolves its own name and bundle id; an unknown variant fails |
 
 ## Exit criteria still open
 
-- [ ] Install the local APK on a phone and run the Maestro flow.
+- [x] Install the local APK on a phone and run the Maestro flow (phone install over adb; flows on the emulator).
 - [ ] Design questions in `docs/design/ui-reference.md` decided (follows, events, branch/year, read-aloud, translate, weekly goal).
 - [ ] Backend, Web and Mobile agents sign off on the spec, ERD, permission matrix and GraphQL skeleton.
 - [ ] Decision on existing Firebase users' data (existing-state.md → Cut-over).
