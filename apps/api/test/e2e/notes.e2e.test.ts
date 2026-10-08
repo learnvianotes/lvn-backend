@@ -1,7 +1,9 @@
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { NotesMaintenance } from '@lvn-backend/notes'
 import { positionBetween, positionsBetween } from '@lvn/contracts/validation'
+import { Storage } from '@lvn-backend/storage'
 import { createTestApp, type TestApp } from '../support/app'
+import { createIntent, SAMPLES, upload } from '../support/flows'
 import { seedUser, tokenFor } from '../support/seed'
 
 /** The notes core of Phase 2 (§4.1–§4.5, §13.2) through the public GraphQL endpoint, against real Postgres. */
@@ -446,6 +448,88 @@ describe('notes', () => {
       const id = await publishedNote(token, 'Homework')
       expect((await run('changeNoteVisibility', { noteId: id, visibility: 'PUBLIC' }, token)).error).toMatchObject({ message: 'Your account cannot make notes public.' })
       expect((await run('changeNoteVisibility', { noteId: id, visibility: 'SHARED' }, token)).payload!.note!.visibility).toBe('SHARED')
+    })
+  })
+
+  describe('media cards (§4.1, §8)', () => {
+    type Media = { id: string; url: string; mimeType: string; fileName: string; sizeBytes: number } | null
+    const media = async (noteId: string, token?: string) =>
+      (await t.gql<{ note: { cards: { edges: { node: { id: string; type: string; media: Media } }[] } } | null }>('query ($id: UUID!) { note(id: $id) { cards { edges { node { id type media { id url mimeType fileName sizeBytes } } } } } }', { id: noteId }, token)).data!.note
+    const imageCard = (fileId: string, id = newId()) => ({ kind: 'UPSERT', id, type: 'image', position: 'a5', content: { fileId, alt: 'A diagram' } })
+
+    it('uploads a picture to a note, shows it in an image card and hands readers a read URL', async () => {
+      const { note } = await create(owner.token, { title: 'With a picture' })
+      const fileId = await upload(t, owner.token, 'ATTACHMENT', 'image/png', SAMPLES.png, 'graph.png', note!.id)
+      expect(await db.noteAttachment.findMany({ where: { fileId } })).toEqual([expect.objectContaining({ noteId: note!.id })])
+      const saved = await save(owner.token, { noteId: note!.id, ops: [imageCard(fileId)] })
+      expect('results' in saved && saved.results[0]!.status).toBe('APPLIED')
+
+      const card = (await media(note!.id, owner.token))!.cards.edges[0]!.node
+      expect(card.media).toMatchObject({ id: fileId, mimeType: 'image/png', fileName: 'graph.png', sizeBytes: SAMPLES.png.length })
+      const res = await fetch(card.media!.url)
+      expect(res.status).toBe(200)
+      expect(new Uint8Array(await res.arrayBuffer())).toEqual(SAMPLES.png)
+
+      // Readers of the published version get it too; strangers get nothing.
+      await mutate('publishNote', { noteId: note!.id }, owner.token, 'note { id }')
+      await share(note!.id, other.id, 'VIEWER')
+      expect((await media(note!.id, other.token))!.cards.edges[0]!.node.media).toMatchObject({ id: fileId })
+      expect(await media(note!.id, unverified.token)).toBeNull()
+    })
+
+    it('only takes uploads to a note its owner or editors can change', async () => {
+      const { note } = await create(owner.token, { title: 'Not yours' })
+      const asOther = await createIntent(t, other.token, { fileName: 'x.png', mimeType: 'image/png', sizeBytes: SAMPLES.png.length, purpose: 'ATTACHMENT', parentId: note!.id })
+      expect(asOther.userErrors[0]).toMatchObject({ code: 'NOT_FOUND' })
+      const noParent = await createIntent(t, owner.token, { fileName: 'x.png', mimeType: 'image/png', sizeBytes: SAMPLES.png.length, purpose: 'ATTACHMENT' })
+      expect(noParent.userErrors[0]).toMatchObject({ field: ['input', 'parentId'] })
+      const tooBig = await createIntent(t, owner.token, { fileName: 'x.pdf', mimeType: 'application/pdf', sizeBytes: 51 * 1024 ** 2, purpose: 'ATTACHMENT', parentId: note!.id })
+      expect(tooBig.userErrors[0]).toMatchObject({ field: ['input', 'sizeBytes'] })
+      // A share editor may add files; they count against the editor's own storage.
+      await share(note!.id, other.id, 'EDITOR')
+      const fileId = await upload(t, other.token, 'ATTACHMENT', 'application/pdf', SAMPLES.pdf, 'notes.pdf', note!.id)
+      expect((await db.fileObject.findUniqueOrThrow({ where: { id: fileId } })).ownerId).toBe(other.id)
+    })
+
+    it('refuses a card showing a file from another note, a missing file or the wrong kind of file', async () => {
+      const { note: mine } = await create(owner.token, { title: 'Mine' })
+      const { note: theirs } = await create(other.token, { title: 'Theirs' })
+      const theirFile = await upload(t, other.token, 'ATTACHMENT', 'image/png', SAMPLES.png, 'secret.png', theirs!.id)
+      const pdf = await upload(t, owner.token, 'ATTACHMENT', 'application/pdf', SAMPLES.pdf, 'a.pdf', mine!.id)
+      for (const [op, message] of [
+        [imageCard(theirFile), 'Upload the file to this note first.'],
+        [imageCard(newId()), 'Upload the file to this note first.'],
+        [imageCard(pdf), 'This file cannot be shown in a image card.'],
+      ] as const) {
+        const res = await save(owner.token, { noteId: mine!.id, ops: [op] })
+        expect('userErrors' in res && res.userErrors[0]).toMatchObject({ code: 'VALIDATION', message, field: ['input', 'ops', '0', 'content', 'fileId'] })
+      }
+      // A file card shows any attachment; a new note cannot start with media cards.
+      const ok = await save(owner.token, { noteId: mine!.id, ops: [{ kind: 'UPSERT', id: newId(), type: 'file', position: 'a6', content: { fileId: pdf } }] })
+      expect('results' in ok && ok.results[0]!.status).toBe('APPLIED')
+      expect((await create(owner.token, { title: 'x', cards: [{ id: newId(), type: 'image', position: 'a0', content: { fileId: pdf } }] })).userErrors[0]).toMatchObject({ field: ['input', 'cards', '0', 'type'] })
+    })
+
+    it('copies keep their pictures, and files go when no note links to them any more', async () => {
+      const { note } = await create(owner.token, { title: 'Pictured origin' })
+      const fileId = await upload(t, owner.token, 'ATTACHMENT', 'image/png', SAMPLES.png, 'p.png', note!.id)
+      await save(owner.token, { noteId: note!.id, ops: [imageCard(fileId)] })
+      await mutate('publishNote', { noteId: note!.id }, owner.token, 'note { id }')
+      await db.note.update({ where: { id: note!.id }, data: { visibility: 'PUBLIC' } })
+      const copy = (await t.gql<{ forkNote: { note: { id: string } } }>('mutation ($input: NoteIdInput!) { forkNote(input: $input) { note { id } } }', { input: { noteId: note!.id } }, other.token)).data!.forkNote.note
+
+      // The origin is deleted for good: the copy still shows the picture, so the file stays.
+      await mutate('deleteNote', { noteId: note!.id }, owner.token, 'note { id }')
+      await mutate('deleteNoteForever', { noteId: note!.id }, owner.token, 'ok')
+      expect((await media(copy.id, other.token))!.cards.edges[0]!.node.media).toMatchObject({ id: fileId })
+      const row = await db.fileObject.findUniqueOrThrow({ where: { id: fileId } })
+      expect(row.deletedAt).toBeNull()
+
+      // Then the copy goes too: nothing links to the file, so its bytes are deleted.
+      await mutate('deleteNote', { noteId: copy.id }, other.token, 'note { id }')
+      await mutate('deleteNoteForever', { noteId: copy.id }, other.token, 'ok')
+      expect(await db.fileObject.findUniqueOrThrow({ where: { id: fileId } })).toMatchObject({ status: 'DELETED' })
+      expect(await t.app.get(Storage).head(row.bucket, row.storageKey)).toBeNull()
     })
   })
 

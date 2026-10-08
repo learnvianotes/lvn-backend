@@ -14,6 +14,7 @@ export function detectMimeType(b: Uint8Array): string | null {
     const brand = String.fromCharCode(...b.slice(8, 12))
     if (['heic', 'heix', 'mif1', 'msf1'].includes(brand)) return 'image/heic'
     if (brand === 'M4A ') return 'audio/mp4'
+    if (brand === 'qt  ') return 'video/quicktime'
     return 'video/mp4'
   }
   if (ascii(0, 'OggS')) return 'audio/ogg'

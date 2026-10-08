@@ -1,0 +1,19 @@
+# Media cards (spec §4.1, §8): the files image, video, audio and file cards show.
+
+"A file a media card shows. The url works for 15 minutes (until expiresAt); load the card again for a new one."
+type MediaFile {
+  id: UUID!
+  url: String!
+  expiresAt: DateTime!
+  mimeType: String!
+  fileName: String!
+  sizeBytes: Int!
+  width: Int
+  height: Int
+  durationMs: Int
+}
+
+extend type Card {
+  "The file of an image, video, audio or file card; null for other cards, or when the file is gone"
+  media: MediaFile
+}

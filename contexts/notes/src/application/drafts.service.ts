@@ -7,6 +7,7 @@ import { decodeCursor, pageSize } from '@lvn-backend/graphql'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { noteFacts } from '../domain/note-access'
+import { AttachmentsService } from './attachments.service'
 import { checkCard, NotesService, type OpenedNote } from './notes.service'
 import { OrganiseService } from './organise.service'
 
@@ -67,6 +68,7 @@ export class DraftsService {
     private readonly notes: NotesService,
     private readonly organise: OrganiseService,
     private readonly limiter: RateLimiter,
+    private readonly attachments: AttachmentsService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
 
@@ -81,14 +83,17 @@ export class DraftsService {
     if (new Set(ops.map((o) => o.id)).size !== ops.length) throw Errors.validation('A card appears twice in one save.', ['input', 'ops'])
     // Everything is checked before anything is written: an invalid card fails the whole save.
     const contents = new Map<string, unknown>()
+    const upserts: { type: CardType; content: unknown; at: string[] }[] = []
     ops.forEach((op, i) => {
       const at = ['input', 'ops', String(i)]
       if (op.kind === 'UPSERT') {
         if (!op.type || op.position == null || op.content === undefined) throw Errors.validation('A card needs a type, a position and content.', at)
-        contents.set(op.id, checkCard({ id: op.id, type: op.type, position: op.position, content: op.content }, at))
+        contents.set(op.id, checkCard({ id: op.id, type: op.type, position: op.position, content: op.content }, at, { media: true }))
+        upserts.push({ type: op.type, content: contents.get(op.id), at })
       }
       if (op.kind === 'MOVE' && !isValidPosition(op.position)) throw Errors.validation('This card position is not valid.', [...at, 'position'])
     })
+    await this.attachments.assertUsable(input.noteId, upserts)
     const title = input.title === undefined || input.title === null ? undefined : noteTitleSchema.safeParse(input.title)
     if (title && !title.success) throw Errors.validation(title.error.issues[0]!.message, ['input', 'title'])
     if ((input.folderId !== undefined || input.tagNames) && !isOwner) throw Errors.forbidden('Folders and tags belong to the note’s owner.')

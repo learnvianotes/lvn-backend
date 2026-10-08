@@ -7,6 +7,7 @@ import { decodeCursor, pageSize } from '@lvn-backend/graphql'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { noteFacts, visibleNotesWhere } from '../domain/note-access'
+import { AttachmentsService } from './attachments.service'
 import type { SnapshotCard } from './drafts.service'
 import { NotesService, type OpenedNote } from './notes.service'
 
@@ -22,6 +23,7 @@ export class SharingService {
     private readonly db: PrismaService,
     private readonly notes: NotesService,
     private readonly limiter: RateLimiter,
+    private readonly attachments: AttachmentsService,
     @Inject(PEOPLE) private readonly people: People,
     @Inject(AUDIT) private readonly audit: Audit,
     @Inject(EVENT_BUS) private readonly events: EventBus,
@@ -149,6 +151,7 @@ export class SharingService {
       })
       if (cards.length) await tx.card.createMany({ data: cards.map((c) => ({ id: newId(), noteId: id, type: c.type, position: c.position, content: c.content as Prisma.InputJsonValue })) })
       if (topics.length) await tx.noteTopic.createMany({ data: topics.map((t) => ({ noteId: id, topicId: t.topicId })) })
+      await this.attachments.carryOver(tx, noteId, id, cards)
     })
     if (usedVersion) await this.events.publish('NoteForked', { noteId: id, forkedFromNoteId: noteId, forkedFromVersionId: usedVersion, ownerId: viewerId })
     return (await this.notes.open(viewerId, id, actor))!

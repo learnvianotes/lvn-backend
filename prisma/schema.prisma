@@ -493,6 +493,8 @@ model FileObject {
   updatedAt          DateTime       @updatedAt @db.Timestamptz(3)
   deletedAt          DateTime?      @db.Timestamptz(3)
 
+  attachments NoteAttachment[]
+
   @@index([ownerId, status])
   @@index([parentType, parentId])
   @@index([status, expiresAt])
@@ -667,11 +669,12 @@ model Note {
   createdAt            DateTime    @default(now()) @db.Timestamptz(3)
   updatedAt            DateTime    @updatedAt @db.Timestamptz(3)
 
-  folder           Folder?       @relation(fields: [folderId], references: [id])
-  publishedVersion NoteVersion?  @relation("PublishedVersion", fields: [publishedVersionId], references: [id])
+  folder           Folder?          @relation(fields: [folderId], references: [id])
+  publishedVersion NoteVersion?     @relation("PublishedVersion", fields: [publishedVersionId], references: [id])
   cards            Card[]
-  versions         NoteVersion[] @relation("NoteVersions")
+  versions         NoteVersion[]    @relation("NoteVersions")
   shares           NoteShare[]
+  attachments      NoteAttachment[]
   tags             NoteTag[]
   topics           NoteTopic[]
 
@@ -735,6 +738,21 @@ model NoteShare {
 
   @@id([noteId, userId])
   @@index([userId])
+  @@schema("notes")
+}
+
+/// A file uploaded to a note (§8.1 ATTACHMENT), or carried over to a copy of it (§4.4): media cards of the note may
+/// show it, and readers of the note get read URLs for it. Files no note links to any more are deleted.
+model NoteAttachment {
+  noteId    String   @db.Uuid
+  fileId    String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  note Note       @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  file FileObject @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@id([noteId, fileId])
+  @@index([fileId])
   @@schema("notes")
 }
 

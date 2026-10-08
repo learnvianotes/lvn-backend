@@ -1,13 +1,17 @@
 import { Injectable } from '@nestjs/common'
 import { NOTE_LIMITS } from '@lvn/contracts/validation'
 import { PrismaService } from '@lvn-backend/prisma-base'
+import { AttachmentsService } from './attachments.service'
 
 /**
  * Nightly housekeeping of the notes context (§9.1 `housekeeping`), run by apps/worker. Both jobs are idempotent.
  */
 @Injectable()
 export class NotesMaintenance {
-  constructor(private readonly db: PrismaService) {}
+  constructor(
+    private readonly db: PrismaService,
+    private readonly attachments: AttachmentsService,
+  ) {}
 
   /**
    * §4.3: public notes keep every published version; other notes keep their newest 50 versions. Conflict and
@@ -29,10 +33,14 @@ export class NotesMaintenance {
         AND NOT (ranked."visibility" = 'PUBLIC' AND v."kind" = 'PUBLISHED')`
   }
 
-  /** §4.5: notes in the trash for 30 days are deleted for good, with their cards, versions, shares and links. */
+  /**
+   * §4.5: notes in the trash for 30 days are deleted for good, with their cards, versions, shares and links; then files
+   * no note links to any more are deleted (§8.2).
+   */
   async emptyTrash(now = new Date()): Promise<number> {
     const cutoff = new Date(now.getTime() - NOTE_LIMITS.trashDays * 24 * 3600 * 1000)
     const { count } = await this.db.note.deleteMany({ where: { deletedAt: { lt: cutoff } } })
+    await this.attachments.purgeUnlinked()
     return count
   }
 }

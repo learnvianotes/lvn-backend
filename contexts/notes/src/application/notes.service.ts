@@ -36,9 +36,12 @@ export interface NoteListFilter {
   trashed?: boolean | null
 }
 
-/** Checks one card from a client and returns its content as stored; `path` names it in the error. */
-export function checkCard(card: CardInput, path: (string | number)[]): unknown {
-  if (MEDIA_CARD_TYPES.has(card.type)) throw Errors.validation('Images, video, audio and file cards arrive with uploads to notes.', [...path.map(String), 'type'])
+/**
+ * Checks one card from a client and returns its content as stored; `path` names it in the error. Media cards need the
+ * note's attachments (AttachmentsService.assertUsable), so only saves to an existing note accept them.
+ */
+export function checkCard(card: CardInput, path: (string | number)[], opts: { media?: boolean } = {}): unknown {
+  if (MEDIA_CARD_TYPES.has(card.type) && !opts.media) throw Errors.validation('Add pictures, video, audio and files once the note exists.', [...path.map(String), 'type'])
   if (!isValidPosition(card.position)) throw Errors.validation('This card position is not valid.', [...path.map(String), 'position'])
   const parsed = parseCardContent(card.type, card.content)
   if (!parsed.ok) throw Errors.validation(`This ${card.type} card is not valid: ${parsed.message}.`, [...path.map(String), 'content'])
@@ -157,10 +160,15 @@ export class NotesService {
     return (await this.open(ownerId, noteId))!
   }
 
-  /** Deletes a note in the trash for good: cards, versions, shares, tags and topics go with it. */
-  async destroy(ownerId: string, noteId: string): Promise<void> {
+  /**
+   * Deletes a note in the trash for good: cards, versions, shares, tags, topics and its links to files go with it.
+   * Returns the files it linked, for AttachmentsService.purgeUnlinked.
+   */
+  async destroy(ownerId: string, noteId: string): Promise<string[]> {
     const { note } = await this.require(ownerId, noteId, 'owner')
     if (!note.deletedAt) throw Errors.validation('Move the note to the trash first.')
+    const linked = await this.db.noteAttachment.findMany({ where: { noteId }, select: { fileId: true } })
     await this.db.note.delete({ where: { id: noteId } })
+    return linked.map((a) => a.fileId)
   }
 }
