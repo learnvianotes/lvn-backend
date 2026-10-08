@@ -20,10 +20,13 @@ Validated in lvn-web `lib/env.ts` until `@lvn/contracts/config` is published (AD
 | `NEXT_PUBLIC_APP_VERSION` | no | `package.json` version | — | — | — | Version shown in the `/core` help centre and sent with feedback |
 | `NEXT_DIST_DIR` | no | `.next` | — | — | — | Build output folder; Playwright builds to `.next-e2e` so it never clobbers `next dev` |
 
-Added in Phase 1 (names proposed, owned by `@lvn/contracts/config`): `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`,
-`NEXT_PUBLIC_SENTRY_DSN`, `REVALIDATE_SECRET` (server-only, for the API's on-demand ISR webhook), and for Google
-sign-in (ADR-0007) `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`,
-`NEXT_PUBLIC_FIREBASE_APP_ID` (public identifiers, not secrets).
+| `NEXT_PUBLIC_API_URL` | yes | — | `http://localhost:4000/graphql` | `https://api.sandbox.learnvianotes.in/graphql` | `https://api.learnvianotes.in/graphql` | The API's GraphQL gateway |
+| `NEXT_PUBLIC_FIREBASE_API_KEY`, `…_AUTH_DOMAIN`, `…_PROJECT_ID`, `…_APP_ID` | no | — (Google off) | — | project values | project values | Google sign-in through Firebase (ADR-0007); public identifiers, not secrets |
+| `NEXT_PUBLIC_GITHUB_CLIENT_ID`, `NEXT_PUBLIC_GITHUB_AUTHORIZE_URL` | no | — (GitHub off) | — | app id, `https://github.com/login/oauth/authorize` | same | GitHub consent page (PKCE) |
+| `NEXT_PUBLIC_LINKEDIN_CLIENT_ID`, `NEXT_PUBLIC_LINKEDIN_AUTHORIZE_URL` | no | — (LinkedIn off) | — | app id, `https://www.linkedin.com/oauth/v2/authorization` | same | LinkedIn consent page (PKCE) |
+
+Still to come: `NEXT_PUBLIC_WS_URL` (subscriptions), `NEXT_PUBLIC_SENTRY_DSN`, and `REVALIDATE_SECRET` (server-only, for
+the API's on-demand ISR webhook) in the phases that use them.
 
 ## lvn-backend
 
