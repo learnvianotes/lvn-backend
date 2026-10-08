@@ -1,6 +1,6 @@
 {
   "name": "@learnvianotes/contracts",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "LearnViaNotes shared contracts: domain enums, permission matrix, config, event and notification schemas, GraphQL schema. Imported as @lvn/contracts (ADR-0031).",
   "license": "UNLICENSED",
   "publishConfig": {
@@ -59,6 +59,16 @@
       "require": {
         "types": "./dist/notifications/index.d.ts",
         "default": "./dist/notifications/index.js"
+      }
+    },
+    "./validation": {
+      "import": {
+        "types": "./dist/validation/index.d.mts",
+        "default": "./dist/validation/index.mjs"
+      },
+      "require": {
+        "types": "./dist/validation/index.d.ts",
+        "default": "./dist/validation/index.js"
       }
     },
     "./graphql/*": "./graphql/*"

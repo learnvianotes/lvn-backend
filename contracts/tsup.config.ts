@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry: { index: 'src/index.ts', 'domain/index': 'src/domain/index.ts', 'config/index': 'src/config/index.ts', 'events/index': 'src/events/index.ts', 'notifications/index': 'src/notifications/index.ts' },
+  entry: { index: 'src/index.ts', 'domain/index': 'src/domain/index.ts', 'config/index': 'src/config/index.ts', 'events/index': 'src/events/index.ts', 'notifications/index': 'src/notifications/index.ts', 'validation/index': 'src/validation/index.ts' },
   format: ['esm', 'cjs'],
   dts: true,
   clean: true,

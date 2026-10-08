@@ -39,7 +39,11 @@ export type CardType = (typeof CardType)[keyof typeof CardType]
 export const NoteKind = { NOTE: 'NOTE', BLOG: 'BLOG', POST: 'POST', PROJECT: 'PROJECT' } as const
 export type NoteKind = (typeof NoteKind)[keyof typeof NoteKind]
 
-export const NoteVersionKind = { PUBLISHED: 'PUBLISHED', CONFLICT: 'CONFLICT' } as const
+/**
+ * PUBLISHED: what readers see (§4.3). CONFLICT: the losing side of a card edited on two devices (§13.2).
+ * DRAFT: the draft as it was before a version was restored, so restoring never loses unpublished work (§4.3).
+ */
+export const NoteVersionKind = { PUBLISHED: 'PUBLISHED', CONFLICT: 'CONFLICT', DRAFT: 'DRAFT' } as const
 export type NoteVersionKind = (typeof NoteVersionKind)[keyof typeof NoteVersionKind]
 
 /** A request to join a group or classroom (ADR-0009). */
