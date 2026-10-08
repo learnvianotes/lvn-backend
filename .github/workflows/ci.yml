@@ -1,5 +1,5 @@
-# lvn-backend CI (spec §16.4). Integration tests with Testcontainers, the GraphQL schema diff and the
-# cross-schema SQL check join this workflow in Phase 1 with the code they test.
+# lvn-backend CI (spec §16.4): every pull request and main. Integration and e2e tests start their own Postgres, Redis,
+# S3 and Mailpit containers (Testcontainers) on the runner's Docker.
 name: ci
 
 on:
@@ -25,11 +25,66 @@ jobs:
       - run: pnpm build
       - run: pnpm lint
       - run: pnpm typecheck
-      - run: pnpm test
       - name: Context boundaries (dependency-cruiser)
         run: pnpm boundaries
       - name: Prisma schema
         run: pnpm prisma:validate
+      - name: Client schema is current (contracts/graphql, §17 contract tests)
+        run: pnpm graphql:check
+      - name: Every configuration variable is documented (§16.1)
+        run: pnpm env:check
+      - name: Unit, integration and e2e tests (Testcontainers)
+        run: pnpm test
+
+  migrations:
+    # Migrations apply to an empty database, and prisma/schema.prisma matches them (no drift).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env: { POSTGRES_USER: lvn, POSTGRES_PASSWORD: lvn, POSTGRES_DB: lvn }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U lvn" --health-interval 2s --health-timeout 2s --health-retries 30
+    env:
+      DATABASE_URL: postgresql://lvn:lvn@localhost:5432/lvn
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:deploy
+      - name: No drift between schema.prisma and the migrated database
+        run: pnpm exec prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
+  image:
+    # The backend image (infra/docker/api.Dockerfile): API, worker and migrations from one build.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/api.Dockerfile
+          push: false
+          tags: lvn-backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: infra/terraform }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: 1.9.8 }
+      - run: terraform fmt -check -recursive
+      - name: Validate the sandbox root (no backend, no credentials)
+        working-directory: infra/terraform/envs/sandbox
+        run: terraform init -backend=false -input=false && terraform validate
 
   secrets:
     runs-on: ubuntu-latest

@@ -1,0 +1,42 @@
+# The §17.1 security suite: mandatory, blocks release. On pull requests that touch what it guards, and nightly in full
+# (with every other test, so a dependency update that weakens a check is caught within a day).
+name: security
+
+on:
+  pull_request:
+    paths:
+      - 'apps/api/**'
+      - 'contexts/users/**'
+      - 'contexts/notes/**'
+      - 'contexts/ai/**'
+      - 'libs/auth-guard/**'
+      - 'libs/graphql/**'
+      - 'libs/redis/**'
+      - 'libs/storage/**'
+      - 'contracts/src/domain/**'
+      - 'prisma/**'
+      - 'pnpm-lock.yaml'
+  schedule:
+    - cron: '30 21 * * *' # 03:00 IST
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: cp .env.example .env
+      - run: pnpm build
+      - name: Security suite (apps/api/test/security)
+        run: pnpm --filter @lvn-backend/api test:security
+      - name: Everything else, nightly
+        if: github.event_name == 'schedule'
+        run: pnpm test
