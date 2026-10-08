@@ -74,6 +74,20 @@ export class Storage {
     }
   }
 
+  /** Writes an object the server made itself (exports, files from imports); browsers use presignPut. */
+  async put(bucket: string, key: string, body: Uint8Array, opts: { contentType: string; metadata?: Record<string, string> }): Promise<void> {
+    await this.client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: opts.contentType, Metadata: opts.metadata }))
+  }
+
+  /** A whole object, refused when it is larger than `maxBytes` (imports read uploads this way). */
+  async getBytes(bucket: string, key: string, maxBytes: number): Promise<Uint8Array> {
+    const info = await this.head(bucket, key)
+    if (!info) throw new Error(`No object ${key}`)
+    if (info.sizeBytes > maxBytes) throw new Error(`Object ${key} is larger than ${maxBytes} bytes`)
+    const r = await this.client.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+    return r.Body ? await r.Body.transformToByteArray() : new Uint8Array()
+  }
+
   /** The first `bytes` bytes of an object (magic-byte checks, §7.2). */
   async firstBytes(bucket: string, key: string, bytes = 64): Promise<Uint8Array> {
     const r = await this.client.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: `bytes=0-${bytes - 1}` }))

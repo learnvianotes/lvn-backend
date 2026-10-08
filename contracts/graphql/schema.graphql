@@ -188,6 +188,33 @@ input CreateUploadIntentInput {
   sizeBytes: Int!
 }
 
+type DataExport {
+  """
+  While READY: a download link that works for 15 minutes; ask again for a new one
+  """
+  downloadUrl: String
+
+  """Kept until then (7 days)"""
+  expiresAt: DateTime
+  id: UUID!
+  readyAt: DateTime
+  requestedAt: DateTime!
+  sizeBytes: Float
+  status: DataExportStatus!
+}
+
+type DataExportPayload {
+  export: DataExport
+  userErrors: [UserError!]!
+}
+
+enum DataExportStatus {
+  EXPIRED
+  FAILED
+  PENDING
+  READY
+}
+
 scalar DateTime
 
 input DecideDomainReviewInput {
@@ -490,6 +517,11 @@ type Mutation {
   Report a note or a person you can see; reporting again updates your report
   """
   reportContent(input: ReportContentInput!): OkPayload!
+
+  """
+  Ask for an archive of everything about you: notes as Markdown and JSON with their files, and your account data. One a day; you are emailed when it is ready
+  """
+  requestDataExport: DataExportPayload!
   requestDocumentVerification(input: RequestDocumentVerificationInput!): VerificationRequestPayload!
 
   """Always ok, whether or not an account exists"""
@@ -810,6 +842,9 @@ type Query {
 
   """Open cases, oldest first (PLATFORM_ADMIN)"""
   moderationQueue(after: String, first: Int): ModerationCaseConnection!
+
+  """Your latest data exports, newest first"""
+  myDataExports: [DataExport!]!
   myFolders: [Folder!]!
 
   """The viewer's own notes, most recently edited first"""

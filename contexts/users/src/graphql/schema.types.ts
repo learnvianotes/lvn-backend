@@ -18,6 +18,25 @@ export interface CompleteRegistrationInput {
   acceptedTermsVersion: string
 }
 
+export interface DataExport {
+  id: string
+  status: DataExportStatus
+  requestedAt: Date
+  readyAt: Date | null
+  /** Kept until then (7 days) */
+  expiresAt: Date | null
+  sizeBytes: number | null
+  /** While READY: a download link that works for 15 minutes; ask again for a new one */
+  downloadUrl: string | null
+}
+
+export interface DataExportPayload {
+  export: DataExport | null
+  userErrors: Array<UserError>
+}
+
+export type DataExportStatus = 'PENDING' | 'READY' | 'FAILED' | 'EXPIRED'
+
 export interface DecideDomainReviewInput {
   domain: string
   approve: boolean

@@ -5,9 +5,10 @@ import { usersSubgraph } from '@lvn-backend/users'
 import { graphqlModules } from '@lvn-backend/graphql'
 import { PrismaModule } from '@lvn-backend/prisma-base'
 import { EventBusModule } from '@lvn-backend/event-bus'
+import { QueueModule } from '@lvn-backend/queue'
 import { RedisModule, SessionRevocations } from '@lvn-backend/redis'
 import { StorageModule } from '@lvn-backend/storage'
-import { FILES, MAILER } from '@lvn-backend/facades'
+import { CORE_DATA_EXPORT, FILES, MAILER, NOTES_DATA_EXPORT } from '@lvn-backend/facades'
 import { Global } from '@nestjs/common'
 import { AccessTokenVerifier } from '@lvn-backend/auth-guard'
 import { resetDatabase } from '@lvn-backend/testing'
@@ -58,7 +59,7 @@ class ProbeQueryResolver {
 @Module({ providers: [ProbeUserResolver, ProbeQueryResolver] })
 class ProbeModule {}
 
-/** users needs bindings for the mail and files facades; this test sends no email and stores no files. */
+/** users needs bindings for the mail, files and data-export facades; this test sends no email, stores no files and exports nothing. */
 @Global()
 @Module({
   providers: [
@@ -67,8 +68,10 @@ class ProbeModule {}
       provide: FILES,
       useValue: { attach: async () => undefined, describe: async () => [], readUrl: async () => ({ url: '', expiresAt: new Date() }), delete: async () => undefined, storageUsed: async () => 0n },
     },
+    { provide: NOTES_DATA_EXPORT, useValue: { exportFor: async () => ({ files: [], counts: {}, omitted: [] }) } },
+    { provide: CORE_DATA_EXPORT, useValue: { exportFor: async () => ({ files: [], counts: {}, omitted: [] }) } },
   ],
-  exports: [MAILER, FILES],
+  exports: [MAILER, FILES, NOTES_DATA_EXPORT, CORE_DATA_EXPORT],
 })
 class NoMailModule {}
 
@@ -80,6 +83,7 @@ describe('federation across in-process subgraphs', () => {
       imports: [
         PrismaModule.forRoot(config.DATABASE_URL),
         RedisModule.forRoot(config.REDIS_URL),
+        QueueModule.forRoot(config.REDIS_URL),
         StorageModule.forRoot({ region: 'us-east-1', forcePathStyle: true }),
         EventBusModule,
         NoMailModule,

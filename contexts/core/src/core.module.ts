@@ -1,4 +1,5 @@
 import { Module, type DynamicModule } from '@nestjs/common'
+import { CoreExport } from './application/core-export'
 import { CoreProgressService } from './application/core-progress.service'
 import { ModerationService } from './application/moderation.service'
 import { CORE_CONFIG, type CoreConfig } from './core.config'
@@ -17,7 +18,7 @@ export class CoreModule {
   static forRoot(config: CoreConfig): DynamicModule {
     return {
       module: CoreModule,
-      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver],
+      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver],
       exports: [CoreProgressService, ModerationService],
     }
   }

@@ -1,6 +1,6 @@
 import type { MailTemplate, MailTemplates } from '@lvn-backend/facades'
 import type { ReactElement } from 'react'
-import { InstitutionalCode, PasswordChanged, ResetPassword, VerifyEmail } from './emails'
+import { DataExportReady, InstitutionalCode, PasswordChanged, ResetPassword, VerifyEmail } from './emails'
 
 type Definition<T extends MailTemplate> = { subject: (data: MailTemplates[T]) => string; element: (data: MailTemplates[T]) => ReactElement }
 
@@ -10,4 +10,5 @@ export const TEMPLATES: { [T in MailTemplate]: Definition<T> } = {
   resetPassword: { subject: () => 'Reset your password', element: (d) => <ResetPassword {...d} /> },
   passwordChanged: { subject: () => 'Your password was changed', element: (d) => <PasswordChanged {...d} /> },
   institutionalCode: { subject: (d) => `${d.code} is your LearnViaNotes code`, element: (d) => <InstitutionalCode {...d} /> },
+  dataExportReady: { subject: () => 'Your LearnViaNotes data is ready', element: (d) => <DataExportReady {...d} /> },
 }

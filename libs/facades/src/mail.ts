@@ -13,6 +13,8 @@ export interface MailTemplates {
   passwordChanged: { displayName: string }
   /** 6-digit code for a college or organisation email (ADR-0017) */
   institutionalCode: { displayName: string; code: string; expiresInMinutes: number }
+  /** ADR-0018: the data export is ready to download, until expiresOn */
+  dataExportReady: { displayName: string; link: string; expiresOn: string }
 }
 
 export type MailTemplate = keyof MailTemplates

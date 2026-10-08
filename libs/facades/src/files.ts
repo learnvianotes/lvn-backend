@@ -4,7 +4,7 @@
  */
 export const FILES = Symbol('FILES')
 
-export type FileParentKind = 'NOTE' | 'CARD' | 'GROUP_POST' | 'RESOURCE' | 'AVATAR' | 'VERIFICATION_REQUEST'
+export type FileParentKind = 'NOTE' | 'CARD' | 'GROUP_POST' | 'RESOURCE' | 'AVATAR' | 'VERIFICATION_REQUEST' | 'IMPORT_JOB' | 'DATA_EXPORT'
 export type FilePurposeKind = 'ATTACHMENT' | 'COVER' | 'VOICE_NOTE' | 'AVATAR' | 'IMPORT' | 'EXPORT' | 'VERIFICATION_DOCUMENT'
 
 export interface FileSummary {
@@ -28,6 +28,11 @@ export interface Files {
   readUrl(fileId: string): Promise<{ url: string; expiresAt: Date }>
   /** Deletes the bytes and marks the rows DELETED (§8.2: the row stays as a record). */
   delete(fileIds: string[]): Promise<void>
+  /**
+   * Stores a file the server made (a data export, ADR-0018) as READY, in the restricted bucket when asked; it is deleted
+   * after `expiresAt`. Returns its id.
+   */
+  store(ownerId: string, file: { purpose: FilePurposeKind; parent: { type: FileParentKind; id: string }; fileName: string; mimeType: string; bytes: Uint8Array; restricted: boolean; expiresAt: Date | null }): Promise<string>
   /** Bytes a user's files take up, counted against STORAGE_BYTES (ADR-0024). */
   storageUsed(ownerId: string): Promise<bigint>
 }
