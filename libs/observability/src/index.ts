@@ -3,3 +3,6 @@ export { logContext, requestIdFrom, withJobContext, type LogContext } from './lo
 export { PinoNestLogger } from './nest-logger'
 export { httpLogging, noteOperation } from './http-logging'
 export type { Logger } from 'pino'
+export { startTelemetry, type Telemetry, type TelemetryOptions } from './telemetry'
+export { flushErrors, reportError, startErrorReporting, type ErrorReportingOptions } from './error-reporting'
+export { stopOnSignals } from './lifecycle'

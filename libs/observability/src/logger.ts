@@ -1,3 +1,4 @@
+import { trace } from '@opentelemetry/api'
 import pino, { type DestinationStream, type Level, type Logger } from 'pino'
 import { logContext } from './log-context'
 
@@ -33,11 +34,14 @@ export function createLogger({ service, env, level, destination }: LoggerOptions
       timestamp: pino.stdTimeFunctions.isoTime,
       formatters: { level: (label) => ({ level: label }) },
       redact: { paths: REDACTED_PATHS, censor: '[redacted]' },
-      // pino-http binds requestId on its own request logger; everything else gets it from the async context.
+      // pino-http binds requestId on its own request logger; everything else gets it from the async context. With
+      // OpenTelemetry on, the active trace and span ids link a line to its trace.
       mixin: (_merge, _level, logger) => {
         const ctx = logContext.getStore()
-        if (!ctx) return {}
-        return 'requestId' in logger.bindings() ? { ...ctx, requestId: undefined } : { ...ctx }
+        const span = trace.getActiveSpan()?.spanContext()
+        const ids = span && span.traceId !== '00000000000000000000000000000000' ? { traceId: span.traceId, spanId: span.spanId } : {}
+        if (!ctx) return ids
+        return 'requestId' in logger.bindings() ? { ...ctx, requestId: undefined, ...ids } : { ...ctx, ...ids }
       },
     },
     destination,

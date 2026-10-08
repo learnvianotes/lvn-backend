@@ -14,7 +14,7 @@ apps/api          composition root: HTTP (+ GraphQL from Phase 1), health probes
 apps/worker       composition root: background jobs (BullMQ from Phase 1), health port
 contexts/<name>   users · notes · core · ai · communication — one future microservice each; see each README
 libs/config       validated configuration (business-free)
-libs/observability  JSON logs with request ids and redaction
+libs/observability  JSON logs with request ids and redaction; OpenTelemetry and Sentry start-up
 contracts         @lvn/contracts: domain enums, permission matrix, config + event schemas, GraphQL schema
 prisma            one database, one Postgres schema per context
 docs              architecture, ADRs, API changes, runbooks, release notes
@@ -57,6 +57,12 @@ The API writes one access-log line per request (method, path without query strin
 are skipped). Request bodies, GraphQL variables and query strings are never logged, and credentials, tokens, codes and
 dates of birth are redacted wherever they appear. `LOG_LEVEL` sets the level; pipe through `npx pino-pretty` to read
 them locally.
+
+Traces and metrics (OpenTelemetry over OTLP/HTTP) start when `OTEL_EXPORTER_OTLP_ENDPOINT` is set: incoming HTTP,
+GraphQL, Postgres, Redis and outgoing fetch, without variables, SQL parameters or Redis arguments; log lines inside a
+trace carry its `traceId`. Unexpected exceptions go to Sentry when `SENTRY_DSN` is set — tagged with the request id,
+operation, queue and job, and stripped of cookies, bodies, headers, local variables and source lines. Each app's
+`src/instrument.ts` starts both before anything else loads; on SIGTERM the app closes, then flushes them.
 
 ## GraphQL
 

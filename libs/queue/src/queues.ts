@@ -1,5 +1,5 @@
 import { Global, Logger, Module, type DynamicModule, type OnApplicationShutdown } from '@nestjs/common'
-import { withJobContext } from '@lvn-backend/observability'
+import { reportError, withJobContext } from '@lvn-backend/observability'
 import { Queue, Worker, type ConnectionOptions, type Job } from 'bullmq'
 
 export type JobHandler = (data: unknown, job: Job) => Promise<unknown>
@@ -54,7 +54,11 @@ export class Queues implements OnApplicationShutdown {
       },
       { connection: this.connection, concurrency },
     )
-    worker.on('failed', (job, err) => this.log.error(`${queueName}/${job?.name ?? '?'} failed: ${err.message}`))
+    worker.on('failed', (job, err) => {
+      this.log.error(`${queueName}/${job?.name ?? '?'} failed: ${err.message}`)
+      // Retries are expected; only a job that has used up its attempts is an error to report.
+      if (!job || job.attemptsMade >= (job.opts.attempts ?? 1)) reportError(err, { queue: queueName, jobId: job?.id, job: job?.name })
+    })
     this.workers.push(worker)
     return worker
   }

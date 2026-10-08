@@ -26,8 +26,13 @@ export const databaseUrl = (): Promise<string> => (workerDb ??= workerDatabase(i
 
 /** A complete API configuration pointing at the test containers and this worker's database. */
 export async function testConfig(overrides: Record<string, string> = {}): Promise<ApiConfig> {
+  return loadConfig(apiConfigSchema, await testEnv(overrides))
+}
+
+/** The same configuration as environment variables, for starting the built API as a process. */
+export async function testEnv(overrides: Record<string, string> = {}): Promise<Record<string, string>> {
   const i = infra()
-  return loadConfig(apiConfigSchema, {
+  return {
     APP_ENV: 'development',
     LOG_LEVEL: 'error',
     DATABASE_URL: await databaseUrl(),
@@ -47,7 +52,7 @@ export async function testConfig(overrides: Record<string, string> = {}): Promis
     WEB_URL: 'http://localhost:3000',
     ...secrets,
     ...overrides,
-  })
+  }
 }
 
 export interface TestApp {

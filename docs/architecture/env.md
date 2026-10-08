@@ -19,13 +19,13 @@ Validated in lvn-web `lib/env.ts` until `@lvn/contracts/config` is published (AD
 | `NEXT_PUBLIC_FEEDBACK_URL` | no | — (sending disabled) | the old site's Apps Script URL | same | same | `/core` help-centre feedback reports (Google Apps Script → Sheet) |
 | `NEXT_PUBLIC_APP_VERSION` | no | `package.json` version | — | — | — | Version shown in the `/core` help centre and sent with feedback |
 | `NEXT_DIST_DIR` | no | `.next` | — | — | — | Build output folder; Playwright builds to `.next-e2e` so it never clobbers `next dev` |
-
 | `NEXT_PUBLIC_API_URL` | yes | — | `http://localhost:4000/graphql` | `https://api.sandbox.learnvianotes.in/graphql` | `https://api.learnvianotes.in/graphql` | The API's GraphQL gateway |
 | `NEXT_PUBLIC_FIREBASE_API_KEY`, `…_AUTH_DOMAIN`, `…_PROJECT_ID`, `…_APP_ID` | no | — (Google off) | — | project values | project values | Google sign-in through Firebase (ADR-0007); public identifiers, not secrets |
 | `NEXT_PUBLIC_GITHUB_CLIENT_ID`, `NEXT_PUBLIC_GITHUB_AUTHORIZE_URL` | no | — (GitHub off) | — | app id, `https://github.com/login/oauth/authorize` | same | GitHub consent page (PKCE) |
 | `NEXT_PUBLIC_LINKEDIN_CLIENT_ID`, `NEXT_PUBLIC_LINKEDIN_AUTHORIZE_URL` | no | — (LinkedIn off) | — | app id, `https://www.linkedin.com/oauth/v2/authorization` | same | LinkedIn consent page (PKCE) |
+| `NEXT_PUBLIC_SENTRY_DSN` | no | — (off) | — | the web project's DSN | same | Browser and server errors (§16.5); a DSN is public by design |
 
-Still to come: `NEXT_PUBLIC_WS_URL` (subscriptions), `NEXT_PUBLIC_SENTRY_DSN`, and `REVALIDATE_SECRET` (server-only, for
+Still to come: `NEXT_PUBLIC_WS_URL` (subscriptions) and `REVALIDATE_SECRET` (server-only, for
 the API's on-demand ISR webhook) in the phases that use them.
 
 ## lvn-backend
@@ -38,6 +38,9 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | --- | --- | --- | --- | --- |
 | `APP_ENV` | api, worker | yes | — | `development`, `sandbox` or `production` |
 | `LOG_LEVEL` | api, worker | no | `info` | `fatal` … `trace` |
+| `RELEASE` | api, worker | no | — (`dev`) | Image tag or commit SHA, reported with traces and errors |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | api, worker | no | — (off) | OTLP/HTTP collector base URL, e.g. the ECS sidecar `http://localhost:4318` (§16.5). The standard `OTEL_*` SDK variables (sampling, batch delay) apply too |
+| `SENTRY_DSN` | api, worker | no | — (off) | Sentry project DSN for unexpected exceptions |
 | `DATABASE_URL` | api, worker | yes (secret) | — | PostgreSQL 16 connection string; must start with `postgres` |
 | `REDIS_URL` | api, worker | yes (secret) | — | Redis 7 connection string |
 | `API_HOST` | api | no | `0.0.0.0` | Bind address |
@@ -88,6 +91,7 @@ in lvn-mobile `env/<variant>.env` (public, committed) with per-machine overrides
 | `EXPO_PUBLIC_API_URL` | yes | `http://100.70.234.41:4000/graphql` | `https://api.sandbox.learnvianotes.in/graphql` | `https://api.learnvianotes.in/graphql` | The API's GraphQL gateway; development builds allow plain HTTP for it |
 | `EXPO_PUBLIC_GITHUB_CLIENT_ID` | no | — | — | — | GitHub sign-in in the app; empty hides the button. Redirect URI `<scheme>://oauth/callback` (schemes `learnvianotes-dev`, `learnvianotes-sandbox`, `learnvianotes`) |
 | `EXPO_PUBLIC_GITHUB_AUTHORIZE_URL` | with the client id | `https://github.com/login/oauth/authorize` | same | same | GitHub's consent page |
+| `EXPO_PUBLIC_SENTRY_DSN` | no | — (off) | the mobile project's DSN | same | Crashes and JS errors (§16.5) |
 
 Later in Phase 1 (ADR-0007): `EXPO_PUBLIC_FIREBASE_*` and the Google OAuth client ids used by native Google Sign-In, once
 the Firebase project's Android and iOS apps exist. LinkedIn has no app variable: it does not redirect to app schemes.

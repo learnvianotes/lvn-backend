@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common'
 import { AppError, ErrorCode } from '@lvn-backend/errors'
+import { reportError } from '@lvn-backend/observability'
 import { GraphQLError, type GraphQLFormattedError } from 'graphql'
 
 const CODES = new Set<string>(Object.values(ErrorCode))
@@ -32,6 +33,7 @@ export function formatError(formatted: GraphQLFormattedError, error: unknown): G
   // The client gets a generic message; the cause stays in the server logs (§6.2, §7.2).
   const cause = (error as { originalError?: unknown })?.originalError ?? error
   log.error(`${path?.join('.') ?? 'operation'}: ${cause instanceof Error ? (cause.stack ?? cause.message) : String(cause)}`)
+  reportError(cause, { path: path?.join('.') })
   return { message: 'Something went wrong. Please try again.', path, extensions: { code: ErrorCode.INTERNAL } }
 }
 
