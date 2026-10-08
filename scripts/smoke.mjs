@@ -140,6 +140,18 @@ await check('a wrong password is refused', async () => {
 
 await check('uploads an avatar: pre-signed PUT, then the API checks the bytes (files bucket)', () => uploadFile(webToken, 'AVATAR', 'image/png', 'me.png', PNG))
 
+await check('browsers on the web origin may upload to storage (CORS preflight of a pre-signed PUT)', async () => {
+  const intent = payload(
+    await gql('mutation ($input: CreateUploadIntentInput!) { createUploadIntent(input: $input) { intent { uploadUrl uploadHeaders { name value } } userErrors { field message code } } }', { input: { fileName: 'cors.png', mimeType: 'image/png', sizeBytes: PNG.length, purpose: 'AVATAR' } }, { token: webToken }),
+    'createUploadIntent',
+  ).intent
+  // What a browser asks before the PUT: every header it will send except Content-Length, which browsers set themselves.
+  const headers = intent.uploadHeaders.map((h) => h.name.toLowerCase()).filter((h) => h !== 'content-length')
+  const res = await fetch(intent.uploadUrl, { method: 'OPTIONS', headers: { Origin: url, 'Access-Control-Request-Method': 'PUT', 'Access-Control-Request-Headers': headers.join(',') } })
+  assert(res.ok && res.headers.get('access-control-allow-origin') === url, `preflight from ${url}: HTTP ${res.status}, allow-origin ${res.headers.get('access-control-allow-origin')}`)
+  return `${headers.length} headers allowed`
+})
+
 await check('uploads an identity document (restricted bucket)', () => uploadFile(webToken, 'VERIFICATION_DOCUMENT', 'application/pdf', 'id-card.pdf', PDF))
 
 await check('writes a note, autosaves a change and reads it back (Phase 2)', async () => {

@@ -174,9 +174,16 @@ resource "docker_container" "s3" {
   }
 }
 
-# The two buckets of envs/sandbox (modules/storage), with the files bucket's CORS rule for uploads from the web.
+# Uploads from the web: browsers PUT to pre-signed URLs with content-type and x-amz-meta-* headers. RustFS 1.0.1 does not
+# match listed AllowedHeaders (any requested header failed the preflight), so the local rule allows all headers; the
+# sandbox's S3 keeps the narrow list (modules/storage).
+locals {
+  files_cors = jsonencode({ CORSRules = [{ AllowedMethods = ["PUT", "GET"], AllowedOrigins = [var.public_url], AllowedHeaders = ["*"], MaxAgeSeconds = 600 }] })
+}
+
+# The two buckets of envs/sandbox (modules/storage), with the files bucket's CORS rule.
 resource "terraform_data" "buckets" {
-  triggers_replace = [docker_container.s3.id, local.buckets, var.public_url]
+  triggers_replace = [docker_container.s3.id, local.buckets, local.files_cors]
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
     environment = local.s3_keys
@@ -185,7 +192,7 @@ resource "terraform_data" "buckets" {
       s3() { docker run --rm --network ${docker_network.this.name} -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION=us-east-1 ${local.images.awscli} --endpoint-url http://s3:9000 s3api "$@"; }
       for _ in $(seq 1 30); do s3 list-buckets >/dev/null 2>&1 && break; sleep 1; done
       for b in ${join(" ", values(local.buckets))}; do s3 head-bucket --bucket "$b" 2>/dev/null || s3 create-bucket --bucket "$b" >/dev/null; done
-      s3 put-bucket-cors --bucket ${local.buckets.files} --cors-configuration '{"CORSRules":[{"AllowedMethods":["PUT","GET"],"AllowedOrigins":["${var.public_url}"],"AllowedHeaders":["content-type","content-length","x-amz-*"],"MaxAgeSeconds":600}]}'
+      s3 put-bucket-cors --bucket ${local.buckets.files} --cors-configuration '${local.files_cors}'
     EOT
   }
   depends_on = [docker_image.this]
