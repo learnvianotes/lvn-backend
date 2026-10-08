@@ -1,4 +1,4 @@
-import { apiConfigSchema, ConfigError, loadConfig, mobileConfigSchema, workerConfigSchema } from '../../../src/config'
+import { apiConfigSchema, ConfigError, loadConfig, mobileConfigSchema, webConfigSchema, workerConfigSchema } from '../../../src/config'
 
 const PRIVATE = '-----BEGIN PRIVATE KEY-----\\nMIIB\\n-----END PRIVATE KEY-----'
 const PUBLIC = '-----BEGIN PUBLIC KEY-----\\nMIIB\\n-----END PUBLIC KEY-----'
@@ -102,8 +102,33 @@ describe('workerConfigSchema', () => {
 })
 
 describe('mobileConfigSchema', () => {
-  it('requires the environment and the web origin', () => {
-    expect(loadConfig(mobileConfigSchema, { EXPO_PUBLIC_APP_ENV: 'sandbox', EXPO_PUBLIC_WEB_URL: 'https://sandbox.learnvianotes.in' }).EXPO_PUBLIC_APP_ENV).toBe('sandbox')
+  const mobile = { EXPO_PUBLIC_APP_ENV: 'sandbox', EXPO_PUBLIC_WEB_URL: 'https://sandbox.learnvianotes.in', EXPO_PUBLIC_API_URL: 'https://api.sandbox.learnvianotes.in/graphql' }
+
+  it('requires the environment, the web origin and the API', () => {
+    expect(loadConfig(mobileConfigSchema, mobile).EXPO_PUBLIC_APP_ENV).toBe('sandbox')
     expect(() => loadConfig(mobileConfigSchema, { EXPO_PUBLIC_APP_ENV: 'sandbox' })).toThrow(/EXPO_PUBLIC_WEB_URL/)
+    expect(() => loadConfig(mobileConfigSchema, { ...mobile, EXPO_PUBLIC_API_URL: undefined })).toThrow(/EXPO_PUBLIC_API_URL/)
+  })
+
+  it('takes GitHub sign-in and Sentry as optional', () => {
+    const c = loadConfig(mobileConfigSchema, { ...mobile, EXPO_PUBLIC_GITHUB_CLIENT_ID: 'Iv1.abc', EXPO_PUBLIC_SENTRY_DSN: 'https://key@o1.ingest.sentry.io/2' })
+    expect(c.EXPO_PUBLIC_GITHUB_CLIENT_ID).toBe('Iv1.abc')
+    expect(() => loadConfig(mobileConfigSchema, { ...mobile, EXPO_PUBLIC_SENTRY_DSN: 'not a url' })).toThrow(/EXPO_PUBLIC_SENTRY_DSN/)
+  })
+})
+
+describe('webConfigSchema', () => {
+  it('requires the site origin and the API; providers, feedback and Sentry are optional', () => {
+    const c = loadConfig(webConfigSchema, { NEXT_PUBLIC_SITE_URL: 'https://www.learnvianotes.in', NEXT_PUBLIC_API_URL: 'https://api.learnvianotes.in/graphql', NEXT_PUBLIC_FEEDBACK_URL: '' })
+    expect(c.NEXT_PUBLIC_APP_ENV).toBe('development')
+    expect(() => loadConfig(webConfigSchema, { NEXT_PUBLIC_SITE_URL: 'https://www.learnvianotes.in' })).toThrow(/NEXT_PUBLIC_API_URL/)
+  })
+})
+
+describe('telemetry', () => {
+  it('turns OpenTelemetry and Sentry on only with well-formed URLs', () => {
+    expect(() => loadConfig(apiConfigSchema, { ...valid, OTEL_EXPORTER_OTLP_ENDPOINT: 'collector:4318' })).toThrow(/OTEL_EXPORTER_OTLP_ENDPOINT/)
+    const c = loadConfig(apiConfigSchema, { ...valid, OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4318', SENTRY_DSN: 'https://key@o1.ingest.sentry.io/2', RELEASE: 'abc1234' })
+    expect(c).toMatchObject({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4318', RELEASE: 'abc1234' })
   })
 })

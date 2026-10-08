@@ -12,6 +12,8 @@ export const AppEnv = z.enum(['development', 'sandbox', 'production'])
 export type AppEnv = z.infer<typeof AppEnv>
 
 const port = z.coerce.number().int().min(1).max(65535)
+/** An http(s) URL — `host:port` alone would parse as a URL with the host as its scheme. */
+const httpUrl = z.url().refine((u) => /^https?:\/\//.test(u), 'must be an http(s) URL')
 
 /** Variables every backend process reads. */
 const backendBase = z.object({
@@ -19,6 +21,12 @@ const backendBase = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   DATABASE_URL: z.url().refine((u) => u.startsWith('postgres'), 'must be a postgres:// URL'),
   REDIS_URL: z.url().refine((u) => u.startsWith('redis'), 'must be a redis:// URL'),
+  /** Image tag or commit SHA of this deployment, reported with traces and errors. */
+  RELEASE: z.string().min(1).optional(),
+  /** OTLP/HTTP collector base URL (§16.5); OpenTelemetry traces and metrics are off without it. */
+  OTEL_EXPORTER_OTLP_ENDPOINT: httpUrl.optional(),
+  /** Sentry DSN for unexpected exceptions; error reporting is off without it. */
+  SENTRY_DSN: httpUrl.optional(),
 })
 
 const flag = z.enum(['true', 'false']).transform((v) => v === 'true')
@@ -138,11 +146,29 @@ export const workerConfigSchema = apiShape
   .superRefine(providersConfigured)
 export type WorkerConfig = z.infer<typeof workerConfigSchema>
 
-/** Public (browser-visible) web variables. Server-only web secrets get their own schema in Phase 1. */
+const publicId = z.string().min(1).optional()
+
+/** Public (browser-visible) web variables. Server-only web secrets get their own schema when the web needs one. */
 export const webConfigSchema = z.object({
   NEXT_PUBLIC_APP_ENV: AppEnv.default('development'),
   /** Canonical web origin, e.g. https://www.learnvianotes.in in production. */
   NEXT_PUBLIC_SITE_URL: z.url(),
+  /** The API's GraphQL gateway. */
+  NEXT_PUBLIC_API_URL: z.url(),
+  /** /core feedback reports; empty disables sending. */
+  NEXT_PUBLIC_FEEDBACK_URL: z.union([z.url(), z.literal('')]).optional(),
+  /** Google sign-in through Firebase Authentication (ADR-0007). Public identifiers, not secrets. */
+  NEXT_PUBLIC_FIREBASE_API_KEY: publicId,
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: publicId,
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: publicId,
+  NEXT_PUBLIC_FIREBASE_APP_ID: publicId,
+  /** GitHub and LinkedIn sign-in (§7.1): public client ids and consent pages. */
+  NEXT_PUBLIC_GITHUB_CLIENT_ID: publicId,
+  NEXT_PUBLIC_GITHUB_AUTHORIZE_URL: z.url().optional(),
+  NEXT_PUBLIC_LINKEDIN_CLIENT_ID: publicId,
+  NEXT_PUBLIC_LINKEDIN_AUTHORIZE_URL: z.url().optional(),
+  /** Sentry DSN for browser and server errors (§16.5); off without it. A DSN is public by design. */
+  NEXT_PUBLIC_SENTRY_DSN: httpUrl.optional(),
 })
 export type WebConfig = z.infer<typeof webConfigSchema>
 
@@ -150,6 +176,13 @@ export const mobileConfigSchema = z.object({
   EXPO_PUBLIC_APP_ENV: AppEnv,
   /** lvn-web origin, for links into the site. */
   EXPO_PUBLIC_WEB_URL: z.url(),
+  /** The API's GraphQL gateway. */
+  EXPO_PUBLIC_API_URL: z.url(),
+  /** GitHub sign-in (§7.1); LinkedIn does not redirect to app schemes and has no app variable. */
+  EXPO_PUBLIC_GITHUB_CLIENT_ID: publicId,
+  EXPO_PUBLIC_GITHUB_AUTHORIZE_URL: z.url().optional(),
+  /** Sentry DSN for crashes and errors (§16.5); off without it. */
+  EXPO_PUBLIC_SENTRY_DSN: httpUrl.optional(),
 })
 export type MobileConfig = z.infer<typeof mobileConfigSchema>
 
