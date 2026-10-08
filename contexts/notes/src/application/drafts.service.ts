@@ -253,9 +253,9 @@ export class DraftsService {
   /** Version history, newest first: editors only. */
   async versions(opened: OpenedNote, first: number | null | undefined, after: string | null | undefined) {
     const size = pageSize(first)
-    const [before] = (decodeCursor(after, 1) as [number] | null) ?? [Number.MAX_SAFE_INTEGER]
+    const cursor = decodeCursor(after, 1) as [number] | null
     const rows = await this.db.noteVersion.findMany({
-      where: { noteId: opened.note.id, number: { lt: before } },
+      where: { noteId: opened.note.id, ...(cursor ? { number: { lt: cursor[0] } } : {}) },
       orderBy: { number: 'desc' },
       take: size + 1,
       select: { id: true, noteId: true, number: true, kind: true, title: true, createdById: true, createdAt: true },

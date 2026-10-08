@@ -287,6 +287,22 @@ describe('notes', () => {
       expect(versions.map((v) => [v.number, v.kind, v.title])).toEqual([[1, 'PUBLISHED', 'v1 title'], [2, 'DRAFT', 'v2 title']])
       expect(((versions[1]!.cards as unknown) as Card[]).map((c) => c.id)).toEqual([b])
 
+      // The history, newest first, page by page.
+      const page1 = await t.gql<{ note: { versions: { edges: { node: { number: number; kind: string; createdBy: { displayName: string } } }[]; pageInfo: { hasNextPage: boolean; endCursor: string } } } }>(
+        'query ($id: UUID!) { note(id: $id) { versions(first: 1) { edges { node { number kind createdBy { displayName } } } pageInfo { hasNextPage endCursor } } } }',
+        { id: note!.id },
+        owner.token,
+      )
+      expect(page1.errors).toBeUndefined()
+      expect(page1.data!.note.versions.edges.map((e) => e.node)).toEqual([{ number: 2, kind: 'DRAFT', createdBy: { displayName: 'Asha Rao' } }])
+      const page2 = await t.gql<{ note: { versions: { edges: { node: { number: number } }[]; pageInfo: { hasNextPage: boolean } } } }>(
+        'query ($id: UUID!, $after: String) { note(id: $id) { versions(first: 5, after: $after) { edges { node { number } } pageInfo { hasNextPage } } } }',
+        { id: note!.id, after: page1.data!.note.versions.pageInfo.endCursor },
+        owner.token,
+      )
+      expect(page2.data!.note.versions.edges.map((e) => e.node.number)).toEqual([1])
+      expect(page2.data!.note.versions.pageInfo.hasNextPage).toBe(false)
+
       // Editors preview one version; it must belong to this note, and readers get nothing.
       const preview = await t.gql<{ note: { version: { number: number; kind: string; cards: { edges: { node: Card }[] } } | null } }>('query ($id: UUID!, $v: UUID!) { note(id: $id) { version(id: $v) { number kind cards { edges { node { id content } } } } } }', { id: note!.id, v: versions[1]!.id }, owner.token)
       expect(preview.data!.note.version).toMatchObject({ number: 2, kind: 'DRAFT' })
