@@ -54,6 +54,11 @@ export type CardOpStatus = 'APPLIED' | 'APPLIED_WITH_CONFLICT' | 'REJECTED'
 /** The sixteen card types (§4.1); content is validated per type (@lvn/contracts/validation) */
 export type CardType = 'text' | 'heading' | 'markdown' | 'code' | 'image' | 'video' | 'audio' | 'file' | 'diagram' | 'quote' | 'callout' | 'checklist' | 'table' | 'question' | 'quiz' | 'flashcard'
 
+export interface ChangeNoteVisibilityInput {
+  noteId: string
+  visibility: Visibility
+}
+
 export interface CreateFolderInput {
   name: string
   parentId?: string | null
@@ -95,6 +100,13 @@ export interface Folder {
 export interface FolderPayload {
   folder: Folder | null
   userErrors: Array<UserError>
+}
+
+/** Where a copy came from (§4.4, ADR-0010). Every reader sees the author; the origin itself only those who can open it. */
+export interface ForkCredit {
+  author: User
+  note: Note | null
+  title: string | null
 }
 
 export interface IdInput {
@@ -161,6 +173,26 @@ export interface MutationProposeTopicArgs {
   input: ProposeTopicInput
 }
 
+export interface MutationChangeNoteVisibilityArgs {
+  input: ChangeNoteVisibilityInput
+}
+
+export interface MutationShareNoteArgs {
+  input: ShareNoteInput
+}
+
+export interface MutationUnshareNoteArgs {
+  input: UnshareNoteInput
+}
+
+export interface MutationForkNoteArgs {
+  input: NoteIdInput
+}
+
+export interface MutationSetNoteForkingArgs {
+  input: SetNoteForkingInput
+}
+
 /** A note (§4.1). Load it in two steps (§6.3): these fields and the outline first, then `cards` page by page. Editors get
  * the draft; readers get the published version. Notes the viewer cannot read are null, exactly as if they did not exist. */
 export interface Note {
@@ -201,6 +233,10 @@ export interface Note {
   updatedAt: Date
   /** Set while the note is in the trash (owner only) */
   deletedAt: Date | null
+  /** Owner only: the people the note is shared with; null for anyone else */
+  shares?: Array<NoteShare> | null
+  /** Set on a copy of another note; it cannot be removed */
+  forkedFrom?: ForkCredit | null
 }
 
 export interface NoteCardsArgs {
@@ -263,6 +299,15 @@ export interface NotePermissions {
   share: boolean
   fork: boolean
 }
+
+/** A person a note is shared with; EDITORs work on the draft, VIEWERs read the published version */
+export interface NoteShare {
+  user: User
+  role: NoteShareRole
+  createdAt: Date
+}
+
+export type NoteShareRole = 'EDITOR' | 'VIEWER'
 
 /** An immutable snapshot of a note's cards (§4.3) */
 export interface NoteVersion {
@@ -334,6 +379,11 @@ export interface QueryFindTopicsArgs {
   subjectId?: string | null
 }
 
+export interface QuerySharedWithMeArgs {
+  first?: number | null
+  after?: string | null
+}
+
 export interface RenameTagInput {
   id: string
   name: string
@@ -342,6 +392,18 @@ export interface RenameTagInput {
 export interface RestoreNoteVersionInput {
   noteId: string
   versionId: string
+}
+
+export interface SetNoteForkingInput {
+  noteId: string
+  enabled: boolean
+}
+
+export interface ShareNoteInput {
+  noteId: string
+  /** A handle (@asha or asha) or an email address */
+  person: string
+  role: NoteShareRole
 }
 
 export interface Subject {
@@ -380,6 +442,11 @@ export type TopicOrigin = 'CURATED' | 'PROPOSED'
 export interface TopicPayload {
   topic: Topic | null
   userErrors: Array<UserError>
+}
+
+export interface UnshareNoteInput {
+  noteId: string
+  userId: string
 }
 
 /** Omitted fields stay as they are; `parentId: null` moves the folder to the top level */

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
+import type { People, Person } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { isRestrictedMinor } from '../domain/rules'
 import type { User } from '../graphql/schema.types'
@@ -6,12 +7,23 @@ import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { InstitutionalEmailService } from './institutional-email.service'
 
 @Injectable()
-export class UsersService {
+export class UsersService implements People {
   constructor(
     private readonly db: PrismaService,
     private readonly institutional: InstitutionalEmailService,
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
   ) {}
+
+  /** People facade: the account a handle or an email names (exact, case-insensitive), never a deleted one. */
+  async find(handleOrEmail: string): Promise<Person | null> {
+    const q = handleOrEmail.trim().replace(/^@/, '')
+    if (!q || q.length > 254) return null
+    const u = await this.db.user.findFirst({
+      where: { deletedAt: null, OR: [{ handle: { equals: q, mode: 'insensitive' } }, { email: q }] },
+      select: { id: true, handle: true, displayName: true, globalRole: true },
+    })
+    return u ? { id: u.id, handle: u.handle, displayName: u.displayName, globalRole: u.globalRole } : null
+  }
 
   /** Anyone's view of a user: no email, institutional address, verification details or age signal. */
   async publicProfile(userId: string): Promise<User | null> {

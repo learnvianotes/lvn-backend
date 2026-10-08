@@ -3,9 +3,9 @@ import type { WorkerConfig } from '@lvn-backend/config'
 import { AiModule } from '@lvn-backend/ai'
 import { CommunicationModule, communicationConfigFrom, MailService } from '@lvn-backend/communication'
 import { CoreModule, coreConfigFrom } from '@lvn-backend/core'
-import { ENTITLEMENTS, FacadesModule, FILES, MAILER, POLICY } from '@lvn-backend/facades'
+import { AUDIT, ENTITLEMENTS, FacadesModule, FILES, MAILER, PEOPLE, POLICY } from '@lvn-backend/facades'
 import { FilesService, NotesModule, notesConfigFrom } from '@lvn-backend/notes'
-import { EntitlementService, PolicyService, UsersModule, usersConfigFrom } from '@lvn-backend/users'
+import { AuditService, EntitlementService, PolicyService, UsersModule, usersConfigFrom, UsersService } from '@lvn-backend/users'
 
 /**
  * The five bounded contexts this process composes (spec §6), configured as in apps/api. Extracting a context
@@ -28,4 +28,6 @@ export const facades = () =>
     [FILES, FilesService],
     [POLICY, PolicyService],
     [ENTITLEMENTS, EntitlementService],
+    [PEOPLE, UsersService],
+    [AUDIT, AuditService],
   ])

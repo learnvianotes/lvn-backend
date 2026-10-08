@@ -1,0 +1,63 @@
+# Who can read a note (spec §4.2, §4.4, §5): visibility, user shares and forks.
+
+enum NoteShareRole { EDITOR VIEWER }
+
+"A person a note is shared with; EDITORs work on the draft, VIEWERs read the published version"
+type NoteShare {
+  user: User!
+  role: NoteShareRole!
+  createdAt: DateTime!
+}
+
+"Where a copy came from (§4.4, ADR-0010). Every reader sees the author; the origin itself only those who can open it."
+type ForkCredit {
+  author: User!
+  note: Note
+  title: String
+}
+
+extend type Note {
+  "Owner only: the people the note is shared with; null for anyone else"
+  shares: [NoteShare!]
+  "Set on a copy of another note; it cannot be removed"
+  forkedFrom: ForkCredit
+}
+
+input ChangeNoteVisibilityInput {
+  noteId: UUID!
+  visibility: Visibility!
+}
+
+input ShareNoteInput {
+  noteId: UUID!
+  "A handle (@asha or asha) or an email address"
+  person: String!
+  role: NoteShareRole!
+}
+
+input UnshareNoteInput {
+  noteId: UUID!
+  userId: UUID!
+}
+
+input SetNoteForkingInput {
+  noteId: UUID!
+  enabled: Boolean!
+}
+
+extend type Query {
+  "Notes other people shared with the viewer, most recently changed first"
+  sharedWithMe(first: Int, after: String): NoteConnection!
+}
+
+extend type Mutation {
+  "PRIVATE, SHARED or PUBLIC (owner, verified account); PUBLIC needs a published version"
+  changeNoteVisibility(input: ChangeNoteVisibilityInput!): NotePayload!
+  "Share with one person, or change their role; a PRIVATE note becomes SHARED"
+  shareNote(input: ShareNoteInput!): NotePayload!
+  unshareNote(input: UnshareNoteInput!): NotePayload!
+  "A PRIVATE copy of a note you may fork, credited to its origin; returns the copy"
+  forkNote(input: NoteIdInput!): NotePayload!
+  "Allow or stop copies of your note"
+  setNoteForking(input: SetNoteForkingInput!): NotePayload!
+}
