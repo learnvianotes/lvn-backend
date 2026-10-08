@@ -1,0 +1,55 @@
+# Files (spec §8): the upload flow. Subgraph of the `notes` context (ADR-0033).
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.6", import: ["@shareable"])
+
+scalar DateTime
+scalar UUID
+
+"Fixed error vocabulary (§6.2)"
+enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL }
+
+type UserError @shareable {
+  field: [String!]
+  message: String!
+  code: ErrorCode!
+}
+
+type OkPayload @shareable {
+  ok: Boolean!
+  userErrors: [UserError!]!
+}
+
+"What an upload is for. Phase 1 accepts AVATAR and VERIFICATION_DOCUMENT; note media arrives with notes (Phase 2)."
+enum FilePurpose { ATTACHMENT COVER VOICE_NOTE AVATAR IMPORT EXPORT VERIFICATION_DOCUMENT }
+
+input CreateUploadIntentInput {
+  "Shown to people; never part of the storage key"
+  fileName: String!
+  mimeType: String!
+  sizeBytes: Int!
+  purpose: FilePurpose!
+  parentId: UUID
+}
+
+type UploadHeader {
+  name: String!
+  value: String!
+}
+
+"Upload the bytes with PUT to uploadUrl and exactly these headers within 10 minutes, then call completeUpload."
+type UploadIntent {
+  fileId: UUID!
+  uploadUrl: String!
+  uploadHeaders: [UploadHeader!]!
+  expiresAt: DateTime!
+}
+
+type UploadIntentPayload {
+  intent: UploadIntent
+  userErrors: [UserError!]!
+}
+
+type Mutation {
+  createUploadIntent(input: CreateUploadIntentInput!): UploadIntentPayload!
+  "Checks the uploaded bytes (size, magic bytes) and makes the file READY"
+  completeUpload(fileId: UUID!): OkPayload!
+}
