@@ -9,5 +9,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@lvn/contracts": "workspace:@learnvianotes/contracts@*"
   }
 }
