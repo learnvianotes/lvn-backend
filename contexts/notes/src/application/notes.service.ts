@@ -91,7 +91,7 @@ export class NotesService {
     return opened as OpenedNote & { actor: Actor }
   }
 
-  async create(ownerId: string, input: { title?: string | null; folderId?: string | null; kind?: NoteRow['kind'] | null; cards?: CardInput[] | null; tagNames?: string[] | null; topicIds?: string[] | null }): Promise<OpenedNote> {
+  async create(ownerId: string, input: { id?: string | null; title?: string | null; folderId?: string | null; kind?: NoteRow['kind'] | null; cards?: CardInput[] | null; tagNames?: string[] | null; topicIds?: string[] | null }): Promise<OpenedNote> {
     const actor = await this.actor(ownerId)
     const kind = input.kind ?? 'NOTE'
     if (kind !== 'NOTE') throw Errors.validation('Only notes can be created for now.', ['input', 'kind'])
@@ -109,7 +109,9 @@ export class NotesService {
     if (input.folderId) await this.organise.assertOwnFolder(ownerId, input.folderId, ['input', 'folderId'])
     const topicIds = await this.organise.usableTopics(ownerId, input.topicIds ?? [], ['input', 'topicIds'])
 
-    const id = newId()
+    // Devices make the id of a note written offline (§13.2), so later changes can name it before it reaches us.
+    const id = input.id ?? newId()
+    if (input.id && (await this.db.note.count({ where: { id: input.id } }))) throw Errors.conflict('A note with this id already exists.', ['input', 'id'])
     await this.db.$transaction(async (tx) => {
       await tx.note.create({ data: { id, ownerId, kind, title: title.data, folderId: input.folderId ?? null, draftRevision: cards.length ? 1 : 0 } })
       if (cards.length) await tx.card.createMany({ data: cards.map((c, i) => ({ id: c.id, noteId: id, type: c.type, position: c.position, content: contents[i] as Prisma.InputJsonValue })) })

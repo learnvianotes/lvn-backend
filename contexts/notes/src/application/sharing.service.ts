@@ -79,7 +79,8 @@ export class SharingService {
 
     await this.db.$transaction(async (tx) => {
       await tx.noteShare.upsert({ where: { noteId_userId: { noteId, userId: person.id } }, create: { noteId, userId: person.id, role, createdById: ownerId }, update: { role } })
-      if (note.visibility === 'PRIVATE') await tx.note.update({ where: { id: noteId }, data: { visibility: 'SHARED' } })
+      // The note counts as changed (updatedAt), so the devices of the person it is shared with pick it up (§13.2).
+      await tx.note.update({ where: { id: noteId }, data: { updatedAt: new Date(), ...(note.visibility === 'PRIVATE' ? { visibility: 'SHARED' as const } : {}) } })
     })
     await this.audit.record({ actorId: ownerId, action: existing ? 'note.share.role' : 'note.share', targetType: 'NOTE', targetId: noteId, metadata: { userId: person.id, role } })
     if (note.visibility === 'PRIVATE') await this.audit.record({ actorId: ownerId, action: 'note.visibility', targetType: 'NOTE', targetId: noteId, metadata: { from: 'PRIVATE', to: 'SHARED' } })

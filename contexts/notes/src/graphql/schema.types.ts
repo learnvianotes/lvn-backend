@@ -67,6 +67,8 @@ export interface CreateFolderInput {
 }
 
 export interface CreateNoteInput {
+  /** Made on the device for a note written offline (a UUIDv7, §13.2); leave out to let the server choose */
+  id?: string | null
   title?: string | null
   folderId?: string | null
   kind?: NoteKind | null
@@ -208,6 +210,10 @@ export interface MutationForkNoteArgs {
 
 export interface MutationSetNoteForkingArgs {
   input: SetNoteForkingInput
+}
+
+export interface MutationSyncPushArgs {
+  ops: Array<SyncOpInput>
 }
 
 /** A note (§4.1). Load it in two steps (§6.3): these fields and the outline first, then `cards` page by page. Editors get
@@ -430,6 +436,12 @@ export interface QuerySharedWithMeArgs {
   after?: string | null
 }
 
+export interface QuerySyncPullArgs {
+  since?: string | null
+  after?: string | null
+  first?: number | null
+}
+
 export interface RenameTagInput {
   id: string
   name: string
@@ -468,6 +480,58 @@ export interface Subject {
   title: string
   /** Top-level topics: curated ones and the viewer's proposals */
   topics: Array<Topic>
+}
+
+export interface SyncedNote {
+  note: Note
+  /** All live cards: the draft for owners and editors, the published version for readers */
+  cards: Array<Card>
+}
+
+export interface SyncOpInput {
+  /** A UUID made on the device; sending the same operation again returns the first answer */
+  clientOpId: string
+  kind: SyncOpKind
+  /** For CREATE_NOTE, the id the device gave the note */
+  noteId: string
+  /** CREATE_NOTE and UPDATE_NOTE */
+  title?: string | null
+  /** CREATE_NOTE: the note's first cards */
+  cards?: Array<CardInput> | null
+  /** UPDATE_NOTE: card changes, as in updateNoteDraft */
+  ops?: Array<CardOpInput> | null
+}
+
+export type SyncOpKind = 'CREATE_NOTE' | 'UPDATE_NOTE' | 'TRASH_NOTE' | 'RESTORE_NOTE'
+
+export interface SyncOpResult {
+  clientOpId: string
+  status: SyncOpStatus
+  code: ErrorCode | null
+  message: string | null
+  noteId: string
+  /** UPDATE_NOTE: per card, as in updateNoteDraft */
+  cardResults: Array<CardOpResult>
+  /** Set when a card changed elsewhere too: the other side is kept in this CONFLICT version */
+  conflictVersionId: string | null
+}
+
+/** APPLIED; REJECTED — it will never apply (show it as needing attention); RETRY — send it again later */
+export type SyncOpStatus = 'APPLIED' | 'REJECTED' | 'RETRY'
+
+export interface SyncPullResult {
+  /** Notes changed since the cursor, oldest change first */
+  notes: Array<SyncedNote>
+  /** Every note this account may keep on its devices; remove the others */
+  liveNoteIds: Array<string>
+  /** Keep it for the next sync (`since`), or ask for the next page (`after`) */
+  cursor: string | null
+  hasMore: boolean
+}
+
+export interface SyncPushPayload {
+  /** In the order sent; after a RETRY, the rest are RETRY too */
+  results: Array<SyncOpResult>
 }
 
 /** The viewer's tag; names are unique ignoring case */

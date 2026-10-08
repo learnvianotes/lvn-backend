@@ -160,6 +160,8 @@ input CardInput {
 }
 
 input CreateNoteInput {
+  "Made on the device for a note written offline (a UUIDv7, §13.2); leave out to let the server choose"
+  id: UUID
   title: String
   folderId: UUID
   kind: NoteKind
