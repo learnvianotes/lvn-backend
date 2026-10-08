@@ -359,6 +359,9 @@ importers:
       '@lvn-backend/facades':
         specifier: workspace:*
         version: link:../../libs/facades
+      '@lvn-backend/graphql':
+        specifier: workspace:*
+        version: link:../../libs/graphql
       '@lvn-backend/prisma-base':
         specifier: workspace:*
         version: link:../../libs/prisma-base
@@ -386,6 +389,10 @@ importers:
       rxjs:
         specifier: ^7.8.2
         version: 7.8.2
+    devDependencies:
+      '@lvn-backend/testing':
+        specifier: workspace:*
+        version: link:../../libs/testing
 
   contexts/users:
     dependencies:
@@ -545,6 +552,9 @@ importers:
       '@nestjs/graphql':
         specifier: 13.4.5
         version: 13.4.5(@apollo/subgraph@2.14.4(graphql@16.14.2))(@nestjs/common@11.2.7(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.2.7)(graphql@16.14.2)(reflect-metadata@0.2.2)(ts-morph@27.0.2)
+      dataloader:
+        specifier: ^2.2.3
+        version: 2.2.3
       graphql:
         specifier: 16.14.2
         version: 16.14.2
@@ -4154,6 +4164,9 @@ packages:
   data-uri-to-buffer@4.0.1:
     resolution: {integrity: sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==}
     engines: {node: '>= 12'}
+
+  dataloader@2.2.3:
+    resolution: {integrity: sha512-y2krtASINtPFS1rSDjacrFgn1dcUuoREVabwlOGOe4SdxenREqwjwjElAdwvbGM7kgZz9a3KVicWR7vcz8rnzA==}
 
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
@@ -10777,6 +10790,8 @@ snapshots:
       d3-array: 3.2.4
 
   data-uri-to-buffer@4.0.1: {}
+
+  dataloader@2.2.3: {}
 
   debug@4.4.3:
     dependencies:
