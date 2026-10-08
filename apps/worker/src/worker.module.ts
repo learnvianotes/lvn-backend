@@ -8,7 +8,7 @@ import { StorageModule } from '@lvn-backend/storage'
 import { contextModules, facades } from './contexts'
 import { MaintenanceJobs } from './maintenance.jobs'
 import { SearchJobs } from './search.jobs'
-import { ExportJobs } from './export.jobs'
+import { DataJobs } from './data.jobs'
 
 /** Composition root for background jobs (spec §3 apps/worker): the contexts and their BullMQ processors. */
 @Module({})
@@ -31,7 +31,7 @@ export class WorkerModule {
         facades(),
         ...contextModules(config),
       ],
-      providers: options.jobs === false ? [] : [MaintenanceJobs, SearchJobs, ExportJobs],
+      providers: options.jobs === false ? [] : [MaintenanceJobs, SearchJobs, DataJobs],
     }
   }
 }

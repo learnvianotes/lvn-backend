@@ -117,6 +117,22 @@ export interface IdInput {
   id: string
 }
 
+export interface ImportedNote {
+  id: string
+  title: string
+}
+
+export interface ImportNotesInput {
+  /** A READY upload with purpose IMPORT: an LVN export, a ZIP of Markdown with pictures, or a Markdown or text file */
+  fileId: string
+}
+
+export interface ImportSkip {
+  /** The file (or card) in the upload */
+  path: string
+  reason: string
+}
+
 /** A file a media card shows. The url works for 15 minutes (until expiresAt); load the card again for a new one. */
 export interface MediaFile {
   id: string
@@ -138,6 +154,14 @@ export interface MutationCreateUploadIntentArgs {
 
 export interface MutationCompleteUploadArgs {
   fileId: string
+}
+
+export interface MutationImportNotesArgs {
+  input: ImportNotesInput
+}
+
+export interface MutationConfirmNoteImportArgs {
+  input: NoteIdInput
 }
 
 export interface MutationCreateNoteArgs {
@@ -306,6 +330,29 @@ export interface NoteFilter {
 export interface NoteIdInput {
   noteId: string
 }
+
+export interface NoteImport {
+  id: string
+  fileName: string
+  /** NEEDS_CONFIRMATION: this file was imported before; confirmNoteImport imports it again */
+  status: NoteImportStatus
+  /** 0 to 100 */
+  progress: number
+  created: number
+  /** The first 100 notes made */
+  notes: Array<ImportedNote>
+  skipped: Array<ImportSkip>
+  error: string | null
+  createdAt: Date
+  finishedAt: Date | null
+}
+
+export interface NoteImportPayload {
+  noteImport: NoteImport | null
+  userErrors: Array<UserError>
+}
+
+export type NoteImportStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'NEEDS_CONFIRMATION'
 
 /** What a note is presented as (ADR-0014, ADR-0015). Phase 2 creates NOTE only. */
 export type NoteKind = 'NOTE' | 'BLOG' | 'POST' | 'PROJECT'

@@ -52,6 +52,29 @@ export class OrganiseService {
     return { ...folder, noteCount: 0 }
   }
 
+  /**
+   * The folder at a path of names (imports, ADR-0018): existing folders are reused, missing ones made; paths deeper than
+   * folders may nest stop at the deepest level allowed. Returns null when not even the first folder can be made.
+   */
+  async ensureFolderPath(ownerId: string, names: string[]): Promise<string | null> {
+    let parentId: string | null = null
+    for (const raw of names.slice(0, NOTE_LIMITS.folderDepth)) {
+      const name = folderNameSchema.safeParse(raw.trim().slice(0, 100))
+      if (!name.success) break
+      const existing: { id: string } | null = await this.db.folder.findFirst({ where: { ownerId, parentId, name: { equals: name.data, mode: 'insensitive' } }, select: { id: true } })
+      if (existing) {
+        parentId = existing.id
+        continue
+      }
+      try {
+        parentId = (await this.createFolder(ownerId, { name: name.data, parentId })).id
+      } catch {
+        break
+      }
+    }
+    return parentId
+  }
+
   async updateFolder(ownerId: string, input: { id: string; name?: string | null; parentId?: string | null }) {
     const all = await this.db.folder.findMany({ where: { ownerId }, select: { id: true, parentId: true } })
     const parents = new Map(all.map((f) => [f.id, f.parentId]))

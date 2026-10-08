@@ -812,6 +812,41 @@ model SyncOpLog {
   @@schema("notes")
 }
 
+enum NoteImportStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+  /// The same file was imported before: waiting for the person to confirm
+  NEEDS_CONFIRMATION
+
+  @@schema("notes")
+}
+
+/// ADR-0018: one import of notes from an uploaded file (purpose IMPORT), run by apps/worker.
+model NoteImport {
+  id             String           @id @db.Uuid
+  /// Cross-context reference to users.User
+  userId         String           @db.Uuid
+  fileId         String           @db.Uuid
+  fileName       String
+  /// SHA-256 of the upload: the same file imported again needs a confirmation
+  checksum       String?
+  allowDuplicate Boolean          @default(false)
+  status         NoteImportStatus @default(PENDING)
+  /// 0 to 100
+  progress       Int              @default(0)
+  /// { created, notes: [{ id, title }], skipped: [{ path, reason }] }
+  report         Json?
+  error          String?
+  createdAt      DateTime         @default(now()) @db.Timestamptz(3)
+  finishedAt     DateTime?        @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+  @@index([userId, checksum])
+  @@schema("notes")
+}
+
 /// ADR-0037: where a note stands with moderation (§15.1).
 enum ModerationState {
   OK

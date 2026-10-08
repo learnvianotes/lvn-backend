@@ -71,7 +71,10 @@ export class NotesExport implements DataExportPart {
         files.push({ path: `${dir}/media/${name}`, bytes: await this.storage.getBytes(file.bucket, file.storageKey, size) })
         media.set(file.id, { path: `media/${name}`, name: file.originalFileName })
       }
-      const forkedFrom = note.forkedFromOwnerId ? { noteId: note.forkedFromNoteId, versionId: note.forkedFromVersionId, ownerId: note.forkedFromOwnerId, title: note.forkedFromNoteId ? (originTitle.get(note.forkedFromNoteId) ?? null) : null } : null
+      // Everything the credit and its rule need (ADR-0010): an import restores both.
+      const forkedFrom = note.forkedFromOwnerId
+        ? { noteId: note.forkedFromNoteId, versionId: note.forkedFromVersionId, ownerId: note.forkedFromOwnerId, title: note.forkedFromNoteId ? (originTitle.get(note.forkedFromNoteId) ?? null) : null, originVisibility: note.forkedFromVisibility, forkedAs: note.forkedAsRole }
+        : null
       const front = {
         title: note.title,
         id: note.id,

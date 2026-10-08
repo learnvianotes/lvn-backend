@@ -5,6 +5,7 @@ import { DraftsService } from './application/drafts.service'
 import { NoteModerationService } from './application/moderation.service'
 import { FilesService } from './application/files.service'
 import { NotesService } from './application/notes.service'
+import { NoteImportService } from './application/note-import.service'
 import { NotesExport } from './application/notes-export'
 import { NotesMaintenance } from './application/notes-maintenance'
 import { OrganiseService } from './application/organise.service'
@@ -14,6 +15,7 @@ import { SearchService } from './application/search.service'
 import { SyncService } from './application/sync.service'
 import { SharingService } from './application/sharing.service'
 import { FilesResolver } from './graphql/files.resolver'
+import { ImportResolver } from './graphql/import.resolver'
 import { CardResolver } from './graphql/media.resolver'
 import { NotesResolver, NoteVersionResolver } from './graphql/notes.resolver'
 import { OrganiseResolver, SubjectResolver, TopicResolver } from './graphql/organise.resolver'
@@ -48,6 +50,8 @@ export class NotesModule {
         SharingService,
         NotesMaintenance,
         NotesExport,
+        NoteImportService,
+        ImportResolver,
         PublicPages,
         SearchIndex,
         SearchService,
@@ -63,7 +67,7 @@ export class NotesModule {
         TopicResolver,
         SharingResolver,
       ],
-      exports: [FilesService, NotesMaintenance, NoteModerationService, SearchIndex],
+      exports: [FilesService, NotesMaintenance, NoteModerationService, SearchIndex, NoteImportService],
     }
   }
 }

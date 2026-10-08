@@ -57,6 +57,7 @@ describe('detectMimeType', () => {
     [[...Buffer.from('OggS')], 'audio/ogg'],
     [[...Buffer.from('RIFF\0\0\0\0WAVEfmt ')], 'audio/wav'],
     [[...Buffer.from('GIF89a')], 'image/gif'],
+    [[0x50, 0x4b, 0x03, 0x04], 'application/zip'],
     [[...Buffer.from('<html><script>')], null],
     [[0x4d, 0x5a, 0x90, 0x00], null],
   ])('%j is %s', (bytes, type) => {

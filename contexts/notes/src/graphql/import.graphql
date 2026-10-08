@@ -1,0 +1,51 @@
+# Settings → Data → Import notes (ADR-0018). Upload with createUploadIntent(purpose: IMPORT) first.
+
+enum NoteImportStatus { PENDING RUNNING DONE FAILED NEEDS_CONFIRMATION }
+
+type ImportedNote {
+  id: UUID!
+  title: String!
+}
+
+type ImportSkip {
+  "The file (or card) in the upload"
+  path: String!
+  reason: String!
+}
+
+type NoteImport {
+  id: UUID!
+  fileName: String!
+  "NEEDS_CONFIRMATION: this file was imported before; confirmNoteImport imports it again"
+  status: NoteImportStatus!
+  "0 to 100"
+  progress: Int!
+  created: Int!
+  "The first 100 notes made"
+  notes: [ImportedNote!]!
+  skipped: [ImportSkip!]!
+  error: String
+  createdAt: DateTime!
+  finishedAt: DateTime
+}
+
+type NoteImportPayload {
+  noteImport: NoteImport
+  userErrors: [UserError!]!
+}
+
+input ImportNotesInput {
+  "A READY upload with purpose IMPORT: an LVN export, a ZIP of Markdown with pictures, or a Markdown or text file"
+  fileId: UUID!
+}
+
+extend type Query {
+  "Your latest imports, newest first"
+  noteImports: [NoteImport!]!
+}
+
+extend type Mutation {
+  "Import notes; everything arrives PRIVATE. Five imports a day"
+  importNotes(input: ImportNotesInput!): NoteImportPayload!
+  confirmNoteImport(input: NoteIdInput!): NoteImportPayload!
+}

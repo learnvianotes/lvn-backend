@@ -10,6 +10,7 @@ export function detectMimeType(b: Uint8Array): string | null {
   if (ascii(0, 'RIFF') && ascii(8, 'WEBP')) return 'image/webp'
   if (ascii(0, 'GIF87a') || ascii(0, 'GIF89a')) return 'image/gif'
   if (ascii(0, '%PDF-')) return 'application/pdf'
+  if (at(0, 0x50, 0x4b, 0x03, 0x04) || at(0, 0x50, 0x4b, 0x05, 0x06)) return 'application/zip'
   if (ascii(4, 'ftyp')) {
     const brand = String.fromCharCode(...b.slice(8, 12))
     if (['heic', 'heix', 'mif1', 'msf1'].includes(brand)) return 'image/heic'

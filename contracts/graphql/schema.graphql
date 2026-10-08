@@ -296,6 +296,24 @@ input IdInput {
   id: UUID!
 }
 
+input ImportNotesInput {
+  """
+  A READY upload with purpose IMPORT: an LVN export, a ZIP of Markdown with pictures, or a Markdown or text file
+  """
+  fileId: UUID!
+}
+
+type ImportSkip {
+  """The file (or card) in the upload"""
+  path: String!
+  reason: String!
+}
+
+type ImportedNote {
+  id: UUID!
+  title: String!
+}
+
 type Institution {
   name: String!
   verified: Boolean!
@@ -474,6 +492,7 @@ type Mutation {
 
   """Checks the uploaded bytes (size, magic bytes) and makes the file READY"""
   completeUpload(fileId: UUID!): OkPayload!
+  confirmNoteImport(input: NoteIdInput!): NoteImportPayload!
   createFolder(input: CreateFolderInput!): FolderPayload!
   createNote(input: CreateNoteInput!): NotePayload!
   createUploadIntent(input: CreateUploadIntentInput!): UploadIntentPayload!
@@ -500,6 +519,9 @@ type Mutation {
   A PRIVATE copy of a note you may fork, credited to its origin; returns the copy
   """
   forkNote(input: NoteIdInput!): NotePayload!
+
+  """Import notes; everything arrives PRIVATE. Five imports a day"""
+  importNotes(input: ImportNotesInput!): NoteImportPayload!
 
   """A moderator's decision on a case (PLATFORM_ADMIN)"""
   moderateContent(input: ModerateContentInput!): OkPayload!
@@ -682,6 +704,40 @@ input NoteIdInput {
   noteId: UUID!
 }
 
+type NoteImport {
+  created: Int!
+  createdAt: DateTime!
+  error: String
+  fileName: String!
+  finishedAt: DateTime
+  id: UUID!
+
+  """The first 100 notes made"""
+  notes: [ImportedNote!]!
+
+  """0 to 100"""
+  progress: Int!
+  skipped: [ImportSkip!]!
+
+  """
+  NEEDS_CONFIRMATION: this file was imported before; confirmNoteImport imports it again
+  """
+  status: NoteImportStatus!
+}
+
+type NoteImportPayload {
+  noteImport: NoteImport
+  userErrors: [UserError!]!
+}
+
+enum NoteImportStatus {
+  DONE
+  FAILED
+  NEEDS_CONFIRMATION
+  PENDING
+  RUNNING
+}
+
 """
 What a note is presented as (ADR-0014, ADR-0015). Phase 2 creates NOTE only.
 """
@@ -856,6 +912,9 @@ type Query {
   A note the viewer can read; null otherwise (anonymous visitors: PUBLIC notes)
   """
   note(id: UUID!): Note
+
+  """Your latest imports, newest first"""
+  noteImports: [NoteImport!]!
 
   """
   Notes anyone may read, newest published first (at most 100 a page): sitemaps and public pages
