@@ -13,6 +13,29 @@ export class UsersService {
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
   ) {}
 
+  /** Anyone's view of a user: no email, institutional address, verification details or age signal. */
+  async publicProfile(userId: string): Promise<User | null> {
+    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null } })
+    if (!u) return null
+    const institutional = await this.institutional.statusOf(userId)
+    return {
+      id: u.id,
+      handle: u.handle,
+      displayName: u.displayName,
+      email: null,
+      emailVerified: u.emailVerifiedAt !== null,
+      registrationComplete: u.registrationCompletedAt !== null,
+      verified: u.verifiedAt !== null,
+      verificationMethod: null,
+      globalRole: u.globalRole,
+      createdAt: u.createdAt,
+      institutionalEmail: null,
+      institutionalEmailStatus: null,
+      institution: institutional.institution,
+      restrictedMinor: null,
+    }
+  }
+
   /** The viewer's own view of their account, viewer-only fields included; null if it was deleted meanwhile. */
   async viewerProfile(userId: string): Promise<User | null> {
     const u = await this.db.user.findFirst({

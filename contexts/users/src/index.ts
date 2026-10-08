@@ -4,6 +4,10 @@ import { UsersModule } from './users.module'
 
 export { UsersModule }
 export type { UsersConfig } from './users.config'
+export { UsersMaintenance } from './application/maintenance'
+/** Implementations of the POLICY and ENTITLEMENTS facades, bound by the composition roots. */
+export { PolicyService } from './application/policy.service'
+export { EntitlementService } from './application/entitlement.service'
 /** Adapters at the edge of the context that a composition root (or a test) may bind differently. */
 export { GOOGLE_ID_TOKENS, MX_LOOKUP, type GoogleIdTokens, type MxLookup, type ProviderIdentity } from './application/providers'
 

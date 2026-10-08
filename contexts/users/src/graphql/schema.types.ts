@@ -13,6 +13,21 @@ export interface CompleteRegistrationInput {
   acceptedTermsVersion: string
 }
 
+export interface DecideDomainReviewInput {
+  domain: string
+  approve: boolean
+}
+
+export interface DomainReview {
+  domain: string
+  status: DomainReviewStatus
+  /** How many people asked for it */
+  requests: number
+  firstSeenAt: Date
+}
+
+export type DomainReviewStatus = 'ACADEMIC_QUEUED' | 'NEEDS_REVIEW' | 'APPROVED' | 'REJECTED'
+
 /** Fixed error vocabulary (§6.2) */
 export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL'
 
@@ -69,6 +84,30 @@ export interface MutationVerifyInstitutionalEmailArgs {
   input: VerifyInstitutionalEmailInput
 }
 
+export interface MutationRequestTeacherVerificationArgs {
+  input: RequestTeacherVerificationInput
+}
+
+export interface MutationRequestDocumentVerificationArgs {
+  input: RequestDocumentVerificationInput
+}
+
+export interface MutationWithdrawVerificationRequestArgs {
+  requestId: string
+}
+
+export interface MutationReviewVerificationRequestArgs {
+  input: ReviewVerificationRequestInput
+}
+
+export interface MutationDecideDomainReviewArgs {
+  input: DecideDomainReviewInput
+}
+
+export interface MutationSetGlobalRoleArgs {
+  input: SetGlobalRoleInput
+}
+
 /** Authorization Code + PKCE: the code from the provider's redirect and the verifier the client generated */
 export interface OAuthExchangeInput {
   provider: OAuthProvider
@@ -85,18 +124,54 @@ export interface OkPayload {
   userErrors: Array<UserError>
 }
 
+export interface QueryVerificationRequestsToReviewArgs {
+  first?: number | null
+  after?: string | null
+}
+
+export interface QueryVerificationDocumentUrlArgs {
+  requestId: string
+  fileId: string
+}
+
+export interface QueryTeachersArgs {
+  search: string
+}
+
+export interface QueryDomainReviewsArgs {
+  status?: DomainReviewStatus | null
+}
+
 export interface RefreshSessionInput {
   /** Mobile only; web sends the cookie */
   refreshToken?: string | null
+}
+
+/** fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by platform admins only, deleted 30 days after the decision */
+export interface RequestDocumentVerificationInput {
+  fileIds: Array<string>
+  message?: string | null
 }
 
 export interface RequestPasswordResetInput {
   email: string
 }
 
+export interface RequestTeacherVerificationInput {
+  teacherId: string
+  message?: string | null
+}
+
 export interface ResetPasswordInput {
   token: string
   password: string
+}
+
+export interface ReviewVerificationRequestInput {
+  requestId: string
+  approve: boolean
+  /** Required when rejecting */
+  reason?: string | null
 }
 
 export interface Session {
@@ -108,8 +183,18 @@ export interface Session {
   user: User
 }
 
+export interface SetGlobalRoleInput {
+  userId: string
+  role: GlobalRole
+}
+
 export interface SetInstitutionalEmailInput {
   email: string
+}
+
+export interface SignedUrl {
+  url: string
+  expiresAt: Date
 }
 
 export interface SignInInput {
@@ -173,7 +258,37 @@ export interface UserError {
   code: ErrorCode
 }
 
+export interface VerificationDocument {
+  fileId: string
+  fileName: string
+  mimeType: string
+  sizeBytes: number
+}
+
 export type VerificationMethod = 'INSTITUTIONAL_EMAIL' | 'TEACHER' | 'DOCUMENTS'
+
+/** Shown to the requester, the addressed teacher and platform admins. Documents are listed for platform admins only. */
+export interface VerificationRequest {
+  id: string
+  method: VerificationMethod
+  status: VerificationRequestStatus
+  message: string | null
+  createdAt: Date
+  decidedAt: Date | null
+  reason: string | null
+  requester: User
+  /** TEACHER method: the teacher asked to vouch */
+  teacher: User | null
+  /** Platform admins only; open one with verificationDocumentUrl (every view is audited) */
+  documents: Array<VerificationDocument>
+}
+
+export interface VerificationRequestPayload {
+  request: VerificationRequest | null
+  userErrors: Array<UserError>
+}
+
+export type VerificationRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN'
 
 export interface VerifyEmailInput {
   token: string

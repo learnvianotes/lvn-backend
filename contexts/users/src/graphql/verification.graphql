@@ -1,0 +1,98 @@
+# Verification without an institutional email (ADR-0019) and the interim platform-admin tools (§15.1).
+
+enum VerificationRequestStatus { PENDING APPROVED REJECTED WITHDRAWN }
+
+"Shown to the requester, the addressed teacher and platform admins. Documents are listed for platform admins only."
+type VerificationRequest {
+  id: UUID!
+  method: VerificationMethod!
+  status: VerificationRequestStatus!
+  message: String
+  createdAt: DateTime!
+  decidedAt: DateTime
+  reason: String
+  requester: User!
+  "TEACHER method: the teacher asked to vouch"
+  teacher: User
+  "Platform admins only; open one with verificationDocumentUrl (every view is audited)"
+  documents: [VerificationDocument!]!
+}
+
+type VerificationDocument {
+  fileId: UUID!
+  fileName: String!
+  mimeType: String!
+  sizeBytes: Int!
+}
+
+type SignedUrl {
+  url: String!
+  expiresAt: DateTime!
+}
+
+type VerificationRequestPayload {
+  request: VerificationRequest
+  userErrors: [UserError!]!
+}
+
+input RequestTeacherVerificationInput {
+  teacherId: UUID!
+  message: String
+}
+
+"fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by platform admins only, deleted 30 days after the decision"
+input RequestDocumentVerificationInput {
+  fileIds: [UUID!]!
+  message: String
+}
+
+input ReviewVerificationRequestInput {
+  requestId: UUID!
+  approve: Boolean!
+  "Required when rejecting"
+  reason: String
+}
+
+enum DomainReviewStatus { ACADEMIC_QUEUED NEEDS_REVIEW APPROVED REJECTED }
+
+type DomainReview {
+  domain: String!
+  status: DomainReviewStatus!
+  "How many people asked for it"
+  requests: Int!
+  firstSeenAt: DateTime!
+}
+
+input DecideDomainReviewInput {
+  domain: String!
+  approve: Boolean!
+}
+
+input SetGlobalRoleInput {
+  userId: UUID!
+  role: GlobalRole!
+}
+
+extend type Query {
+  myVerificationRequests: [VerificationRequest!]!
+  "Teachers: pending requests addressed to them. Platform admins: every pending request. Oldest first; `after` is the last id seen."
+  verificationRequestsToReview(first: Int, after: UUID): [VerificationRequest!]!
+  "Platform admins only: a 15-minute link to one document; the view is written to the audit log"
+  verificationDocumentUrl(requestId: UUID!, fileId: UUID!): SignedUrl!
+  "Verified teachers whose name or handle matches, to ask one of them for verification"
+  teachers(search: String!): [User!]!
+  "Platform admins: institutional email domains waiting for review (ADR-0017)"
+  domainReviews(status: DomainReviewStatus): [DomainReview!]!
+}
+
+extend type Mutation {
+  requestTeacherVerification(input: RequestTeacherVerificationInput!): VerificationRequestPayload!
+  requestDocumentVerification(input: RequestDocumentVerificationInput!): VerificationRequestPayload!
+  withdrawVerificationRequest(requestId: UUID!): OkPayload!
+  "Teachers: requests addressed to them. Platform admins: all, including documents."
+  reviewVerificationRequest(input: ReviewVerificationRequestInput!): VerificationRequestPayload!
+  "Platform admins"
+  decideDomainReview(input: DecideDomainReviewInput!): OkPayload!
+  "Platform admins: TEACHER is granted by review, not by an email address (§5, ADR-0017)"
+  setGlobalRole(input: SetGlobalRoleInput!): OkPayload!
+}
