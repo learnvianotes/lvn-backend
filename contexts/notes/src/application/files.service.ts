@@ -34,6 +34,8 @@ interface PurposeRule {
 /** Purposes open so far; COVER, VOICE_NOTE and IMPORT arrive with their features. */
 const PURPOSES: Partial<Record<FilePurposeKind, PurposeRule>> = {
   ATTACHMENT: { parentType: 'NOTE', mimeTypes: Object.keys(NOTE_MEDIA), maxBytes: (m) => NOTE_MEDIA[m]!, restricted: false },
+  // ADR-0018: notes to import — an LVN export, a ZIP of Markdown, or one Markdown or text file.
+  IMPORT: { parentType: 'IMPORT_JOB', mimeTypes: ['application/zip', 'text/markdown', 'text/plain'], maxBytes: 200 * 1024 ** 2, restricted: false },
   AVATAR: { parentType: 'AVATAR', mimeTypes: IMAGES, maxBytes: UploadLimits.image, restricted: false },
   VERIFICATION_DOCUMENT: { parentType: 'VERIFICATION_REQUEST', mimeTypes: [...IMAGES, 'application/pdf'], maxBytes: UploadLimits.document, restricted: true },
 }
@@ -54,6 +56,8 @@ const field = (name: string) => ['input', name]
  */
 function sameKind(declared: string, detected: string | null): boolean {
   if (declared === detected) return true
+  // Text has no magic bytes; it must at least not look like binary.
+  if (declared.startsWith('text/') && detected === null) return true
   return (declared === 'audio/webm' && detected === 'video/webm') || (declared === 'audio/mp4' && detected === 'video/mp4')
 }
 
@@ -214,6 +218,26 @@ export class FilesService implements Files {
       },
     })
     return id
+  }
+
+  /**
+   * A file found inside an import (ADR-0018), stored as an attachment of the note being created — with the checks an
+   * upload gets: what the bytes are (not what the name says), the size limit of its kind, and the owner's storage.
+   * Returns the file id, or why it was left out.
+   */
+  async storeAttachment(ownerId: string, noteId: string, fileName: string, bytes: Uint8Array): Promise<{ fileId: string } | { refused: string }> {
+    const mimeType = detectMimeType(bytes.slice(0, 64))
+    const limit = mimeType ? NOTE_MEDIA[mimeType] : undefined
+    if (!mimeType || limit === undefined) return { refused: 'not a picture, video, audio or PDF notes accept' }
+    if (bytes.length > limit) return { refused: `larger than ${Math.round(limit / 1024 ** 2)} MB` }
+    try {
+      await this.assertQuota(ownerId, bytes.length)
+    } catch {
+      return { refused: 'your storage is full' }
+    }
+    const fileId = await this.store(ownerId, { purpose: 'ATTACHMENT', parent: { type: 'NOTE', id: noteId }, fileName: fileName.slice(0, 255), mimeType, bytes, restricted: false, expiresAt: null })
+    await this.db.noteAttachment.create({ data: { noteId, fileId } })
+    return { fileId }
   }
 
   /** The bytes of a READY file of this owner (the importer reads uploads), at most `maxBytes`. */

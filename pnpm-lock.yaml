@@ -398,9 +398,15 @@ importers:
       '@nestjs/graphql':
         specifier: 13.4.5
         version: 13.4.5(@apollo/subgraph@2.14.4(graphql@16.14.2))(@nestjs/common@11.2.7(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.2.7)(graphql@16.14.2)(reflect-metadata@0.2.2)(ts-morph@27.0.2)
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       graphql:
         specifier: 16.14.2
         version: 16.14.2
+      marked:
+        specifier: 15.0.12
+        version: 15.0.12
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2

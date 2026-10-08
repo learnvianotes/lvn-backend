@@ -391,6 +391,30 @@ input IdInput
   id: UUID!
 }
 
+type ImportedNote
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  title: String!
+}
+
+input ImportNotesInput
+  @join__type(graph: NOTES)
+{
+  """
+  A READY upload with purpose IMPORT: an LVN export, a ZIP of Markdown with pictures, or a Markdown or text file
+  """
+  fileId: UUID!
+}
+
+type ImportSkip
+  @join__type(graph: NOTES)
+{
+  """The file (or card) in the upload"""
+  path: String!
+  reason: String!
+}
+
 type Institution
   @join__type(graph: USERS)
 {
@@ -628,6 +652,10 @@ type Mutation
 
   """Checks the uploaded bytes (size, magic bytes) and makes the file READY"""
   completeUpload(fileId: UUID!): OkPayload! @join__field(graph: NOTES)
+
+  """Import notes; everything arrives PRIVATE. Five imports a day"""
+  importNotes(input: ImportNotesInput!): NoteImportPayload! @join__field(graph: NOTES)
+  confirmNoteImport(input: NoteIdInput!): NoteImportPayload! @join__field(graph: NOTES)
   createNote(input: CreateNoteInput!): NotePayload! @join__field(graph: NOTES)
   updateNoteDraft(input: UpdateNoteDraftInput!): UpdateNoteDraftPayload! @join__field(graph: NOTES)
 
@@ -851,6 +879,46 @@ input NoteIdInput
   noteId: UUID!
 }
 
+type NoteImport
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  fileName: String!
+
+  """
+  NEEDS_CONFIRMATION: this file was imported before; confirmNoteImport imports it again
+  """
+  status: NoteImportStatus!
+
+  """0 to 100"""
+  progress: Int!
+  created: Int!
+
+  """The first 100 notes made"""
+  notes: [ImportedNote!]!
+  skipped: [ImportSkip!]!
+  error: String
+  createdAt: DateTime!
+  finishedAt: DateTime
+}
+
+type NoteImportPayload
+  @join__type(graph: NOTES)
+{
+  noteImport: NoteImport
+  userErrors: [UserError!]!
+}
+
+enum NoteImportStatus
+  @join__type(graph: NOTES)
+{
+  PENDING @join__enumValue(graph: NOTES)
+  RUNNING @join__enumValue(graph: NOTES)
+  DONE @join__enumValue(graph: NOTES)
+  FAILED @join__enumValue(graph: NOTES)
+  NEEDS_CONFIRMATION @join__enumValue(graph: NOTES)
+}
+
 """
 What a note is presented as (ADR-0014, ADR-0015). Phase 2 creates NOTE only.
 """
@@ -1048,6 +1116,9 @@ type Query
 
   """Open cases, oldest first (PLATFORM_ADMIN)"""
   moderationQueue(first: Int, after: String): ModerationCaseConnection! @join__field(graph: CORE)
+
+  """Your latest imports, newest first"""
+  noteImports: [NoteImport!]! @join__field(graph: NOTES)
 
   """
   A note the viewer can read; null otherwise (anonymous visitors: PUBLIC notes)
