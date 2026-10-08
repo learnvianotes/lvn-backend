@@ -339,6 +339,116 @@ describe('notes', () => {
     })
   })
 
+  describe('visibility, sharing and forking (§4.2, §4.4, ADR-0010)', () => {
+    const run = async (mutation: string, input: object, token: string, selection = 'note { id visibility forkingEnabled }') => {
+      const res = await t.gql<Record<string, { note: { id: string; visibility: string; forkingEnabled: boolean } | null; userErrors: UserErrors }>>(`mutation ($input: ${mutation[0]!.toUpperCase()}${mutation.slice(1)}Input!) { ${mutation}(input: $input) { ${selection} ${ERRORS} } }`, { input }, token)
+      return { payload: res.data?.[mutation], error: res.errors?.[0] }
+    }
+    const fork = (noteId: string, token: string) =>
+      t.gql<{ forkNote: { note: { id: string; visibility: string; forkedFrom: { title: string | null; author: { displayName: string }; note: { id: string } | null } | null } | null; userErrors: UserErrors } }>(
+        'mutation ($input: NoteIdInput!) { forkNote(input: $input) { note { id visibility forkedFrom { title author { displayName } note { id } } } userErrors { field message code } } }',
+        { input: { noteId } },
+        token,
+      )
+    const publishedNote = async (token: string, title: string) => {
+      const { note } = await create(token, { title, cards: [{ id: newId(), type: 'text', position: 'a0', content: text(`${title} body`) }] })
+      await mutate('publishNote', { noteId: note!.id }, token, 'note { id }')
+      return note!.id
+    }
+
+    it('needs a verified account, and a published version before going public', async () => {
+      const { note } = await create(unverified.token, { title: 'Mine' })
+      expect((await run('changeNoteVisibility', { noteId: note!.id, visibility: 'SHARED' }, unverified.token)).error).toMatchObject({ message: 'Verify your account to share notes.', extensions: { code: 'FORBIDDEN' } })
+      const { note: draft } = await create(owner.token, { title: 'Not yet' })
+      expect((await run('changeNoteVisibility', { noteId: draft!.id, visibility: 'PUBLIC' }, owner.token)).payload!.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'visibility'] })
+
+      const id = await publishedNote(owner.token, 'Going public')
+      expect((await run('changeNoteVisibility', { noteId: id, visibility: 'PUBLIC' }, owner.token)).payload!.note!.visibility).toBe('PUBLIC')
+      expect(await read(id)).not.toBeNull()
+      await run('changeNoteVisibility', { noteId: id, visibility: 'PRIVATE' }, owner.token)
+      expect(await read(id)).toBeNull()
+      const audit = await db.auditLog.findMany({ where: { targetId: id, action: 'note.visibility' }, orderBy: { createdAt: 'asc' } })
+      expect(audit.map((a) => a.metadata)).toEqual([{ from: 'PRIVATE', to: 'PUBLIC' }, { from: 'PUBLIC', to: 'PRIVATE' }])
+    })
+
+    it('shares with a person by handle or email, changes their role and takes it back', async () => {
+      const reader = await seedUser(t.app, { verified: true, displayName: 'Reader R', handle: `reader${Date.now()}` })
+      const readerToken = tokenFor(t.config, reader.id)
+      const id = await publishedNote(owner.token, 'For my friend')
+      expect((await run('shareNote', { noteId: id, person: 'nobody-here', role: 'VIEWER' }, owner.token)).payload!.userErrors[0]).toMatchObject({ field: ['input', 'person'] })
+      expect((await run('shareNote', { noteId: id, person: (await db.user.findUniqueOrThrow({ where: { id: owner.id } })).handle, role: 'VIEWER' }, owner.token)).payload!.userErrors[0]!.message).toBe('This is your own note.')
+
+      const shared = await run('shareNote', { noteId: id, person: `@${reader.handle}`, role: 'VIEWER' }, owner.token)
+      // A PRIVATE note becomes SHARED: share rows grant nothing on a PRIVATE note.
+      expect(shared.payload!.note!.visibility).toBe('SHARED')
+      const listed = await t.gql<{ sharedWithMe: { edges: { node: { id: string; viewerAccess: string } }[] } }>('{ sharedWithMe { edges { node { id viewerAccess } } } }', {}, readerToken)
+      expect(listed.data!.sharedWithMe.edges.map((e) => e.node)).toContainEqual({ id, viewerAccess: 'READER' })
+      const shares = await t.gql<{ note: { shares: { user: { id: string }; role: string }[] | null } }>('query ($id: UUID!) { note(id: $id) { shares { user { id } role } } }', { id }, owner.token)
+      expect(shares.data!.note.shares).toEqual([{ user: { id: reader.id }, role: 'VIEWER' }])
+      const hidden = await t.gql<{ note: { shares: unknown } }>('query ($id: UUID!) { note(id: $id) { shares { role } } }', { id }, readerToken)
+      expect(hidden.data!.note.shares).toBeNull()
+
+      await run('shareNote', { noteId: id, person: reader.email, role: 'EDITOR' }, owner.token)
+      expect((await read(id, readerToken))!.viewerAccess).toBe('EDITOR')
+      await run('unshareNote', { noteId: id, userId: reader.id }, owner.token)
+      expect(await read(id, readerToken)).toBeNull()
+      expect((await db.auditLog.findMany({ where: { targetId: id, action: { startsWith: 'note.' } } })).map((a) => a.action).sort()).toEqual(['note.share', 'note.share.role', 'note.unshare', 'note.visibility'])
+    })
+
+    it('lets teachers share with teachers only once connected (ADR-0013)', async () => {
+      const teacher = await seedUser(t.app, { verified: true, globalRole: 'TEACHER' })
+      const other = await seedUser(t.app, { verified: true, globalRole: 'TEACHER' })
+      const { note } = await create(tokenFor(t.config, teacher.id), { title: 'Lesson plan' })
+      const res = await run('shareNote', { noteId: note!.id, person: other.handle, role: 'VIEWER' }, tokenFor(t.config, teacher.id))
+      expect(res.error).toMatchObject({ extensions: { code: 'FORBIDDEN' } })
+    })
+
+    it('forks with a credit that stays, and a copy of a shared note never goes public', async () => {
+      const forker = await seedUser(t.app, { verified: true, displayName: 'Forker F' })
+      const forkerToken = tokenFor(t.config, forker.id)
+      const publicId = await publishedNote(owner.token, 'Open origin')
+      await run('changeNoteVisibility', { noteId: publicId, visibility: 'PUBLIC' }, owner.token)
+
+      const copy = (await fork(publicId, forkerToken)).data!.forkNote.note!
+      expect(copy).toMatchObject({ visibility: 'PRIVATE', forkedFrom: { title: 'Open origin', author: { displayName: 'Asha Rao' }, note: { id: publicId } } })
+      expect(words(cardsOf((await read(copy.id, forkerToken))!)[0]!)).toBe('Open origin body')
+      // The origin was PUBLIC when forked, so the copy may become PUBLIC.
+      await mutate('publishNote', { noteId: copy.id }, forkerToken, 'note { id }')
+      expect((await run('changeNoteVisibility', { noteId: copy.id, visibility: 'PUBLIC' }, forkerToken)).payload!.note!.visibility).toBe('PUBLIC')
+      // Later the origin goes private: readers of the copy still see who wrote it, not the hidden origin.
+      await run('changeNoteVisibility', { noteId: publicId, visibility: 'PRIVATE' }, owner.token)
+      const credit = await t.gql<{ note: { forkedFrom: unknown } }>('query ($id: UUID!) { note(id: $id) { forkedFrom { title author { displayName } note { id } } } }', { id: copy.id })
+      expect(credit.data!.note.forkedFrom).toEqual({ title: null, author: { displayName: 'Asha Rao' }, note: null })
+
+      const sharedId = await publishedNote(owner.token, 'Shared origin')
+      await run('shareNote', { noteId: sharedId, person: forker.email, role: 'VIEWER' }, owner.token)
+      const sharedCopy = (await fork(sharedId, forkerToken)).data!.forkNote.note!
+      await mutate('publishNote', { noteId: sharedCopy.id }, forkerToken, 'note { id }')
+      expect((await run('changeNoteVisibility', { noteId: sharedCopy.id, visibility: 'PUBLIC' }, forkerToken)).error).toMatchObject({ extensions: { code: 'FORBIDDEN' } })
+      expect((await run('changeNoteVisibility', { noteId: sharedCopy.id, visibility: 'SHARED' }, forkerToken)).payload!.note!.visibility).toBe('SHARED')
+    })
+
+    it('stops copies when the owner turns forking off, except the owner’s own', async () => {
+      const id = await publishedNote(owner.token, 'No copies please')
+      await run('changeNoteVisibility', { noteId: id, visibility: 'PUBLIC' }, owner.token)
+      expect((await run('setNoteForking', { noteId: id, enabled: false }, owner.token)).payload!.note!.forkingEnabled).toBe(false)
+      expect((await fork(id, other.token)).errors?.[0]).toMatchObject({ extensions: { code: 'FORBIDDEN' } })
+      expect((await fork(id, owner.token)).data!.forkNote.note!.forkedFrom).toMatchObject({ note: { id } })
+      // Nobody else can fork what they cannot read.
+      const { note: secret } = await create(owner.token, { title: 'Secret' })
+      expect((await fork(secret!.id, other.token)).data!.forkNote.userErrors[0]).toMatchObject({ code: 'NOT_FOUND' })
+    })
+
+    it('keeps restricted minors from making notes public (§15.2)', async () => {
+      const minor = await seedUser(t.app, { verified: true })
+      await db.user.update({ where: { id: minor.id }, data: { dateOfBirth: new Date('2013-01-01') } })
+      const token = tokenFor(t.config, minor.id)
+      const id = await publishedNote(token, 'Homework')
+      expect((await run('changeNoteVisibility', { noteId: id, visibility: 'PUBLIC' }, token)).error).toMatchObject({ message: 'Your account cannot make notes public.' })
+      expect((await run('changeNoteVisibility', { noteId: id, visibility: 'SHARED' }, token)).payload!.note!.visibility).toBe('SHARED')
+    })
+  })
+
   describe('the trash (§4.5)', () => {
     it('hides trashed notes from everyone but the owner, restores them, and deletes them for good', async () => {
       const { note } = await create(owner.token, { title: 'To bin' })

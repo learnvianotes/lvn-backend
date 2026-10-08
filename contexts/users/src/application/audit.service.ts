@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common'
+import type { Audit, AuditEntry } from '@lvn-backend/facades'
 import { newId, type Prisma, PrismaService } from '@lvn-backend/prisma-base'
 
 /**
@@ -6,12 +7,12 @@ import { newId, type Prisma, PrismaService } from '@lvn-backend/prisma-base'
  * (ADR-0019). Never content. Kept 7 years (§15.2).
  */
 @Injectable()
-export class AuditService {
+export class AuditService implements Audit {
   constructor(private readonly db: PrismaService) {}
 
-  async record(entry: { actorId: string | null; action: string; targetType: string; targetId?: string | null; metadata?: Prisma.InputJsonValue }, tx?: Prisma.TransactionClient): Promise<void> {
+  async record(entry: AuditEntry | { actorId: string | null; action: string; targetType: string; targetId?: string | null; metadata?: Prisma.InputJsonValue }, tx?: Prisma.TransactionClient): Promise<void> {
     await (tx ?? this.db).auditLog.create({
-      data: { id: newId(), actorId: entry.actorId, action: entry.action, targetType: entry.targetType, targetId: entry.targetId ?? null, metadata: entry.metadata },
+      data: { id: newId(), actorId: entry.actorId, action: entry.action, targetType: entry.targetType, targetId: entry.targetId ?? null, metadata: entry.metadata as Prisma.InputJsonValue | undefined },
     })
   }
 }

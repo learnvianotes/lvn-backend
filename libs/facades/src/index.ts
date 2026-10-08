@@ -4,4 +4,6 @@ export { MAILER, type Mailer, type MailTemplate, type MailTemplates } from './ma
 export { POLICY, type Policy } from './policy'
 export { ENTITLEMENTS, type Entitlements } from './entitlements'
 export { FILES, type Files, type FileParentKind, type FilePurposeKind, type FileSummary } from './files'
+export { PEOPLE, type People, type Person } from './people'
+export { AUDIT, type Audit, type AuditEntry } from './audit'
 export { FacadesModule } from './bind'

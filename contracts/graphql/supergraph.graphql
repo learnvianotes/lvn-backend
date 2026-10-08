@@ -150,6 +150,13 @@ enum CardType
   flashcard @join__enumValue(graph: NOTES)
 }
 
+input ChangeNoteVisibilityInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+  visibility: Visibility!
+}
+
 """
 After a provider sign-in (no signUp call): the same details, collected once
 """
@@ -298,6 +305,17 @@ type FolderPayload
 {
   folder: Folder
   userErrors: [UserError!]!
+}
+
+"""
+Where a copy came from (§4.4, ADR-0010). Every reader sees the author; the origin itself only those who can open it.
+"""
+type ForkCredit
+  @join__type(graph: NOTES)
+{
+  author: User!
+  note: Note
+  title: String
 }
 
 enum GlobalRole
@@ -455,6 +473,25 @@ type Mutation
   """Removes the tag from every note"""
   deleteTag(input: IdInput!): OkPayload! @join__field(graph: NOTES)
   proposeTopic(input: ProposeTopicInput!): TopicPayload! @join__field(graph: NOTES)
+
+  """
+  PRIVATE, SHARED or PUBLIC (owner, verified account); PUBLIC needs a published version
+  """
+  changeNoteVisibility(input: ChangeNoteVisibilityInput!): NotePayload! @join__field(graph: NOTES)
+
+  """
+  Share with one person, or change their role; a PRIVATE note becomes SHARED
+  """
+  shareNote(input: ShareNoteInput!): NotePayload! @join__field(graph: NOTES)
+  unshareNote(input: UnshareNoteInput!): NotePayload! @join__field(graph: NOTES)
+
+  """
+  A PRIVATE copy of a note you may fork, credited to its origin; returns the copy
+  """
+  forkNote(input: NoteIdInput!): NotePayload! @join__field(graph: NOTES)
+
+  """Allow or stop copies of your note"""
+  setNoteForking(input: SetNoteForkingInput!): NotePayload! @join__field(graph: NOTES)
   signUp(input: SignUpInput!): AuthPayload! @join__field(graph: USERS)
   signIn(input: SignInInput!): AuthPayload! @join__field(graph: USERS)
   refreshSession(input: RefreshSessionInput!): AuthPayload! @join__field(graph: USERS)
@@ -561,6 +598,12 @@ type Note
 
   """Set while the note is in the trash (owner only)"""
   deletedAt: DateTime
+
+  """Owner only: the people the note is shared with; null for anyone else"""
+  shares: [NoteShare!]
+
+  """Set on a copy of another note; it cannot be removed"""
+  forkedFrom: ForkCredit
 }
 
 """
@@ -641,6 +684,24 @@ type NotePermissions
   delete: Boolean!
   share: Boolean!
   fork: Boolean!
+}
+
+"""
+A person a note is shared with; EDITORs work on the draft, VIEWERs read the published version
+"""
+type NoteShare
+  @join__type(graph: NOTES)
+{
+  user: User!
+  role: NoteShareRole!
+  createdAt: DateTime!
+}
+
+enum NoteShareRole
+  @join__type(graph: NOTES)
+{
+  EDITOR @join__enumValue(graph: NOTES)
+  VIEWER @join__enumValue(graph: NOTES)
 }
 
 """An immutable snapshot of a note's cards (§4.3)"""
@@ -773,6 +834,9 @@ type Query
   """Topics whose title contains the words, curated first (at most 50)"""
   findTopics(query: String!, subjectId: UUID): [Topic!]! @join__field(graph: NOTES)
 
+  """Notes other people shared with the viewer, most recently changed first"""
+  sharedWithMe(first: Int, after: String): NoteConnection! @join__field(graph: NOTES)
+
   """The signed-in user, null for anonymous visitors"""
   viewer: User @join__field(graph: USERS)
 
@@ -894,6 +958,23 @@ input SetInstitutionalEmailInput
   email: String!
 }
 
+input SetNoteForkingInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+  enabled: Boolean!
+}
+
+input ShareNoteInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+
+  """A handle (@asha or asha) or an email address"""
+  person: String!
+  role: NoteShareRole!
+}
+
 type SignedUrl
   @join__type(graph: USERS)
 {
@@ -1012,6 +1093,13 @@ type TopicPayload
 {
   topic: Topic
   userErrors: [UserError!]!
+}
+
+input UnshareNoteInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+  userId: UUID!
 }
 
 """

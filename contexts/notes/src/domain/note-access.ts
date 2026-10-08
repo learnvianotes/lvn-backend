@@ -12,11 +12,20 @@ export interface NoteAccessRow {
   forkingEnabled: boolean
   publishedVersionId: string | null
   deletedAt: Date | null
+  /** Set on forks: what the origin was when forked, and how the forker could reach it (ADR-0010) */
+  forkedFromVisibility?: Visibility | null
+  forkedAsRole?: 'OWNER' | 'EDITOR' | 'READER' | null
 }
 
 /** The facts `can()` needs about one note for one actor; `shareRole` is the actor's NoteShare row, if any. */
 export function noteFacts(note: NoteAccessRow, shareRole: 'EDITOR' | 'VIEWER' | null): NoteFacts {
-  return { ownerId: note.ownerId, visibility: note.visibility, forkingEnabled: note.forkingEnabled, ...(shareRole ? { shareRole } : {}) }
+  return {
+    ownerId: note.ownerId,
+    visibility: note.visibility,
+    forkingEnabled: note.forkingEnabled,
+    ...(shareRole ? { shareRole } : {}),
+    ...(note.forkedFromVisibility ? { fork: { originVisibilityAtFork: note.forkedFromVisibility, forkedAsOwnerOrEditor: note.forkedAsRole === 'OWNER' || note.forkedAsRole === 'EDITOR' } } : {}),
+  }
 }
 
 /**
