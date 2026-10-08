@@ -88,8 +88,8 @@ switched off until configured, for later. The sandbox needs **no domain** and is
 
 - [x] **Web and mobile sign in with email and Google** — email: on both, in dev and on the local environment
   (Playwright live 4/4, Maestro 5/5). Google: checked by the owner on the web and the phone in dev on 2026-10-08 (six
-  successful `signInWithGoogle` exchanges); the local environment runs the same images with the same Firebase project
-  and offers Google (live spec), but no Google sign-in has gone through it yet — one click at its address does that.
+  successful `signInWithGoogle` exchanges), and on the local environment at 23:44 IST: a new Google account signed
+  in through the web, gave its registration details (`completeRegistration`) and kept its session.
 - [x] **Migration deploys** — on the local environment, as its own step on every new image (`deploy-local.sh`); in CI
   on an empty database. AWS sandbox: `deploy.sh` runs the migrate task.
 - [x] **File upload round-trips** — on the local environment through its published S3 endpoint, into both buckets
@@ -101,8 +101,6 @@ and the live specs.
 
 ## Needed from the owner
 
-- **Google on the local environment (one click):** `100.70.234.41` is an authorized domain in Firebase (done); open
-  `http://100.70.234.41:8080` and Continue with Google.
 
 - **AWS (deferred by the owner, 2026-10-08):** an account with an administrator CLI profile on the deploying machine (AWS CLI v2, Terraform ≥ 1.9, Docker,
   `jq`), and a sender email address for SES. Everything else is created by `infra/terraform/bootstrap.sh` and
