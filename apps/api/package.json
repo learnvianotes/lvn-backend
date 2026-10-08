@@ -26,6 +26,7 @@
     "@lvn-backend/notes": "workspace:*",
     "@lvn-backend/observability": "workspace:*",
     "@lvn-backend/prisma-base": "workspace:*",
+    "@lvn-backend/queue": "workspace:*",
     "@lvn-backend/redis": "workspace:*",
     "@lvn-backend/storage": "workspace:*",
     "@lvn-backend/users": "workspace:*",

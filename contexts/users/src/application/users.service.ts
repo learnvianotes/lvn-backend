@@ -25,6 +25,24 @@ export class UsersService implements People {
     return u ? { id: u.id, handle: u.handle, displayName: u.displayName, globalRole: u.globalRole } : null
   }
 
+  /**
+   * People facade, for search (P2e): handles starting with, or names containing, the query. Only people known to be
+   * past the digital-consent age are listed — younger people are never discoverable by strangers (§15.2).
+   */
+  async search(query: string, limit: number): Promise<Person[]> {
+    const q = query.trim().replace(/^@/, '')
+    if (q.length < 2) return []
+    const adultsBornBy = new Date()
+    adultsBornBy.setUTCFullYear(adultsBornBy.getUTCFullYear() - this.config.digitalConsentAge)
+    const rows = await this.db.user.findMany({
+      where: { deletedAt: null, dateOfBirth: { lte: adultsBornBy }, OR: [{ handle: { startsWith: q, mode: 'insensitive' } }, { displayName: { contains: q, mode: 'insensitive' } }] },
+      select: { id: true, handle: true, displayName: true, globalRole: true },
+      orderBy: [{ displayName: 'asc' }],
+      take: Math.min(limit, 20),
+    })
+    return rows.map((u) => ({ id: u.id, handle: u.handle, displayName: u.displayName, globalRole: u.globalRole }))
+  }
+
   /** Anyone's view of a user: no email, institutional address, verification details or age signal. */
   async publicProfile(userId: string): Promise<User | null> {
     const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null } })

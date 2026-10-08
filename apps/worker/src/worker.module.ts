@@ -7,6 +7,7 @@ import { RedisModule } from '@lvn-backend/redis'
 import { StorageModule } from '@lvn-backend/storage'
 import { contextModules, facades } from './contexts'
 import { MaintenanceJobs } from './maintenance.jobs'
+import { SearchJobs } from './search.jobs'
 
 /** Composition root for background jobs (spec §3 apps/worker): the contexts and their BullMQ processors. */
 @Module({})
@@ -29,7 +30,7 @@ export class WorkerModule {
         facades(),
         ...contextModules(config),
       ],
-      providers: options.jobs === false ? [] : [MaintenanceJobs],
+      providers: options.jobs === false ? [] : [MaintenanceJobs, SearchJobs],
     }
   }
 }

@@ -329,6 +329,12 @@ export interface NotePermissions {
   fork: boolean
 }
 
+export interface NoteSearchHit {
+  note: Note
+  /** Words around the match from the published version; each match is wrapped in U+E000 … U+E001 */
+  snippet: string
+}
+
 /** A person a note is shared with; EDITORs work on the draft, VIEWERs read the published version */
 export interface NoteShare {
   user: User
@@ -413,6 +419,12 @@ export interface QueryFindTopicsArgs {
   subjectId?: string | null
 }
 
+export interface QuerySearchArgs {
+  query: string
+  scopes?: Array<SearchScope> | null
+  first?: number | null
+}
+
 export interface QuerySharedWithMeArgs {
   first?: number | null
   after?: string | null
@@ -427,6 +439,16 @@ export interface RestoreNoteVersionInput {
   noteId: string
   versionId: string
 }
+
+export interface SearchResults {
+  /** Only notes the viewer may read, best match first */
+  notes: Array<NoteSearchHit>
+  /** People past the digital-consent age, by handle or name */
+  people: Array<User>
+  topics: Array<Topic>
+}
+
+export type SearchScope = 'NOTES' | 'PEOPLE' | 'TOPICS'
 
 export interface SetNoteForkingInput {
   noteId: string

@@ -4,6 +4,7 @@ import { AccessTokenVerifier } from '@lvn-backend/auth-guard'
 import { EventBusModule } from '@lvn-backend/event-bus'
 import { graphqlModules } from '@lvn-backend/graphql'
 import { PrismaModule } from '@lvn-backend/prisma-base'
+import { QueueModule } from '@lvn-backend/queue'
 import { RedisModule, SessionRevocations } from '@lvn-backend/redis'
 import { StorageModule } from '@lvn-backend/storage'
 import { contextModules, SUBGRAPHS, TOKEN_AUDIENCE } from './contexts'
@@ -26,6 +27,8 @@ export class AppModule {
       imports: [
         PrismaModule.forRoot(config.DATABASE_URL),
         RedisModule.forRoot(config.REDIS_URL),
+        // The API only enqueues (§9.1); apps/worker runs the jobs.
+        QueueModule.forRoot(config.REDIS_URL),
         StorageModule.forRoot({
           endpoint: config.S3_ENDPOINT,
           region: config.S3_REGION,

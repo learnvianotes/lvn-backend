@@ -8,6 +8,8 @@ export { notesConfigFrom, type NotesConfig } from './notes.config'
 export { FilesService } from './application/files.service'
 /** Implementation of the NOTE_MODERATION facade (ADR-0037), bound by the composition roots. */
 export { NoteModerationService } from './application/moderation.service'
+/** The search index and its queue (§10.4), run by apps/worker. */
+export { NOTES_SEARCH_QUEUE, SearchIndex } from './application/search-index'
 /** Nightly housekeeping (version pruning, emptying the trash), run by apps/worker. */
 export { NotesMaintenance } from './application/notes-maintenance'
 

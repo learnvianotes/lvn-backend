@@ -5,6 +5,7 @@ import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
 import { Storage } from '@lvn-backend/storage'
 import { startInfra, testSecrets, type TestInfra } from '@lvn-backend/testing'
+import { NOTES_SEARCH_QUEUE } from '@lvn-backend/notes'
 import { USERS_MAINTENANCE_QUEUE } from '../../src/maintenance.jobs'
 import { WorkerModule } from '../../src/worker.module'
 
@@ -72,5 +73,26 @@ describe('worker', () => {
     }
     expect(await db.fileObject.findUniqueOrThrow({ where: { id: fileId } })).toMatchObject({ status: 'DELETED' })
     expect(await app.get(Storage).head('lvn-restricted', key)).toBeNull()
+  })
+
+  it('indexes a published note for search when its job runs, and schedules the nightly reindex', async () => {
+    const db = app.get(PrismaService)
+    const ownerId = newId()
+    await db.user.create({ data: { id: ownerId, email: `s${ownerId.slice(-8)}@example.com`, handle: `s${ownerId.slice(-8)}`, displayName: 'S' } })
+    const noteId = newId()
+    const versionId = newId()
+    await db.note.create({ data: { id: noteId, ownerId, title: 'Tries' } })
+    await db.noteVersion.create({ data: { id: versionId, noteId, number: 1, kind: 'PUBLISHED', title: 'Tries', createdById: ownerId, cards: [{ id: newId(), type: 'text', position: 'a0', revision: 1, content: { doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Prefix trees for autocomplete.' }] }] } } }] } })
+    await db.note.update({ where: { id: noteId }, data: { publishedVersionId: versionId } })
+
+    const job = await app.get(Queues).queue(NOTES_SEARCH_QUEUE).add('index-note', { noteId })
+    const deadline = Date.now() + 20_000
+    while (!(await job.isCompleted())) {
+      if (Date.now() > deadline || (await job.isFailed())) throw new Error(`job did not complete: ${job.failedReason ?? 'timeout'}`)
+      await new Promise((r) => setTimeout(r, 200))
+    }
+    expect(await db.noteSearchDocument.findUniqueOrThrow({ where: { noteId } })).toMatchObject({ versionId, title: 'Tries', body: 'Prefix trees for autocomplete.' })
+    const schedulers = await app.get(Queues).queue(NOTES_SEARCH_QUEUE).getJobSchedulers()
+    expect(schedulers.map((x) => [x.key, x.pattern])).toEqual([['reindex-all', '15 4 * * *']])
   })
 })
