@@ -202,13 +202,16 @@ erDiagram
     uuid id PK
     text slug UK
     text title
+    int position
   }
   Topic {
     uuid id PK
     uuid subjectId FK
     uuid parentId FK
     text slug
+    text title
     enum origin "CURATED | PROPOSED"
+    uuid proposedById "→ users.User"
   }
   Note {
     uuid id PK
@@ -218,22 +221,23 @@ erDiagram
     text slug
     enum kind "NOTE | BLOG | POST | PROJECT (ADR-0014)"
     enum visibility "PRIVATE | SHARED | PUBLIC"
-    enum moderationState "OK | PENDING_REVIEW | HIDDEN"
-    int draftRevision
+    enum moderationState "OK | PENDING_REVIEW | HIDDEN (P2d)"
+    int draftRevision "bumped by every draft change"
+    timestamptz draftUpdatedAt
     uuid publishedVersionId FK
     timestamptz publishedAt
     bool forkingEnabled
-    bool sharedWithConnections "owner's connections can read (ADR-0013)"
-    uuid forkedFromNoteId FK
-    uuid forkedFromVersionId FK
-    enum forkedFromVisibility "origin visibility at fork time (ADR-0010)"
-    enum forkedAsRole "OWNER | EDITOR | READER (ADR-0010)"
+    bool sharedWithConnections "owner's connections can read (ADR-0013, Phase 3)"
+    uuid forkedFromNoteId FK "P2c"
+    uuid forkedFromVersionId FK "P2c"
+    enum forkedFromVisibility "origin visibility at fork time (ADR-0010, P2c)"
+    enum forkedAsRole "OWNER | EDITOR | READER (ADR-0010, P2c)"
     timestamptz deletedAt
   }
   Card {
-    uuid id PK
+    uuid id PK "client-made UUID"
     uuid noteId FK
-    text position "fractional index"
+    text position "fractional index, COLLATE C"
     enum type "text … flashcard (16 types)"
     jsonb content "Tiptap JSON, Zod-validated per type"
     int revision
@@ -243,8 +247,10 @@ erDiagram
     uuid id PK
     uuid noteId FK
     int number
-    jsonb cards "full snapshot"
-    enum kind "PUBLISHED | CONFLICT"
+    text title
+    jsonb cards "full snapshot: id, type, position, content, revision"
+    enum kind "PUBLISHED | CONFLICT | DRAFT"
+    uuid createdById "→ users.User"
     timestamptz createdAt
   }
   NoteShare {
@@ -269,7 +275,7 @@ erDiagram
   Tag {
     uuid id PK
     uuid ownerId
-    text name
+    citext name "unique per owner"
   }
   FileObject {
     uuid id PK
