@@ -2,6 +2,7 @@ import { Module, type DynamicModule } from '@nestjs/common'
 import { JsonScalar } from '@lvn-backend/graphql'
 import { AttachmentsService } from './application/attachments.service'
 import { DraftsService } from './application/drafts.service'
+import { NoteModerationService } from './application/moderation.service'
 import { FilesService } from './application/files.service'
 import { NotesService } from './application/notes.service'
 import { NotesMaintenance } from './application/notes-maintenance'
@@ -19,7 +20,8 @@ import { NOTES_CONFIG, type NotesConfig } from './notes.config'
  * Owns: subjects, topics, folders, tags, notes, cards, versions, shares, forks, FileObject, search indexing, SearchProvider (Postgres → Typesense).
  * Imported only by the composition roots (apps/api, apps/worker); other contexts reach it through its
  * facade (FILES in libs/facades), never by importing this package (enforced by dependency-cruiser).
- * Needs PrismaModule, RedisModule, StorageModule, EventBusModule and the POLICY, ENTITLEMENTS, PEOPLE and AUDIT facades.
+ * Needs PrismaModule, RedisModule, StorageModule, EventBusModule and the POLICY, ENTITLEMENTS, PEOPLE, AUDIT and MODERATION
+ * facades; provides NOTE_MODERATION (bound by the composition roots).
  * Never global: GraphQL subgraphs follow module imports, so a global context would leak its resolvers.
  */
 @Module({})
@@ -32,6 +34,7 @@ export class NotesModule {
         JsonScalar,
         FilesService,
         AttachmentsService,
+        NoteModerationService,
         NotesService,
         DraftsService,
         OrganiseService,
@@ -46,7 +49,7 @@ export class NotesModule {
         TopicResolver,
         SharingResolver,
       ],
-      exports: [FilesService, NotesMaintenance],
+      exports: [FilesService, NotesMaintenance, NoteModerationService],
     }
   }
 }

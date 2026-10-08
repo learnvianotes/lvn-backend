@@ -1,4 +1,4 @@
-import { Action, can, type Actor, type NoteFacts, type Visibility } from '@lvn/contracts/domain'
+import { Action, can, type Actor, type ModerationState, type NoteFacts, type Visibility } from '@lvn/contracts/domain'
 import type { Prisma } from '@lvn-backend/prisma-base'
 
 /** What a viewer may see of a note: OWNER and EDITOR work on the draft, READER sees the published version (§4.3). */
@@ -12,6 +12,8 @@ export interface NoteAccessRow {
   forkingEnabled: boolean
   publishedVersionId: string | null
   deletedAt: Date | null
+  /** ADR-0037; OK when absent */
+  moderation?: ModerationState
   /** Set on forks: what the origin was when forked, and how the forker could reach it (ADR-0010) */
   forkedFromVisibility?: Visibility | null
   forkedAsRole?: 'OWNER' | 'EDITOR' | 'READER' | null
@@ -31,11 +33,16 @@ export function noteFacts(note: NoteAccessRow, shareRole: 'EDITOR' | 'VIEWER' | 
 /**
  * The viewer's access, or null when the note is invisible to them — which callers report exactly like a note that does
  * not exist, so ids reveal nothing (§5). On top of the matrix's `note.read`: a trashed note is visible to its owner
- * only, and a reader needs a published version to have anything to read.
+ * only, a reader needs a published version to have anything to read, and moderation (ADR-0037) closes the public path
+ * to a held note and the note itself to everyone but its owner once hidden or removed.
  */
 export function noteAccess(actor: Actor | null, note: NoteAccessRow, shareRole: 'EDITOR' | 'VIEWER' | null): NoteAccess | null {
   if (actor?.id === note.ownerId) return 'OWNER'
   if (note.deletedAt) return null
+  const moderation = note.moderation ?? 'OK'
+  if (moderation === 'HIDDEN' || moderation === 'REMOVED') return null
+  // Held: only the people it is shared with still read it (shares grant nothing on PRIVATE notes; can() checks that).
+  if (moderation === 'PENDING_REVIEW' && !shareRole) return null
   const facts = noteFacts(note, shareRole)
   if (!can(actor, Action.NOTE_READ, { kind: 'note', note: facts })) return null
   if (actor && can(actor, Action.NOTE_EDIT_DRAFT, { kind: 'note', note: facts })) return 'EDITOR'
@@ -49,14 +56,16 @@ export function noteAccess(actor: Actor | null, note: NoteAccessRow, shareRole: 
  */
 export function visibleNotesWhere(actorId: string | null): Prisma.NoteWhereInput {
   const published: Prisma.NoteWhereInput = { publishedVersionId: { not: null } }
-  if (!actorId) return { deletedAt: null, visibility: 'PUBLIC', ...published }
+  const open: Prisma.NoteWhereInput = { moderation: 'OK' }
+  const shared: Prisma.NoteWhereInput = { moderation: { in: ['OK', 'PENDING_REVIEW'] } }
+  if (!actorId) return { deletedAt: null, visibility: 'PUBLIC', ...open, ...published }
   return {
     deletedAt: null,
     OR: [
       { ownerId: actorId },
-      { visibility: 'PUBLIC', ...published },
-      { visibility: { in: ['SHARED', 'PUBLIC'] }, shares: { some: { userId: actorId, role: 'EDITOR' } } },
-      { visibility: { in: ['SHARED', 'PUBLIC'] }, shares: { some: { userId: actorId, role: 'VIEWER' } }, ...published },
+      { visibility: 'PUBLIC', ...open, ...published },
+      { visibility: { in: ['SHARED', 'PUBLIC'] }, ...shared, shares: { some: { userId: actorId, role: 'EDITOR' } } },
+      { visibility: { in: ['SHARED', 'PUBLIC'] }, ...shared, shares: { some: { userId: actorId, role: 'VIEWER' } }, ...published },
     ],
   }
 }

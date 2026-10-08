@@ -643,31 +643,35 @@ model Tag {
 
 /// The document (§4.1). Its cards are the draft; readers other than editors see `publishedVersion` (§4.3).
 model Note {
-  id                   String      @id @db.Uuid
+  id                   String          @id @db.Uuid
   /// Cross-context reference to users.User
-  ownerId              String      @db.Uuid
-  folderId             String?     @db.Uuid
-  kind                 NoteKind    @default(NOTE)
-  title                String      @default("")
-  slug                 String      @default("note")
-  visibility           Visibility  @default(PRIVATE)
+  ownerId              String          @db.Uuid
+  folderId             String?         @db.Uuid
+  kind                 NoteKind        @default(NOTE)
+  title                String          @default("")
+  slug                 String          @default("note")
+  visibility           Visibility      @default(PRIVATE)
   /// Bumped by every change to the draft (title, folder, tags, topics or any card)
-  draftRevision        Int         @default(0)
-  draftUpdatedAt       DateTime    @default(now()) @db.Timestamptz(3)
-  publishedVersionId   String?     @unique @db.Uuid
-  publishedAt          DateTime?   @db.Timestamptz(3)
-  forkingEnabled       Boolean     @default(true)
+  draftRevision        Int             @default(0)
+  draftUpdatedAt       DateTime        @default(now()) @db.Timestamptz(3)
+  publishedVersionId   String?         @unique @db.Uuid
+  publishedAt          DateTime?       @db.Timestamptz(3)
+  forkingEnabled       Boolean         @default(true)
+  /// ADR-0037: only OK notes are readable on the public path; HIDDEN and REMOVED notes by their owner only
+  moderation           ModerationState @default(OK)
+  /// Why the note is held, hidden or removed; shown to the owner
+  moderationReason     String?
   /// Fork credit (§4.4, ADR-0010): the origin, the version copied and its author (credited even when the origin is gone)
-  forkedFromNoteId     String?     @db.Uuid
-  forkedFromVersionId  String?     @db.Uuid
+  forkedFromNoteId     String?         @db.Uuid
+  forkedFromVersionId  String?         @db.Uuid
   /// Cross-context reference to users.User
-  forkedFromOwnerId    String?     @db.Uuid
+  forkedFromOwnerId    String?         @db.Uuid
   /// What the origin was when it was forked: decides whether the fork may become PUBLIC
   forkedFromVisibility Visibility?
   forkedAsRole         ForkRole?
-  deletedAt            DateTime?   @db.Timestamptz(3)
-  createdAt            DateTime    @default(now()) @db.Timestamptz(3)
-  updatedAt            DateTime    @updatedAt @db.Timestamptz(3)
+  deletedAt            DateTime?       @db.Timestamptz(3)
+  createdAt            DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime        @updatedAt @db.Timestamptz(3)
 
   folder           Folder?          @relation(fields: [folderId], references: [id])
   publishedVersion NoteVersion?     @relation("PublishedVersion", fields: [publishedVersionId], references: [id])
@@ -738,6 +742,16 @@ model NoteShare {
 
   @@id([noteId, userId])
   @@index([userId])
+  @@schema("notes")
+}
+
+/// ADR-0037: where a note stands with moderation (§15.1).
+enum ModerationState {
+  OK
+  PENDING_REVIEW
+  HIDDEN
+  REMOVED
+
   @@schema("notes")
 }
 
@@ -827,5 +841,102 @@ model CoreProblemMark {
 
   @@id([userId, subjectId, problemId, origin])
   @@index([userId, subjectId])
+  @@schema("core")
+}
+
+// ── Moderation (§15.1, ADR-0037) ─────────────────────────────────────────────────────────────────────────────
+
+enum ReportEntityType {
+  NOTE
+  USER
+
+  @@schema("core")
+}
+
+enum ReportReason {
+  HARASSMENT
+  SEXUAL
+  SELF_HARM
+  HATE
+  SPAM
+  COPYRIGHT
+  OTHER
+
+  @@schema("core")
+}
+
+enum ReportStatus {
+  OPEN
+  RESOLVED
+
+  @@schema("core")
+}
+
+enum ModerationActionType {
+  APPROVE
+  HIDE
+  REMOVE
+  WARN
+  SUSPEND
+  DISMISS
+
+  @@schema("core")
+}
+
+enum AppealStatus {
+  OPEN
+  DECIDED
+
+  @@schema("core")
+}
+
+/// A report on content: by a person, or by the scorer (reporterId null) when it held content back on its way public.
+model Report {
+  id           String           @id @db.Uuid
+  entityType   ReportEntityType
+  /// Cross-context reference: notes.Note or users.User
+  entityId     String           @db.Uuid
+  /// Cross-context reference to users.User; null when the scorer filed it
+  reporterId   String?          @db.Uuid
+  reason       ReportReason
+  details      String?
+  status       ReportStatus     @default(OPEN)
+  createdAt    DateTime         @default(now()) @db.Timestamptz(3)
+  resolvedAt   DateTime?        @db.Timestamptz(3)
+  resolvedById String?          @db.Uuid
+
+  @@unique([entityType, entityId, reporterId])
+  @@index([status, createdAt])
+  @@index([entityType, entityId])
+  @@schema("core")
+}
+
+/// What a moderator (or the report threshold, actorId null) did about an entity; also written to the audit log.
+model ModerationAction {
+  id         String               @id @db.Uuid
+  entityType ReportEntityType
+  entityId   String               @db.Uuid
+  action     ModerationActionType
+  reason     String?
+  actorId    String?              @db.Uuid
+  createdAt  DateTime             @default(now()) @db.Timestamptz(3)
+
+  @@index([entityType, entityId, createdAt])
+  @@schema("core")
+}
+
+/// The author's one appeal against hiding or removing their content (§15.1).
+model ModerationAppeal {
+  id         String           @id @db.Uuid
+  entityType ReportEntityType
+  entityId   String           @db.Uuid
+  userId     String           @db.Uuid
+  message    String
+  status     AppealStatus     @default(OPEN)
+  createdAt  DateTime         @default(now()) @db.Timestamptz(3)
+  decidedAt  DateTime?        @db.Timestamptz(3)
+
+  @@unique([entityType, entityId, userId])
+  @@index([status, createdAt])
   @@schema("core")
 }

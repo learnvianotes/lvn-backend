@@ -82,6 +82,8 @@ const auth = z.object({
    * 18 under India's DPDP Act (the default for learnvianotes.in), 16 in parts of the EU, at least 13 everywhere.
    */
   DIGITAL_CONSENT_AGE: z.coerce.number().int().min(13).max(21).default(18),
+  /** ADR-0037: extra `REASON: phrase` lines for the rule-based moderation scorer; the built-in spam phrases apply without it. */
+  MODERATION_WORDS_FILE: z.string().min(1).optional(),
   /** k-anonymity range API for the breached-password check (§7.1); unset only in tests. */
   PASSWORD_BREACH_API_URL: z.url().optional(),
   /** Firebase project whose ID tokens signInWithGoogle accepts (ADR-0007). */

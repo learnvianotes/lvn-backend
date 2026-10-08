@@ -139,6 +139,13 @@ export class NotesResolver {
     }).load(n.opened)
   }
 
+  @ResolveField('moderation')
+  moderation(@Parent() n: NoteParent) {
+    if (n.opened.access !== 'OWNER') return null
+    const { moderation: state, moderationReason: reason } = n.opened.note
+    return { state, reason, canAppeal: state === 'HIDDEN' || state === 'REMOVED' }
+  }
+
   @ResolveField('outline')
   outline(@Parent() n: NoteParent) {
     return this.drafts.outline(n.opened)

@@ -21,6 +21,14 @@ directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on
 
 directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
 
+input AppealModerationInput
+  @join__type(graph: CORE)
+{
+  entityType: ReportEntityType!
+  entityId: UUID!
+  message: String!
+}
+
 type AuthPayload
   @join__type(graph: USERS)
 {
@@ -266,16 +274,17 @@ enum DomainReviewStatus
 
 """Fixed error vocabulary (§6.2)"""
 enum ErrorCode
+  @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
-  UNAUTHENTICATED @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  FORBIDDEN @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  NOT_FOUND @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  VALIDATION @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  CONFLICT @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  RATE_LIMITED @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  INTERNAL @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  UNAUTHENTICATED @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  FORBIDDEN @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  NOT_FOUND @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  VALIDATION @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  CONFLICT @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  RATE_LIMITED @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  INTERNAL @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
 }
 
 """
@@ -458,10 +467,118 @@ type MediaFile
   durationMs: Int
 }
 
+input ModerateContentInput
+  @join__type(graph: CORE)
+{
+  entityType: ReportEntityType!
+  entityId: UUID!
+  action: ModerationActionType!
+
+  """Required for HIDE, REMOVE and WARN: the author is told"""
+  reason: String
+}
+
+"""A note as moderators see it: the published version readers would see"""
+type ModeratedNote
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  title: String!
+  excerpt: String!
+  owner: User!
+  visibility: String!
+  moderation: ModerationState!
+  moderationReason: String
+  deleted: Boolean!
+}
+
+"""
+APPROVE frees a held note; HIDE and REMOVE take it off for everyone but its author; DISMISS closes reports; WARN tells the author. SUSPEND is not available yet.
+"""
+enum ModerationActionType
+  @join__type(graph: CORE)
+{
+  APPROVE @join__enumValue(graph: CORE)
+  HIDE @join__enumValue(graph: CORE)
+  REMOVE @join__enumValue(graph: CORE)
+  WARN @join__enumValue(graph: CORE)
+  SUSPEND @join__enumValue(graph: CORE)
+  DISMISS @join__enumValue(graph: CORE)
+}
+
+type ModerationAppeal
+  @join__type(graph: CORE)
+{
+  message: String!
+  createdAt: DateTime!
+}
+
+type ModerationCase
+  @join__type(graph: CORE)
+{
+  entityType: ReportEntityType!
+  entityId: UUID!
+
+  """Set for NOTE cases"""
+  note: ModeratedNote
+
+  """Set for USER cases"""
+  user: User
+  reports: [ModerationReport!]!
+  appeal: ModerationAppeal
+  openedAt: DateTime!
+}
+
+type ModerationCaseConnection
+  @join__type(graph: CORE)
+{
+  edges: [ModerationCaseEdge!]!
+  pageInfo: PageInfo!
+}
+
+type ModerationCaseEdge
+  @join__type(graph: CORE)
+{
+  cursor: String!
+  node: ModerationCase!
+}
+
+type ModerationReport
+  @join__type(graph: CORE)
+{
+  reason: ReportReason!
+  details: String
+
+  """null when the scorer held the content on its way to the public"""
+  reporter: User
+  createdAt: DateTime!
+}
+
+enum ModerationState
+  @join__type(graph: CORE)
+  @join__type(graph: NOTES)
+{
+  OK @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES)
+  PENDING_REVIEW @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES)
+  HIDDEN @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES)
+  REMOVED @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES)
+}
+
 type Mutation
+  @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
+  """
+  Report a note or a person you can see; reporting again updates your report
+  """
+  reportContent(input: ReportContentInput!): OkPayload! @join__field(graph: CORE)
+
+  """A moderator's decision on a case (PLATFORM_ADMIN)"""
+  moderateContent(input: ModerateContentInput!): OkPayload! @join__field(graph: CORE)
+
+  """The author's one appeal against hiding or removing their note"""
+  appealModeration(input: AppealModerationInput!): OkPayload! @join__field(graph: CORE)
   createUploadIntent(input: CreateUploadIntentInput!): UploadIntentPayload! @join__field(graph: NOTES)
 
   """Checks the uploaded bytes (size, magic bytes) and makes the file READY"""
@@ -621,6 +738,9 @@ type Note
   """Set while the note is in the trash (owner only)"""
   deletedAt: DateTime
 
+  """Owner only; null for everyone else"""
+  moderation: NoteModeration
+
   """Owner only: the people the note is shared with; null for anyone else"""
   shares: [NoteShare!]
 
@@ -685,6 +805,22 @@ enum NoteKind
   BLOG @join__enumValue(graph: NOTES)
   POST @join__enumValue(graph: NOTES)
   PROJECT @join__enumValue(graph: NOTES)
+}
+
+"""Where a note stands with moderation"""
+type NoteModeration
+  @join__type(graph: NOTES)
+{
+  """
+  OK, or PENDING_REVIEW (held from the public until a moderator looks), HIDDEN or REMOVED (by a moderator)
+  """
+  state: ModerationState!
+
+  """Why, in words for the owner"""
+  reason: String
+
+  """Hidden or removed notes can be appealed once (appealModeration)"""
+  canAppeal: Boolean!
 }
 
 type NotePayload
@@ -787,6 +923,7 @@ enum OAuthProvider
 }
 
 type OkPayload
+  @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
@@ -803,6 +940,7 @@ type OutlineItem
 }
 
 type PageInfo
+  @join__type(graph: CORE)
   @join__type(graph: NOTES)
 {
   hasNextPage: Boolean!
@@ -840,6 +978,9 @@ type Query
   Signed-in users: their progress on a /core subject (web reads it on /core pages)
   """
   coreProgress(subjectId: String!): CoreSubjectProgress! @join__field(graph: CORE)
+
+  """Open cases, oldest first (PLATFORM_ADMIN)"""
+  moderationQueue(first: Int, after: String): ModerationCaseConnection! @join__field(graph: CORE)
 
   """
   A note the viewer can read; null otherwise (anonymous visitors: PUBLIC notes)
@@ -902,6 +1043,36 @@ input RenameTagInput
 {
   id: UUID!
   name: String!
+}
+
+input ReportContentInput
+  @join__type(graph: CORE)
+{
+  entityType: ReportEntityType!
+  entityId: UUID!
+  reason: ReportReason!
+
+  """What is wrong, in the reporter's words (at most 1,000 characters)"""
+  details: String
+}
+
+enum ReportEntityType
+  @join__type(graph: CORE)
+{
+  NOTE @join__enumValue(graph: CORE)
+  USER @join__enumValue(graph: CORE)
+}
+
+enum ReportReason
+  @join__type(graph: CORE)
+{
+  HARASSMENT @join__enumValue(graph: CORE)
+  SEXUAL @join__enumValue(graph: CORE)
+  SELF_HARM @join__enumValue(graph: CORE)
+  HATE @join__enumValue(graph: CORE)
+  SPAM @join__enumValue(graph: CORE)
+  COPYRIGHT @join__enumValue(graph: CORE)
+  OTHER @join__enumValue(graph: CORE)
 }
 
 """
@@ -1199,8 +1370,9 @@ type UploadIntentPayload
   userErrors: [UserError!]!
 }
 
-"""A person, owned by the users subgraph; notes refer to people by id."""
+"""A person, owned by the users subgraph"""
 type User
+  @join__type(graph: CORE, key: "id", resolvable: false)
   @join__type(graph: NOTES, key: "id", resolvable: false)
   @join__type(graph: USERS, key: "id")
 {
@@ -1253,6 +1425,7 @@ type User
 An expected failure of a mutation; `field` is the dotted input path, e.g. ["input", "email"]
 """
 type UserError
+  @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
@@ -1262,6 +1435,7 @@ type UserError
 }
 
 scalar UUID
+  @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 

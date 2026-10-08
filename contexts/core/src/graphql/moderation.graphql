@@ -1,0 +1,116 @@
+# Moderation (spec §15.1, ADR-0037): reports, the platform queue, decisions and appeals. A note's own moderation state
+# is a field of Note in the notes subgraph.
+
+scalar UUID
+
+"A person, owned by the users subgraph"
+type User @key(fields: "id", resolvable: false) {
+  id: UUID!
+}
+
+type PageInfo @shareable {
+  hasNextPage: Boolean!
+  endCursor: String
+}
+
+enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL }
+
+type UserError @shareable {
+  field: [String!]
+  message: String!
+  code: ErrorCode!
+}
+
+type OkPayload @shareable {
+  ok: Boolean!
+  userErrors: [UserError!]!
+}
+
+enum ModerationState { OK PENDING_REVIEW HIDDEN REMOVED }
+enum ReportEntityType { NOTE USER }
+enum ReportReason { HARASSMENT SEXUAL SELF_HARM HATE SPAM COPYRIGHT OTHER }
+"APPROVE frees a held note; HIDE and REMOVE take it off for everyone but its author; DISMISS closes reports; WARN tells the author. SUSPEND is not available yet."
+enum ModerationActionType { APPROVE HIDE REMOVE WARN SUSPEND DISMISS }
+
+input ReportContentInput {
+  entityType: ReportEntityType!
+  entityId: UUID!
+  reason: ReportReason!
+  "What is wrong, in the reporter's words (at most 1,000 characters)"
+  details: String
+}
+
+input ModerateContentInput {
+  entityType: ReportEntityType!
+  entityId: UUID!
+  action: ModerationActionType!
+  "Required for HIDE, REMOVE and WARN: the author is told"
+  reason: String
+}
+
+input AppealModerationInput {
+  entityType: ReportEntityType!
+  entityId: UUID!
+  message: String!
+}
+
+type ModerationReport {
+  reason: ReportReason!
+  details: String
+  "null when the scorer held the content on its way to the public"
+  reporter: User
+  createdAt: DateTime!
+}
+
+type ModerationAppeal {
+  message: String!
+  createdAt: DateTime!
+}
+
+"A note as moderators see it: the published version readers would see"
+type ModeratedNote {
+  id: UUID!
+  title: String!
+  excerpt: String!
+  owner: User!
+  visibility: String!
+  moderation: ModerationState!
+  moderationReason: String
+  deleted: Boolean!
+}
+
+type ModerationCase {
+  entityType: ReportEntityType!
+  entityId: UUID!
+  "Set for NOTE cases"
+  note: ModeratedNote
+  "Set for USER cases"
+  user: User
+  reports: [ModerationReport!]!
+  appeal: ModerationAppeal
+  openedAt: DateTime!
+}
+
+type ModerationCaseEdge {
+  cursor: String!
+  node: ModerationCase!
+}
+
+type ModerationCaseConnection {
+  edges: [ModerationCaseEdge!]!
+  pageInfo: PageInfo!
+}
+
+extend type Query {
+  "Open cases, oldest first (PLATFORM_ADMIN)"
+  moderationQueue(first: Int, after: String): ModerationCaseConnection!
+}
+
+type Mutation {
+  "Report a note or a person you can see; reporting again updates your report"
+  reportContent(input: ReportContentInput!): OkPayload!
+  "A moderator's decision on a case (PLATFORM_ADMIN)"
+  moderateContent(input: ModerateContentInput!): OkPayload!
+  "The author's one appeal against hiding or removing their note"
+  appealModeration(input: AppealModerationInput!): OkPayload!
+}
