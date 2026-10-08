@@ -24,7 +24,7 @@ account and the provider credentials listed under "Exit criteria".
 | Abuse limits | Depth 8 / complexity 1000 (VALIDATION, HTTP 400), list caps, per-account sign-in limit, per-network failed sign-in limit (IPv6 by /64), `TRUST_PROXY_HOPS` | `libs/graphql`, `contexts/users` |
 | Observability (§16.5) | JSON logs with request id, operation, queue/job, redaction; OpenTelemetry traces and metrics over OTLP; Sentry for unexpected errors only, scrubbed; flush on SIGTERM; readiness checks Postgres, Redis and the schema version | `libs/observability`, `apps/*/src/instrument.ts`, `apps/api/src/health` |
 | Security suite (§17.1) | Students A and B, Teacher T, an admin; every mutation fuzzed for role escalation; URL lifetimes and re-checks; upload abuse; query limits; brute force and credential stuffing; refresh reuse; viewer-only fields. Later channels are `it.todo` | `apps/api/test/security` |
-| Packaging and infra | One image for API, worker and migrations; Terraform for the sandbox (VPC, RDS, Redis, S3 + KMS, Secrets Manager, ECS, ALB) | `infra/docker`, `infra/terraform` |
+| Packaging and infra | One image for API, worker and migrations; a domain-free Terraform sandbox from one `.env` (CloudFront → internal ALB, ECS, RDS, Redis, S3 + KMS, generated secrets, SES) and a deploy script (ADR-0035) | `infra/docker`, `infra/terraform`, `infra/scripts` |
 | CI | Build, lint, typecheck, boundaries, schema and env checks, all tests (Testcontainers), migrations on empty Postgres + drift, image build, Terraform validate, gitleaks, audit; security suite on relevant PRs and nightly | `.github/workflows` |
 | Contracts | `@lvn/contracts` 0.9.0 → 0.13.0 (config for all three apps, events, notifications) | `contracts/`, `docs/api-changes/` |
 
@@ -62,28 +62,35 @@ build argument failed the web build; credential stuffing across accounts was not
 
 ## Exit criteria (§18)
 
-- [ ] **Web and mobile sign in on all providers in dev and sandbox.** Email + password: done in dev on both. Google:
-  needs the Firebase project's web config, and its Android/iOS apps for mobile. GitHub: needs the OAuth apps (one per
-  environment, redirect URIs in `docs/architecture/env.md`). LinkedIn: web only until app links exist — LinkedIn does
-  not redirect to app schemes. Sandbox: needs the AWS account.
-- [ ] **Migration deploys** — to sandbox. Locally and in the CI job: done.
+Owner decisions of 2026-10-08: sign-in at launch shows **email and Google**; GitHub and LinkedIn stay in the code,
+switched off until configured, for later. The sandbox needs **no domain** and is configured from one `.env`
+(ADR-0035). The owner creates the Sentry organisation and publishes the repositories.
+
+- [ ] **Web and mobile sign in with email and Google in dev and sandbox.** Email + password: done in dev on both.
+  Google: implemented on web (Firebase popup) and mobile (native Google Sign-In → Firebase, tested with stubs); needs
+  the Firebase project's values to run for real. Sandbox: needs the AWS account.
+- [ ] **Migration deploys** — to sandbox (`infra/scripts/deploy.sh` runs the migrate task). Locally and in CI: done.
 - [ ] **File upload round-trips** — in sandbox. Locally against S3-compatible RustFS: done.
 - [x] **Security suite scaffold passes.**
 
 ## Needed from the owner
 
-AWS sandbox account (and later production), a Resend account and sending domain, GitHub and LinkedIn OAuth apps,
-the Firebase project's web/Android/iOS apps, a Sentry organisation, and publishing the three repositories to the
-`learnvianotes` organisation (CI has only run locally).
+- **AWS:** an account with an administrator CLI profile on the deploying machine (AWS CLI v2, Terraform ≥ 1.9, Docker,
+  `jq`), and a sender email address for SES. Everything else is created by `infra/terraform/bootstrap.sh` and
+  `infra/scripts/deploy.sh` from `infra/terraform/envs/sandbox/.env` (`infra/terraform/README.md`).
+- **Firebase:** Google enabled; the web app's config; Android apps with the signing key's SHA-1; the Web client ID
+  (lvn-mobile `docs/architecture/mobile-addendum.md` → Sign-in). Then the CloudFront host in Authentication →
+  Authorized domains.
+- Sentry organisation and publishing: done by the owner.
 
 ## Known gaps carried forward
 
-- Deploy workflow (ECR push, migrate task, service update) — with the AWS account and a GitHub OIDC role.
-- CloudFront, WAF, Route 53; the OpenTelemetry collector and its backends.
+- A deploy workflow in GitHub Actions (the script runs locally; CI needs an OIDC role).
+- WAF rules; the OpenTelemetry collector and its backends.
 - Lighthouse CI on public routes (§16.4) — with the public note page (Phase 2).
 - Maestro and Playwright against sandbox on `main` (§16.4) — with sandbox.
 - Android App Links / iOS universal links: emailed links open the web meanwhile.
 - Mobile Sentry symbolication (Sentry Expo plugin and token).
 - The backend image is 1.2 GB (all production dependencies); slim it with per-app `pnpm deploy`.
 
-GraphQL schema: `contracts/graphql/schema.graphql` as of `@lvn/contracts` 0.13.0.
+GraphQL schema: `contracts/graphql/schema.graphql` as of `@lvn/contracts` 0.14.0.
