@@ -124,6 +124,11 @@ const apiShape = backendBase
     API_PORT: port.default(4000),
     /** Comma-separated origins allowed by CORS. */
     CORS_ORIGINS: z.string().transform((s) => s.split(',').map((o) => o.trim()).filter(Boolean)),
+    /**
+     * Proxies in front of the API whose X-Forwarded-For is trusted for the client address (rate limits, §7.1):
+     * 0 locally, 1 behind the ALB, 2 behind CloudFront + ALB. Too high lets clients choose their own address.
+     */
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
   })
   .extend(storage.shape)
   .extend(mail.shape)

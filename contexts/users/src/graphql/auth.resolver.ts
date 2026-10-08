@@ -37,7 +37,7 @@ export class AuthResolver {
 
   @Mutation('signIn')
   signIn(@Args() { input }: MutationSignInArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
-    return withUserErrors<AuthPayload>(async () => ({ session: await deliverSession(ctx, this.users, await this.auth.signIn(input.email, input.password, deviceOf(ctx))) }), { session: null })
+    return withUserErrors<AuthPayload>(async () => ({ session: await deliverSession(ctx, this.users, await this.auth.signIn(input.email, input.password, deviceOf(ctx), ctx.req.ip)) }), { session: null })
   }
 
   @Mutation('refreshSession')

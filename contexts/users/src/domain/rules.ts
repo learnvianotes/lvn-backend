@@ -10,6 +10,11 @@ export const RESET_PASSWORD_TTL_MINUTES = 60
 /** §7.1 rate limits. */
 export const LIMITS = {
   signIn: { max: 5, windowSeconds: 15 * 60 },
+  /**
+   * Credential stuffing: failed sign-ins from one network across any number of accounts. Only failures count, so a
+   * campus behind one address is not locked out by people signing in normally.
+   */
+  signInFailuresPerNetwork: { max: 50, windowSeconds: 15 * 60 },
   passwordReset: { max: 3, windowSeconds: 60 * 60 },
   verifyEmailResend: { max: 3, windowSeconds: 60 * 60 },
 } as const

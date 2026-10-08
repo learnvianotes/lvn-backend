@@ -47,6 +47,17 @@ describe('RateLimiter', () => {
     expect((await limiter.hit('c', limit, 10)).allowed).toBe(true)
   })
 
+  it('peeks without recording an attempt', async () => {
+    const limiter = new RateLimiter(redis)
+    const limit = { max: 2, windowSeconds: 60 }
+    expect(await limiter.peek('d', limit, 0)).toEqual({ allowed: true, retryAfter: 0, remaining: 2 })
+    await limiter.hit('d', limit, 0)
+    await limiter.hit('d', limit, 1000)
+    for (let i = 0; i < 3; i++) expect(await limiter.peek('d', limit, 2000)).toEqual({ allowed: false, retryAfter: 58, remaining: 0 })
+    expect(await redis.zcard('rl:d')).toBe(2)
+    expect((await limiter.peek('d', limit, 60_001)).allowed).toBe(true)
+  })
+
   it('holds under concurrency', async () => {
     const limiter = new RateLimiter(redis)
     const results = await Promise.all(Array.from({ length: 20 }, () => limiter.hit('d', { max: 5, windowSeconds: 60 })))

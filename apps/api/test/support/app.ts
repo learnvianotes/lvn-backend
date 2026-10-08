@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import type { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
@@ -50,6 +51,7 @@ export async function testEnv(overrides: Record<string, string> = {}): Promise<R
     SMTP_URL: i.mail.smtpUrl,
     JWT_ISSUER: 'http://localhost:4000',
     WEB_URL: 'http://localhost:3000',
+    TRUST_PROXY_HOPS: '1',
     ...secrets,
     ...overrides,
   }
@@ -103,6 +105,13 @@ export async function createTestApp(overrides: Record<string, string> = {}): Pro
     destination: { write: (line: string) => void (lines.push(line), process.env.LVN_TEST_LOGS && process.stdout.write(line)) },
   })
   const app = moduleRef.createNestApplication({ logger: new PinoNestLogger(logger) })
+  // Each test app is its own client network (behind one trusted proxy), so per-network sign-in limits in the shared
+  // Redis never add up across test files or runs. A test can still send its own X-Forwarded-For.
+  const network = `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`
+  app.use((req: { headers: Record<string, string | string[] | undefined> }, _res: unknown, next: () => void) => {
+    req.headers['x-forwarded-for'] ??= network
+    next()
+  })
   configureHttp(app, config, logger)
   await app.init()
   await app.get(Storage).ensureBuckets([config.S3_BUCKET, config.S3_RESTRICTED_BUCKET])

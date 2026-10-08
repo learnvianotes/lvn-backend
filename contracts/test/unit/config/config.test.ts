@@ -132,3 +132,11 @@ describe('telemetry', () => {
     expect(c).toMatchObject({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4318', RELEASE: 'abc1234' })
   })
 })
+
+describe('TRUST_PROXY_HOPS', () => {
+  it('defaults to trusting no proxy and accepts a small number of hops only', () => {
+    expect(loadConfig(apiConfigSchema, valid).TRUST_PROXY_HOPS).toBe(0)
+    expect(loadConfig(apiConfigSchema, { ...valid, TRUST_PROXY_HOPS: '2' }).TRUST_PROXY_HOPS).toBe(2)
+    for (const bad of ['-1', '6', 'true', '1.5']) expect(() => loadConfig(apiConfigSchema, { ...valid, TRUST_PROXY_HOPS: bad })).toThrow(/TRUST_PROXY_HOPS/)
+  })
+})

@@ -36,6 +36,17 @@ redis.call('PEXPIRE', key, window)
 return {1, count + 1}
 `
 
+/** The same window, counted without recording an attempt. */
+const PEEK = `
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
+local count = redis.call('ZCARD', key)
+local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+return {count, tonumber(oldest[2] or now)}
+`
+
 /** Sliding-window rate limits in Redis (§7.1). Refused attempts are not counted. */
 @Injectable()
 export class RateLimiter {
@@ -46,6 +57,14 @@ export class RateLimiter {
     const [allowed, value] = (await this.redis.eval(SLIDING_WINDOW, 1, `rl:${key}`, now, windowMs, limit.max, `${now}:${randomUUID()}`)) as [number, number]
     if (allowed === 1) return { allowed: true, retryAfter: 0, remaining: limit.max - value }
     return { allowed: false, retryAfter: Math.max(1, Math.ceil((value + windowMs - now) / 1000)), remaining: 0 }
+  }
+
+  /** Whether one more attempt would be allowed, without recording one (for limits that count only failures). */
+  async peek(key: string, limit: Limit, now = Date.now()): Promise<LimitResult> {
+    const windowMs = limit.windowSeconds * 1000
+    const [count, oldest] = (await this.redis.eval(PEEK, 1, `rl:${key}`, now, windowMs)) as [number, number]
+    if (count < limit.max) return { allowed: true, retryAfter: 0, remaining: limit.max - count }
+    return { allowed: false, retryAfter: Math.max(1, Math.ceil((oldest + windowMs - now) / 1000)), remaining: 0 }
   }
 
   /** Forgets every attempt for a key (e.g. after a successful sign-in). */

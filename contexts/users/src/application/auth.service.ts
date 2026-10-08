@@ -13,6 +13,7 @@ import {
   TERMS_VERSION,
   VERIFY_EMAIL_TTL_HOURS,
 } from '../domain/rules'
+import { clientNetwork } from '../domain/network'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { freeHandle } from './handles'
 import { parseField } from './input'
@@ -97,14 +98,23 @@ export class AuthService {
     return this.sessions.start(id, device)
   }
 
-  async signIn(rawEmail: string, password: string, device: DeviceInfo): Promise<IssuedSession> {
+  /** `ip` is the client address (behind trusted proxies); it is used for the credential-stuffing limit, never stored. */
+  async signIn(rawEmail: string, password: string, device: DeviceInfo, ip?: string): Promise<IssuedSession> {
     const email = parseField(emailSchema, rawEmail, 'email')
+    const network = clientNetwork(ip)
+    if (network) {
+      const fromNetwork = await this.limiter.peek(`signin-fail:${network}`, LIMITS.signInFailuresPerNetwork)
+      if (!fromNetwork.allowed) throw Errors.rateLimited(fromNetwork.retryAfter, 'Too many failed sign-ins from your network. Try again in a few minutes.')
+    }
     const limit = await this.limiter.hit(`signin:${email}`, LIMITS.signIn)
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many sign-in attempts. Try again in a few minutes.')
 
     const user = await this.db.user.findUnique({ where: { email }, select: { id: true, passwordHash: true, deletedAt: true, emailVerifiedAt: true } })
     const ok = await this.passwords.verify(user && !user.deletedAt ? user.passwordHash : null, password)
-    if (!user || !ok) throw Errors.validation('Email or password is incorrect.')
+    if (!user || !ok) {
+      if (network) await this.limiter.hit(`signin-fail:${network}`, LIMITS.signInFailuresPerNetwork)
+      throw Errors.validation('Email or password is incorrect.')
+    }
 
     await this.limiter.reset(`signin:${email}`)
     if (user.emailVerifiedAt) await this.legacy.match(user.id, { verifiedEmail: email })

@@ -46,6 +46,7 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `API_HOST` | api | no | `0.0.0.0` | Bind address |
 | `API_PORT` | api | no | `4000` | HTTP + WebSocket port |
 | `CORS_ORIGINS` | api | yes | — | Comma-separated allow-list (§7.2) |
+| `TRUST_PROXY_HOPS` | api | no | `0` | Proxies in front of the API whose `X-Forwarded-For` is trusted for the client address used by rate limits: `0` locally, `1` behind the ALB, `2` behind CloudFront + ALB. Higher than the real number lets clients choose their address |
 | `WORKER_HEALTH_PORT` | worker | no | `4001` | `/health/live` for the ECS health check |
 | `LEGACY_FIREBASE_PROJECT_ID` | worker | no | — | Old Firebase project read once by `pnpm --filter @lvn-backend/worker legacy:snapshot` (ADR-0023); credentials from `GOOGLE_APPLICATION_CREDENTIALS` (a read-only service account in Secrets Manager) |
 | `S3_ENDPOINT` | api, worker | no | — (AWS) | S3-compatible endpoint; `http://localhost:59000` for RustFS locally (ADR-0032); unset on AWS |
