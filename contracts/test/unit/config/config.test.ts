@@ -58,6 +58,11 @@ describe('apiConfigSchema (Phase 1)', () => {
     expect(loadConfig(apiConfigSchema, { ...valid, MAIL_TRANSPORT: 'resend', RESEND_API_KEY: 're_123' }).MAIL_TRANSPORT).toBe('resend')
   })
 
+  it('sends through SES with the task role, needing only the region', () => {
+    expect(() => loadConfig(apiConfigSchema, { ...valid, MAIL_TRANSPORT: 'ses' })).toThrow(/SES_REGION/)
+    expect(loadConfig(apiConfigSchema, { ...valid, MAIL_TRANSPORT: 'ses', SES_REGION: 'ap-south-1' }).SES_REGION).toBe('ap-south-1')
+  })
+
   it('parses the path-style flag and leaves sign-in providers off by default', () => {
     const cfg = loadConfig(apiConfigSchema, { ...valid, S3_FORCE_PATH_STYLE: 'true' })
     expect(cfg.S3_FORCE_PATH_STYLE).toBe(true)

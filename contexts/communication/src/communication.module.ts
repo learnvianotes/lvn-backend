@@ -1,13 +1,14 @@
 import { Module, type DynamicModule } from '@nestjs/common'
 import type { ApiConfig } from '@lvn/contracts/config'
 import { MailService } from './mail/mail.service'
-import { ResendTransport, SmtpTransport, type MailTransport } from './mail/transport'
+import { ResendTransport, SesTransport, SmtpTransport, type MailTransport } from './mail/transport'
 
 export interface CommunicationConfig {
   mailFrom: string
-  mailTransport: 'smtp' | 'resend'
+  mailTransport: 'smtp' | 'resend' | 'ses'
   smtpUrl?: string
   resendApiKey?: string
+  sesRegion?: string
 }
 
 export const communicationConfigFrom = (c: ApiConfig): CommunicationConfig => ({
@@ -15,6 +16,7 @@ export const communicationConfigFrom = (c: ApiConfig): CommunicationConfig => ({
   mailTransport: c.MAIL_TRANSPORT,
   smtpUrl: c.SMTP_URL,
   resendApiKey: c.RESEND_API_KEY,
+  sesRegion: c.SES_REGION,
 })
 
 /**
@@ -28,7 +30,11 @@ export const communicationConfigFrom = (c: ApiConfig): CommunicationConfig => ({
 export class CommunicationModule {
   static forRoot(config: CommunicationConfig): DynamicModule {
     const transport: MailTransport =
-      config.mailTransport === 'resend' ? new ResendTransport(config.resendApiKey!) : new SmtpTransport(config.smtpUrl!)
+      config.mailTransport === 'ses'
+        ? new SesTransport(config.sesRegion!)
+        : config.mailTransport === 'resend'
+          ? new ResendTransport(config.resendApiKey!)
+          : new SmtpTransport(config.smtpUrl!)
     return {
       module: CommunicationModule,
       providers: [{ provide: MailService, useValue: new MailService(transport, config.mailFrom) }],

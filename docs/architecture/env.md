@@ -56,9 +56,10 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `S3_BUCKET` | api, worker | yes | — | Uploads and media (§8) |
 | `S3_RESTRICTED_BUCKET` | api, worker | yes | — | Identity documents (ADR-0019) and old-site snapshots (ADR-0023), own encryption key, never behind the CDN |
 | `MAIL_FROM` | api, worker | yes | — | Sender, e.g. `LearnViaNotes <no-reply@learnvianotes.in>` |
-| `MAIL_TRANSPORT` | api, worker | yes | — | `smtp` (Mailpit locally) or `resend` |
+| `MAIL_TRANSPORT` | api, worker | yes | — | `smtp` (Mailpit locally), `ses` (AWS, sent with the task role — ADR-0035) or `resend` |
 | `SMTP_URL` | api, worker | when `smtp` | — | `smtp://localhost:51025` for Mailpit |
 | `RESEND_API_KEY` | api, worker | when `resend` (secret) | — | Resend API key |
+| `SES_REGION` | api, worker | when `ses` | — | Region of the SES identity `MAIL_FROM` uses |
 | `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | api | yes (secret) | — | RS256 key pair for access tokens (§7.1), PEM with `\n` escapes; `pnpm keys:dev` writes a pair to `.env.local` |
 | `JWT_ISSUER` | api | yes | — | The API's public origin (`iss` claim) |
 | `WEB_URL` | api | yes | — | lvn-web origin for links in emails and OAuth redirects |

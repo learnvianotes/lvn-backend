@@ -48,17 +48,22 @@ const storage = z.object({
   S3_RESTRICTED_BUCKET: z.string().min(3),
 })
 
-/** Transactional email (§2): SMTP (Mailpit locally) or Resend. */
+/**
+ * Transactional email (§2): SMTP (Mailpit locally), Amazon SES on AWS (signed with the task role — no key), or Resend.
+ */
 const mail = z.object({
   MAIL_FROM: z.string().min(3),
-  MAIL_TRANSPORT: z.enum(['smtp', 'resend']),
+  MAIL_TRANSPORT: z.enum(['smtp', 'resend', 'ses']),
   SMTP_URL: z.url().optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
+  /** Region of the SES identity that MAIL_FROM uses. */
+  SES_REGION: z.string().min(1).optional(),
 })
 
-const mailTransportConfigured = <T extends { MAIL_TRANSPORT: 'smtp' | 'resend'; SMTP_URL?: string; RESEND_API_KEY?: string }>(c: T, ctx: z.RefinementCtx) => {
+const mailTransportConfigured = <T extends { MAIL_TRANSPORT: 'smtp' | 'resend' | 'ses'; SMTP_URL?: string; RESEND_API_KEY?: string; SES_REGION?: string }>(c: T, ctx: z.RefinementCtx) => {
   if (c.MAIL_TRANSPORT === 'smtp' && !c.SMTP_URL) ctx.addIssue({ code: 'custom', path: ['SMTP_URL'], message: 'required when MAIL_TRANSPORT=smtp' })
   if (c.MAIL_TRANSPORT === 'resend' && !c.RESEND_API_KEY) ctx.addIssue({ code: 'custom', path: ['RESEND_API_KEY'], message: 'required when MAIL_TRANSPORT=resend' })
+  if (c.MAIL_TRANSPORT === 'ses' && !c.SES_REGION) ctx.addIssue({ code: 'custom', path: ['SES_REGION'], message: 'required when MAIL_TRANSPORT=ses' })
 }
 
 /** Sessions and sign-in (§7, ADR-0007). Provider credentials are optional: a provider without them is switched off. */

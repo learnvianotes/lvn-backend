@@ -1,3 +1,4 @@
+import { SendEmailCommand, SESv2Client } from '@aws-sdk/client-sesv2'
 import nodemailer from 'nodemailer'
 import { Resend } from 'resend'
 
@@ -24,7 +25,29 @@ export class SmtpTransport implements MailTransport {
   }
 }
 
-/** Resend — sandbox and production (§2). */
+/**
+ * Amazon SES through its API, signed with the credentials of the running task (the ECS task role on AWS): no SMTP
+ * password or API key exists to leak or rotate. The sender must be an identity verified in SES.
+ */
+export class SesTransport implements MailTransport {
+  constructor(
+    region: string,
+    private readonly client: Pick<SESv2Client, 'send'> = new SESv2Client({ region }),
+  ) {}
+
+  async send(mail: OutgoingMail): Promise<void> {
+    const utf8 = (Data: string) => ({ Data, Charset: 'UTF-8' })
+    await this.client.send(
+      new SendEmailCommand({
+        FromEmailAddress: mail.from,
+        Destination: { ToAddresses: [mail.to] },
+        Content: { Simple: { Subject: utf8(mail.subject), Body: { Html: utf8(mail.html), Text: utf8(mail.text) } } },
+      }),
+    )
+  }
+}
+
+/** Resend — a hosted alternative to SES (§2). */
 export class ResendTransport implements MailTransport {
   private readonly client: Resend
   constructor(apiKey: string) {
