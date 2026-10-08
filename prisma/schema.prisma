@@ -159,6 +159,7 @@ model User {
   emailTokens          EmailToken[]
   institutionalEmails  InstitutionalEmail[]
   consents             ConsentRecord[]
+  dataExports          DataExport[]
   memberships          Membership[]
   verificationRequests VerificationRequest[] @relation("requester")
   profile              StudentProfile?
@@ -283,6 +284,35 @@ model Membership {
 
   @@id([userId, organizationId])
   @@index([organizationId])
+  @@schema("users")
+}
+
+enum DataExportStatus {
+  PENDING
+  READY
+  FAILED
+  EXPIRED
+
+  @@schema("users")
+}
+
+/// ADR-0018: an archive of everything about a person, ready within 24 hours and downloadable for 7 days.
+model DataExport {
+  id          String           @id @db.Uuid
+  userId      String           @db.Uuid
+  status      DataExportStatus @default(PENDING)
+  /// Cross-context reference to notes.FileObject (purpose EXPORT, restricted bucket)
+  fileId      String?          @db.Uuid
+  sizeBytes   BigInt?
+  error       String?
+  requestedAt DateTime         @default(now()) @db.Timestamptz(3)
+  readyAt     DateTime?        @db.Timestamptz(3)
+  expiresAt   DateTime?        @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, requestedAt])
+  @@index([status, expiresAt])
   @@schema("users")
 }
 
@@ -438,6 +468,10 @@ enum FileParentType {
   RESOURCE
   AVATAR
   VERIFICATION_REQUEST
+  /// ADR-0018: an upload to import notes from
+  IMPORT_JOB
+  /// ADR-0018: a data export archive
+  DATA_EXPORT
 
   @@schema("notes")
 }

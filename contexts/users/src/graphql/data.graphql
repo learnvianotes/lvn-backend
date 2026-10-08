@@ -1,0 +1,30 @@
+# Settings → Data (ADR-0018): an archive of everything about you.
+
+enum DataExportStatus { PENDING READY FAILED EXPIRED }
+
+type DataExport {
+  id: UUID!
+  status: DataExportStatus!
+  requestedAt: DateTime!
+  readyAt: DateTime
+  "Kept until then (7 days)"
+  expiresAt: DateTime
+  sizeBytes: Float
+  "While READY: a download link that works for 15 minutes; ask again for a new one"
+  downloadUrl: String
+}
+
+type DataExportPayload {
+  export: DataExport
+  userErrors: [UserError!]!
+}
+
+extend type Query {
+  "Your latest data exports, newest first"
+  myDataExports: [DataExport!]!
+}
+
+extend type Mutation {
+  "Ask for an archive of everything about you: notes as Markdown and JSON with their files, and your account data. One a day; you are emailed when it is ready"
+  requestDataExport: DataExportPayload!
+}

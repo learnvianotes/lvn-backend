@@ -191,6 +191,38 @@ export class FilesService implements Files {
     return this.storage.presignGet(file.bucket, file.storageKey, { expiresInSeconds: READ_URL_TTL_SECONDS, downloadName: file.originalFileName })
   }
 
+  async store(ownerId: string, file: { purpose: FilePurposeKind; parent: { type: FileParentKind; id: string }; fileName: string; mimeType: string; bytes: Uint8Array; restricted: boolean; expiresAt: Date | null }): Promise<string> {
+    const id = newId()
+    const bucket = file.restricted ? this.config.restrictedBucket : this.config.bucket
+    const storageKey = `${this.config.env}/${ownerId}/${id}/original`
+    await this.storage.put(bucket, storageKey, file.bytes, { contentType: file.mimeType, metadata: { 'file-id': id, 'owner-id': ownerId, env: this.config.env } })
+    await this.db.fileObject.create({
+      data: {
+        id,
+        ownerId,
+        parentType: file.parent.type,
+        parentId: file.parent.id,
+        purpose: file.purpose,
+        bucket,
+        storageKey,
+        mimeType: file.mimeType,
+        detectedMimeType: detectMimeType(file.bytes.slice(0, 64)),
+        sizeBytes: BigInt(file.bytes.length),
+        originalFileName: file.fileName,
+        status: 'READY',
+        expiresAt: file.expiresAt,
+      },
+    })
+    return id
+  }
+
+  /** The bytes of a READY file of this owner (the importer reads uploads), at most `maxBytes`. */
+  async readBytes(ownerId: string, fileId: string, maxBytes: number): Promise<{ bytes: Uint8Array; fileName: string; mimeType: string }> {
+    const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
+    if (!file || file.ownerId !== ownerId || file.status !== 'READY' || file.deletedAt) throw Errors.notFound('Upload not found.')
+    return { bytes: await this.storage.getBytes(file.bucket, file.storageKey, maxBytes), fileName: file.originalFileName, mimeType: file.mimeType }
+  }
+
   /** Read URLs for READY files the caller has already decided the reader may see; one access count update. */
   async readUrls(fileIds: string[]) {
     const files = fileIds.length ? await this.db.fileObject.findMany({ where: { id: { in: [...new Set(fileIds)] }, status: 'READY', deletedAt: null } }) : []

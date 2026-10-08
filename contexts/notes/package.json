@@ -25,7 +25,8 @@
     "@nestjs/graphql": "13.4.5",
     "graphql": "16.14.2",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@lvn-backend/testing": "workspace:*"

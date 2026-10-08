@@ -36,6 +36,17 @@ export function PasswordChanged({ displayName }: MailTemplates['passwordChanged'
   )
 }
 
+export function DataExportReady({ displayName, link, expiresOn }: MailTemplates['dataExportReady']) {
+  return (
+    <Layout preview="Your LearnViaNotes data is ready to download">
+      <Heading as="h1" style={heading}>Your data is ready</Heading>
+      <Text style={paragraph}>Hi {displayName}, the archive of your notes and account data you asked for is ready. Download it from your account page:</Text>
+      <Button href={link} style={button}>Download your data</Button>
+      <Text style={muted}>The download is available until {expiresOn}. Keep the file somewhere safe: it holds your personal data.</Text>
+    </Layout>
+  )
+}
+
 export function InstitutionalCode({ displayName, code, expiresInMinutes }: MailTemplates['institutionalCode']) {
   return (
     <Layout preview={`Your LearnViaNotes code is ${code}`}>

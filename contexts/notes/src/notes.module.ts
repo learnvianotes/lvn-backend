@@ -5,6 +5,7 @@ import { DraftsService } from './application/drafts.service'
 import { NoteModerationService } from './application/moderation.service'
 import { FilesService } from './application/files.service'
 import { NotesService } from './application/notes.service'
+import { NotesExport } from './application/notes-export'
 import { NotesMaintenance } from './application/notes-maintenance'
 import { OrganiseService } from './application/organise.service'
 import { PublicPages } from './application/public-pages'
@@ -46,6 +47,7 @@ export class NotesModule {
         OrganiseService,
         SharingService,
         NotesMaintenance,
+        NotesExport,
         PublicPages,
         SearchIndex,
         SearchService,

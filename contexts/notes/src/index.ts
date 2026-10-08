@@ -10,6 +10,8 @@ export { FilesService } from './application/files.service'
 export { NoteModerationService } from './application/moderation.service'
 /** The search index and its queue (§10.4), run by apps/worker. */
 export { NOTES_SEARCH_QUEUE, SearchIndex } from './application/search-index'
+/** The notes part of a data export (ADR-0018), bound to NOTES_DATA_EXPORT by the composition roots. */
+export { NotesExport } from './application/notes-export'
 /** Nightly housekeeping (version pruning, emptying the trash), run by apps/worker. */
 export { NotesMaintenance } from './application/notes-maintenance'
 

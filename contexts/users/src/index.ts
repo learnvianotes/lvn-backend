@@ -18,3 +18,5 @@ export { GOOGLE_ID_TOKENS, MX_LOOKUP, type GoogleIdTokens, type MxLookup, type P
 
 /** This context's federation subgraph, composed by apps/api's gateway (ADR-0033). */
 export const usersSubgraph = { name: 'users', typeDefs: usersTypeDefs, modules: [UsersModule] }
+/** Data exports (ADR-0018): requested here, built by apps/worker from the users.export queue. */
+export { DataExportService, USERS_EXPORT_QUEUE } from './application/data-export.service'
