@@ -1,0 +1,16 @@
+# Accepting the Terms, the Privacy Policy and the public-content licence again when they change (spec §15.2).
+
+extend type User {
+  "The viewer's own: whether they accepted the current version (Query.termsVersion); false means ask again. null for others."
+  termsAccepted: Boolean
+}
+
+input AcceptTermsInput {
+  "Query.termsVersion, as shown to the person"
+  version: String!
+}
+
+extend type Mutation {
+  "Accept the current Terms, Privacy Policy and content licence"
+  acceptTerms(input: AcceptTermsInput!): OkPayload!
+}

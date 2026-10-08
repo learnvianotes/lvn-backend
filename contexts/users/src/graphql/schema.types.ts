@@ -1,5 +1,10 @@
 // Generated from this folder's *.graphql by scripts/graphql-types.mjs (ADR-0033). Do not edit.
 
+export interface AcceptTermsInput {
+  /** Query.termsVersion, as shown to the person */
+  version: string
+}
+
 export interface AuthPayload {
   session: Session | null
   userErrors: Array<UserError>
@@ -111,6 +116,10 @@ export interface MutationSetInstitutionalEmailArgs {
 
 export interface MutationVerifyInstitutionalEmailArgs {
   input: VerifyInstitutionalEmailInput
+}
+
+export interface MutationAcceptTermsArgs {
+  input: AcceptTermsInput
 }
 
 export interface MutationRequestTeacherVerificationArgs {
@@ -306,6 +315,8 @@ export interface User {
   institution?: Institution | null
   /** Viewer only: a minor without verified consent (§15.2) — no public publishing, no DMs */
   restrictedMinor?: boolean | null
+  /** The viewer's own: whether they accepted the current version (Query.termsVersion); false means ask again. null for others. */
+  termsAccepted?: boolean | null
 }
 
 /** An expected failure of a mutation; `field` is the dotted input path, e.g. ["input", "email"] */

@@ -21,6 +21,13 @@ directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on
 
 directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
 
+input AcceptTermsInput
+  @join__type(graph: USERS)
+{
+  """Query.termsVersion, as shown to the person"""
+  version: String!
+}
+
 input AppealModerationInput
   @join__type(graph: CORE)
 {
@@ -661,6 +668,9 @@ type Mutation
   setInstitutionalEmail(input: SetInstitutionalEmailInput!): OkPayload! @join__field(graph: USERS)
   verifyInstitutionalEmail(input: VerifyInstitutionalEmailInput!): OkPayload! @join__field(graph: USERS)
   resendInstitutionalEmailCode: OkPayload! @join__field(graph: USERS)
+
+  """Accept the current Terms, Privacy Policy and content licence"""
+  acceptTerms(input: AcceptTermsInput!): OkPayload! @join__field(graph: USERS)
   requestTeacherVerification(input: RequestTeacherVerificationInput!): VerificationRequestPayload! @join__field(graph: USERS)
   requestDocumentVerification(input: RequestDocumentVerificationInput!): VerificationRequestPayload! @join__field(graph: USERS)
   withdrawVerificationRequest(requestId: UUID!): OkPayload! @join__field(graph: USERS)
@@ -1424,6 +1434,11 @@ type User
   Viewer only: a minor without verified consent (§15.2) — no public publishing, no DMs
   """
   restrictedMinor: Boolean @join__field(graph: USERS)
+
+  """
+  The viewer's own: whether they accepted the current version (Query.termsVersion); false means ask again. null for others.
+  """
+  termsAccepted: Boolean @join__field(graph: USERS)
 }
 
 """
