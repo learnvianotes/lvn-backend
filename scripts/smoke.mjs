@@ -2,7 +2,8 @@
 /**
  * Smoke test of a deployed environment through its public entrance, as a new user would go (Phase 1 exit criteria,
  * §18): readiness, email sign-up (as the app) and sign-in (as the web), the session refresh, an avatar upload and an
- * identity document upload through pre-signed PUTs, and — with --mailpit — the email that sign-up sends.
+ * identity document upload through pre-signed PUTs, a note written, saved and trashed (Phase 2), and — with
+ * --mailpit — the email that sign-up sends.
  *
  *   node scripts/smoke.mjs <public_url> [--mailpit <mailpit_url>]
  *   pnpm smoke http://127.0.0.1:8080 --mailpit http://127.0.0.1:8025      (the local environment, ADR-0036)
@@ -140,6 +141,26 @@ await check('a wrong password is refused', async () => {
 await check('uploads an avatar: pre-signed PUT, then the API checks the bytes (files bucket)', () => uploadFile(webToken, 'AVATAR', 'image/png', 'me.png', PNG))
 
 await check('uploads an identity document (restricted bucket)', () => uploadFile(webToken, 'VERIFICATION_DOCUMENT', 'application/pdf', 'id-card.pdf', PDF))
+
+await check('writes a note, autosaves a change and reads it back (Phase 2)', async () => {
+  const card = crypto.randomUUID()
+  const text = (t) => ({ doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: t }] }] } })
+  const created = payload(
+    await gql('mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id draftRevision } userErrors { field message code } } }', { input: { title: 'Smoke note', cards: [{ id: card, type: 'text', position: 'a0', content: text('first') }] } }, { token: webToken }),
+    'createNote',
+  )
+  const noteId = created.note.id
+  const saved = payload(
+    await gql('mutation ($input: UpdateNoteDraftInput!) { updateNoteDraft(input: $input) { note { draftRevision } results { status } userErrors { field message code } } }', { input: { noteId, ops: [{ kind: 'UPSERT', id: card, type: 'text', position: 'a0', content: text('second'), baseRevision: 1 }] } }, { token: webToken }),
+    'updateNoteDraft',
+  )
+  assert(saved.results[0].status === 'APPLIED', `save: ${JSON.stringify(saved.results)}`)
+  const { data } = await gql('query ($id: UUID!) { note(id: $id) { title cards { edges { node { content } } } } }', { id: noteId }, { token: webToken })
+  const words = data.note.cards.edges[0].node.content.doc.content[0].content[0].text
+  assert(words === 'second', `read back "${words}"`)
+  payload(await gql('mutation ($id: UUID!) { deleteNote(input: { noteId: $id }) { note { id } userErrors { field message code } } }', { id: noteId }, { token: webToken }), 'deleteNote')
+  return `note ${noteId}`
+})
 
 if (mailpit) {
   await check('sign-up sent an email', async () => {

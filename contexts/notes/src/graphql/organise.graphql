@@ -1,0 +1,100 @@
+# How notes are organised (spec §4.1): folders and tags per user, subjects and topics shared by everyone.
+
+"The viewer's folder; nested up to 5 levels"
+type Folder {
+  id: UUID!
+  name: String!
+  parentId: UUID
+  "Live notes directly in this folder"
+  noteCount: Int!
+}
+
+"The viewer's tag; names are unique ignoring case"
+type Tag {
+  id: UUID!
+  name: String!
+  noteCount: Int!
+}
+
+type Subject {
+  id: UUID!
+  slug: String!
+  title: String!
+  "Top-level topics: curated ones and the viewer's proposals"
+  topics: [Topic!]!
+}
+
+enum TopicOrigin { CURATED PROPOSED }
+
+"A topic within a subject; curated by LVN or proposed by a user (usable by its proposer until curated)"
+type Topic {
+  id: UUID!
+  slug: String!
+  title: String!
+  origin: TopicOrigin!
+  subject: Subject!
+  parentId: UUID
+  children: [Topic!]!
+}
+
+input CreateFolderInput {
+  name: String!
+  parentId: UUID
+}
+
+"Omitted fields stay as they are; `parentId: null` moves the folder to the top level"
+input UpdateFolderInput {
+  id: UUID!
+  name: String
+  parentId: UUID
+}
+
+input RenameTagInput {
+  id: UUID!
+  name: String!
+}
+
+input IdInput {
+  id: UUID!
+}
+
+input ProposeTopicInput {
+  subjectId: UUID!
+  parentId: UUID
+  title: String!
+}
+
+type FolderPayload {
+  folder: Folder
+  userErrors: [UserError!]!
+}
+
+type TagPayload {
+  tag: Tag
+  userErrors: [UserError!]!
+}
+
+type TopicPayload {
+  topic: Topic
+  userErrors: [UserError!]!
+}
+
+extend type Query {
+  myFolders: [Folder!]!
+  myTags: [Tag!]!
+  subjects: [Subject!]!
+  subject(slug: String!): Subject
+  "Topics whose title contains the words, curated first (at most 50)"
+  findTopics(query: String!, subjectId: UUID): [Topic!]!
+}
+
+extend type Mutation {
+  createFolder(input: CreateFolderInput!): FolderPayload!
+  updateFolder(input: UpdateFolderInput!): FolderPayload!
+  "Its notes and subfolders move up one level"
+  deleteFolder(input: IdInput!): OkPayload!
+  renameTag(input: RenameTagInput!): TagPayload!
+  "Removes the tag from every note"
+  deleteTag(input: IdInput!): OkPayload!
+  proposeTopic(input: ProposeTopicInput!): TopicPayload!
+}

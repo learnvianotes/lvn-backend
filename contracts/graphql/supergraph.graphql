@@ -29,6 +29,128 @@ type AuthPayload
 }
 
 """
+One block of a note (§4.1). `position` orders cards (a fractional index: compare as plain strings, then by id).
+"""
+type Card
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  type: CardType!
+  position: String!
+
+  """Shape depends on `type` (@lvn/contracts/validation CARD_CONTENT)"""
+  content: JSON!
+
+  """
+  Send it back as baseRevision when changing or deleting the card (§13.2)
+  """
+  revision: Int!
+}
+
+type CardConnection
+  @join__type(graph: NOTES)
+{
+  edges: [CardEdge!]!
+  pageInfo: PageInfo!
+}
+
+type CardEdge
+  @join__type(graph: NOTES)
+{
+  cursor: String!
+  node: Card!
+}
+
+"""
+A card as the client has it. Ids are UUIDs the client makes, so cards created offline keep their id.
+"""
+input CardInput
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  type: CardType!
+  position: String!
+  content: JSON!
+}
+
+input CardOpInput
+  @join__type(graph: NOTES)
+{
+  kind: CardOpKind!
+  id: UUID!
+  type: CardType
+  position: String
+  content: JSON
+
+  """The card's revision the client last saw; omitted for new cards"""
+  baseRevision: Int
+}
+
+enum CardOpKind
+  @join__type(graph: NOTES)
+{
+  """Create the card, or change it; send `baseRevision` when changing"""
+  UPSERT @join__enumValue(graph: NOTES)
+
+  """Change only `position`"""
+  MOVE @join__enumValue(graph: NOTES)
+
+  """Remove the card; send `baseRevision`"""
+  DELETE @join__enumValue(graph: NOTES)
+}
+
+type CardOpResult
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  status: CardOpStatus!
+
+  """The card's revision after the save"""
+  revision: Int
+  message: String
+}
+
+enum CardOpStatus
+  @join__type(graph: NOTES)
+{
+  APPLIED @join__enumValue(graph: NOTES)
+
+  """
+  Applied, but the card had changed on another device since baseRevision: that version is kept in `conflictVersion`
+  """
+  APPLIED_WITH_CONFLICT @join__enumValue(graph: NOTES)
+
+  """
+  Not applied: the card was deleted, or changed elsewhere before this delete
+  """
+  REJECTED @join__enumValue(graph: NOTES)
+}
+
+"""
+The sixteen card types (§4.1); content is validated per type (@lvn/contracts/validation)
+"""
+enum CardType
+  @join__type(graph: NOTES)
+{
+  text @join__enumValue(graph: NOTES)
+  heading @join__enumValue(graph: NOTES)
+  markdown @join__enumValue(graph: NOTES)
+  code @join__enumValue(graph: NOTES)
+  image @join__enumValue(graph: NOTES)
+  video @join__enumValue(graph: NOTES)
+  audio @join__enumValue(graph: NOTES)
+  file @join__enumValue(graph: NOTES)
+  diagram @join__enumValue(graph: NOTES)
+  quote @join__enumValue(graph: NOTES)
+  callout @join__enumValue(graph: NOTES)
+  checklist @join__enumValue(graph: NOTES)
+  table @join__enumValue(graph: NOTES)
+  question @join__enumValue(graph: NOTES)
+  quiz @join__enumValue(graph: NOTES)
+  flashcard @join__enumValue(graph: NOTES)
+}
+
+"""
 After a provider sign-in (no signUp call): the same details, collected once
 """
 input CompleteRegistrationInput
@@ -67,6 +189,24 @@ type CoreTopicProgress
   revisit: Boolean!
   secondsStudied: Int!
   lastStudiedAt: DateTime
+}
+
+input CreateFolderInput
+  @join__type(graph: NOTES)
+{
+  name: String!
+  parentId: UUID
+}
+
+input CreateNoteInput
+  @join__type(graph: NOTES)
+{
+  title: String
+  folderId: UUID
+  kind: NoteKind
+  cards: [CardInput!]
+  tagNames: [String!]
+  topicIds: [UUID!]
 }
 
 input CreateUploadIntentInput
@@ -141,12 +281,37 @@ enum FilePurpose
   VERIFICATION_DOCUMENT @join__enumValue(graph: NOTES)
 }
 
+"""The viewer's folder; nested up to 5 levels"""
+type Folder
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  name: String!
+  parentId: UUID
+
+  """Live notes directly in this folder"""
+  noteCount: Int!
+}
+
+type FolderPayload
+  @join__type(graph: NOTES)
+{
+  folder: Folder
+  userErrors: [UserError!]!
+}
+
 enum GlobalRole
   @join__type(graph: USERS)
 {
   STUDENT @join__enumValue(graph: USERS)
   TEACHER @join__enumValue(graph: USERS)
   PLATFORM_ADMIN @join__enumValue(graph: USERS)
+}
+
+input IdInput
+  @join__type(graph: NOTES)
+{
+  id: UUID!
 }
 
 type Institution
@@ -181,6 +346,9 @@ enum join__Graph {
   NOTES @join__graph(name: "notes", url: "local://notes")
   USERS @join__graph(name: "users", url: "local://users")
 }
+
+scalar JSON
+  @join__type(graph: NOTES)
 
 type LegacyCounts
   @join__type(graph: USERS)
@@ -258,6 +426,35 @@ type Mutation
 
   """Checks the uploaded bytes (size, magic bytes) and makes the file READY"""
   completeUpload(fileId: UUID!): OkPayload! @join__field(graph: NOTES)
+  createNote(input: CreateNoteInput!): NotePayload! @join__field(graph: NOTES)
+  updateNoteDraft(input: UpdateNoteDraftInput!): UpdateNoteDraftPayload! @join__field(graph: NOTES)
+
+  """
+  Snapshot the draft as the version readers see (owner; a verified account)
+  """
+  publishNote(input: NoteIdInput!): NotePayload! @join__field(graph: NOTES)
+
+  """
+  Make an old version the draft again; the current draft is kept as a DRAFT version
+  """
+  restoreNoteVersion(input: RestoreNoteVersionInput!): NotePayload! @join__field(graph: NOTES)
+
+  """Move to the trash, restorable for 30 days (§4.5)"""
+  deleteNote(input: NoteIdInput!): NotePayload! @join__field(graph: NOTES)
+  restoreNote(input: NoteIdInput!): NotePayload! @join__field(graph: NOTES)
+
+  """Delete a note in the trash now, for good"""
+  deleteNoteForever(input: NoteIdInput!): OkPayload! @join__field(graph: NOTES)
+  createFolder(input: CreateFolderInput!): FolderPayload! @join__field(graph: NOTES)
+  updateFolder(input: UpdateFolderInput!): FolderPayload! @join__field(graph: NOTES)
+
+  """Its notes and subfolders move up one level"""
+  deleteFolder(input: IdInput!): OkPayload! @join__field(graph: NOTES)
+  renameTag(input: RenameTagInput!): TagPayload! @join__field(graph: NOTES)
+
+  """Removes the tag from every note"""
+  deleteTag(input: IdInput!): OkPayload! @join__field(graph: NOTES)
+  proposeTopic(input: ProposeTopicInput!): TopicPayload! @join__field(graph: NOTES)
   signUp(input: SignUpInput!): AuthPayload! @join__field(graph: USERS)
   signIn(input: SignInInput!): AuthPayload! @join__field(graph: USERS)
   refreshSession(input: RefreshSessionInput!): AuthPayload! @join__field(graph: USERS)
@@ -307,6 +504,176 @@ type Mutation
 }
 
 """
+A note (§4.1). Load it in two steps (§6.3): these fields and the outline first, then `cards` page by page. Editors get
+the draft; readers get the published version. Notes the viewer cannot read are null, exactly as if they did not exist.
+"""
+type Note
+  @join__type(graph: NOTES, key: "id")
+{
+  id: UUID!
+  kind: NoteKind!
+
+  """Empty when untitled"""
+  title: String!
+
+  """URL part of the title, set when published"""
+  slug: String!
+  visibility: Visibility!
+  owner: User!
+  viewerAccess: NoteAccess!
+  viewerCan: NotePermissions!
+
+  """The owner's folder; null for anyone else"""
+  folder: Folder
+
+  """The owner's tags; empty for anyone else"""
+  tags: [Tag!]!
+  topics: [Topic!]!
+
+  """Editors only: bumped by every change to the draft"""
+  draftRevision: Int
+
+  """Editors only"""
+  draftUpdatedAt: DateTime
+  publishedVersion: NoteVersion
+  publishedAt: DateTime
+  forkingEnabled: Boolean!
+  cardCount: Int!
+
+  """The headings, for navigation"""
+  outline: [OutlineItem!]!
+
+  """In order; at most 100 per page"""
+  cards(first: Int, after: String): CardConnection!
+
+  """Editors only: newest first"""
+  versions(first: Int, after: String): NoteVersionConnection
+  createdAt: DateTime!
+  updatedAt: DateTime!
+
+  """Set while the note is in the trash (owner only)"""
+  deletedAt: DateTime
+}
+
+"""
+OWNER and EDITOR work on the draft; READER sees the published version (§4.3)
+"""
+enum NoteAccess
+  @join__type(graph: NOTES)
+{
+  OWNER @join__enumValue(graph: NOTES)
+  EDITOR @join__enumValue(graph: NOTES)
+  READER @join__enumValue(graph: NOTES)
+}
+
+type NoteConnection
+  @join__type(graph: NOTES)
+{
+  edges: [NoteEdge!]!
+  pageInfo: PageInfo!
+}
+
+type NoteEdge
+  @join__type(graph: NOTES)
+{
+  cursor: String!
+  node: Note!
+}
+
+input NoteFilter
+  @join__type(graph: NOTES)
+{
+  """Notes in this folder (not its subfolders)"""
+  folderId: UUID
+
+  """Notes in no folder"""
+  unfiled: Boolean
+  tagId: UUID
+  topicId: UUID
+  kind: NoteKind
+
+  """The trash instead of the live notes"""
+  trashed: Boolean
+}
+
+input NoteIdInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+}
+
+"""
+What a note is presented as (ADR-0014, ADR-0015). Phase 2 creates NOTE only.
+"""
+enum NoteKind
+  @join__type(graph: NOTES)
+{
+  NOTE @join__enumValue(graph: NOTES)
+  BLOG @join__enumValue(graph: NOTES)
+  POST @join__enumValue(graph: NOTES)
+  PROJECT @join__enumValue(graph: NOTES)
+}
+
+type NotePayload
+  @join__type(graph: NOTES)
+{
+  note: Note
+  userErrors: [UserError!]!
+}
+
+"""
+What the viewer may do with a note, to show or hide controls; the API checks again on every mutation.
+"""
+type NotePermissions
+  @join__type(graph: NOTES)
+{
+  edit: Boolean!
+  publish: Boolean!
+  changeVisibility: Boolean!
+  delete: Boolean!
+  share: Boolean!
+  fork: Boolean!
+}
+
+"""An immutable snapshot of a note's cards (§4.3)"""
+type NoteVersion
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  number: Int!
+  kind: NoteVersionKind!
+  title: String!
+  createdBy: User!
+  createdAt: DateTime!
+  cards(first: Int, after: String): CardConnection!
+}
+
+type NoteVersionConnection
+  @join__type(graph: NOTES)
+{
+  edges: [NoteVersionEdge!]!
+  pageInfo: PageInfo!
+}
+
+type NoteVersionEdge
+  @join__type(graph: NOTES)
+{
+  cursor: String!
+  node: NoteVersion!
+}
+
+"""
+PUBLISHED: what readers see. CONFLICT: the losing side of a card edited on two devices. DRAFT: the draft before a restore.
+"""
+enum NoteVersionKind
+  @join__type(graph: NOTES)
+{
+  PUBLISHED @join__enumValue(graph: NOTES)
+  CONFLICT @join__enumValue(graph: NOTES)
+  DRAFT @join__enumValue(graph: NOTES)
+}
+
+"""
 Authorization Code + PKCE: the code from the provider's redirect and the verifier the client generated
 """
 input OAuthExchangeInput
@@ -336,6 +703,21 @@ type OkPayload
   userErrors: [UserError!]!
 }
 
+type OutlineItem
+  @join__type(graph: NOTES)
+{
+  cardId: UUID!
+  level: Int!
+  text: String!
+}
+
+type PageInfo
+  @join__type(graph: NOTES)
+{
+  hasNextPage: Boolean!
+  endCursor: String
+}
+
 enum ProblemMark
   @join__type(graph: CORE)
 {
@@ -350,6 +732,14 @@ type ProfilePayload
   userErrors: [UserError!]!
 }
 
+input ProposeTopicInput
+  @join__type(graph: NOTES)
+{
+  subjectId: UUID!
+  parentId: UUID
+  title: String!
+}
+
 type Query
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
@@ -359,6 +749,21 @@ type Query
   Signed-in users: their progress on a /core subject (web reads it on /core pages)
   """
   coreProgress(subjectId: String!): CoreSubjectProgress! @join__field(graph: CORE)
+
+  """
+  A note the viewer can read; null otherwise (anonymous visitors: PUBLIC notes)
+  """
+  note(id: UUID!): Note @join__field(graph: NOTES)
+
+  """The viewer's own notes, most recently edited first"""
+  myNotes(filter: NoteFilter, first: Int, after: String): NoteConnection! @join__field(graph: NOTES)
+  myFolders: [Folder!]! @join__field(graph: NOTES)
+  myTags: [Tag!]! @join__field(graph: NOTES)
+  subjects: [Subject!]! @join__field(graph: NOTES)
+  subject(slug: String!): Subject @join__field(graph: NOTES)
+
+  """Topics whose title contains the words, curated first (at most 50)"""
+  findTopics(query: String!, subjectId: UUID): [Topic!]! @join__field(graph: NOTES)
 
   """The signed-in user, null for anonymous visitors"""
   viewer: User @join__field(graph: USERS)
@@ -398,6 +803,13 @@ input RefreshSessionInput
   refreshToken: String
 }
 
+input RenameTagInput
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  name: String!
+}
+
 """
 fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by platform admins only, deleted 30 days after the decision
 """
@@ -426,6 +838,13 @@ input ResetPasswordInput
 {
   token: String!
   password: String!
+}
+
+input RestoreNoteVersionInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+  versionId: UUID!
 }
 
 input ReviewVerificationRequestInput
@@ -531,6 +950,101 @@ type StudentProfile
   showOnProfile: Boolean!
 }
 
+type Subject
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  slug: String!
+  title: String!
+
+  """Top-level topics: curated ones and the viewer's proposals"""
+  topics: [Topic!]!
+}
+
+"""The viewer's tag; names are unique ignoring case"""
+type Tag
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  name: String!
+  noteCount: Int!
+}
+
+type TagPayload
+  @join__type(graph: NOTES)
+{
+  tag: Tag
+  userErrors: [UserError!]!
+}
+
+"""
+A topic within a subject; curated by LVN or proposed by a user (usable by its proposer until curated)
+"""
+type Topic
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  slug: String!
+  title: String!
+  origin: TopicOrigin!
+  subject: Subject!
+  parentId: UUID
+  children: [Topic!]!
+}
+
+enum TopicOrigin
+  @join__type(graph: NOTES)
+{
+  CURATED @join__enumValue(graph: NOTES)
+  PROPOSED @join__enumValue(graph: NOTES)
+}
+
+type TopicPayload
+  @join__type(graph: NOTES)
+{
+  topic: Topic
+  userErrors: [UserError!]!
+}
+
+"""
+Omitted fields stay as they are; `parentId: null` moves the folder to the top level
+"""
+input UpdateFolderInput
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  name: String
+  parentId: UUID
+}
+
+"""
+One save of the draft (autosave). Title, folder, tags and topics are last-writer-wins; card operations are checked per
+card (§13.2) and reported in `results`. Omitted fields stay as they are; `folderId: null` moves the note out of folders.
+"""
+input UpdateNoteDraftInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+  title: String
+  folderId: UUID
+  tagNames: [String!]
+  topicIds: [UUID!]
+  ops: [CardOpInput!]
+}
+
+type UpdateNoteDraftPayload
+  @join__type(graph: NOTES)
+{
+  note: Note
+  results: [CardOpResult!]!
+
+  """
+  The other device's version of conflicting cards, restorable from version history
+  """
+  conflictVersion: NoteVersion
+  userErrors: [UserError!]!
+}
+
 """Omitted fields stay as they are; null clears a field"""
 input UpdateProfileInput
   @join__type(graph: USERS)
@@ -567,55 +1081,54 @@ type UploadIntentPayload
   userErrors: [UserError!]!
 }
 
-"""
-A person on LVN (§4.1). Fields marked viewer-only are null for anyone else.
-"""
+"""A person, owned by the users subgraph; notes refer to people by id."""
 type User
+  @join__type(graph: NOTES, key: "id", resolvable: false)
   @join__type(graph: USERS, key: "id")
 {
   id: UUID!
-  handle: String!
-  displayName: String!
+  handle: String! @join__field(graph: USERS)
+  displayName: String! @join__field(graph: USERS)
 
   """Viewer only"""
-  email: String
-  emailVerified: Boolean!
+  email: String @join__field(graph: USERS)
+  emailVerified: Boolean! @join__field(graph: USERS)
 
   """False until the registration details are given (ADR-0017)"""
-  registrationComplete: Boolean!
+  registrationComplete: Boolean! @join__field(graph: USERS)
 
   """
   Verified by institutional email, a teacher, or platform admins (ADR-0019)
   """
-  verified: Boolean!
-  verificationMethod: VerificationMethod
-  globalRole: GlobalRole!
-  createdAt: DateTime!
+  verified: Boolean! @join__field(graph: USERS)
+  verificationMethod: VerificationMethod @join__field(graph: USERS)
+  globalRole: GlobalRole! @join__field(graph: USERS)
+  createdAt: DateTime! @join__field(graph: USERS)
 
   """The viewer's own profile; for others only when they show it"""
-  profile: StudentProfile
+  profile: StudentProfile @join__field(graph: USERS)
 
   """Viewer only"""
-  limits: [Limit!]
+  limits: [Limit!] @join__field(graph: USERS)
 
   """Viewer only: data from the old learnvianotes.in site (ADR-0023)"""
-  legacyImport: LegacyImport
+  legacyImport: LegacyImport @join__field(graph: USERS)
 
   """
   Viewer only (ADR-0017): the confirmed address, or the one waiting for its code
   """
-  institutionalEmail: String
+  institutionalEmail: String @join__field(graph: USERS)
 
   """Viewer only"""
-  institutionalEmailStatus: InstitutionalEmailStatus
+  institutionalEmailStatus: InstitutionalEmailStatus @join__field(graph: USERS)
 
   """The confirmed college or organisation"""
-  institution: Institution
+  institution: Institution @join__field(graph: USERS)
 
   """
   Viewer only: a minor without verified consent (§15.2) — no public publishing, no DMs
   """
-  restrictedMinor: Boolean
+  restrictedMinor: Boolean @join__field(graph: USERS)
 }
 
 """
@@ -701,6 +1214,15 @@ input VerifyInstitutionalEmailInput
   @join__type(graph: USERS)
 {
   code: String!
+}
+
+"""Who can read a note (§4.2)"""
+enum Visibility
+  @join__type(graph: NOTES)
+{
+  PRIVATE @join__enumValue(graph: NOTES)
+  SHARED @join__enumValue(graph: NOTES)
+  PUBLIC @join__enumValue(graph: NOTES)
 }
 
 enum YearOfStudy

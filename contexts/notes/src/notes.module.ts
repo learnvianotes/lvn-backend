@@ -1,6 +1,13 @@
 import { Module, type DynamicModule } from '@nestjs/common'
+import { JsonScalar } from '@lvn-backend/graphql'
+import { DraftsService } from './application/drafts.service'
 import { FilesService } from './application/files.service'
+import { NotesService } from './application/notes.service'
+import { NotesMaintenance } from './application/notes-maintenance'
+import { OrganiseService } from './application/organise.service'
 import { FilesResolver } from './graphql/files.resolver'
+import { NotesResolver, NoteVersionResolver } from './graphql/notes.resolver'
+import { OrganiseResolver, SubjectResolver, TopicResolver } from './graphql/organise.resolver'
 import { NOTES_CONFIG, type NotesConfig } from './notes.config'
 
 /**
@@ -16,8 +23,22 @@ export class NotesModule {
   static forRoot(config: NotesConfig): DynamicModule {
     return {
       module: NotesModule,
-      providers: [{ provide: NOTES_CONFIG, useValue: config }, FilesService, FilesResolver],
-      exports: [FilesService],
+      providers: [
+        { provide: NOTES_CONFIG, useValue: config },
+        JsonScalar,
+        FilesService,
+        NotesService,
+        DraftsService,
+        OrganiseService,
+        NotesMaintenance,
+        FilesResolver,
+        NotesResolver,
+        NoteVersionResolver,
+        OrganiseResolver,
+        SubjectResolver,
+        TopicResolver,
+      ],
+      exports: [FilesService, NotesMaintenance],
     }
   }
 }

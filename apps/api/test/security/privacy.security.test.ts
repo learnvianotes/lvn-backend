@@ -55,7 +55,33 @@ describe('security: privacy', () => {
   })
 
   describe('notes (Phase 2) and AI (Phase 5)', () => {
-    it.todo('B cannot read A’s private note by id, by public-note SEO page or through a file URL')
+    it('B cannot read, change or even detect A’s private note by id — it answers exactly like a note that does not exist', async () => {
+      const created = await t.gql<{ createNote: { note: { id: string } } }>(
+        'mutation { createNote(input: { title: "A’s diary", cards: [{ id: "01920000-0000-7000-8000-00000000d1a1", type: text, position: "a0", content: { doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "secret" }] }] } } }] }) { note { id } } }',
+        {},
+        actors.a.token,
+      )
+      const id = created.data!.createNote.note.id
+      const missing = '01920000-0000-7000-8000-0000000000ff'
+      const probe = async (noteId: string) => {
+        const read = await t.gql<{ note: unknown }>('query ($id: UUID!) { note(id: $id) { id title } }', { id: noteId }, actors.b.token)
+        const anon = await t.gql<{ note: unknown }>('query ($id: UUID!) { note(id: $id) { id title } }', { id: noteId })
+        const save = await t.gql('mutation ($id: UUID!) { updateNoteDraft(input: { noteId: $id, title: "mine now" }) { note { id } userErrors { code message } } }', { id: noteId }, actors.b.token)
+        const publish = await t.gql('mutation ($id: UUID!) { publishNote(input: { noteId: $id }) { note { id } userErrors { code message } } }', { id: noteId }, actors.b.token)
+        const trash = await t.gql('mutation ($id: UUID!) { deleteNote(input: { noteId: $id }) { note { id } userErrors { code message } } }', { id: noteId }, actors.b.token)
+        return { read: read.data, anon: anon.data, save: save.data ?? save.errors, publish: publish.data ?? publish.errors, trash: trash.data ?? trash.errors }
+      }
+      const answers = await probe(id)
+      expect(answers.read).toEqual({ note: null })
+      expect(answers.anon).toEqual({ note: null })
+      expect(answers).toEqual(await probe(missing))
+      const mine = await t.gql<{ myNotes: { edges: { node: { id: string } }[] } }>('{ myNotes { edges { node { id } } } }', {}, actors.b.token)
+      expect(mine.data!.myNotes.edges.map((e) => e.node.id)).not.toContain(id)
+      // Nothing changed.
+      const own = await t.gql<{ note: { title: string; deletedAt: string | null } }>('query ($id: UUID!) { note(id: $id) { title deletedAt } }', { id }, actors.a.token)
+      expect(own.data!.note).toEqual({ title: 'A’s diary', deletedAt: null })
+    })
+    it.todo('B cannot read A’s private note through a public-note SEO page or a file URL (P2c, P2d)')
     it.todo('B cannot fork or comment on A’s private note')
     it.todo('B gets no search results, recommendations or Ask AI answers that draw on A’s private notes')
     it.todo('unpublishing a note removes it from search, recommendations and RAG within 60 seconds')

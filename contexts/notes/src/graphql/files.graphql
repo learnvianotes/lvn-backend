@@ -1,5 +1,5 @@
 # Files (spec §8): the upload flow. Subgraph of the `notes` context (ADR-0033).
-extend schema @link(url: "https://specs.apollo.dev/federation/v2.6", import: ["@shareable"])
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.6", import: ["@key", "@shareable"])
 
 scalar DateTime
 scalar UUID

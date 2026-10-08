@@ -1,0 +1,256 @@
+# Notes, cards and versions (spec §4.1–§4.5, §6.2). Subgraph of the `notes` context (ADR-0033).
+
+scalar JSON
+
+"A person, owned by the users subgraph; notes refer to people by id."
+type User @key(fields: "id", resolvable: false) {
+  id: UUID!
+}
+
+type PageInfo @shareable {
+  hasNextPage: Boolean!
+  endCursor: String
+}
+
+"What a note is presented as (ADR-0014, ADR-0015). Phase 2 creates NOTE only."
+enum NoteKind { NOTE BLOG POST PROJECT }
+
+"Who can read a note (§4.2)"
+enum Visibility { PRIVATE SHARED PUBLIC }
+
+"The sixteen card types (§4.1); content is validated per type (@lvn/contracts/validation)"
+enum CardType { text heading markdown code image video audio file diagram quote callout checklist table question quiz flashcard }
+
+"PUBLISHED: what readers see. CONFLICT: the losing side of a card edited on two devices. DRAFT: the draft before a restore."
+enum NoteVersionKind { PUBLISHED CONFLICT DRAFT }
+
+"OWNER and EDITOR work on the draft; READER sees the published version (§4.3)"
+enum NoteAccess { OWNER EDITOR READER }
+
+"What the viewer may do with a note, to show or hide controls; the API checks again on every mutation."
+type NotePermissions {
+  edit: Boolean!
+  publish: Boolean!
+  changeVisibility: Boolean!
+  delete: Boolean!
+  share: Boolean!
+  fork: Boolean!
+}
+
+"""
+A note (§4.1). Load it in two steps (§6.3): these fields and the outline first, then `cards` page by page. Editors get
+the draft; readers get the published version. Notes the viewer cannot read are null, exactly as if they did not exist.
+"""
+type Note @key(fields: "id") {
+  id: UUID!
+  kind: NoteKind!
+  "Empty when untitled"
+  title: String!
+  "URL part of the title, set when published"
+  slug: String!
+  visibility: Visibility!
+  owner: User!
+  viewerAccess: NoteAccess!
+  viewerCan: NotePermissions!
+  "The owner's folder; null for anyone else"
+  folder: Folder
+  "The owner's tags; empty for anyone else"
+  tags: [Tag!]!
+  topics: [Topic!]!
+  "Editors only: bumped by every change to the draft"
+  draftRevision: Int
+  "Editors only"
+  draftUpdatedAt: DateTime
+  publishedVersion: NoteVersion
+  publishedAt: DateTime
+  forkingEnabled: Boolean!
+  cardCount: Int!
+  "The headings, for navigation"
+  outline: [OutlineItem!]!
+  "In order; at most 100 per page"
+  cards(first: Int, after: String): CardConnection!
+  "Editors only: newest first"
+  versions(first: Int, after: String): NoteVersionConnection
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  "Set while the note is in the trash (owner only)"
+  deletedAt: DateTime
+}
+
+"One block of a note (§4.1). `position` orders cards (a fractional index: compare as plain strings, then by id)."
+type Card {
+  id: UUID!
+  type: CardType!
+  position: String!
+  "Shape depends on `type` (@lvn/contracts/validation CARD_CONTENT)"
+  content: JSON!
+  "Send it back as baseRevision when changing or deleting the card (§13.2)"
+  revision: Int!
+}
+
+type OutlineItem {
+  cardId: UUID!
+  level: Int!
+  text: String!
+}
+
+"An immutable snapshot of a note's cards (§4.3)"
+type NoteVersion {
+  id: UUID!
+  number: Int!
+  kind: NoteVersionKind!
+  title: String!
+  createdBy: User!
+  createdAt: DateTime!
+  cards(first: Int, after: String): CardConnection!
+}
+
+type NoteEdge {
+  cursor: String!
+  node: Note!
+}
+
+type NoteConnection {
+  edges: [NoteEdge!]!
+  pageInfo: PageInfo!
+}
+
+type CardEdge {
+  cursor: String!
+  node: Card!
+}
+
+type CardConnection {
+  edges: [CardEdge!]!
+  pageInfo: PageInfo!
+}
+
+type NoteVersionEdge {
+  cursor: String!
+  node: NoteVersion!
+}
+
+type NoteVersionConnection {
+  edges: [NoteVersionEdge!]!
+  pageInfo: PageInfo!
+}
+
+input NoteFilter {
+  "Notes in this folder (not its subfolders)"
+  folderId: UUID
+  "Notes in no folder"
+  unfiled: Boolean
+  tagId: UUID
+  topicId: UUID
+  kind: NoteKind
+  "The trash instead of the live notes"
+  trashed: Boolean
+}
+
+"A card as the client has it. Ids are UUIDs the client makes, so cards created offline keep their id."
+input CardInput {
+  id: UUID!
+  type: CardType!
+  position: String!
+  content: JSON!
+}
+
+input CreateNoteInput {
+  title: String
+  folderId: UUID
+  kind: NoteKind
+  cards: [CardInput!]
+  tagNames: [String!]
+  topicIds: [UUID!]
+}
+
+enum CardOpKind {
+  "Create the card, or change it; send `baseRevision` when changing"
+  UPSERT
+  "Change only `position`"
+  MOVE
+  "Remove the card; send `baseRevision`"
+  DELETE
+}
+
+input CardOpInput {
+  kind: CardOpKind!
+  id: UUID!
+  type: CardType
+  position: String
+  content: JSON
+  "The card's revision the client last saw; omitted for new cards"
+  baseRevision: Int
+}
+
+"""
+One save of the draft (autosave). Title, folder, tags and topics are last-writer-wins; card operations are checked per
+card (§13.2) and reported in `results`. Omitted fields stay as they are; `folderId: null` moves the note out of folders.
+"""
+input UpdateNoteDraftInput {
+  noteId: UUID!
+  title: String
+  folderId: UUID
+  tagNames: [String!]
+  topicIds: [UUID!]
+  ops: [CardOpInput!]
+}
+
+enum CardOpStatus {
+  APPLIED
+  "Applied, but the card had changed on another device since baseRevision: that version is kept in `conflictVersion`"
+  APPLIED_WITH_CONFLICT
+  "Not applied: the card was deleted, or changed elsewhere before this delete"
+  REJECTED
+}
+
+type CardOpResult {
+  id: UUID!
+  status: CardOpStatus!
+  "The card's revision after the save"
+  revision: Int
+  message: String
+}
+
+type NotePayload {
+  note: Note
+  userErrors: [UserError!]!
+}
+
+type UpdateNoteDraftPayload {
+  note: Note
+  results: [CardOpResult!]!
+  "The other device's version of conflicting cards, restorable from version history"
+  conflictVersion: NoteVersion
+  userErrors: [UserError!]!
+}
+
+input NoteIdInput {
+  noteId: UUID!
+}
+
+input RestoreNoteVersionInput {
+  noteId: UUID!
+  versionId: UUID!
+}
+
+extend type Query {
+  "A note the viewer can read; null otherwise (anonymous visitors: PUBLIC notes)"
+  note(id: UUID!): Note
+  "The viewer's own notes, most recently edited first"
+  myNotes(filter: NoteFilter, first: Int, after: String): NoteConnection!
+}
+
+extend type Mutation {
+  createNote(input: CreateNoteInput!): NotePayload!
+  updateNoteDraft(input: UpdateNoteDraftInput!): UpdateNoteDraftPayload!
+  "Snapshot the draft as the version readers see (owner; a verified account)"
+  publishNote(input: NoteIdInput!): NotePayload!
+  "Make an old version the draft again; the current draft is kept as a DRAFT version"
+  restoreNoteVersion(input: RestoreNoteVersionInput!): NotePayload!
+  "Move to the trash, restorable for 30 days (§4.5)"
+  deleteNote(input: NoteIdInput!): NotePayload!
+  restoreNote(input: NoteIdInput!): NotePayload!
+  "Delete a note in the trash now, for good"
+  deleteNoteForever(input: NoteIdInput!): OkPayload!
+}
