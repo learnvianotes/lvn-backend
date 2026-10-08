@@ -42,3 +42,9 @@ environment and checked there before the next starts. Nothing is pushed until th
   and need the owner's (or a lawyer's) approval before public notes go live.
 - **PDF evaluation set (ADR-0028):** sample PDFs — slides, textbooks, question papers, Hindi and Telugu, printed scans —
   ideally ~200 pages the owner may use for testing.
+
+## Progress
+
+| Slice | State | Evidence |
+| --- | --- | --- |
+| P2a Notes core | Done 2026-10-09 | contracts 138 tests (card content, positions); notes integration: the read predicate equals the per-note rule on all 24 combinations × 5 viewers; API 145 tests incl. 17 notes e2e and the private-note privacy test; deployed to the local environment, `pnpm smoke` 12/12 |
