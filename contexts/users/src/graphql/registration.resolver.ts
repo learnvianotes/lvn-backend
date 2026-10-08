@@ -1,11 +1,12 @@
-import { UseGuards } from '@nestjs/common'
+import { Inject, UseGuards } from '@nestjs/common'
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql'
 import { CurrentViewer, SignedInGuard, type RequestContext, type Viewer } from '@lvn-backend/auth-guard'
 import { withUserErrors } from '@lvn-backend/errors'
 import { InstitutionalEmailService } from '../application/institutional-email.service'
 import { OAuthService } from '../application/oauth.service'
 import { RegistrationService } from '../application/registration.service'
-import { deliverSession, deviceOf } from './session-delivery'
+import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { deliverSession, deviceOf, refreshCookieOptions, type RefreshCookieOptions } from './session-delivery'
 import { UsersService } from '../application/users.service'
 import type {
   AuthPayload,
@@ -20,12 +21,17 @@ import type {
 
 @Resolver()
 export class RegistrationResolver {
+  private readonly cookie: RefreshCookieOptions
+
   constructor(
     private readonly oauth: OAuthService,
     private readonly registration: RegistrationService,
     private readonly institutional: InstitutionalEmailService,
     private readonly users: UsersService,
-  ) {}
+    @Inject(USERS_CONFIG) config: UsersConfig,
+  ) {
+    this.cookie = refreshCookieOptions(config.jwtIssuer)
+  }
 
   @Query('signInOptions')
   signInOptions(): SignInOptions {
@@ -35,14 +41,14 @@ export class RegistrationResolver {
   @Mutation('signInWithGoogle')
   signInWithGoogle(@Args() { input }: MutationSignInWithGoogleArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
     return withUserErrors<AuthPayload>(async () => ({
-      session: await deliverSession(ctx, this.users, await this.oauth.signInWithGoogle(input.idToken, deviceOf(ctx), ctx.requestId)),
+      session: await deliverSession(ctx, this.cookie, this.users, await this.oauth.signInWithGoogle(input.idToken, deviceOf(ctx), ctx.requestId)),
     }), { session: null })
   }
 
   @Mutation('oauthExchange')
   oauthExchange(@Args() { input }: MutationOauthExchangeArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
     return withUserErrors<AuthPayload>(async () => ({
-      session: await deliverSession(ctx, this.users, await this.oauth.exchange(input.provider, input, deviceOf(ctx), ctx.requestId)),
+      session: await deliverSession(ctx, this.cookie, this.users, await this.oauth.exchange(input.provider, input, deviceOf(ctx), ctx.requestId)),
     }), { session: null })
   }
 

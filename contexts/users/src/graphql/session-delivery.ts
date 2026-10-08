@@ -3,9 +3,27 @@ import type { DeviceInfo, IssuedSession } from '../application/session.service'
 import type { UsersService } from '../application/users.service'
 import type { Session } from './schema.types'
 
-/** The web client's refresh token: HttpOnly, Secure, SameSite=Lax, only ever sent to /graphql (§7.1). */
+/** The web client's refresh token: HttpOnly, SameSite=Lax, only ever sent to /graphql (§7.1). */
 export const REFRESH_COOKIE = 'lvn_rt'
-export const refreshCookieOptions = { httpOnly: true, secure: true, sameSite: 'lax' as const, path: '/graphql' }
+
+export interface RefreshCookieOptions {
+  httpOnly: true
+  secure: boolean
+  sameSite: 'lax'
+  path: string
+}
+
+/**
+ * Secure whenever the API is served over HTTPS — its public origin, JWT_ISSUER, says so (sandbox and production).
+ * Browsers drop Secure cookies from plain-HTTP origins other than localhost, so a development API reached at the
+ * machine's LAN or VPN address over HTTP must send the cookie without it.
+ */
+export const refreshCookieOptions = (apiOrigin: string): RefreshCookieOptions => ({
+  httpOnly: true,
+  secure: apiOrigin.startsWith('https://'),
+  sameSite: 'lax',
+  path: '/graphql',
+})
 
 const header = (ctx: RequestContext, name: string): string | undefined => {
   const v = ctx.req.headers[name]
@@ -19,9 +37,9 @@ export const deviceOf = (ctx: RequestContext): DeviceInfo => ({
 })
 
 /** Session payload: the refresh token goes in the body for mobile and in the cookie for web. */
-export async function deliverSession(ctx: RequestContext, users: UsersService, s: IssuedSession): Promise<Session> {
+export async function deliverSession(ctx: RequestContext, cookie: RefreshCookieOptions, users: UsersService, s: IssuedSession): Promise<Session> {
   const mobile = deviceOf(ctx).client === 'mobile'
-  if (!mobile) ctx.res.cookie(REFRESH_COOKIE, s.refreshToken, { ...refreshCookieOptions, expires: s.refreshTokenExpiresAt })
+  if (!mobile) ctx.res.cookie(REFRESH_COOKIE, s.refreshToken, { ...cookie, expires: s.refreshTokenExpiresAt })
   const user = await users.viewerProfile(s.userId)
   return { accessToken: s.accessToken, accessTokenExpiresAt: s.accessTokenExpiresAt, refreshToken: mobile ? s.refreshToken : null, user: user! }
 }

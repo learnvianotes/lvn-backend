@@ -72,13 +72,26 @@ describe('auth', () => {
       expect(again.data!.verifyEmail).toEqual({ ok: false, userErrors: [{ code: 'VALIDATION' }] })
     })
 
-    it('sets an HttpOnly, Secure, SameSite=Lax refresh cookie scoped to /graphql for the web', async () => {
+    it('sets an HttpOnly, SameSite=Lax refresh cookie scoped to /graphql for the web, not Secure on a plain-HTTP API', async () => {
+      // JWT_ISSUER (the API's public origin) is http:// here: browsers would drop a Secure cookie from it.
       const res = await http().post('/graphql').send({ query: SIGN_UP, variables: { input: signUpInput() } })
       const cookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []).find((c) => c.startsWith('lvn_rt='))!
       expect(cookie).toMatch(/HttpOnly/)
-      expect(cookie).toMatch(/Secure/)
+      expect(cookie).not.toMatch(/Secure/)
       expect(cookie).toMatch(/SameSite=Lax/)
       expect(cookie).toMatch(/Path=\/graphql/)
+    })
+
+    it('makes the refresh cookie Secure when the API is served over HTTPS', async () => {
+      const https = await createTestApp({ JWT_ISSUER: 'https://api.example.test' })
+      try {
+        const res = await request(https.app.getHttpServer()).post('/graphql').send({ query: SIGN_UP, variables: { input: signUpInput() } })
+        const cookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []).find((c) => c.startsWith('lvn_rt='))!
+        expect(cookie).toMatch(/HttpOnly/)
+        expect(cookie).toMatch(/; Secure/)
+      } finally {
+        await https.close()
+      }
     })
 
     it('gives the mobile app its refresh token in the body and no cookie', async () => {
@@ -158,7 +171,7 @@ describe('auth', () => {
     })
 
     it('refreshes the web session from the cookie, rotating the cookie', async () => {
-      // Browsers send this Secure cookie to http://localhost; test HTTP clients do not, so it is passed by hand.
+      // Passed by hand: supertest keeps no cookie jar.
       const cookieOf = (res: request.Response) => ([] as string[]).concat(res.headers['set-cookie'] ?? []).find((c) => c.startsWith('lvn_rt='))!.split(';')[0]!
       const signUp = await http().post('/graphql').send({ query: SIGN_UP, variables: { input: signUpInput() } })
       const res = await http().post('/graphql').set('cookie', cookieOf(signUp)).send({ query: REFRESH, variables: { input: {} } })

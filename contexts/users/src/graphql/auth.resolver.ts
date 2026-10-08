@@ -1,3 +1,4 @@
+import { Inject } from '@nestjs/common'
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql'
 import { requireViewer, type RequestContext } from '@lvn-backend/auth-guard'
 import { Errors, withUserErrors } from '@lvn-backend/errors'
@@ -5,7 +6,8 @@ import { AuthService } from '../application/auth.service'
 import { SessionService } from '../application/session.service'
 import { UsersService } from '../application/users.service'
 import { TERMS_VERSION } from '../domain/rules'
-import { deliverSession, deviceOf, REFRESH_COOKIE, refreshCookieOptions as cookieOptions } from './session-delivery'
+import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { deliverSession, deviceOf, REFRESH_COOKIE, refreshCookieOptions, type RefreshCookieOptions } from './session-delivery'
 import type {
   AuthPayload,
   MutationRefreshSessionArgs,
@@ -19,11 +21,16 @@ import type {
 
 @Resolver()
 export class AuthResolver {
+  private readonly cookie: RefreshCookieOptions
+
   constructor(
     private readonly auth: AuthService,
     private readonly sessions: SessionService,
     private readonly users: UsersService,
-  ) {}
+    @Inject(USERS_CONFIG) config: UsersConfig,
+  ) {
+    this.cookie = refreshCookieOptions(config.jwtIssuer)
+  }
 
   @Query('termsVersion')
   termsVersion(): string {
@@ -32,12 +39,12 @@ export class AuthResolver {
 
   @Mutation('signUp')
   signUp(@Args() { input }: MutationSignUpArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
-    return withUserErrors<AuthPayload>(async () => ({ session: await deliverSession(ctx, this.users, await this.auth.signUp(input, deviceOf(ctx), ctx.requestId)) }), { session: null })
+    return withUserErrors<AuthPayload>(async () => ({ session: await deliverSession(ctx, this.cookie, this.users, await this.auth.signUp(input, deviceOf(ctx), ctx.requestId)) }), { session: null })
   }
 
   @Mutation('signIn')
   signIn(@Args() { input }: MutationSignInArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
-    return withUserErrors<AuthPayload>(async () => ({ session: await deliverSession(ctx, this.users, await this.auth.signIn(input.email, input.password, deviceOf(ctx), ctx.req.ip)) }), { session: null })
+    return withUserErrors<AuthPayload>(async () => ({ session: await deliverSession(ctx, this.cookie, this.users, await this.auth.signIn(input.email, input.password, deviceOf(ctx), ctx.req.ip)) }), { session: null })
   }
 
   @Mutation('refreshSession')
@@ -45,9 +52,9 @@ export class AuthResolver {
     const token = input.refreshToken ?? ctx.req.cookies?.[REFRESH_COOKIE]
     if (!token) throw Errors.unauthenticated('Your session has ended. Sign in again.')
     try {
-      return { session: await deliverSession(ctx, this.users, await this.sessions.refresh(token)), userErrors: [] }
+      return { session: await deliverSession(ctx, this.cookie, this.users, await this.sessions.refresh(token)), userErrors: [] }
     } catch (e) {
-      if (!input.refreshToken) ctx.res.clearCookie(REFRESH_COOKIE, cookieOptions)
+      if (!input.refreshToken) ctx.res.clearCookie(REFRESH_COOKIE, this.cookie)
       throw e
     }
   }
@@ -63,7 +70,7 @@ export class AuthResolver {
     } else {
       requireViewer(null)
     }
-    ctx.res.clearCookie(REFRESH_COOKIE, cookieOptions)
+    ctx.res.clearCookie(REFRESH_COOKIE, this.cookie)
     return { ok: true, userErrors: [] }
   }
 

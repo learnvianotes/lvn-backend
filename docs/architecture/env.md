@@ -64,7 +64,7 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `RESEND_API_KEY` | api, worker | when `resend` (secret) | — | Resend API key |
 | `SES_REGION` | api, worker | when `ses` | — | Region of the SES identity `MAIL_FROM` uses |
 | `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | api | yes (secret) | — | RS256 key pair for access tokens (§7.1), PEM with `\n` escapes; `pnpm keys:dev` writes a pair to `.env.local` |
-| `JWT_ISSUER` | api | yes | — | The API's public origin (`iss` claim) |
+| `JWT_ISSUER` | api | yes | — | The API's public origin (`iss` claim); `https://` makes the web refresh cookie `Secure`, so a development API reached at the machine's LAN/VPN address over HTTP still keeps browser sessions |
 | `WEB_URL` | api | yes | — | lvn-web origin for links in emails and OAuth redirects |
 | `CODE_HMAC_SECRET` | api | yes (secret, ≥ 32 chars) | — | HMAC key for short codes (institutional email) |
 | `DIGITAL_CONSENT_AGE` | api | no | `18` | Below it an account needs guardian or institutional consent or is a restricted minor (§15.2; 18 under DPDP) |
