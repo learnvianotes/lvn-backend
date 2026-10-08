@@ -7,6 +7,7 @@ import { FilesService } from './application/files.service'
 import { NotesService } from './application/notes.service'
 import { NotesMaintenance } from './application/notes-maintenance'
 import { OrganiseService } from './application/organise.service'
+import { PublicPages } from './application/public-pages'
 import { SharingService } from './application/sharing.service'
 import { FilesResolver } from './graphql/files.resolver'
 import { CardResolver } from './graphql/media.resolver'
@@ -40,6 +41,7 @@ export class NotesModule {
         OrganiseService,
         SharingService,
         NotesMaintenance,
+        PublicPages,
         FilesResolver,
         CardResolver,
         NotesResolver,

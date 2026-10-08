@@ -7,7 +7,7 @@ import { POLICY, type Policy } from '@lvn-backend/facades'
 import { decodeCursor, pageSize } from '@lvn-backend/graphql'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
-import { noteAccess, type NoteAccess, type NoteAccessRow } from '../domain/note-access'
+import { noteAccess, type NoteAccess, type NoteAccessRow, visibleNotesWhere } from '../domain/note-access'
 import { OrganiseService } from './organise.service'
 
 export type NoteRow = Prisma.NoteGetPayload<object>
@@ -136,6 +136,19 @@ export class NotesService {
         ? { AND: [where, { OR: [{ draftUpdatedAt: { lt: new Date(cursor[0]) } }, { draftUpdatedAt: new Date(cursor[0]), id: { lt: cursor[1] } }] }] }
         : where,
       orderBy: [{ draftUpdatedAt: 'desc' }, { id: 'desc' }],
+      take: size + 1,
+    })
+    return { rows, size }
+  }
+
+  /** Notes anyone may read, newest published first: sitemaps and the public pages (P2d). */
+  async publicList(first: number | null | undefined, after: string | null | undefined) {
+    const size = pageSize(first, 100)
+    const cursor = decodeCursor(after, 2) as [string, string] | null
+    const where = visibleNotesWhere(null)
+    const rows = await this.db.note.findMany({
+      where: cursor ? { AND: [where, { OR: [{ publishedAt: { lt: new Date(cursor[0]) } }, { publishedAt: new Date(cursor[0]), id: { lt: cursor[1] } }] }] } : where,
+      orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
       take: size + 1,
     })
     return { rows, size }

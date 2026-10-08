@@ -399,6 +399,11 @@ export interface QueryMyNotesArgs {
   after?: string | null
 }
 
+export interface QueryPublicNotesArgs {
+  first?: number | null
+  after?: string | null
+}
+
 export interface QuerySubjectArgs {
   slug: string
 }

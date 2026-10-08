@@ -797,6 +797,11 @@ type Query {
   """
   note(id: UUID!): Note
 
+  """
+  Notes anyone may read, newest published first (at most 100 a page): sitemaps and public pages
+  """
+  publicNotes(after: String, first: Int): NoteConnection!
+
   """Notes other people shared with the viewer, most recently changed first"""
   sharedWithMe(after: String, first: Int): NoteConnection!
   signInOptions: SignInOptions!

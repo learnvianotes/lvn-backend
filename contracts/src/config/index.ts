@@ -84,6 +84,10 @@ const auth = z.object({
   DIGITAL_CONSENT_AGE: z.coerce.number().int().min(13).max(21).default(18),
   /** ADR-0037: extra `REASON: phrase` lines for the rule-based moderation scorer; the built-in spam phrases apply without it. */
   MODERATION_WORDS_FILE: z.string().min(1).optional(),
+  /** The web app's on-demand revalidation endpoint (`<web>/api/revalidate`): public note pages refresh when a note changes. Off without it. */
+  WEB_REVALIDATE_URL: httpUrl.optional(),
+  /** Shared with the web app's REVALIDATE_SECRET; at least 32 characters. */
+  REVALIDATE_SECRET: z.string().min(32).optional(),
   /** k-anonymity range API for the breached-password check (§7.1); unset only in tests. */
   PASSWORD_BREACH_API_URL: z.url().optional(),
   /** Firebase project whose ID tokens signInWithGoogle accepts (ADR-0007). */
