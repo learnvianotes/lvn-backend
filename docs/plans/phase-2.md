@@ -31,8 +31,8 @@ environment and checked there before the next starts. Nothing is pushed until th
 
 | ADR | Question | Leaning (research, 2026-10-08) |
 | --- | --- | --- |
-| Mobile local store (P2f) | §2 pins WatermelonDB | Replace with `expo-sqlite` + Drizzle ORM and our own outbox. WatermelonDB's last release is 0.28.0 (2025-04-07); Expo SDK 57 / New Architecture support exists only in community plugin forks. `expo-sqlite` is Expo's own (57.0.4, 2026-10-06); the sync protocol is ours either way (§13.2) |
-| Mobile editor (P2f) | Spec leaves it open | Read natively from card JSON; edit text cards with Tiptap — `@10play/tentap-editor` (Tiptap in a WebView with a native toolbar, 1.0.1) or Tiptap 3 in an Expo DOM component (same version as the web) — decided by a spike; structured cards (code, table, quiz, flashcard, media) as native forms |
+| Mobile local store (P2f) | §2 pins WatermelonDB | *Decided in ADR-0038: `expo-sqlite` with plain SQL (no Drizzle) and our own outbox.* Proposed: replace with `expo-sqlite` + Drizzle ORM and our own outbox. WatermelonDB's last release is 0.28.0 (2025-04-07); Expo SDK 57 / New Architecture support exists only in community plugin forks. `expo-sqlite` is Expo's own (57.0.4, 2026-10-06); the sync protocol is ours either way (§13.2) |
+| Mobile editor (P2f) | Spec leaves it open | Read natively from card JSON; edit text cards with Tiptap — `@10play/tentap-editor` (Tiptap in a WebView with a native toolbar, 1.0.1) or Tiptap 3 in an Expo DOM component (same version as the web) — decided by a spike; structured cards (code, table, quiz, flashcard, media) as native forms. *Decided in ADR-0039: Tiptap 3 in an Expo DOM component for rich text, native fields for heading, code and checklists, structured cards edited on the web for now* |
 | Moderation without AI (P2d) | §15.1 assumes AI scoring; the AI gateway is Phase 5 | Rule-based scorer (links, repetition, a word list) + reports + human queue now, behind the scorer interface |
 | Media processing scope (P2c) | §8.1: resize, transcode, normalise, ClamAV | Image variants with `sharp`; audio/video with `ffmpeg` in the worker; ClamAV as a container in the local environment |
 

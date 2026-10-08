@@ -555,7 +555,7 @@ Mobile answers "what should I learn right now?": quick capture, reading, AI, com
 ### 13.1 Navigation and storage
 
 - Expo Router tabs: Home · Explore · Create (centre sheet: Note, Quick Note, Voice Note, Photo, Upload, Quiz, Flashcard) · Community · Profile. Teacher and group-admin actions appear inside the relevant classroom/group screens, not as extra tabs.
-- Storage tiers: `expo-secure-store` for tokens and encryption keys; WatermelonDB (SQLite) for notes, cards, subjects, groups, drafts and the sync queue; MMKV for small preferences and last-opened state; `expo-file-system` cache directory for media with an LRU cap of 500 MB.
+- Storage tiers: `expo-secure-store` for tokens and encryption keys; WatermelonDB (SQLite) *[Amended: ADR-0038 — expo-sqlite with plain SQL and our own outbox]* for notes, cards, subjects, groups, drafts and the sync queue; MMKV for small preferences and last-opened state; `expo-file-system` cache directory for media with an LRU cap of 500 MB.
 - Three environments via EAS build profiles *[Amended: ADR-0008 — via `env/<variant>.env` and local build scripts]* and `app.config.ts` reading `EXPO_PUBLIC_*` from `@lvn/contracts/config`; bundle ids `com.learnvianotes.dev`, `com.learnvianotes.sandbox`, `com.learnvianotes` (prod) *[Erratum E9]* so all three install side by side. No URL or key is hardcoded.
 
 ### 13.2 Offline and sync
