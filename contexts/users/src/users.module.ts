@@ -19,6 +19,7 @@ import { AuthResolver } from './graphql/auth.resolver'
 import { ProfileResolver } from './graphql/profile.resolver'
 import { RegistrationResolver } from './graphql/registration.resolver'
 import { VerificationResolver } from './graphql/verification.resolver'
+import { UserReferenceResolver } from './graphql/user-reference.resolver'
 import { ViewerResolver } from './graphql/viewer.resolver'
 import { USERS_CONFIG, type UsersConfig } from './users.config'
 
@@ -57,6 +58,7 @@ export class UsersModule {
         ProfileService,
         LegacyService,
         ViewerResolver,
+        UserReferenceResolver,
         AuthResolver,
         RegistrationResolver,
         VerificationResolver,
