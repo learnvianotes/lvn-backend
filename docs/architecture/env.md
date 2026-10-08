@@ -66,7 +66,7 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | api | no (secret) | — (LinkedIn off) | OAuth app for `oauthExchange` |
 | `GITHUB_OAUTH_URL`, `GITHUB_API_URL` | api | with GitHub | — | `https://github.com`, `https://api.github.com` |
 | `LINKEDIN_OAUTH_URL`, `LINKEDIN_API_URL` | api | with LinkedIn | — | `https://www.linkedin.com/oauth/v2`, `https://api.linkedin.com/v2` |
-| `OAUTH_REDIRECT_URIS` | api | with GitHub or LinkedIn | — | Comma-separated redirect URIs registered with the providers; `oauthExchange` refuses any other |
+| `OAUTH_REDIRECT_URIS` | api | with GitHub or LinkedIn | — | Comma-separated redirect URIs registered with the providers; `oauthExchange` refuses any other. Web: `<SITE_URL>/oauth/callback`; app (GitHub only): `<scheme>://oauth/callback` of each variant |
 
 Local services (`pnpm infra:up`, `infra/docker/compose.yaml`) listen on 55432 (Postgres), 56379 (Redis), 59000/59001
 (RustFS API/console) and 51025/58025 (Mailpit SMTP/UI) so other projects on the same machine keep the default ports.
@@ -85,7 +85,11 @@ in lvn-mobile `env/<variant>.env` (public, committed) with per-machine overrides
 | `APP_VARIANT` | build time | `development` | `sandbox` | `production` | App name and bundle id in `app.config.ts` (not readable by app code) |
 | `EXPO_PUBLIC_APP_ENV` | yes | `development` | `sandbox` | `production` | Environment badge; later feature defaults |
 | `EXPO_PUBLIC_WEB_URL` | yes | `http://100.70.234.41:3000` | `https://sandbox.learnvianotes.in` | `https://www.learnvianotes.in` | Links into lvn-web |
+| `EXPO_PUBLIC_API_URL` | yes | `http://100.70.234.41:4000/graphql` | `https://api.sandbox.learnvianotes.in/graphql` | `https://api.learnvianotes.in/graphql` | The API's GraphQL gateway; development builds allow plain HTTP for it |
+| `EXPO_PUBLIC_GITHUB_CLIENT_ID` | no | — | — | — | GitHub sign-in in the app; empty hides the button. Redirect URI `<scheme>://oauth/callback` (schemes `learnvianotes-dev`, `learnvianotes-sandbox`, `learnvianotes`) |
+| `EXPO_PUBLIC_GITHUB_AUTHORIZE_URL` | with the client id | `https://github.com/login/oauth/authorize` | same | same | GitHub's consent page |
 
-Phase 1 (ADR-0007): `EXPO_PUBLIC_FIREBASE_*` and the Google OAuth client ids used by native Google Sign-In.
+Later in Phase 1 (ADR-0007): `EXPO_PUBLIC_FIREBASE_*` and the Google OAuth client ids used by native Google Sign-In, once
+the Firebase project's Android and iOS apps exist. LinkedIn has no app variable: it does not redirect to app schemes.
 Phase 3 (ADR-0021): `GOOGLE_SERVICES_JSON` and `GOOGLE_SERVICE_INFO_PLIST` — build-time paths to the Firebase config
 files used for FCM device tokens.
