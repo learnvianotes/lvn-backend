@@ -30,7 +30,7 @@ export const safeHref = z
     }
   }, 'Links must start with http://, https:// or mailto:')
 
-const simpleMark = (type: string) => z.object({ type: z.literal(type) })
+const simpleMark = <T extends string>(type: T) => z.object({ type: z.literal(type) })
 
 export const markSchema = z.discriminatedUnion('type', [
   simpleMark('bold'),
