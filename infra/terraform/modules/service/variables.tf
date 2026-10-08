@@ -6,12 +6,19 @@ variable "vpc_id" {
   type = string
 }
 
-variable "public_subnet_ids" {
-  type = list(string)
+variable "private_subnet_ids" {
+  description = "Where the internal ALB lives"
+  type        = list(string)
 }
 
-variable "private_subnet_ids" {
-  type = list(string)
+variable "app_subnet_ids" {
+  description = "Where the tasks run (network module's app_subnet_ids)"
+  type        = list(string)
+}
+
+variable "assign_public_ip" {
+  description = "True when the tasks run in public subnets (no NAT gateway)"
+  type        = bool
 }
 
 variable "alb_security_group_id" {
@@ -20,21 +27,6 @@ variable "alb_security_group_id" {
 
 variable "apps_security_group_id" {
   type = string
-}
-
-variable "certificate_arn" {
-  description = "ACM certificate for the web and api hosts"
-  type        = string
-}
-
-variable "api_host" {
-  description = "Host routed to the API, e.g. api.sandbox.learnvianotes.in"
-  type        = string
-}
-
-variable "image_tag" {
-  description = "Commit SHA of the images to run; the same tag is promoted from sandbox to production"
-  type        = string
 }
 
 variable "backend_environment" {
@@ -47,13 +39,13 @@ variable "backend_secret_arns" {
   type        = map(string)
 }
 
-variable "web_environment" {
-  type = map(string)
+variable "migrate_database_url_secret_arn" {
+  description = "DATABASE_URL for the migrate task (Prisma's own TLS settings)"
+  type        = string
 }
 
-variable "web_secret_arns" {
-  type    = map(string)
-  default = {}
+variable "web_environment" {
+  type = map(string)
 }
 
 variable "bucket_arns" {
@@ -62,6 +54,17 @@ variable "bucket_arns" {
 
 variable "restricted_kms_key_arn" {
   type = string
+}
+
+variable "mail_policy_json" {
+  description = "IAM policy that lets the backend send mail (mail module)"
+  type        = string
+}
+
+variable "allow_destroy" {
+  description = "Let `terraform destroy` delete image repositories that still hold images (sandbox)"
+  type        = bool
+  default     = true
 }
 
 variable "log_retention_days" {

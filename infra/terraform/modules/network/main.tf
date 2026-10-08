@@ -1,5 +1,6 @@
-# VPC with public subnets (ALB, NAT) and private subnets (ECS tasks, RDS, Redis) in two availability zones (§16.2:
-# only the ALB is public; compute and data live in private subnets).
+# VPC with public subnets (NAT, or the tasks when there is no NAT) and private subnets (the internal ALB, RDS, Redis,
+# and the tasks when there is a NAT) in two availability zones. Nothing accepts traffic from the internet directly:
+# viewers reach the ALB only through CloudFront (§16.2).
 
 data "aws_availability_zones" "available" {
   state = "available"
@@ -44,7 +45,8 @@ resource "aws_eip" "nat" {
   tags   = { Name = "${var.name}-nat-${count.index}" }
 }
 
-# One NAT gateway in sandbox (cost); production sets nat_gateways = 2 so an AZ outage keeps egress.
+# NAT gives tasks in private subnets their egress (ECR, Secrets Manager, SES, Google). 0 saves its cost: the tasks then
+# run in the public subnets with public IPs, still reachable only from the ALB's security group.
 resource "aws_nat_gateway" "this" {
   count         = var.nat_gateways
   allocation_id = aws_eip.nat[count.index].id
@@ -70,9 +72,12 @@ resource "aws_route_table_association" "public" {
 resource "aws_route_table" "private" {
   count  = length(aws_subnet.private)
   vpc_id = aws_vpc.this.id
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.this[min(count.index, var.nat_gateways - 1)].id
+  dynamic "route" {
+    for_each = var.nat_gateways > 0 ? [1] : []
+    content {
+      cidr_block     = "0.0.0.0/0"
+      nat_gateway_id = aws_nat_gateway.this[min(count.index, var.nat_gateways - 1)].id
+    }
   }
   tags = { Name = "${var.name}-private-${count.index}" }
 }
@@ -85,21 +90,18 @@ resource "aws_route_table_association" "private" {
 
 resource "aws_security_group" "alb" {
   name        = "${var.name}-alb"
-  description = "Public HTTPS (and HTTP, redirected) to the load balancer"
+  description = "Internal ALB: HTTP from CloudFront (VPC origin) only"
   vpc_id      = aws_vpc.this.id
 }
 
-resource "aws_vpc_security_group_ingress_rule" "alb_https" {
-  security_group_id = aws_security_group.alb.id
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "tcp"
-  from_port         = 443
-  to_port           = 443
+# CloudFront reaches the internal ALB through its VPC origin from these AWS-managed addresses.
+data "aws_ec2_managed_prefix_list" "cloudfront" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "alb_http" {
+resource "aws_vpc_security_group_ingress_rule" "alb_from_cloudfront" {
   security_group_id = aws_security_group.alb.id
-  cidr_ipv4         = "0.0.0.0/0"
+  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
   ip_protocol       = "tcp"
   from_port         = 80
   to_port           = 80

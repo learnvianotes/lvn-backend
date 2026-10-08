@@ -2,6 +2,9 @@
 *.tfstate
 *.tfstate.*
 *.tfvars
-!*.tfvars.example
-backend.hcl
 crash.log
+# Each environment's settings (envs/<env>/.env.example is the template)
+envs/*/.env
+# bootstrap's local state
+bootstrap/*.tfstate
+bootstrap/*.tfstate.backup

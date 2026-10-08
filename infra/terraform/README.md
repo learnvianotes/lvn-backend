@@ -1,43 +1,72 @@
 # Infrastructure (Terraform)
 
-The sandbox environment of spec §16.1–16.2 on AWS, region `ap-south-1` (Mumbai: closest to the learners, data stays in
-India). Production will be the same modules in its own account with production sizes.
+The sandbox of spec §16.1–16.2 on AWS, with no domain of its own and every setting in one `.env` (ADR-0035). The site
+and API are served at CloudFront's `https://<id>.cloudfront.net` address. Production will be the same modules in its
+own account with production sizes.
 
 ```text
-envs/sandbox      root module: what runs in the sandbox account
-modules/network   VPC, public subnets (ALB, NAT) and private subnets (tasks, data); security groups ALB → apps → data
-modules/data      RDS PostgreSQL 16 (managed master password, TLS only) and ElastiCache Redis 7 (encrypted)
-modules/storage   S3: files bucket and the restricted bucket for identity documents with its own KMS key (ADR-0019)
-modules/secrets   Secrets Manager names for the apps' secrets — values are put in by hand, never in Terraform
-modules/service   ECR, ECS Fargate (api, worker, web; a one-off migrate task), ALB with HTTPS and api.<host> routing
+envs/sandbox   root module of the sandbox; settings in envs/sandbox/.env (template .env.example)
+bootstrap      the bucket for the Terraform state (once per account)
+modules/network   VPC; public and private subnets; optional NAT; security groups CloudFront → ALB → tasks → data
+modules/data      RDS PostgreSQL 16 (TLS only, generated password) and ElastiCache Redis 7 (encrypted)
+modules/storage   private, versioned, encrypted S3: files, and identity documents under their own KMS key (ADR-0019)
+modules/secrets   Secrets Manager entries with the generated values (database, Redis, JWT keys, code secret)
+modules/mail      the SES sender identity and the permission to send as it
+modules/service   ECR, ECS Fargate (api, worker, web, one-off migrate), internal ALB with /graphql → api
+modules/edge      CloudFront with HTTPS on its default address, reaching the ALB through a VPC origin
+run.sh, bootstrap.sh, lib.sh   wrappers that load envs/<env>/.env
+../scripts/deploy.sh           build, push, migrate, roll out
 ```
 
-## First time (per AWS account)
+## What you need
 
-1. Create the state bucket (versioned, encrypted) and an ACM certificate for `sandbox.learnvianotes.in` and
-   `api.sandbox.learnvianotes.in` in `ap-south-1`.
-2. `cp envs/sandbox/backend.hcl.example envs/sandbox/backend.hcl` and `terraform.tfvars.example` → `terraform.tfvars`.
-3. `cd envs/sandbox && terraform init -backend-config=backend.hcl && terraform plan`, then `apply`.
-4. Put the values into each `lvn-sandbox/<NAME>` secret (`secret_arns` output): `DATABASE_URL` from `db_endpoint` and
-   the RDS-managed password (`db_master_secret_arn`), `REDIS_URL` as `rediss://<redis_endpoint>:6379`, a new JWT key pair
-   and `CODE_HMAC_SECRET` (generated the way `scripts/dev-keys.mjs` does — never the development ones),
-   `RESEND_API_KEY`, `SENTRY_DSN`.
-5. Point both hosts at `alb_dns_name` (Route 53 alias).
+- An AWS account and a CLI profile with administrator rights in it (`aws configure sso` or `aws configure`).
+- AWS CLI v2, Terraform 1.9 or later, Docker, `jq`, and lvn-web checked out next to lvn-backend.
+- An email address you own, for sending mail. SES sends it a verification link.
+- For Google sign-in: the Firebase project id and its web app config.
 
-## Each deploy (§16.2)
+A brand-new AWS account may refuse to create CloudFront distributions until AWS Support verifies it: open a free
+"Account and billing" case if `apply` reports "Your account must be verified before you can add new CloudFront
+resources".
 
-CI builds one image per commit from `infra/docker/api.Dockerfile` (it also runs the worker and the migrations) and
-lvn-web's `Dockerfile`, pushes them to ECR with
-the commit SHA as tag, runs the `migrate` task to completion, then updates the services with the same `image_tag`.
-Rollback is the previous tag.
+## First time
+
+```bash
+cp infra/terraform/envs/sandbox/.env.example infra/terraform/envs/sandbox/.env   # fill in the empty values
+infra/terraform/bootstrap.sh sandbox        # the encrypted state bucket
+infra/terraform/run.sh sandbox init
+infra/scripts/deploy.sh sandbox             # infrastructure, images, migrations, services (CloudFront takes ~10 min)
+```
+
+Then:
+
+1. Click the verification link SES sent to `TF_VAR_mail_from_address`. Until SES production access is granted (SES
+   console → Request production access) mail goes only to verified addresses, 200 a day.
+2. Add the CloudFront host (`run.sh sandbox output -raw public_url`) to Firebase → Authentication → Settings →
+   Authorized domains.
+3. For the app: put `EXPO_PUBLIC_WEB_URL=<public_url>` and `EXPO_PUBLIC_API_URL=<public_url>/graphql` in lvn-mobile's
+   `env/sandbox.local.env` and build it (`pnpm build:android sandbox`).
+
+## Every deploy
+
+`infra/scripts/deploy.sh sandbox` (refuses uncommitted changes unless `--allow-dirty`). Images are tagged by commit and
+kept in SSM Parameter Store, so `run.sh sandbox apply` on its own changes infrastructure without touching what runs.
+Rollback: write the previous tag to the SSM parameters (`run.sh sandbox output image_tag_parameters`) and apply.
+
+## Secrets and state
+
+Terraform generates the database password, the JWT key pair and the code HMAC secret and stores them in Secrets
+Manager, so they are also in the state. The state bucket is private, encrypted and versioned; anyone who can read it
+can read those secrets. Rotating one: `run.sh sandbox apply -replace=tls_private_key.jwt` (for example), then deploy.
+
+## Cost
+
+As sized, roughly US$110–160 a month in `ap-south-1`: the NAT gateway (about a quarter of it), the ALB, two small
+Fargate services and a worker, RDS `db.t4g.micro`, ElastiCache `cache.t4g.micro`. `TF_VAR_nat_gateway=false` drops
+the NAT gateway; `TF_VAR_budget_alert_email` sets a monthly budget alert. Check with the AWS Pricing Calculator.
 
 ## Not yet here
 
-- CloudFront, WAF rules and Route 53 records (§16.2) — with the production account.
-- The OpenTelemetry collector sidecar and its backends (Prometheus, Loki, Tempo or Grafana Cloud): the apps export to
-  `otel_exporter_otlp_endpoint` when it is set (§16.5).
-- `NEXT_PUBLIC_*` values are compiled into the web build, so the web image is built per environment until the web reads
-  them at run time.
-- The deploy workflow itself (needs the AWS account and an OIDC role for GitHub Actions).
-
-`terraform fmt -check` and `terraform validate` (no backend, no credentials) run in CI.
+WAF rules (§16.2), the OpenTelemetry collector and its backends (the apps export when
+`TF_VAR_otel_exporter_otlp_endpoint` is set), and a deploy workflow in GitHub Actions (needs an OIDC role).
+`terraform fmt -check` and `validate` run in CI.

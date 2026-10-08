@@ -85,6 +85,12 @@ jobs:
       - name: Validate the sandbox root (no backend, no credentials)
         working-directory: infra/terraform/envs/sandbox
         run: terraform init -backend=false -input=false && terraform validate
+      - name: Validate the state bootstrap
+        working-directory: infra/terraform/bootstrap
+        run: terraform init -backend=false -input=false && terraform validate
+      - name: Deploy scripts (shellcheck)
+        working-directory: infra
+        run: shellcheck -x -P SCRIPTDIR scripts/deploy.sh terraform/run.sh terraform/bootstrap.sh terraform/lib.sh
 
   secrets:
     runs-on: ubuntu-latest

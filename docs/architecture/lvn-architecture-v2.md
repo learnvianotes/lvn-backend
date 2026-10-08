@@ -41,6 +41,7 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0029](../adr/0029-mobile-ui-kit.md) | Mobile UI = Uniwind + react-native-reusables + our brand components, Reanimated 4; one token source for web and mobile. (§2) |
 | [0030](../adr/0030-rhythm-instead-of-streaks.md) | Rhythm — weekly, forgiving habit system with a Today ring and Exam Readiness instead of daily streaks. (§14.2) |
 | [0008](../adr/0008-mobile-builds-without-eas.md) | Mobile is built locally (prebuild + Gradle/Xcode) without an Expo account; no EAS Build/Update, no OTA for now. (§2, §13.1, §13.3, §16.1, §16.2) |
+| [0035](../adr/0035-domain-free-aws-sandbox-from-env.md) | The sandbox needs no domain: CloudFront's default HTTPS address in front of an internal ALB (VPC origin); settings in one `.env`; generated secrets; mail through SES with the task role. (§16.1, §16.2) |
 
 **Errata (owner-approved, 2026-10-08).** Wording conflicts inside v2, corrected in place and marked *[Erratum E#]*:
 E1 role-brief sections · E2 three repositories, not a monorepo · E3 AI prompts path · E4 web/mobile own repositories,
@@ -649,7 +650,7 @@ Three fully isolated environments, infrastructure as code, immutable container i
 | Infra | Docker Compose: Postgres, Redis, MinIO, Typesense, Mailpit, Ollama (optional) | Terraform, separate AWS account | Terraform, separate AWS account |
 | Data | Seed script, deterministic | Synthetic + anonymised fixtures, reset weekly | Real; never copied downward |
 | Domains | `localhost`, `*.lvn.local` | `sandbox.learnvianotes.com`, `api.sandbox…` | `learnvianotes.com`, `api.learnvianotes.com` |
-| Domains *[Amended: ADR-0022]* | from `.env` (`localhost`, the dev machine's address for phones) | `sandbox.learnvianotes.in`, `api.sandbox.learnvianotes.in` | `www.learnvianotes.in`, `api.learnvianotes.in` — all set in the environment, never in code |
+| Domains *[Amended: ADR-0022]* | from `.env` (`localhost`, the dev machine's address for phones) | `sandbox.learnvianotes.in`, `api.sandbox.learnvianotes.in` *[Amended: ADR-0035 — no domain: CloudFront's default `https://<id>.cloudfront.net`, API at `/graphql`]* | `www.learnvianotes.in`, `api.learnvianotes.in` — all set in the environment, never in code |
 | OAuth apps | Dev credentials | Sandbox credentials | Production credentials |
 | AI | Ollama or capped dev keys | Capped keys, cheap models | Production keys, budget cap |
 | Mobile | `com.learnvianotes.dev`, EAS `development` profile | `.sandbox`, EAS `preview`, TestFlight / internal track | store build, EAS `production` |

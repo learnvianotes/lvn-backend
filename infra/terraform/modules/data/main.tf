@@ -1,5 +1,11 @@
-# PostgreSQL 16 (pgvector is created by the migrations) and Redis 7, private and encrypted (§16.2). The database master
-# password is generated and kept by RDS in Secrets Manager; Terraform state never holds it.
+# PostgreSQL 16 (pgvector is created by the migrations) and Redis 7, private and encrypted (§16.2). The database
+# password is generated here and handed to the apps as part of DATABASE_URL through Secrets Manager; it is in the
+# Terraform state, which lives in an encrypted, private bucket (bootstrap.sh).
+
+resource "random_password" "db" {
+  length  = 40
+  special = false
+}
 
 resource "aws_db_subnet_group" "this" {
   name       = var.name
@@ -32,7 +38,7 @@ resource "aws_db_instance" "this" {
   storage_encrypted               = true
   db_name                         = "lvn"
   username                        = "lvn"
-  manage_master_user_password     = true
+  password                        = random_password.db.result
   db_subnet_group_name            = aws_db_subnet_group.this.name
   vpc_security_group_ids          = [var.security_group_id]
   parameter_group_name            = aws_db_parameter_group.this.name

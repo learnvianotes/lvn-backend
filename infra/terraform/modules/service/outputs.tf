@@ -1,6 +1,9 @@
+output "alb_arn" {
+  value = aws_lb.this.arn
+}
+
 output "alb_dns_name" {
-  description = "Point the web and api hosts here (Route 53 alias or CNAME)"
-  value       = aws_lb.this.dns_name
+  value = aws_lb.this.dns_name
 }
 
 output "ecr_repositories" {
@@ -11,7 +14,15 @@ output "cluster_name" {
   value = aws_ecs_cluster.this.name
 }
 
-output "migrate_task_definition" {
-  description = "Run once per deploy before the api service updates (§16.2)"
-  value       = aws_ecs_task_definition.this["migrate"].arn
+output "migrate_task_family" {
+  value = aws_ecs_task_definition.this["migrate"].family
+}
+
+output "image_tag_parameters" {
+  description = "SSM parameters the deploy script writes the image tags to"
+  value       = { for k, p in aws_ssm_parameter.image_tag : k => p.name }
+}
+
+output "deployed_image_tags" {
+  value = local.tags
 }

@@ -15,11 +15,11 @@ Validated in lvn-web `lib/env.ts` until `@lvn/contracts/config` is published (AD
 | Variable | Required | Default | Development | Sandbox | Production | Purpose |
 | --- | --- | --- | --- | --- | --- | --- |
 | `NEXT_PUBLIC_APP_ENV` | yes | `development` | `development` | `sandbox` | `production` | Gates indexing (`robots`, `noindex`) and, later, feature defaults |
-| `NEXT_PUBLIC_SITE_URL` | yes | — | `http://localhost:3000` | `https://sandbox.learnvianotes.in` | `https://www.learnvianotes.in` | Canonical URLs, sitemap, Open Graph |
+| `NEXT_PUBLIC_SITE_URL` | yes | — | `http://localhost:3000` | the CloudFront address (ADR-0035) | `https://www.learnvianotes.in` | Canonical URLs, sitemap, Open Graph |
 | `NEXT_PUBLIC_FEEDBACK_URL` | no | — (sending disabled) | the old site's Apps Script URL | same | same | `/core` help-centre feedback reports (Google Apps Script → Sheet) |
 | `NEXT_PUBLIC_APP_VERSION` | no | `package.json` version | — | — | — | Version shown in the `/core` help centre and sent with feedback |
 | `NEXT_DIST_DIR` | no | `.next` | — | — | — | Build output folder; Playwright builds to `.next-e2e` so it never clobbers `next dev` |
-| `NEXT_PUBLIC_API_URL` | yes | — | `http://localhost:4000/graphql` | `https://api.sandbox.learnvianotes.in/graphql` | `https://api.learnvianotes.in/graphql` | The API's GraphQL gateway |
+| `NEXT_PUBLIC_API_URL` | yes | — | `http://localhost:4000/graphql` | `<CloudFront address>/graphql` | `https://api.learnvianotes.in/graphql` | The API's GraphQL gateway |
 | `NEXT_PUBLIC_FIREBASE_API_KEY`, `…_AUTH_DOMAIN`, `…_PROJECT_ID`, `…_APP_ID` | no | — (Google off) | — | project values | project values | Google sign-in through Firebase (ADR-0007); public identifiers, not secrets |
 | `NEXT_PUBLIC_GITHUB_CLIENT_ID`, `NEXT_PUBLIC_GITHUB_AUTHORIZE_URL` | no | — (GitHub off) | — | app id, `https://github.com/login/oauth/authorize` | same | GitHub consent page (PKCE) |
 | `NEXT_PUBLIC_LINKEDIN_CLIENT_ID`, `NEXT_PUBLIC_LINKEDIN_AUTHORIZE_URL` | no | — (LinkedIn off) | — | app id, `https://www.linkedin.com/oauth/v2/authorization` | same | LinkedIn consent page (PKCE) |
@@ -29,6 +29,9 @@ Still to come: `NEXT_PUBLIC_WS_URL` (subscriptions) and `REVALIDATE_SECRET` (ser
 the API's on-demand ISR webhook) in the phases that use them.
 
 ## lvn-backend
+
+On AWS these are set by Terraform from `infra/terraform/envs/<env>/.env` (ADR-0035): the generated secrets go through
+Secrets Manager, the rest into the task definitions; the sandbox's URLs are its CloudFront address.
 
 Schemas: `apiConfigSchema` and `workerConfigSchema` in `@lvn/contracts/config`, loaded by `libs/config`. The worker
 runs the same contexts as the API, so it reads every API variable as well as its own; give both tasks one environment. Secrets are
@@ -89,8 +92,8 @@ in lvn-mobile `env/<variant>.env` (public, committed) with per-machine overrides
 | --- | --- | --- | --- | --- | --- |
 | `APP_VARIANT` | build time | `development` | `sandbox` | `production` | App name and bundle id in `app.config.ts` (not readable by app code) |
 | `EXPO_PUBLIC_APP_ENV` | yes | `development` | `sandbox` | `production` | Environment badge; later feature defaults |
-| `EXPO_PUBLIC_WEB_URL` | yes | `http://100.70.234.41:3000` | `https://sandbox.learnvianotes.in` | `https://www.learnvianotes.in` | Links into lvn-web |
-| `EXPO_PUBLIC_API_URL` | yes | `http://100.70.234.41:4000/graphql` | `https://api.sandbox.learnvianotes.in/graphql` | `https://api.learnvianotes.in/graphql` | The API's GraphQL gateway; development builds allow plain HTTP for it |
+| `EXPO_PUBLIC_WEB_URL` | yes | `http://100.70.234.41:3000` | the CloudFront address, in `env/sandbox.local.env` | `https://www.learnvianotes.in` | Links into lvn-web |
+| `EXPO_PUBLIC_API_URL` | yes | `http://100.70.234.41:4000/graphql` | `<CloudFront address>/graphql`, in `env/sandbox.local.env` | `https://api.learnvianotes.in/graphql` | The API's GraphQL gateway; development builds allow plain HTTP for it |
 | `EXPO_PUBLIC_GITHUB_CLIENT_ID` | no | — | — | — | GitHub sign-in in the app; empty hides the button. Redirect URI `<scheme>://oauth/callback` (schemes `learnvianotes-dev`, `learnvianotes-sandbox`, `learnvianotes`) |
 | `EXPO_PUBLIC_GITHUB_AUTHORIZE_URL` | with the client id | `https://github.com/login/oauth/authorize` | same | same | GitHub's consent page |
 | `EXPO_PUBLIC_FIREBASE_API_KEY`, `…_AUTH_DOMAIN`, `…_PROJECT_ID`, `…_APP_ID` | no | — (Google off) | the Firebase web app's config | same | Google sign-in (ADR-0007): Firebase turns the Google account into the ID token the API accepts. Public identifiers |

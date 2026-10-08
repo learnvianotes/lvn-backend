@@ -10,11 +10,11 @@ variable "cidr_block" {
 }
 
 variable "nat_gateways" {
-  description = "NAT gateways for private-subnet egress: 1 in sandbox, 2 in production"
+  description = "NAT gateways for private-subnet egress: 0 (tasks in public subnets, cheapest), 1 (sandbox), 2 (production)"
   type        = number
   default     = 1
   validation {
-    condition     = var.nat_gateways >= 1 && var.nat_gateways <= 2
-    error_message = "nat_gateways must be 1 or 2."
+    condition     = var.nat_gateways >= 0 && var.nat_gateways <= 2
+    error_message = "nat_gateways must be 0, 1 or 2."
   }
 }
