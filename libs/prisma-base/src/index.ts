@@ -1,6 +1,7 @@
 export { PrismaService, DATABASE_URL } from './prisma.service'
 export { PrismaModule } from './prisma.module'
 export { newId, isUuid, idTime } from './ids'
+export { shippedMigration } from './migrations'
 export { Prisma } from './generated/client'
 export type * from './generated/client'
 export * as $Enums from './generated/enums'
