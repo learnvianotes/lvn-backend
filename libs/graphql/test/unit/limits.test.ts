@@ -1,5 +1,5 @@
-import { parse } from 'graphql'
-import { MAX_DEPTH, queryDepth } from '../../src/limits'
+import { getIntrospectionQuery, parse } from 'graphql'
+import { isIntrospectionOnly, MAX_DEPTH, queryDepth } from '../../src/limits'
 
 describe('queryDepth', () => {
   it('counts field nesting', () => {
@@ -25,5 +25,19 @@ describe('queryDepth', () => {
 
   it('has the limit from the spec', () => {
     expect(MAX_DEPTH).toBe(8)
+  })
+})
+
+describe('isIntrospectionOnly', () => {
+  it('exempts the standard introspection query, which nests deeper than the limit', () => {
+    const doc = parse(getIntrospectionQuery())
+    expect(queryDepth(doc)).toBeGreaterThan(MAX_DEPTH)
+    expect(isIntrospectionOnly(doc)).toBe(true)
+  })
+
+  it('does not exempt an operation that also selects real fields', () => {
+    expect(isIntrospectionOnly(parse('{ __typename termsVersion }'))).toBe(false)
+    expect(isIntrospectionOnly(parse('query A { __typename } query B { viewer { id } }'), 'B')).toBe(false)
+    expect(isIntrospectionOnly(parse('query A { __typename } query B { viewer { id } }'), 'A')).toBe(true)
   })
 })

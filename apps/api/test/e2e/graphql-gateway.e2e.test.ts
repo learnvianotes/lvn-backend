@@ -1,3 +1,4 @@
+import { getIntrospectionQuery } from 'graphql'
 import request from 'supertest'
 import { createTestApp, type TestApp } from '../support/app'
 import { seedUser, tokenFor } from '../support/seed'
@@ -40,10 +41,18 @@ describe('GraphQL gateway', () => {
   })
 
   it('rejects queries deeper than 8 levels (§6.2)', async () => {
-    const deep = '{ __schema { types { fields { type { ofType { ofType { ofType { ofType { name } } } } } } } } }'
+    // Next to a real field, introspection counts like any other selection.
+    const deep = '{ termsVersion __schema { types { fields { type { ofType { ofType { ofType { ofType { name } } } } } } } } }'
     const res = await t.gql(deep)
+    expect(res.status).toBe(400)
     expect(res.errors?.[0]?.extensions.code).toBe('VALIDATION')
     expect(res.errors?.[0]?.message).toMatch(/too deep/)
+  })
+
+  it('answers the standard introspection query in development (codegen, GraphiQL), deeper than the limit as it is', async () => {
+    const res = await t.gql<{ __schema: { queryType: { name: string } } }>(getIntrospectionQuery())
+    expect(res.errors).toBeUndefined()
+    expect(res.data!.__schema.queryType.name).toBe('Query')
   })
 
   it('keeps the subgraph endpoints private', async () => {

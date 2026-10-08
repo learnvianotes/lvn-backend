@@ -1,7 +1,7 @@
 import type { ApolloServerPlugin } from '@apollo/server'
-import { AppError, ErrorCode } from '@lvn-backend/errors'
+import { ErrorCode } from '@lvn-backend/errors'
 import { noteOperation } from '@lvn-backend/observability'
-import { Kind, type DocumentNode, type FragmentDefinitionNode, type SelectionSetNode } from 'graphql'
+import { GraphQLError, Kind, type DocumentNode, type FragmentDefinitionNode, type SelectionSetNode } from 'graphql'
 import { getComplexity, simpleEstimator } from 'graphql-query-complexity'
 
 /** Query depth limit 8 and complexity limit 1000 (§6.2). */
@@ -29,6 +29,23 @@ export function queryDepth(document: DocumentNode, operationName?: string | null
   return depth(op.selectionSet, new Set())
 }
 
+/**
+ * True when every top-level field of the operation is introspection (`__schema`, `__type`, `__typename`). Those are
+ * exempt from the limits: the standard introspection query nests `ofType` deeper than any real query, and outside
+ * development Apollo refuses introspection before the limits run.
+ */
+export function isIntrospectionOnly(document: DocumentNode, operationName?: string | null): boolean {
+  const op = document.definitions.find((d) => d.kind === Kind.OPERATION_DEFINITION && (!operationName || d.name?.value === operationName))
+  if (!op || op.kind !== Kind.OPERATION_DEFINITION) return false
+  return op.selectionSet.selections.every((s) => s.kind === Kind.FIELD && s.name.value.startsWith('__'))
+}
+
+/**
+ * A refusal of the request itself: VALIDATION with HTTP 400. Apollo answers 500 to anything else thrown from a plugin,
+ * which would also report a client's mistake as a server failure.
+ */
+const refuse = (message: string) => new GraphQLError(message, { extensions: { code: ErrorCode.VALIDATION, http: { status: 400 } } })
+
 /** Rejects too-deep or too-complex operations before any resolver runs. */
 export function limitsPlugin(): ApolloServerPlugin {
   return {
@@ -37,16 +54,24 @@ export function limitsPlugin(): ApolloServerPlugin {
         async didResolveOperation({ request, document, schema, contextValue }) {
           // The operation name joins the request's log lines and its access-log entry (never the variables).
           noteOperation((contextValue as { req?: unknown }).req, request.operationName)
+          if (isIntrospectionOnly(document, request.operationName)) return
           const depth = queryDepth(document, request.operationName)
-          if (depth > MAX_DEPTH) throw new AppError(ErrorCode.VALIDATION, `Query is too deep (${depth} > ${MAX_DEPTH}).`)
-          const complexity = getComplexity({
-            schema,
-            query: document,
-            operationName: request.operationName ?? undefined,
-            variables: request.variables ?? {},
-            estimators: [simpleEstimator({ defaultComplexity: 1 })],
-          })
-          if (complexity > MAX_COMPLEXITY) throw new AppError(ErrorCode.VALIDATION, `Query is too complex (${complexity} > ${MAX_COMPLEXITY}).`)
+          if (depth > MAX_DEPTH) throw refuse(`Query is too deep (${depth} > ${MAX_DEPTH}).`)
+          let complexity: number
+          try {
+            complexity = getComplexity({
+              schema,
+              query: document,
+              operationName: request.operationName ?? undefined,
+              variables: request.variables ?? {},
+              estimators: [simpleEstimator({ defaultComplexity: 1 })],
+            })
+          } catch (e) {
+            // Complexity reads the variables before Apollo validates them; a missing or ill-typed one fails here.
+            if (e instanceof GraphQLError) throw refuse(e.message)
+            throw e
+          }
+          if (complexity > MAX_COMPLEXITY) throw refuse(`Query is too complex (${complexity} > ${MAX_COMPLEXITY}).`)
         },
       }
     },
