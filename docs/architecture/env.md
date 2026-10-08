@@ -102,5 +102,6 @@ in lvn-mobile `env/<variant>.env` (public, committed) with per-machine overrides
 | `EXPO_PUBLIC_SENTRY_DSN` | no | — (off) | the mobile project's DSN | same | Crashes and JS errors (§16.5) |
 
 LinkedIn has no app variable: it does not redirect to app schemes.
-Phase 3 (ADR-0021): `GOOGLE_SERVICES_JSON` and `GOOGLE_SERVICE_INFO_PLIST` — build-time paths to the Firebase config
-files used for FCM device tokens.
+`GOOGLE_SERVICES_JSON` (build time, not `EXPO_PUBLIC_`): path of the variant's Firebase Android config,
+`firebase/<variant>/google-services.json` (git-ignored), applied with the Google Services Gradle plugin 4.5.0 when the
+file exists. Phase 3 (ADR-0021) adds `GOOGLE_SERVICE_INFO_PLIST`, its iOS counterpart, with FCM.
