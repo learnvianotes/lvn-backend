@@ -14,6 +14,7 @@ apps/api          composition root: HTTP (+ GraphQL from Phase 1), health probes
 apps/worker       composition root: background jobs (BullMQ from Phase 1), health port
 contexts/<name>   users · notes · core · ai · communication — one future microservice each; see each README
 libs/config       validated configuration (business-free)
+libs/observability  JSON logs with request ids and redaction
 contracts         @lvn/contracts: domain enums, permission matrix, config + event schemas, GraphQL schema
 prisma            one database, one Postgres schema per context
 docs              architecture, ADRs, API changes, runbooks, release notes
@@ -46,6 +47,16 @@ ADR-0019) and one-off commands:
 pnpm --filter @lvn-backend/worker legacy:snapshot   # copy the old site's data into the restricted bucket (ADR-0023)
 ```
 Docker must be running for the integration and e2e tests: they start their own containers (Testcontainers).
+
+## Logs
+
+Both apps write one JSON object per line to stdout (pino): `level`, ISO `time`, `service` (`lvn-api`, `lvn-worker`),
+`env`, `msg`, and — on every line written while handling a request or job — `requestId` (from a well-formed
+`X-Request-Id`, otherwise generated, and echoed in the response), the GraphQL `operation`, or `queue` and `jobId`.
+The API writes one access-log line per request (method, path without query string, status, `durationMs`; health checks
+are skipped). Request bodies, GraphQL variables and query strings are never logged, and credentials, tokens, codes and
+dates of birth are redacted wherever they appear. `LOG_LEVEL` sets the level; pipe through `npx pino-pretty` to read
+them locally.
 
 ## GraphQL
 

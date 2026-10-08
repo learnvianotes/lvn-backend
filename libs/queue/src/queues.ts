@@ -1,4 +1,5 @@
 import { Global, Logger, Module, type DynamicModule, type OnApplicationShutdown } from '@nestjs/common'
+import { withJobContext } from '@lvn-backend/observability'
 import { Queue, Worker, type ConnectionOptions, type Job } from 'bullmq'
 
 export type JobHandler = (data: unknown, job: Job) => Promise<unknown>
@@ -48,7 +49,8 @@ export class Queues implements OnApplicationShutdown {
       async (job) => {
         const handler = handlers[job.name]
         if (!handler) throw new Error(`No handler for ${queueName}/${job.name}`)
-        return handler(job.data, job)
+        // Every line the handler logs carries the queue and job id.
+        return withJobContext(queueName, job.id, () => handler(job.data, job))
       },
       { connection: this.connection, concurrency },
     )

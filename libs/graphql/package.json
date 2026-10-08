@@ -16,6 +16,7 @@
     "@apollo/server": "^5.5.1",
     "@apollo/subgraph": "2.14.4",
     "@lvn-backend/errors": "workspace:*",
+    "@lvn-backend/observability": "workspace:*",
     "@lvn/contracts": "workspace:@learnvianotes/contracts@*",
     "@nestjs/apollo": "13.4.5",
     "@nestjs/common": "^11.2.7",

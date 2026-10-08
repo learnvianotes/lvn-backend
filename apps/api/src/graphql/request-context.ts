@@ -1,14 +1,12 @@
-import { randomUUID } from 'node:crypto'
 import type { AccessTokenVerifier, RequestContext, Viewer } from '@lvn-backend/auth-guard'
+import { requestIdFrom } from '@lvn-backend/observability'
 
 /** Answers whether a session family was revoked within the access-token lifetime (Redis in apps/api). */
 export interface RevocationCheck {
   isRevoked(sessionFamilyId: string): Promise<boolean>
 }
 
-const REQUEST_ID = /^[A-Za-z0-9._-]{8,64}$/
-
-type Req = RequestContext['req'] & { headers: Record<string, string | string[] | undefined> }
+type Req = RequestContext['req'] & { headers: Record<string, string | string[] | undefined>; id?: unknown }
 
 /** The viewer from `Authorization: Bearer <access token>`; null when absent, invalid or expired. */
 export function viewerFromRequest(req: Req, verifier: AccessTokenVerifier): Viewer | null {
@@ -20,11 +18,9 @@ export function viewerFromRequest(req: Req, verifier: AccessTokenVerifier): View
   return { userId: result.claims.sub, sessionId: result.claims.sid, roles: result.claims.roles }
 }
 
-/** Request ids propagate from the client to the logs (§7.2); a malformed one is replaced. */
+/** The id the access log gave this request (from X-Request-Id when well-formed, §7.2), so both name it the same. */
 export function requestIdOf(req: Req): string {
-  const header = req.headers['x-request-id']
-  const value = Array.isArray(header) ? header[0] : header
-  return value && REQUEST_ID.test(value) ? value : randomUUID()
+  return typeof req.id === 'string' ? req.id : requestIdFrom(req.headers['x-request-id'])
 }
 
 /** The viewer is dropped when their session was revoked (sign-out, reuse, reset) even if the token has not expired. */

@@ -1,5 +1,6 @@
 import type { ApolloServerPlugin } from '@apollo/server'
 import { AppError, ErrorCode } from '@lvn-backend/errors'
+import { noteOperation } from '@lvn-backend/observability'
 import { Kind, type DocumentNode, type FragmentDefinitionNode, type SelectionSetNode } from 'graphql'
 import { getComplexity, simpleEstimator } from 'graphql-query-complexity'
 
@@ -33,7 +34,9 @@ export function limitsPlugin(): ApolloServerPlugin {
   return {
     async requestDidStart() {
       return {
-        async didResolveOperation({ request, document, schema }) {
+        async didResolveOperation({ request, document, schema, contextValue }) {
+          // The operation name joins the request's log lines and its access-log entry (never the variables).
+          noteOperation((contextValue as { req?: unknown }).req, request.operationName)
           const depth = queryDepth(document, request.operationName)
           if (depth > MAX_DEPTH) throw new AppError(ErrorCode.VALIDATION, `Query is too deep (${depth} > ${MAX_DEPTH}).`)
           const complexity = getComplexity({

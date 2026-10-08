@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing'
 import { apiConfigSchema, loadConfig, type ApiConfig } from '@lvn/contracts/config'
 import { resetDatabase, testSecrets, workerDatabase, type TestInfra } from '@lvn-backend/testing'
 import { GOOGLE_ID_TOKENS, MX_LOOKUP, type GoogleIdTokens, type MxLookup } from '@lvn-backend/users'
+import { createLogger, PinoNestLogger } from '@lvn-backend/observability'
 import { Storage } from '@lvn-backend/storage'
 import request from 'supertest'
 import { AppModule } from '../../src/app.module'
@@ -52,6 +53,8 @@ export async function testConfig(overrides: Record<string, string> = {}): Promis
 export interface TestApp {
   app: INestApplication
   config: ApiConfig
+  /** Log lines written so far (JSON-parsed), at the configured LOG_LEVEL ("error" unless overridden). */
+  logs(): Record<string, unknown>[]
   /** POST /graphql; `token` is sent as a Bearer access token. */
   gql<T = Record<string, unknown>>(query: string, variables?: object, token?: string): Promise<{ status: number; data?: T; errors?: { message: string; extensions: { code: string; field?: string[] } }[] }>
   close(): Promise<void>
@@ -86,13 +89,22 @@ export async function createTestApp(overrides: Record<string, string> = {}): Pro
     .overrideProvider(GOOGLE_ID_TOKENS)
     .useValue(fakeGoogle)
     .compile()
-  const app = moduleRef.createNestApplication({ logger: process.env.LVN_TEST_LOGS ? ['error', 'warn'] : false })
-  configureHttp(app, config)
+  // Logs go to memory for assertions, and to stdout too with LVN_TEST_LOGS=1.
+  const lines: string[] = []
+  const logger = createLogger({
+    service: 'lvn-api',
+    env: config.APP_ENV,
+    level: config.LOG_LEVEL,
+    destination: { write: (line: string) => void (lines.push(line), process.env.LVN_TEST_LOGS && process.stdout.write(line)) },
+  })
+  const app = moduleRef.createNestApplication({ logger: new PinoNestLogger(logger) })
+  configureHttp(app, config, logger)
   await app.init()
   await app.get(Storage).ensureBuckets([config.S3_BUCKET, config.S3_RESTRICTED_BUCKET])
   return {
     app,
     config,
+    logs: () => lines.map((l) => JSON.parse(l) as Record<string, unknown>),
     async gql(query, variables, token) {
       const req = request(app.getHttpServer()).post('/graphql').set('content-type', 'application/json')
       if (token) req.set('authorization', `Bearer ${token}`)

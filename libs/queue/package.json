@@ -11,6 +11,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@lvn-backend/observability": "workspace:*",
     "@nestjs/common": "^11.2.7",
     "bullmq": "^6.3.11"
   },
