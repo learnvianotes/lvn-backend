@@ -425,6 +425,9 @@ type Note {
   topics: [Topic!]!
   updatedAt: DateTime!
 
+  """Editors only: one version of this note, to preview or restore"""
+  version(id: UUID!): NoteVersion
+
   """Editors only: newest first"""
   versions(after: String, first: Int): NoteVersionConnection
   viewerAccess: NoteAccess!

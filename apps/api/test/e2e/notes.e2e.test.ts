@@ -286,6 +286,14 @@ describe('notes', () => {
       const versions = await db.noteVersion.findMany({ where: { noteId: note!.id }, orderBy: { number: 'asc' } })
       expect(versions.map((v) => [v.number, v.kind, v.title])).toEqual([[1, 'PUBLISHED', 'v1 title'], [2, 'DRAFT', 'v2 title']])
       expect(((versions[1]!.cards as unknown) as Card[]).map((c) => c.id)).toEqual([b])
+
+      // Editors preview one version; it must belong to this note, and readers get nothing.
+      const preview = await t.gql<{ note: { version: { number: number; kind: string; cards: { edges: { node: Card }[] } } | null } }>('query ($id: UUID!, $v: UUID!) { note(id: $id) { version(id: $v) { number kind cards { edges { node { id content } } } } } }', { id: note!.id, v: versions[1]!.id }, owner.token)
+      expect(preview.data!.note.version).toMatchObject({ number: 2, kind: 'DRAFT' })
+      expect(words(preview.data!.note.version!.cards.edges[0]!.node)).toBe('version two')
+      const { note: elsewhere } = await create(owner.token, {})
+      const foreign = await t.gql<{ note: { version: unknown } }>('query ($id: UUID!, $v: UUID!) { note(id: $id) { version(id: $v) { number } } }', { id: elsewhere!.id, v: versions[1]!.id }, owner.token)
+      expect(foreign.data!.note.version).toBeNull()
     })
 
     it('prunes old versions nightly but keeps what readers see and every version of a public note', async () => {

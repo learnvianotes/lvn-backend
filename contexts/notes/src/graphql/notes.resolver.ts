@@ -16,6 +16,7 @@ import type {
   MutationRestoreNoteVersionArgs,
   MutationUpdateNoteDraftArgs,
   NoteCardsArgs,
+  NoteVersionArgs,
   NoteVersionsArgs,
   OkPayload,
   QueryMyNotesArgs,
@@ -144,6 +145,13 @@ export class NotesResolver {
     if (n.opened.access === 'READER') return null
     const { rows, size } = await this.drafts.versions(n.opened, first, after)
     return connection(rows, size, (v) => [v.number], (v) => v)
+  }
+
+  @ResolveField('version')
+  async version(@Parent() n: NoteParent, @Args() { id }: NoteVersionArgs) {
+    if (n.opened.access === 'READER') return null
+    const version = await this.drafts.version(id)
+    return version && version.noteId === n.id ? version : null
   }
 
   // ── Mutations ────────────────────────────────────────────────────────────────────────────────────────────

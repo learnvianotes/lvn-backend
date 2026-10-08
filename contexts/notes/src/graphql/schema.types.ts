@@ -193,6 +193,8 @@ export interface Note {
   cards: CardConnection
   /** Editors only: newest first */
   versions: NoteVersionConnection | null
+  /** Editors only: one version of this note, to preview or restore */
+  version: NoteVersion | null
   createdAt: Date
   updatedAt: Date
   /** Set while the note is in the trash (owner only) */
@@ -207,6 +209,10 @@ export interface NoteCardsArgs {
 export interface NoteVersionsArgs {
   first?: number | null
   after?: string | null
+}
+
+export interface NoteVersionArgs {
+  id: string
 }
 
 /** OWNER and EDITOR work on the draft; READER sees the published version (§4.3) */

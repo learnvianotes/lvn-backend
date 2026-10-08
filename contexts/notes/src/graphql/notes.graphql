@@ -71,6 +71,8 @@ type Note @key(fields: "id") {
   cards(first: Int, after: String): CardConnection!
   "Editors only: newest first"
   versions(first: Int, after: String): NoteVersionConnection
+  "Editors only: one version of this note, to preview or restore"
+  version(id: UUID!): NoteVersion
   createdAt: DateTime!
   updatedAt: DateTime!
   "Set while the note is in the trash (owner only)"
