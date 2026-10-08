@@ -64,7 +64,7 @@ class NoMailModule {}
 
 describe('federation across in-process subgraphs', () => {
   it('composes users + a second subgraph and resolves one entity across both', async () => {
-    const config = testConfig()
+    const config = await testConfig()
     await resetDatabase(config.DATABASE_URL)
     const moduleRef = await Test.createTestingModule({
       imports: [

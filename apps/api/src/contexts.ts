@@ -25,8 +25,15 @@ export function contextModules(config: ApiConfig): (Type | DynamicModule)[] {
       digitalConsentAge: config.DIGITAL_CONSENT_AGE,
       passwordBreachApiUrl: config.PASSWORD_BREACH_API_URL,
       firebaseProjectId: config.FIREBASE_PROJECT_ID,
-      github: config.GITHUB_CLIENT_ID && config.GITHUB_CLIENT_SECRET ? { clientId: config.GITHUB_CLIENT_ID, clientSecret: config.GITHUB_CLIENT_SECRET } : undefined,
-      linkedin: config.LINKEDIN_CLIENT_ID && config.LINKEDIN_CLIENT_SECRET ? { clientId: config.LINKEDIN_CLIENT_ID, clientSecret: config.LINKEDIN_CLIENT_SECRET } : undefined,
+      github:
+        config.GITHUB_CLIENT_ID && config.GITHUB_CLIENT_SECRET
+          ? { clientId: config.GITHUB_CLIENT_ID, clientSecret: config.GITHUB_CLIENT_SECRET, oauthUrl: config.GITHUB_OAUTH_URL!, apiUrl: config.GITHUB_API_URL! }
+          : undefined,
+      linkedin:
+        config.LINKEDIN_CLIENT_ID && config.LINKEDIN_CLIENT_SECRET
+          ? { clientId: config.LINKEDIN_CLIENT_ID, clientSecret: config.LINKEDIN_CLIENT_SECRET, oauthUrl: config.LINKEDIN_OAUTH_URL!, apiUrl: config.LINKEDIN_API_URL! }
+          : undefined,
+      oauthRedirectUris: config.OAUTH_REDIRECT_URIS,
     }),
     NotesModule,
     CoreModule,

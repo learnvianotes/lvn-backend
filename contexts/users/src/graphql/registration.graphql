@@ -1,0 +1,82 @@
+# Provider sign-in (ADR-0007, §7.1), registration details and the institutional email (ADR-0017, ADR-0019).
+
+"Providers exchanged through oauthExchange. Google uses signInWithGoogle (ADR-0007)."
+enum OAuthProvider { GITHUB LINKEDIN }
+
+enum InstitutionalEmailStatus {
+  "No college or organisation email yet"
+  NONE
+  "A code was sent to the address and not yet entered"
+  CODE_SENT
+  "Confirmed; the account is verified by it"
+  CONFIRMED
+  "Confirmed, but the domain waits for platform-admin review before it verifies the account"
+  PENDING_REVIEW
+}
+
+type Institution {
+  name: String!
+  verified: Boolean!
+}
+
+"Which sign-in methods this deployment offers"
+type SignInOptions {
+  emailPassword: Boolean!
+  google: Boolean!
+  github: Boolean!
+  linkedin: Boolean!
+}
+
+extend type User {
+  "Viewer only (ADR-0017): the confirmed address, or the one waiting for its code"
+  institutionalEmail: String
+  "Viewer only"
+  institutionalEmailStatus: InstitutionalEmailStatus
+  "The confirmed college or organisation"
+  institution: Institution
+  "Viewer only: a minor without verified consent (§15.2) — no public publishing, no DMs"
+  restrictedMinor: Boolean
+}
+
+"Firebase ID token from a Google sign-in; verified by the API and exchanged for an LVN session (ADR-0007)"
+input SignInWithGoogleInput {
+  idToken: String!
+}
+
+"Authorization Code + PKCE: the code from the provider's redirect and the verifier the client generated"
+input OAuthExchangeInput {
+  provider: OAuthProvider!
+  code: String!
+  codeVerifier: String!
+  redirectUri: String!
+}
+
+"After a provider sign-in (no signUp call): the same details, collected once"
+input CompleteRegistrationInput {
+  displayName: String!
+  dateOfBirth: String!
+  institutionalEmail: String
+  acceptedTermsVersion: String!
+}
+
+input SetInstitutionalEmailInput {
+  email: String!
+}
+
+input VerifyInstitutionalEmailInput {
+  code: String!
+}
+
+extend type Query {
+  signInOptions: SignInOptions!
+}
+
+extend type Mutation {
+  signInWithGoogle(input: SignInWithGoogleInput!): AuthPayload!
+  oauthExchange(input: OAuthExchangeInput!): AuthPayload!
+  completeRegistration(input: CompleteRegistrationInput!): OkPayload!
+  "Adds or replaces the college or organisation email; a code is sent to it"
+  setInstitutionalEmail(input: SetInstitutionalEmailInput!): OkPayload!
+  verifyInstitutionalEmail(input: VerifyInstitutionalEmailInput!): OkPayload!
+  resendInstitutionalEmailCode: OkPayload!
+}

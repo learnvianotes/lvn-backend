@@ -28,6 +28,18 @@ type AuthPayload
   userErrors: [UserError!]!
 }
 
+"""
+After a provider sign-in (no signUp call): the same details, collected once
+"""
+input CompleteRegistrationInput
+  @join__type(graph: USERS)
+{
+  displayName: String!
+  dateOfBirth: String!
+  institutionalEmail: String
+  acceptedTermsVersion: String!
+}
+
 scalar DateTime
   @join__type(graph: USERS)
 
@@ -50,6 +62,31 @@ enum GlobalRole
   STUDENT @join__enumValue(graph: USERS)
   TEACHER @join__enumValue(graph: USERS)
   PLATFORM_ADMIN @join__enumValue(graph: USERS)
+}
+
+type Institution
+  @join__type(graph: USERS)
+{
+  name: String!
+  verified: Boolean!
+}
+
+enum InstitutionalEmailStatus
+  @join__type(graph: USERS)
+{
+  """No college or organisation email yet"""
+  NONE @join__enumValue(graph: USERS)
+
+  """A code was sent to the address and not yet entered"""
+  CODE_SENT @join__enumValue(graph: USERS)
+
+  """Confirmed; the account is verified by it"""
+  CONFIRMED @join__enumValue(graph: USERS)
+
+  """
+  Confirmed, but the domain waits for platform-admin review before it verifies the account
+  """
+  PENDING_REVIEW @join__enumValue(graph: USERS)
 }
 
 scalar join__FieldSet
@@ -88,6 +125,38 @@ type Mutation
 
   """Sets the password and signs out every device"""
   resetPassword(input: ResetPasswordInput!): OkPayload!
+  signInWithGoogle(input: SignInWithGoogleInput!): AuthPayload!
+  oauthExchange(input: OAuthExchangeInput!): AuthPayload!
+  completeRegistration(input: CompleteRegistrationInput!): OkPayload!
+
+  """
+  Adds or replaces the college or organisation email; a code is sent to it
+  """
+  setInstitutionalEmail(input: SetInstitutionalEmailInput!): OkPayload!
+  verifyInstitutionalEmail(input: VerifyInstitutionalEmailInput!): OkPayload!
+  resendInstitutionalEmailCode: OkPayload!
+}
+
+"""
+Authorization Code + PKCE: the code from the provider's redirect and the verifier the client generated
+"""
+input OAuthExchangeInput
+  @join__type(graph: USERS)
+{
+  provider: OAuthProvider!
+  code: String!
+  codeVerifier: String!
+  redirectUri: String!
+}
+
+"""
+Providers exchanged through oauthExchange. Google uses signInWithGoogle (ADR-0007).
+"""
+enum OAuthProvider
+  @join__type(graph: USERS)
+{
+  GITHUB @join__enumValue(graph: USERS)
+  LINKEDIN @join__enumValue(graph: USERS)
 }
 
 type OkPayload
@@ -107,6 +176,7 @@ type Query
   Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2)
   """
   termsVersion: String!
+  signInOptions: SignInOptions!
 }
 
 input RefreshSessionInput
@@ -145,11 +215,36 @@ type Session
   user: User!
 }
 
+input SetInstitutionalEmailInput
+  @join__type(graph: USERS)
+{
+  email: String!
+}
+
 input SignInInput
   @join__type(graph: USERS)
 {
   email: String!
   password: String!
+}
+
+"""Which sign-in methods this deployment offers"""
+type SignInOptions
+  @join__type(graph: USERS)
+{
+  emailPassword: Boolean!
+  google: Boolean!
+  github: Boolean!
+  linkedin: Boolean!
+}
+
+"""
+Firebase ID token from a Google sign-in; verified by the API and exchanged for an LVN session (ADR-0007)
+"""
+input SignInWithGoogleInput
+  @join__type(graph: USERS)
+{
+  idToken: String!
 }
 
 """
@@ -191,6 +286,22 @@ type User
   verificationMethod: VerificationMethod
   globalRole: GlobalRole!
   createdAt: DateTime!
+
+  """
+  Viewer only (ADR-0017): the confirmed address, or the one waiting for its code
+  """
+  institutionalEmail: String
+
+  """Viewer only"""
+  institutionalEmailStatus: InstitutionalEmailStatus
+
+  """The confirmed college or organisation"""
+  institution: Institution
+
+  """
+  Viewer only: a minor without verified consent (§15.2) — no public publishing, no DMs
+  """
+  restrictedMinor: Boolean
 }
 
 """
@@ -219,4 +330,10 @@ input VerifyEmailInput
   @join__type(graph: USERS)
 {
   token: String!
+}
+
+input VerifyInstitutionalEmailInput
+  @join__type(graph: USERS)
+{
+  code: String!
 }

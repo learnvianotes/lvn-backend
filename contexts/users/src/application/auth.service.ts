@@ -4,18 +4,19 @@ import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { MAILER, type Mailer } from '@lvn-backend/facades'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
-import type { z } from 'zod'
 import {
   dateOfBirthSchema,
   displayNameSchema,
   emailSchema,
-  handleBase,
   LIMITS,
   RESET_PASSWORD_TTL_MINUTES,
   TERMS_VERSION,
   VERIFY_EMAIL_TTL_HOURS,
 } from '../domain/rules'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { freeHandle } from './handles'
+import { parseField } from './input'
+import { InstitutionalEmailService } from './institutional-email.service'
 import { PasswordService } from './password.service'
 import { randomToken, sha256 } from './secrets'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
@@ -27,13 +28,6 @@ export interface SignUpInput {
   dateOfBirth: string
   institutionalEmail?: string | null
   acceptedTermsVersion: string
-}
-
-/** Parses one input field with its schema; the first problem becomes VALIDATION on input.<field>. */
-function field<S extends z.ZodType>(schema: S, value: unknown, name: string): z.infer<S> {
-  const result = schema.safeParse(value)
-  if (!result.success) throw Errors.validation(result.error.issues[0]?.message ?? 'Invalid value.', ['input', name])
-  return result.data
 }
 
 const INVALID_LINK = 'This link is invalid or has expired. Ask for a new one.'
@@ -49,19 +43,21 @@ export class AuthService {
     private readonly passwords: PasswordService,
     private readonly sessions: SessionService,
     private readonly limiter: RateLimiter,
+    private readonly institutional: InstitutionalEmailService,
     @Inject(MAILER) private readonly mailer: Mailer,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
   ) {}
 
   async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string): Promise<IssuedSession> {
-    const email = field(emailSchema, input.email, 'email')
-    const displayName = field(displayNameSchema, input.displayName, 'displayName')
-    const dateOfBirth = field(dateOfBirthSchema, input.dateOfBirth, 'dateOfBirth')
+    const email = parseField(emailSchema, input.email, 'email')
+    const displayName = parseField(displayNameSchema, input.displayName, 'displayName')
+    const dateOfBirth = parseField(dateOfBirthSchema, input.dateOfBirth, 'dateOfBirth')
     if (input.acceptedTermsVersion !== TERMS_VERSION) {
       throw Errors.validation('Accept the current Terms and Privacy Policy to continue.', ['input', 'acceptedTermsVersion'])
     }
     await this.passwords.assertAcceptable(input.password)
+    if (input.institutionalEmail) await this.institutional.check(input.institutionalEmail, ['input', 'institutionalEmail'])
     if (await this.db.user.findUnique({ where: { email }, select: { id: true } })) {
       throw Errors.conflict('An account with this email already exists. Sign in instead.', ['input', 'email'])
     }
@@ -74,7 +70,7 @@ export class AuthService {
           data: {
             id,
             email,
-            handle: await this.freeHandle(tx, displayName),
+            handle: await freeHandle(tx, displayName),
             displayName,
             passwordHash,
             dateOfBirth,
@@ -94,12 +90,13 @@ export class AuthService {
     }
 
     await this.sendEmailVerification(id, email, displayName)
+    if (input.institutionalEmail) await this.institutional.start(id, input.institutionalEmail)
     await this.events.publish('UserRegistered', { userId: id }, { correlationId })
     return this.sessions.start(id, device)
   }
 
   async signIn(rawEmail: string, password: string, device: DeviceInfo): Promise<IssuedSession> {
-    const email = field(emailSchema, rawEmail, 'email')
+    const email = parseField(emailSchema, rawEmail, 'email')
     const limit = await this.limiter.hit(`signin:${email}`, LIMITS.signIn)
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many sign-in attempts. Try again in a few minutes.')
 
@@ -122,7 +119,7 @@ export class AuthService {
 
   /** Always succeeds for the caller (no account enumeration); emails a link only if an account exists. */
   async requestPasswordReset(rawEmail: string): Promise<void> {
-    const email = field(emailSchema, rawEmail, 'email')
+    const email = parseField(emailSchema, rawEmail, 'email')
     const limit = await this.limiter.hit(`reset:${email}`, LIMITS.passwordReset)
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many reset requests. Try again later.')
     const user = await this.db.user.findUnique({ where: { email }, select: { id: true, displayName: true, deletedAt: true } })
@@ -175,15 +172,5 @@ export class AuthService {
     const url = new URL(path, this.config.webUrl)
     url.searchParams.set('token', token)
     return url.toString()
-  }
-
-  /** A handle nobody has: the name's slug, then with a random 4-digit suffix. */
-  private async freeHandle(tx: Prisma.TransactionClient, displayName: string): Promise<string> {
-    const base = handleBase(displayName)
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const handle = attempt === 0 ? base : `${base}${Math.floor(1000 + Math.random() * 9000)}`
-      if (!(await tx.user.findUnique({ where: { handle }, select: { id: true } }))) return handle
-    }
-    return `${base}${newId().slice(-8)}`
   }
 }

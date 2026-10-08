@@ -8,8 +8,10 @@ export interface UsersConfig {
   digitalConsentAge: number
   passwordBreachApiUrl?: string
   firebaseProjectId?: string
-  github?: { clientId: string; clientSecret: string }
-  linkedin?: { clientId: string; clientSecret: string }
+  github?: { clientId: string; clientSecret: string; oauthUrl: string; apiUrl: string }
+  linkedin?: { clientId: string; clientSecret: string; oauthUrl: string; apiUrl: string }
+  /** Redirect URIs registered with GitHub and LinkedIn; oauthExchange accepts no other */
+  oauthRedirectUris: string[]
 }
 
 export const USERS_CONFIG = Symbol('USERS_CONFIG')

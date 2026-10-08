@@ -72,6 +72,20 @@ describe('apiConfigSchema (Phase 1)', () => {
     expect(() => loadConfig(apiConfigSchema, { ...valid, DIGITAL_CONSENT_AGE: '10' })).toThrow(/DIGITAL_CONSENT_AGE/)
   })
 
+  it('needs endpoints and redirect URIs for a provider that is switched on', () => {
+    const github = { GITHUB_CLIENT_ID: 'id', GITHUB_CLIENT_SECRET: 'secret' }
+    expect(() => loadConfig(apiConfigSchema, { ...valid, ...github })).toThrow(/GITHUB_OAUTH_URL[\s\S]*GITHUB_API_URL[\s\S]*OAUTH_REDIRECT_URIS/)
+    const cfg = loadConfig(apiConfigSchema, {
+      ...valid,
+      ...github,
+      GITHUB_OAUTH_URL: 'https://github.com',
+      GITHUB_API_URL: 'https://api.github.com',
+      OAUTH_REDIRECT_URIS: 'http://localhost:3000/oauth/callback, lvn://oauth',
+    })
+    expect(cfg.OAUTH_REDIRECT_URIS).toEqual(['http://localhost:3000/oauth/callback', 'lvn://oauth'])
+    expect(loadConfig(apiConfigSchema, valid).OAUTH_REDIRECT_URIS).toEqual([])
+  })
+
   it('requires a long code secret', () => {
     expect(() => loadConfig(apiConfigSchema, { ...valid, CODE_HMAC_SECRET: 'short' })).toThrow(/CODE_HMAC_SECRET/)
   })

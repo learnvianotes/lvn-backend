@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs'
 import type { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import { apiConfigSchema, loadConfig, type ApiConfig } from '@lvn/contracts/config'
-import { resetDatabase, testSecrets, type TestInfra } from '@lvn-backend/testing'
+import { resetDatabase, testSecrets, workerDatabase, type TestInfra } from '@lvn-backend/testing'
+import { GOOGLE_ID_TOKENS, MX_LOOKUP, type GoogleIdTokens, type MxLookup } from '@lvn-backend/users'
 import request from 'supertest'
 import { AppModule } from '../../src/app.module'
 import { configureHttp } from '../../src/http'
@@ -17,13 +18,17 @@ export function infra(): Infra {
 
 const secrets = testSecrets()
 
-/** A complete API configuration pointing at the test containers. */
-export function testConfig(overrides: Record<string, string> = {}): ApiConfig {
+/** This worker's own database (see workerDatabase). */
+let workerDb: Promise<string> | undefined
+export const databaseUrl = (): Promise<string> => (workerDb ??= workerDatabase(infra().databaseUrl))
+
+/** A complete API configuration pointing at the test containers and this worker's database. */
+export async function testConfig(overrides: Record<string, string> = {}): Promise<ApiConfig> {
   const i = infra()
   return loadConfig(apiConfigSchema, {
     APP_ENV: 'development',
     LOG_LEVEL: 'error',
-    DATABASE_URL: i.databaseUrl,
+    DATABASE_URL: await databaseUrl(),
     REDIS_URL: i.redisUrl,
     CORS_ORIGINS: 'http://localhost:3000',
     S3_ENDPOINT: i.s3.endpoint,
@@ -51,11 +56,35 @@ export interface TestApp {
   close(): Promise<void>
 }
 
-/** A fresh database and a fully composed API (all subgraphs + gateway), as main.ts builds it. */
+/** Domains the fake MX lookup treats as unable to receive mail. */
+export const NO_MAIL_DOMAINS = new Set(['nomail.example', 'dead-college.edu'])
+const fakeMx: MxLookup = { acceptsMail: async (domain) => !NO_MAIL_DOMAINS.has(domain) }
+
+/**
+ * Fake Google ID tokens: `google:<uid>:<email>[:<name>]` is a valid Google sign-in with a verified email; anything else
+ * is refused, as Firebase would refuse a forged token.
+ */
+export const fakeGoogle: GoogleIdTokens = {
+  verify: async (token) => {
+    const [kind, uid, email, name] = token.split(':')
+    if (kind !== 'google' || !uid || !email) return null
+    return { provider: 'GOOGLE', providerUserId: uid, email, emailVerified: true, name: name ?? null }
+  },
+}
+
+/**
+ * A fresh database and a fully composed API (all subgraphs + gateway), as main.ts builds it. Only the edges are
+ * replaced: DNS (MX) and Google token verification, which would otherwise reach the internet.
+ */
 export async function createTestApp(overrides: Record<string, string> = {}): Promise<TestApp> {
-  const config = testConfig(overrides)
+  const config = await testConfig(overrides)
   await resetDatabase(config.DATABASE_URL)
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule.forRoot(config)] }).compile()
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule.forRoot(config)] })
+    .overrideProvider(MX_LOOKUP)
+    .useValue(fakeMx)
+    .overrideProvider(GOOGLE_ID_TOKENS)
+    .useValue(fakeGoogle)
+    .compile()
   const app = moduleRef.createNestApplication({ logger: false })
   configureHttp(app, config)
   await app.init()

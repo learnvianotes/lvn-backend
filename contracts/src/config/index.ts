@@ -75,9 +75,40 @@ const auth = z.object({
   FIREBASE_PROJECT_ID: z.string().min(1).optional(),
   GITHUB_CLIENT_ID: z.string().min(1).optional(),
   GITHUB_CLIENT_SECRET: z.string().min(1).optional(),
+  /** GitHub's OAuth origin (https://github.com) and REST API (https://api.github.com); from env like every URL. */
+  GITHUB_OAUTH_URL: z.url().optional(),
+  GITHUB_API_URL: z.url().optional(),
   LINKEDIN_CLIENT_ID: z.string().min(1).optional(),
   LINKEDIN_CLIENT_SECRET: z.string().min(1).optional(),
+  /** LinkedIn's OAuth base (https://www.linkedin.com/oauth/v2) and OpenID userinfo API (https://api.linkedin.com/v2). */
+  LINKEDIN_OAUTH_URL: z.url().optional(),
+  LINKEDIN_API_URL: z.url().optional(),
+  /**
+   * Comma-separated redirect URIs `oauthExchange` accepts — exactly those registered with GitHub and LinkedIn (the web
+   * callback page and the app's deep link). Anything else is refused.
+   */
+  OAUTH_REDIRECT_URIS: z
+    .string()
+    .optional()
+    .transform((s) => (s ? s.split(',').map((u) => u.trim()).filter(Boolean) : [])),
 })
+
+/** A provider with credentials needs its endpoints and at least one redirect URI. */
+const providersConfigured = (
+  c: { GITHUB_CLIENT_ID?: string; GITHUB_OAUTH_URL?: string; GITHUB_API_URL?: string; LINKEDIN_CLIENT_ID?: string; LINKEDIN_OAUTH_URL?: string; LINKEDIN_API_URL?: string; OAUTH_REDIRECT_URIS: string[] },
+  ctx: z.RefinementCtx,
+) => {
+  const need = (cond: boolean, path: string, message: string) => cond || ctx.addIssue({ code: 'custom', path: [path], message })
+  if (c.GITHUB_CLIENT_ID) {
+    need(!!c.GITHUB_OAUTH_URL, 'GITHUB_OAUTH_URL', 'required when GITHUB_CLIENT_ID is set')
+    need(!!c.GITHUB_API_URL, 'GITHUB_API_URL', 'required when GITHUB_CLIENT_ID is set')
+  }
+  if (c.LINKEDIN_CLIENT_ID) {
+    need(!!c.LINKEDIN_OAUTH_URL, 'LINKEDIN_OAUTH_URL', 'required when LINKEDIN_CLIENT_ID is set')
+    need(!!c.LINKEDIN_API_URL, 'LINKEDIN_API_URL', 'required when LINKEDIN_CLIENT_ID is set')
+  }
+  if (c.GITHUB_CLIENT_ID || c.LINKEDIN_CLIENT_ID) need(c.OAUTH_REDIRECT_URIS.length > 0, 'OAUTH_REDIRECT_URIS', 'required when GitHub or LinkedIn sign-in is on')
+}
 
 export const apiConfigSchema = backendBase
   .extend({
@@ -90,6 +121,7 @@ export const apiConfigSchema = backendBase
   .extend(mail.shape)
   .extend(auth.shape)
   .superRefine(mailTransportConfigured)
+  .superRefine(providersConfigured)
 export type ApiConfig = z.infer<typeof apiConfigSchema>
 
 export const workerConfigSchema = backendBase

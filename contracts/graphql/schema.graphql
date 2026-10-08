@@ -4,6 +4,16 @@ type AuthPayload {
   userErrors: [UserError!]!
 }
 
+"""
+After a provider sign-in (no signUp call): the same details, collected once
+"""
+input CompleteRegistrationInput {
+  acceptedTermsVersion: String!
+  dateOfBirth: String!
+  displayName: String!
+  institutionalEmail: String
+}
+
 scalar DateTime
 
 """Fixed error vocabulary (§6.2)"""
@@ -23,20 +33,69 @@ enum GlobalRole {
   TEACHER
 }
 
+type Institution {
+  name: String!
+  verified: Boolean!
+}
+
+enum InstitutionalEmailStatus {
+  """A code was sent to the address and not yet entered"""
+  CODE_SENT
+
+  """Confirmed; the account is verified by it"""
+  CONFIRMED
+
+  """No college or organisation email yet"""
+  NONE
+
+  """
+  Confirmed, but the domain waits for platform-admin review before it verifies the account
+  """
+  PENDING_REVIEW
+}
+
 type Mutation {
+  completeRegistration(input: CompleteRegistrationInput!): OkPayload!
+  oauthExchange(input: OAuthExchangeInput!): AuthPayload!
   refreshSession(input: RefreshSessionInput!): AuthPayload!
 
   """Always ok, whether or not an account exists"""
   requestPasswordReset(input: RequestPasswordResetInput!): OkPayload!
+  resendInstitutionalEmailCode: OkPayload!
 
   """Sets the password and signs out every device"""
   resetPassword(input: ResetPasswordInput!): OkPayload!
+
+  """
+  Adds or replaces the college or organisation email; a code is sent to it
+  """
+  setInstitutionalEmail(input: SetInstitutionalEmailInput!): OkPayload!
   signIn(input: SignInInput!): AuthPayload!
+  signInWithGoogle(input: SignInWithGoogleInput!): AuthPayload!
 
   """Ends this device's session (its whole refresh-token family)"""
   signOut: OkPayload!
   signUp(input: SignUpInput!): AuthPayload!
   verifyEmail(input: VerifyEmailInput!): OkPayload!
+  verifyInstitutionalEmail(input: VerifyInstitutionalEmailInput!): OkPayload!
+}
+
+"""
+Authorization Code + PKCE: the code from the provider's redirect and the verifier the client generated
+"""
+input OAuthExchangeInput {
+  code: String!
+  codeVerifier: String!
+  provider: OAuthProvider!
+  redirectUri: String!
+}
+
+"""
+Providers exchanged through oauthExchange. Google uses signInWithGoogle (ADR-0007).
+"""
+enum OAuthProvider {
+  GITHUB
+  LINKEDIN
 }
 
 type OkPayload {
@@ -45,6 +104,8 @@ type OkPayload {
 }
 
 type Query {
+  signInOptions: SignInOptions!
+
   """
   Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2)
   """
@@ -82,9 +143,28 @@ type Session {
   user: User!
 }
 
+input SetInstitutionalEmailInput {
+  email: String!
+}
+
 input SignInInput {
   email: String!
   password: String!
+}
+
+"""Which sign-in methods this deployment offers"""
+type SignInOptions {
+  emailPassword: Boolean!
+  github: Boolean!
+  google: Boolean!
+  linkedin: Boolean!
+}
+
+"""
+Firebase ID token from a Google sign-in; verified by the API and exchanged for an LVN session (ADR-0007)
+"""
+input SignInWithGoogleInput {
+  idToken: String!
 }
 
 """
@@ -116,8 +196,24 @@ type User {
   handle: String!
   id: UUID!
 
+  """The confirmed college or organisation"""
+  institution: Institution
+
+  """
+  Viewer only (ADR-0017): the confirmed address, or the one waiting for its code
+  """
+  institutionalEmail: String
+
+  """Viewer only"""
+  institutionalEmailStatus: InstitutionalEmailStatus
+
   """False until the registration details are given (ADR-0017)"""
   registrationComplete: Boolean!
+
+  """
+  Viewer only: a minor without verified consent (§15.2) — no public publishing, no DMs
+  """
+  restrictedMinor: Boolean
   verificationMethod: VerificationMethod
 
   """
@@ -143,4 +239,8 @@ enum VerificationMethod {
 
 input VerifyEmailInput {
   token: String!
+}
+
+input VerifyInstitutionalEmailInput {
+  code: String!
 }
