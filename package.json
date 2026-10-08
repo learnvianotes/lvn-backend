@@ -22,7 +22,8 @@
     "db:generate": "prisma generate",
     "graphql:export": "node scripts/export-supergraph.mjs",
     "graphql:check": "node scripts/export-supergraph.mjs --check",
-    "env:check": "node scripts/env-check.mjs"
+    "env:check": "node scripts/env-check.mjs",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "prisma": "7.10.0",
