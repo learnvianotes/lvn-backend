@@ -191,6 +191,16 @@ export const mobileConfigSchema = z.object({
   /** GitHub sign-in (§7.1); LinkedIn does not redirect to app schemes and has no app variable. */
   EXPO_PUBLIC_GITHUB_CLIENT_ID: publicId,
   EXPO_PUBLIC_GITHUB_AUTHORIZE_URL: z.url().optional(),
+  /**
+   * Google sign-in (ADR-0007): native Google Sign-In for the account, then Firebase for the ID token the API accepts.
+   * The Firebase web app's config, and the OAuth client ids the Google provider of that Firebase project created.
+   */
+  EXPO_PUBLIC_FIREBASE_API_KEY: publicId,
+  EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: publicId,
+  EXPO_PUBLIC_FIREBASE_PROJECT_ID: publicId,
+  EXPO_PUBLIC_FIREBASE_APP_ID: publicId,
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: publicId,
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: publicId,
   /** Sentry DSN for crashes and errors (§16.5); off without it. */
   EXPO_PUBLIC_SENTRY_DSN: httpUrl.optional(),
 })

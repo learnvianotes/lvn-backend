@@ -93,9 +93,11 @@ in lvn-mobile `env/<variant>.env` (public, committed) with per-machine overrides
 | `EXPO_PUBLIC_API_URL` | yes | `http://100.70.234.41:4000/graphql` | `https://api.sandbox.learnvianotes.in/graphql` | `https://api.learnvianotes.in/graphql` | The API's GraphQL gateway; development builds allow plain HTTP for it |
 | `EXPO_PUBLIC_GITHUB_CLIENT_ID` | no | — | — | — | GitHub sign-in in the app; empty hides the button. Redirect URI `<scheme>://oauth/callback` (schemes `learnvianotes-dev`, `learnvianotes-sandbox`, `learnvianotes`) |
 | `EXPO_PUBLIC_GITHUB_AUTHORIZE_URL` | with the client id | `https://github.com/login/oauth/authorize` | same | same | GitHub's consent page |
+| `EXPO_PUBLIC_FIREBASE_API_KEY`, `…_AUTH_DOMAIN`, `…_PROJECT_ID`, `…_APP_ID` | no | — (Google off) | the Firebase web app's config | same | Google sign-in (ADR-0007): Firebase turns the Google account into the ID token the API accepts. Public identifiers |
+| `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | with Firebase | the "Web client" OAuth id the Firebase Google provider created | same | same | Audience of the ID token native Google Sign-In returns, so Firebase accepts it |
+| `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | for iOS builds | the Firebase iOS app's OAuth client | same | same | Native Google Sign-In on iOS |
 | `EXPO_PUBLIC_SENTRY_DSN` | no | — (off) | the mobile project's DSN | same | Crashes and JS errors (§16.5) |
 
-Later in Phase 1 (ADR-0007): `EXPO_PUBLIC_FIREBASE_*` and the Google OAuth client ids used by native Google Sign-In, once
-the Firebase project's Android and iOS apps exist. LinkedIn has no app variable: it does not redirect to app schemes.
+LinkedIn has no app variable: it does not redirect to app schemes.
 Phase 3 (ADR-0021): `GOOGLE_SERVICES_JSON` and `GOOGLE_SERVICE_INFO_PLIST` — build-time paths to the Firebase config
 files used for FCM device tokens.

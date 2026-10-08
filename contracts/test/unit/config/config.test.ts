@@ -115,6 +115,12 @@ describe('mobileConfigSchema', () => {
     expect(() => loadConfig(mobileConfigSchema, { ...mobile, EXPO_PUBLIC_API_URL: undefined })).toThrow(/EXPO_PUBLIC_API_URL/)
   })
 
+  it('takes Google sign-in (Firebase) as optional', () => {
+    const c = loadConfig(mobileConfigSchema, { ...mobile, EXPO_PUBLIC_FIREBASE_PROJECT_ID: 'lvn-prod', EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: '123-abc.apps.googleusercontent.com' })
+    expect(c).toMatchObject({ EXPO_PUBLIC_FIREBASE_PROJECT_ID: 'lvn-prod', EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: '123-abc.apps.googleusercontent.com' })
+    expect(loadConfig(mobileConfigSchema, mobile).EXPO_PUBLIC_FIREBASE_API_KEY).toBeUndefined()
+  })
+
   it('takes GitHub sign-in and Sentry as optional', () => {
     const c = loadConfig(mobileConfigSchema, { ...mobile, EXPO_PUBLIC_GITHUB_CLIENT_ID: 'Iv1.abc', EXPO_PUBLIC_SENTRY_DSN: 'https://key@o1.ingest.sentry.io/2' })
     expect(c.EXPO_PUBLIC_GITHUB_CLIENT_ID).toBe('Iv1.abc')
