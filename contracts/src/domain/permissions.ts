@@ -91,6 +91,8 @@ export const Action = {
   ACCOUNT_REVIEW_VERIFICATION: 'account.reviewVerification',
   PERSONAL_STUDY_CREATE: 'study.create',
   CONTENT_REPORT: 'content.report',
+  /** The platform moderation queue (§15.1): PLATFORM_ADMIN until the admin app exists (ADR-0037). */
+  CONTENT_MODERATE: 'content.moderate',
 } as const
 export type Action = (typeof Action)[keyof typeof Action]
 
@@ -453,6 +455,8 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           return true
         case Action.CLASSROOM_CREATE:
           return actor.globalRole === GlobalRole.TEACHER
+        case Action.CONTENT_MODERATE:
+          return actor.globalRole === GlobalRole.PLATFORM_ADMIN
         default:
           return false
       }

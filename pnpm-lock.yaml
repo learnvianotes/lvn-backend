@@ -317,12 +317,21 @@ importers:
       '@lvn-backend/event-bus':
         specifier: workspace:*
         version: link:../../libs/event-bus
+      '@lvn-backend/facades':
+        specifier: workspace:*
+        version: link:../../libs/facades
+      '@lvn-backend/graphql':
+        specifier: workspace:*
+        version: link:../../libs/graphql
       '@lvn-backend/legacy':
         specifier: workspace:*
         version: link:../../libs/legacy
       '@lvn-backend/prisma-base':
         specifier: workspace:*
         version: link:../../libs/prisma-base
+      '@lvn-backend/redis':
+        specifier: workspace:*
+        version: link:../../libs/redis
       '@lvn-backend/storage':
         specifier: workspace:*
         version: link:../../libs/storage

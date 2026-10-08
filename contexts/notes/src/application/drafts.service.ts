@@ -8,6 +8,7 @@ import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { noteFacts } from '../domain/note-access'
 import { AttachmentsService } from './attachments.service'
+import { NoteModerationService } from './moderation.service'
 import { checkCard, NotesService, type OpenedNote } from './notes.service'
 import { OrganiseService } from './organise.service'
 
@@ -69,6 +70,7 @@ export class DraftsService {
     private readonly organise: OrganiseService,
     private readonly limiter: RateLimiter,
     private readonly attachments: AttachmentsService,
+    private readonly moderation: NoteModerationService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
 
@@ -191,7 +193,15 @@ export class DraftsService {
       return id
     })
     const note = opened.note
-    await this.events.publish('NotePublished', { noteId, versionId, ownerId, visibility: note.visibility, kind: note.kind })
+    if (note.visibility !== 'PUBLIC') {
+      await this.events.publish('NotePublished', { noteId, versionId, ownerId, visibility: note.visibility, kind: note.kind })
+    } else if (await this.moderation.screen(noteId)) {
+      // ADR-0037: every version that reaches the public is screened.
+      await this.events.publish('NotePublished', { noteId, versionId, ownerId, visibility: note.visibility, kind: note.kind })
+    } else if (note.moderation === 'OK' && note.publishedVersionId) {
+      // Held now, though the previous version was public: it leaves search and recommendations until reviewed.
+      await this.events.publish('NoteUnpublished', { noteId, ownerId })
+    }
     return (await this.notes.open(ownerId, noteId, opened.actor))!
   }
 

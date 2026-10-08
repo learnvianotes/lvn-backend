@@ -2,9 +2,9 @@ import type { DynamicModule } from '@nestjs/common'
 import type { WorkerConfig } from '@lvn-backend/config'
 import { AiModule } from '@lvn-backend/ai'
 import { CommunicationModule, communicationConfigFrom, MailService } from '@lvn-backend/communication'
-import { CoreModule, coreConfigFrom } from '@lvn-backend/core'
-import { AUDIT, ENTITLEMENTS, FacadesModule, FILES, MAILER, PEOPLE, POLICY } from '@lvn-backend/facades'
-import { FilesService, NotesModule, notesConfigFrom } from '@lvn-backend/notes'
+import { CoreModule, coreConfigFrom, ModerationService } from '@lvn-backend/core'
+import { AUDIT, ENTITLEMENTS, FacadesModule, FILES, MAILER, MODERATION, NOTE_MODERATION, PEOPLE, POLICY } from '@lvn-backend/facades'
+import { FilesService, NoteModerationService, NotesModule, notesConfigFrom } from '@lvn-backend/notes'
 import { AuditService, EntitlementService, PolicyService, UsersModule, usersConfigFrom, UsersService } from '@lvn-backend/users'
 
 /**
@@ -30,4 +30,6 @@ export const facades = () =>
     [ENTITLEMENTS, EntitlementService],
     [PEOPLE, UsersService],
     [AUDIT, AuditService],
+    [MODERATION, ModerationService],
+    [NOTE_MODERATION, NoteModerationService],
   ])

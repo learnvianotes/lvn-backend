@@ -8,6 +8,7 @@ import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { noteFacts, visibleNotesWhere } from '../domain/note-access'
 import { AttachmentsService } from './attachments.service'
+import { NoteModerationService } from './moderation.service'
 import type { SnapshotCard } from './drafts.service'
 import { NotesService, type OpenedNote } from './notes.service'
 
@@ -24,6 +25,7 @@ export class SharingService {
     private readonly notes: NotesService,
     private readonly limiter: RateLimiter,
     private readonly attachments: AttachmentsService,
+    private readonly moderation: NoteModerationService,
     @Inject(PEOPLE) private readonly people: People,
     @Inject(AUDIT) private readonly audit: Audit,
     @Inject(EVENT_BUS) private readonly events: EventBus,
@@ -42,10 +44,14 @@ export class SharingService {
       throw Errors.forbidden()
     }
     if (visibility === 'PUBLIC' && !note.publishedVersionId) throw Errors.validation('Publish the note first: readers see the published version.', ['input', 'visibility'])
+    if (visibility === 'PUBLIC' && (note.moderation === 'HIDDEN' || note.moderation === 'REMOVED')) {
+      throw Errors.forbidden('Moderators took this note off the public pages. You can appeal from the note.')
+    }
     await this.db.note.update({ where: { id: noteId }, data: { visibility } })
     await this.audit.record({ actorId: ownerId, action: 'note.visibility', targetType: 'NOTE', targetId: noteId, metadata: { from: note.visibility, to: visibility } })
-    if (visibility === 'PUBLIC' && note.publishedVersionId) {
-      await this.events.publish('NotePublished', { noteId, versionId: note.publishedVersionId, ownerId, visibility, kind: note.kind })
+    if (visibility === 'PUBLIC') {
+      // ADR-0037: the published version is screened first; a held note waits for a moderator.
+      if (await this.moderation.screen(noteId)) await this.events.publish('NotePublished', { noteId, versionId: note.publishedVersionId!, ownerId, visibility, kind: note.kind })
     } else if (note.visibility === 'PUBLIC') {
       // §4.2: leaving PUBLIC removes the note from search and recommendations (the listeners act on this).
       await this.events.publish('NoteUnpublished', { noteId, ownerId })

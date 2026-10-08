@@ -128,6 +128,8 @@ export interface MediaFile {
   durationMs: number | null
 }
 
+export type ModerationState = 'OK' | 'PENDING_REVIEW' | 'HIDDEN' | 'REMOVED'
+
 export interface MutationCreateUploadIntentArgs {
   input: CreateUploadIntentInput
 }
@@ -248,6 +250,8 @@ export interface Note {
   updatedAt: Date
   /** Set while the note is in the trash (owner only) */
   deletedAt: Date | null
+  /** Owner only; null for everyone else */
+  moderation?: NoteModeration | null
   /** Owner only: the people the note is shared with; null for anyone else */
   shares?: Array<NoteShare> | null
   /** Set on a copy of another note; it cannot be removed */
@@ -299,6 +303,16 @@ export interface NoteIdInput {
 
 /** What a note is presented as (ADR-0014, ADR-0015). Phase 2 creates NOTE only. */
 export type NoteKind = 'NOTE' | 'BLOG' | 'POST' | 'PROJECT'
+
+/** Where a note stands with moderation */
+export interface NoteModeration {
+  /** OK, or PENDING_REVIEW (held from the public until a moderator looks), HIDDEN or REMOVED (by a moderator) */
+  state: ModerationState
+  /** Why, in words for the owner */
+  reason: string | null
+  /** Hidden or removed notes can be appealed once (appealModeration) */
+  canAppeal: boolean
+}
 
 export interface NotePayload {
   note: Note | null

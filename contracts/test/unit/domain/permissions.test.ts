@@ -507,6 +507,13 @@ describe('actions without a resource', () => {
     }
   })
 
+  it('only platform admins moderate public content (ADR-0037)', () => {
+    expect(can(student('a', { globalRole: GlobalRole.PLATFORM_ADMIN }), Action.CONTENT_MODERATE)).toBe(true)
+    expect(can(student('t', { globalRole: GlobalRole.TEACHER }), Action.CONTENT_MODERATE)).toBe(false)
+    expect(can(other, Action.CONTENT_MODERATE)).toBe(false)
+    expect(can(anon, Action.CONTENT_MODERATE)).toBe(false)
+  })
+
   it('only the TEACHER role creates classrooms; it is never self-selected', () => {
     expect(can(student('t', { globalRole: GlobalRole.TEACHER }), Action.CLASSROOM_CREATE)).toBe(true)
     expect(can(other, Action.CLASSROOM_CREATE)).toBe(false)

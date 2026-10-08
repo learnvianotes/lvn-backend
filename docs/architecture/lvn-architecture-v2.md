@@ -618,7 +618,7 @@ A student community with public content and minors needs human moderation and a 
 
 ### 15.1 Moderation
 
-- Automated: AI moderation on publish and on comments (categories: harassment, sexual, self-harm, hate, spam, copyright claim). Scores above threshold put content in `PENDING_REVIEW` instead of `PUBLIC`; the author is told, with a reason.
+- Automated: AI moderation on publish and on comments (categories: harassment, sexual, self-harm, hate, spam, copyright claim). Scores above threshold put content in `PENDING_REVIEW` instead of `PUBLIC`; the author is told, with a reason. *[Amended: ADR-0037 — until the AI gateway (Phase 5) a rule-based scorer behind the same `MODERATION` facade; `PENDING_REVIEW` is the note's moderation state, not a visibility; three reports from different people also hold a public note]*
 - User reporting: `reportContent(entityType, entityId, reason, details)` on notes, comments, groups, resources and profiles. Users can block other users (hides their content and prevents DMs/comments).
 - Queue: `Report` rows feed a moderation queue. Group moderators handle group scope, classroom teachers handle class scope, platform moderators (admin app) handle public scope. Actions (`hide`, `remove`, `warn`, `suspend`, `dismiss`) are recorded in `ModerationAction` and the audit log; the author can appeal once.
 - Until the admin app exists, a minimal internal moderation page lives behind a `PLATFORM_ADMIN`-only route in the web app and is removed when admin.learnvianotes.com ships.

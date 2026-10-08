@@ -5,7 +5,8 @@ import { noteAccess, visibleNotesWhere, type NoteAccessRow } from '../../src/dom
 
 /**
  * §5: "implement the predicate once as a reusable where builder … unit-test that both produce identical result sets on
- * seeded data." Every combination of visibility, published or not, trashed or not and share role, for five viewers:
+ * seeded data." Every combination of visibility, published or not, trashed or not, share role and moderation state
+ * (ADR-0037), for five viewers:
  * the per-note decision (`noteAccess`, used when opening one note) and the query (`visibleNotesWhere`, used for every
  * list) must agree on every pair.
  */
@@ -26,17 +27,19 @@ describe('note visibility: the single-note rule and the list query agree', () =>
       for (const published of [false, true]) {
         for (const trashed of [false, true]) {
           for (const shared of [false, true]) {
-            const id = newId()
-            await db.note.create({ data: { id, ownerId: owner, visibility, deletedAt: trashed ? new Date() : null } })
-            let publishedVersionId: string | null = null
-            if (published) {
-              publishedVersionId = newId()
-              await db.noteVersion.create({ data: { id: publishedVersionId, noteId: id, number: 1, kind: 'PUBLISHED', title: '', cards: [], createdById: owner } })
-              await db.note.update({ where: { id }, data: { publishedVersionId } })
+            for (const moderation of ['OK', 'PENDING_REVIEW', 'HIDDEN', 'REMOVED'] as const) {
+              const id = newId()
+              await db.note.create({ data: { id, ownerId: owner, visibility, moderation, deletedAt: trashed ? new Date() : null } })
+              let publishedVersionId: string | null = null
+              if (published) {
+                publishedVersionId = newId()
+                await db.noteVersion.create({ data: { id: publishedVersionId, noteId: id, number: 1, kind: 'PUBLISHED', title: '', cards: [], createdById: owner } })
+                await db.note.update({ where: { id }, data: { publishedVersionId } })
+              }
+              const shares: Record<string, 'EDITOR' | 'VIEWER'> = shared ? { [editor]: 'EDITOR', [viewer]: 'VIEWER' } : {}
+              for (const [userId, role] of Object.entries(shares)) await db.noteShare.create({ data: { noteId: id, userId, role, createdById: owner } })
+              notes.push({ id, ownerId: owner, visibility, moderation, forkingEnabled: true, publishedVersionId, deletedAt: trashed ? new Date() : null, shares })
             }
-            const shares: Record<string, 'EDITOR' | 'VIEWER'> = shared ? { [editor]: 'EDITOR', [viewer]: 'VIEWER' } : {}
-            for (const [userId, role] of Object.entries(shares)) await db.noteShare.create({ data: { noteId: id, userId, role, createdById: owner } })
-            notes.push({ id, ownerId: owner, visibility, forkingEnabled: true, publishedVersionId, deletedAt: trashed ? new Date() : null, shares })
           }
         }
       }
@@ -67,8 +70,8 @@ describe('note visibility: the single-note rule and the list query agree', () =>
   })
 
   it('gives what the matrix says, on the cases that matter most', () => {
-    const find = (v: string, published: boolean, trashed: boolean, shared: boolean) =>
-      notes.find((n) => n.visibility === v && !!n.publishedVersionId === published && !!n.deletedAt === trashed && Object.keys(n.shares).length > 0 === shared)!
+    const find = (v: string, published: boolean, trashed: boolean, shared: boolean, moderation = 'OK') =>
+      notes.find((n) => n.visibility === v && !!n.publishedVersionId === published && !!n.deletedAt === trashed && Object.keys(n.shares).length > 0 === shared && n.moderation === moderation)!
     const access = (id: string | null, n: (typeof notes)[number]) => noteAccess(id ? actor(id, true) : null, n, id ? (n.shares[id] ?? null) : null)
     // PRIVATE: the owner only, whatever share rows exist.
     expect(access(owner, find('PRIVATE', false, false, true))).toBe('OWNER')
@@ -83,5 +86,13 @@ describe('note visibility: the single-note rule and the list query agree', () =>
     expect(access(null, find('PUBLIC', false, false, false))).toBeNull()
     expect(access(stranger, find('PUBLIC', true, true, false))).toBeNull()
     expect(access(owner, find('PUBLIC', true, true, false))).toBe('OWNER')
+    // ADR-0037: a held note leaves the public path but stays with the people it is shared with; hidden or removed, it
+    // is its owner's alone.
+    expect(access(null, find('PUBLIC', true, false, true, 'PENDING_REVIEW'))).toBeNull()
+    expect(access(stranger, find('PUBLIC', true, false, true, 'PENDING_REVIEW'))).toBeNull()
+    expect(access(viewer, find('PUBLIC', true, false, true, 'PENDING_REVIEW'))).toBe('READER')
+    expect(access(editor, find('SHARED', true, false, true, 'HIDDEN'))).toBeNull()
+    expect(access(viewer, find('PUBLIC', true, false, true, 'REMOVED'))).toBeNull()
+    expect(access(owner, find('PUBLIC', true, false, true, 'REMOVED'))).toBe('OWNER')
   })
 })
