@@ -82,4 +82,7 @@ Every package keeps its tests in `test/`, never in `src/` (Jest, `testMatch: <ro
 | `test/e2e/` | a composed app over HTTP (`apps/api`) | the app in-process |
 
 `contracts/` holds 80 % line coverage and 100 % branch coverage on `src/domain/permissions.ts` (spec §17).
-The security suite of spec §17.1 lands in `apps/api/test/security/` with Phase 1.
+The security suite of spec §17.1 is `apps/api/test/security/` (`pnpm --filter @lvn-backend/api test:security`): Student A,
+Student B, Teacher T and a platform admin; every mutation fuzzed for role escalation, viewer-only fields, pre-signed
+URL lifetimes and re-checks, upload abuse, query limits, brute force, credential stuffing and refresh-token reuse.
+Assertions for channels that later phases add are `it.todo` until then ([README](apps/api/test/security/README.md)).
