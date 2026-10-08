@@ -989,6 +989,11 @@ type Query
 
   """The viewer's own notes, most recently edited first"""
   myNotes(filter: NoteFilter, first: Int, after: String): NoteConnection! @join__field(graph: NOTES)
+
+  """
+  Notes anyone may read, newest published first (at most 100 a page): sitemaps and public pages
+  """
+  publicNotes(first: Int, after: String): NoteConnection! @join__field(graph: NOTES)
   myFolders: [Folder!]! @join__field(graph: NOTES)
   myTags: [Tag!]! @join__field(graph: NOTES)
   subjects: [Subject!]! @join__field(graph: NOTES)

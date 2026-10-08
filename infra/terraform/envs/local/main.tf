@@ -51,6 +51,9 @@ locals {
       SMTP_URL                = "smtp://mailpit:1025"
       MAIL_FROM               = "${var.mail_from_name} <${var.mail_from_address}>"
       PASSWORD_BREACH_API_URL = "https://api.pwnedpasswords.com/range"
+      # Public note pages refresh when a note changes (P2d): the API calls the web container directly.
+      WEB_REVALIDATE_URL = "http://web:3000/api/revalidate"
+      REVALIDATE_SECRET  = random_password.revalidate.result
     },
     { for k, v in local.optional : k => v if v != "" },
     var.extra_backend_environment,
@@ -67,6 +70,11 @@ resource "tls_private_key" "jwt" {
 }
 
 resource "random_password" "code_hmac" {
+  length  = 48
+  special = false
+}
+
+resource "random_password" "revalidate" {
   length  = 48
   special = false
 }
@@ -282,6 +290,9 @@ resource "docker_container" "web" {
     "NEXT_PUBLIC_APP_ENV=${var.environment}",
     "NEXT_PUBLIC_SITE_URL=${var.public_url}",
     "NEXT_PUBLIC_API_URL=${var.public_url}/graphql",
+    # Server-side rendering (public note pages) reaches the API inside the network, not through the entrance.
+    "API_INTERNAL_URL=http://api:4000/graphql",
+    "REVALIDATE_SECRET=${random_password.revalidate.result}",
   ]
   networks_advanced {
     name    = docker_network.this.id

@@ -21,6 +21,7 @@ import type {
   NoteVersionsArgs,
   OkPayload,
   QueryMyNotesArgs,
+  QueryPublicNotesArgs,
   QueryNoteArgs,
 } from './schema.types'
 
@@ -46,6 +47,12 @@ export class NotesResolver {
   async note(@Args() { id }: QueryNoteArgs, @CurrentViewer() viewer: Viewer | null): Promise<NoteParent | null> {
     const opened = await this.notes.open(viewer?.userId ?? null, id)
     return opened ? toNote(opened) : null
+  }
+
+  @Query('publicNotes')
+  async publicNotes(@Args() { first, after }: QueryPublicNotesArgs) {
+    const { rows, size } = await this.notes.publicList(first, after)
+    return connection(rows, size, (n) => [n.publishedAt!.toISOString(), n.id], (n) => toNote({ note: n, access: 'READER', shareRole: null, actor: null }))
   }
 
   @Query('myNotes')

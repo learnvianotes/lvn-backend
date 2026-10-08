@@ -24,9 +24,10 @@ Validated in lvn-web `lib/env.ts` until `@lvn/contracts/config` is published (AD
 | `NEXT_PUBLIC_GITHUB_CLIENT_ID`, `NEXT_PUBLIC_GITHUB_AUTHORIZE_URL` | no | — (GitHub off) | — | app id, `https://github.com/login/oauth/authorize` | same | GitHub consent page (PKCE) |
 | `NEXT_PUBLIC_LINKEDIN_CLIENT_ID`, `NEXT_PUBLIC_LINKEDIN_AUTHORIZE_URL` | no | — (LinkedIn off) | — | app id, `https://www.linkedin.com/oauth/v2/authorization` | same | LinkedIn consent page (PKCE) |
 | `NEXT_PUBLIC_SENTRY_DSN` | no | — (off) | — | the web project's DSN | same | Browser and server errors (§16.5); a DSN is public by design |
+| `API_INTERNAL_URL` | no | `NEXT_PUBLIC_API_URL` | — | the API's address inside the VPC | same | Server-only: where server rendering (public note pages, sitemap) calls the API |
+| `REVALIDATE_SECRET` | no | — (on-demand refresh off) | — | secret, ≥ 32 characters | same | Server-only: the API's calls to `/api/revalidate` must carry it; the same value as the API's |
 
-Still to come: `NEXT_PUBLIC_WS_URL` (subscriptions) and `REVALIDATE_SECRET` (server-only, for
-the API's on-demand ISR webhook) in the phases that use them.
+Still to come: `NEXT_PUBLIC_WS_URL` (subscriptions) in the phase that uses it.
 
 ## lvn-backend
 
@@ -46,6 +47,8 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `SENTRY_DSN` | api, worker | no | — (off) | Sentry project DSN for unexpected exceptions |
 | `DATABASE_URL` | api, worker | yes (secret) | — | PostgreSQL 16 connection string; must start with `postgres` |
 | `REDIS_URL` | api, worker | yes (secret) | — | Redis 7 connection string |
+| `WEB_REVALIDATE_URL` | api | no | — (off) | The web app's `/api/revalidate`: public note pages refresh when a note changes (P2d) |
+| `REVALIDATE_SECRET` | api | no | — | Sent with those calls; at least 32 characters; the same value as the web app's |
 | `MODERATION_WORDS_FILE` | api | no | — (built-in spam phrases only) | A file of `REASON: phrase` lines (REASON as in ReportReason, `#` comments) that hold content for review on its way to the public (ADR-0037) |
 | `API_HOST` | api | no | `0.0.0.0` | Bind address |
 | `API_PORT` | api | no | `4000` | HTTP + WebSocket port |
