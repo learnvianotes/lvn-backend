@@ -1,0 +1,63 @@
+# Offline sync for devices (spec §13.2): push the outbox, pull what changed.
+
+enum SyncOpKind { CREATE_NOTE UPDATE_NOTE TRASH_NOTE RESTORE_NOTE }
+
+"APPLIED; REJECTED — it will never apply (show it as needing attention); RETRY — send it again later"
+enum SyncOpStatus { APPLIED REJECTED RETRY }
+
+input SyncOpInput {
+  "A UUID made on the device; sending the same operation again returns the first answer"
+  clientOpId: UUID!
+  kind: SyncOpKind!
+  "For CREATE_NOTE, the id the device gave the note"
+  noteId: UUID!
+  "CREATE_NOTE and UPDATE_NOTE"
+  title: String
+  "CREATE_NOTE: the note's first cards"
+  cards: [CardInput!]
+  "UPDATE_NOTE: card changes, as in updateNoteDraft"
+  ops: [CardOpInput!]
+}
+
+type SyncOpResult {
+  clientOpId: UUID!
+  status: SyncOpStatus!
+  code: ErrorCode
+  message: String
+  noteId: UUID!
+  "UPDATE_NOTE: per card, as in updateNoteDraft"
+  cardResults: [CardOpResult!]!
+  "Set when a card changed elsewhere too: the other side is kept in this CONFLICT version"
+  conflictVersionId: UUID
+}
+
+type SyncPushPayload {
+  "In the order sent; after a RETRY, the rest are RETRY too"
+  results: [SyncOpResult!]!
+}
+
+type SyncedNote {
+  note: Note!
+  "All live cards: the draft for owners and editors, the published version for readers"
+  cards: [Card!]!
+}
+
+type SyncPullResult {
+  "Notes changed since the cursor, oldest change first"
+  notes: [SyncedNote!]!
+  "Every note this account may keep on its devices; remove the others"
+  liveNoteIds: [UUID!]!
+  "Keep it for the next sync (`since`), or ask for the next page (`after`)"
+  cursor: String
+  hasMore: Boolean!
+}
+
+extend type Query {
+  "What changed since `since` (the cursor of the last completed sync) or `after` (the previous page); 1 to 50 notes (default 20)"
+  syncPull(since: String, after: String, first: Int): SyncPullResult!
+}
+
+extend type Mutation {
+  "Apply a device's outbox in order (at most 100 operations)"
+  syncPush(ops: [SyncOpInput!]!): SyncPushPayload!
+}

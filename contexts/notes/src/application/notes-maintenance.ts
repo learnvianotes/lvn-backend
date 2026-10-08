@@ -37,6 +37,12 @@ export class NotesMaintenance {
    * §4.5: notes in the trash for 30 days are deleted for good, with their cards, versions, shares and links; then files
    * no note links to any more are deleted (§8.2).
    */
+  /** §13.2: answers to sync operations are kept 30 days. */
+  async pruneSyncLog(now = new Date()): Promise<number> {
+    const { count } = await this.db.syncOpLog.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - 30 * 86_400_000) } } })
+    return count
+  }
+
   async emptyTrash(now = new Date()): Promise<number> {
     const cutoff = new Date(now.getTime() - NOTE_LIMITS.trashDays * 24 * 3600 * 1000)
     const { count } = await this.db.note.deleteMany({ where: { deletedAt: { lt: cutoff } } })

@@ -10,6 +10,7 @@ import { OrganiseService } from './application/organise.service'
 import { PublicPages } from './application/public-pages'
 import { SearchIndex } from './application/search-index'
 import { SearchService } from './application/search.service'
+import { SyncService } from './application/sync.service'
 import { SharingService } from './application/sharing.service'
 import { FilesResolver } from './graphql/files.resolver'
 import { CardResolver } from './graphql/media.resolver'
@@ -17,6 +18,7 @@ import { NotesResolver, NoteVersionResolver } from './graphql/notes.resolver'
 import { OrganiseResolver, SubjectResolver, TopicResolver } from './graphql/organise.resolver'
 import { SearchResolver } from './graphql/search.resolver'
 import { SharingResolver } from './graphql/sharing.resolver'
+import { SyncResolver } from './graphql/sync.resolver'
 import { NOTES_CONFIG, type NotesConfig } from './notes.config'
 
 /**
@@ -48,6 +50,8 @@ export class NotesModule {
         SearchIndex,
         SearchService,
         SearchResolver,
+        SyncService,
+        SyncResolver,
         FilesResolver,
         CardResolver,
         NotesResolver,

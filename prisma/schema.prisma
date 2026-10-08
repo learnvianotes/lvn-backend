@@ -765,6 +765,19 @@ model NoteSearchDocument {
   @@schema("notes")
 }
 
+/// Sync operations already applied (§13.2): a device that retries gets the first answer again, never a second write.
+/// Kept 30 days.
+model SyncOpLog {
+  clientOpId String   @id @db.Uuid
+  /// Cross-context reference to users.User
+  userId     String   @db.Uuid
+  result     Json
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([createdAt])
+  @@schema("notes")
+}
+
 /// ADR-0037: where a note stands with moderation (§15.1).
 enum ModerationState {
   OK

@@ -36,6 +36,8 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
         return { pruned }
       },
       // §4.5: the trash keeps notes for 30 days.
+      // §13.2: sync answers are kept 30 days.
+      'prune-sync-log': async () => ({ pruned: await this.notes.pruneSyncLog() }),
       'empty-trash': async () => {
         const deleted = await this.notes.emptyTrash()
         this.log.log(`deleted ${deleted} notes from the trash`)
@@ -44,5 +46,6 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
     })
     await this.queues.repeat(NOTES_MAINTENANCE_QUEUE, 'prune-versions', '30 3 * * *')
     await this.queues.repeat(NOTES_MAINTENANCE_QUEUE, 'empty-trash', '45 3 * * *')
+    await this.queues.repeat(NOTES_MAINTENANCE_QUEUE, 'prune-sync-log', '50 3 * * *')
   }
 }

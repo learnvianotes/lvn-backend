@@ -228,6 +228,10 @@ input CreateFolderInput
 input CreateNoteInput
   @join__type(graph: NOTES)
 {
+  """
+  Made on the device for a note written offline (a UUIDv7, §13.2); leave out to let the server choose
+  """
+  id: UUID
   title: String
   folderId: UUID
   kind: NoteKind
@@ -638,6 +642,9 @@ type Mutation
 
   """Allow or stop copies of your note"""
   setNoteForking(input: SetNoteForkingInput!): NotePayload! @join__field(graph: NOTES)
+
+  """Apply a device's outbox in order (at most 100 operations)"""
+  syncPush(ops: [SyncOpInput!]!): SyncPushPayload! @join__field(graph: NOTES)
   signUp(input: SignUpInput!): AuthPayload! @join__field(graph: USERS)
   signIn(input: SignInInput!): AuthPayload! @join__field(graph: USERS)
   refreshSession(input: RefreshSessionInput!): AuthPayload! @join__field(graph: USERS)
@@ -1031,6 +1038,11 @@ type Query
   """Notes other people shared with the viewer, most recently changed first"""
   sharedWithMe(first: Int, after: String): NoteConnection! @join__field(graph: NOTES)
 
+  """
+  What changed since `since` (the cursor of the last completed sync) or `after` (the previous page); 1 to 50 notes (default 20)
+  """
+  syncPull(since: String, after: String, first: Int): SyncPullResult! @join__field(graph: NOTES)
+
   """The signed-in user, null for anonymous visitors"""
   viewer: User @join__field(graph: USERS)
 
@@ -1291,6 +1303,100 @@ type Subject
 
   """Top-level topics: curated ones and the viewer's proposals"""
   topics: [Topic!]!
+}
+
+type SyncedNote
+  @join__type(graph: NOTES)
+{
+  note: Note!
+
+  """
+  All live cards: the draft for owners and editors, the published version for readers
+  """
+  cards: [Card!]!
+}
+
+input SyncOpInput
+  @join__type(graph: NOTES)
+{
+  """
+  A UUID made on the device; sending the same operation again returns the first answer
+  """
+  clientOpId: UUID!
+  kind: SyncOpKind!
+
+  """For CREATE_NOTE, the id the device gave the note"""
+  noteId: UUID!
+
+  """CREATE_NOTE and UPDATE_NOTE"""
+  title: String
+
+  """CREATE_NOTE: the note's first cards"""
+  cards: [CardInput!]
+
+  """UPDATE_NOTE: card changes, as in updateNoteDraft"""
+  ops: [CardOpInput!]
+}
+
+enum SyncOpKind
+  @join__type(graph: NOTES)
+{
+  CREATE_NOTE @join__enumValue(graph: NOTES)
+  UPDATE_NOTE @join__enumValue(graph: NOTES)
+  TRASH_NOTE @join__enumValue(graph: NOTES)
+  RESTORE_NOTE @join__enumValue(graph: NOTES)
+}
+
+type SyncOpResult
+  @join__type(graph: NOTES)
+{
+  clientOpId: UUID!
+  status: SyncOpStatus!
+  code: ErrorCode
+  message: String
+  noteId: UUID!
+
+  """UPDATE_NOTE: per card, as in updateNoteDraft"""
+  cardResults: [CardOpResult!]!
+
+  """
+  Set when a card changed elsewhere too: the other side is kept in this CONFLICT version
+  """
+  conflictVersionId: UUID
+}
+
+"""
+APPLIED; REJECTED — it will never apply (show it as needing attention); RETRY — send it again later
+"""
+enum SyncOpStatus
+  @join__type(graph: NOTES)
+{
+  APPLIED @join__enumValue(graph: NOTES)
+  REJECTED @join__enumValue(graph: NOTES)
+  RETRY @join__enumValue(graph: NOTES)
+}
+
+type SyncPullResult
+  @join__type(graph: NOTES)
+{
+  """Notes changed since the cursor, oldest change first"""
+  notes: [SyncedNote!]!
+
+  """Every note this account may keep on its devices; remove the others"""
+  liveNoteIds: [UUID!]!
+
+  """
+  Keep it for the next sync (`since`), or ask for the next page (`after`)
+  """
+  cursor: String
+  hasMore: Boolean!
+}
+
+type SyncPushPayload
+  @join__type(graph: NOTES)
+{
+  """In the order sent; after a RETRY, the rest are RETRY too"""
+  results: [SyncOpResult!]!
 }
 
 """The viewer's tag; names are unique ignoring case"""
