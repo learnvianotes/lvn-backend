@@ -21,7 +21,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "graphql:export": "node scripts/export-supergraph.mjs",
-    "graphql:check": "node scripts/export-supergraph.mjs --check"
+    "graphql:check": "node scripts/export-supergraph.mjs --check",
+    "env:check": "node scripts/env-check.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
