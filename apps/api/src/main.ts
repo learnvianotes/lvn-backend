@@ -2,6 +2,7 @@ import 'reflect-metadata'
 import { NestFactory } from '@nestjs/core'
 import type { NestExpressApplication } from '@nestjs/platform-express'
 import { loadApiConfig } from '@lvn-backend/config'
+import { Storage } from '@lvn-backend/storage'
 import { configureHttp } from './http'
 import { AppModule } from './app.module'
 
@@ -9,6 +10,8 @@ async function bootstrap() {
   const config = loadApiConfig()
   const app = await NestFactory.create<NestExpressApplication>(AppModule.forRoot(config), { bufferLogs: false })
   configureHttp(app, config)
+  // Local RustFS starts empty; sandbox and production buckets come from Terraform.
+  if (config.APP_ENV === 'development') await app.get(Storage).ensureBuckets([config.S3_BUCKET, config.S3_RESTRICTED_BUCKET])
   app.enableShutdownHooks()
   await app.listen(config.API_PORT, config.API_HOST)
 }

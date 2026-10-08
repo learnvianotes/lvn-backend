@@ -1,7 +1,9 @@
+import { Logger } from '@nestjs/common'
 import { AppError, ErrorCode } from '@lvn-backend/errors'
 import { GraphQLError, type GraphQLFormattedError } from 'graphql'
 
 const CODES = new Set<string>(Object.values(ErrorCode))
+const log = new Logger('GraphQL')
 
 /**
  * Every error leaves the API with one of the fixed codes and no stack trace (§6.2). AppErrors keep their message;
@@ -27,6 +29,9 @@ export function formatError(formatted: GraphQLFormattedError, error: unknown): G
   if (code === 'GRAPHQL_VALIDATION_FAILED' || code === 'GRAPHQL_PARSE_FAILED' || code === 'BAD_USER_INPUT' || code === 'BAD_REQUEST') {
     return { message: formatted.message, path, extensions: { code: ErrorCode.VALIDATION } }
   }
+  // The client gets a generic message; the cause stays in the server logs (§6.2, §7.2).
+  const cause = (error as { originalError?: unknown })?.originalError ?? error
+  log.error(`${path?.join('.') ?? 'operation'}: ${cause instanceof Error ? (cause.stack ?? cause.message) : String(cause)}`)
   return { message: 'Something went wrong. Please try again.', path, extensions: { code: ErrorCode.INTERNAL } }
 }
 

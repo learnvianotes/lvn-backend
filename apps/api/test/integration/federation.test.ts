@@ -6,7 +6,7 @@ import { graphqlModules } from '@lvn-backend/graphql'
 import { PrismaModule } from '@lvn-backend/prisma-base'
 import { EventBusModule } from '@lvn-backend/event-bus'
 import { RedisModule, SessionRevocations } from '@lvn-backend/redis'
-import { MAILER } from '@lvn-backend/facades'
+import { FILES, MAILER } from '@lvn-backend/facades'
 import { Global } from '@nestjs/common'
 import { AccessTokenVerifier } from '@lvn-backend/auth-guard'
 import { resetDatabase } from '@lvn-backend/testing'
@@ -57,9 +57,15 @@ class ProbeQueryResolver {
 @Module({ providers: [ProbeUserResolver, ProbeQueryResolver] })
 class ProbeModule {}
 
-/** users needs a mailer binding; this test sends no email. */
+/** users needs bindings for the mail and files facades; this test sends no email and stores no files. */
 @Global()
-@Module({ providers: [{ provide: MAILER, useValue: { send: async () => undefined } }], exports: [MAILER] })
+@Module({
+  providers: [
+    { provide: MAILER, useValue: { send: async () => undefined } },
+    { provide: FILES, useValue: { attach: async () => undefined, describe: async () => [], readUrl: async () => ({ url: '', expiresAt: new Date() }), delete: async () => undefined } },
+  ],
+  exports: [MAILER, FILES],
+})
 class NoMailModule {}
 
 describe('federation across in-process subgraphs', () => {

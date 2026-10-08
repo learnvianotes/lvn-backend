@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing'
 import { apiConfigSchema, loadConfig, type ApiConfig } from '@lvn/contracts/config'
 import { resetDatabase, testSecrets, workerDatabase, type TestInfra } from '@lvn-backend/testing'
 import { GOOGLE_ID_TOKENS, MX_LOOKUP, type GoogleIdTokens, type MxLookup } from '@lvn-backend/users'
+import { Storage } from '@lvn-backend/storage'
 import request from 'supertest'
 import { AppModule } from '../../src/app.module'
 import { configureHttp } from '../../src/http'
@@ -85,9 +86,10 @@ export async function createTestApp(overrides: Record<string, string> = {}): Pro
     .overrideProvider(GOOGLE_ID_TOKENS)
     .useValue(fakeGoogle)
     .compile()
-  const app = moduleRef.createNestApplication({ logger: false })
+  const app = moduleRef.createNestApplication({ logger: process.env.LVN_TEST_LOGS ? ['error', 'warn'] : false })
   configureHttp(app, config)
   await app.init()
+  await app.get(Storage).ensureBuckets([config.S3_BUCKET, config.S3_RESTRICTED_BUCKET])
   return {
     app,
     config,

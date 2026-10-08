@@ -20,15 +20,20 @@ export async function workerDatabase(migratedUrl: string, workerId = process.env
   return url.toString()
 }
 
-/** Empties every table of the context schemas (not the migrations table), so each test file starts clean. */
+/** Reference data that migrations insert (the FREE plan and its entitlements, ADR-0024); resets keep it. */
+export const SEEDED_TABLES = ['users.Plan', 'users.Entitlement']
+
+/** Empties every table of the context schemas except migration-seeded reference data, so each test file starts clean. */
 export async function resetDatabase(databaseUrl: string): Promise<void> {
   const client = new Client({ connectionString: databaseUrl })
   await client.connect()
   try {
     const { rows } = await client.query<{ name: string }>(
-      `SELECT format('%I.%I', schemaname, tablename) AS name FROM pg_tables WHERE schemaname IN ('users', 'notes', 'core', 'ai', 'comms')`,
+      `SELECT format('%I.%I', schemaname, tablename) AS name FROM pg_tables
+       WHERE schemaname IN ('users', 'notes', 'core', 'ai', 'comms') AND schemaname || '.' || tablename <> ALL($1)`,
+      [SEEDED_TABLES],
     )
-    if (rows.length) await client.query(`TRUNCATE ${rows.map((r) => r.name).join(', ')} CASCADE`)
+    if (rows.length) await client.query(`TRUNCATE ${rows.map((r) => r.name).join(', ')}`)
   } finally {
     await client.end()
   }

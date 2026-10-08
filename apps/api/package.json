@@ -20,10 +20,12 @@
     "@lvn-backend/core": "workspace:*",
     "@lvn-backend/errors": "workspace:*",
     "@lvn-backend/event-bus": "workspace:*",
+    "@lvn-backend/facades": "workspace:*",
     "@lvn-backend/graphql": "workspace:*",
     "@lvn-backend/notes": "workspace:*",
     "@lvn-backend/prisma-base": "workspace:*",
     "@lvn-backend/redis": "workspace:*",
+    "@lvn-backend/storage": "workspace:*",
     "@lvn-backend/users": "workspace:*",
     "@lvn/contracts": "workspace:@learnvianotes/contracts@*",
     "@nestjs/apollo": "13.4.5",
@@ -38,7 +40,6 @@
     "rxjs": "^7.8.2"
   },
   "devDependencies": {
-    "@lvn-backend/facades": "workspace:*",
     "@lvn-backend/testing": "workspace:*",
     "@nestjs/cli": "^11.0.24",
     "@nestjs/testing": "^11.2.7",

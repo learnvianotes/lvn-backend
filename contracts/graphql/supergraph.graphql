@@ -40,20 +40,75 @@ input CompleteRegistrationInput
   acceptedTermsVersion: String!
 }
 
+input CreateUploadIntentInput
+  @join__type(graph: NOTES)
+{
+  """Shown to people; never part of the storage key"""
+  fileName: String!
+  mimeType: String!
+  sizeBytes: Int!
+  purpose: FilePurpose!
+  parentId: UUID
+}
+
 scalar DateTime
+  @join__type(graph: NOTES)
   @join__type(graph: USERS)
+
+input DecideDomainReviewInput
+  @join__type(graph: USERS)
+{
+  domain: String!
+  approve: Boolean!
+}
+
+type DomainReview
+  @join__type(graph: USERS)
+{
+  domain: String!
+  status: DomainReviewStatus!
+
+  """How many people asked for it"""
+  requests: Int!
+  firstSeenAt: DateTime!
+}
+
+enum DomainReviewStatus
+  @join__type(graph: USERS)
+{
+  ACADEMIC_QUEUED @join__enumValue(graph: USERS)
+  NEEDS_REVIEW @join__enumValue(graph: USERS)
+  APPROVED @join__enumValue(graph: USERS)
+  REJECTED @join__enumValue(graph: USERS)
+}
 
 """Fixed error vocabulary (§6.2)"""
 enum ErrorCode
+  @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
-  UNAUTHENTICATED @join__enumValue(graph: USERS)
-  FORBIDDEN @join__enumValue(graph: USERS)
-  NOT_FOUND @join__enumValue(graph: USERS)
-  VALIDATION @join__enumValue(graph: USERS)
-  CONFLICT @join__enumValue(graph: USERS)
-  RATE_LIMITED @join__enumValue(graph: USERS)
-  INTERNAL @join__enumValue(graph: USERS)
+  UNAUTHENTICATED @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  FORBIDDEN @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  NOT_FOUND @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  VALIDATION @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  CONFLICT @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  RATE_LIMITED @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  INTERNAL @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+}
+
+"""
+What an upload is for. Phase 1 accepts AVATAR and VERIFICATION_DOCUMENT; note media arrives with notes (Phase 2).
+"""
+enum FilePurpose
+  @join__type(graph: NOTES)
+{
+  ATTACHMENT @join__enumValue(graph: NOTES)
+  COVER @join__enumValue(graph: NOTES)
+  VOICE_NOTE @join__enumValue(graph: NOTES)
+  AVATAR @join__enumValue(graph: NOTES)
+  IMPORT @join__enumValue(graph: NOTES)
+  EXPORT @join__enumValue(graph: NOTES)
+  VERIFICATION_DOCUMENT @join__enumValue(graph: NOTES)
 }
 
 enum GlobalRole
@@ -92,6 +147,7 @@ enum InstitutionalEmailStatus
 scalar join__FieldSet
 
 enum join__Graph {
+  NOTES @join__graph(name: "notes", url: "local://notes")
   USERS @join__graph(name: "users", url: "local://users")
 }
 
@@ -110,31 +166,52 @@ enum link__Purpose {
 }
 
 type Mutation
+  @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
-  signUp(input: SignUpInput!): AuthPayload!
-  signIn(input: SignInInput!): AuthPayload!
-  refreshSession(input: RefreshSessionInput!): AuthPayload!
+  createUploadIntent(input: CreateUploadIntentInput!): UploadIntentPayload! @join__field(graph: NOTES)
+
+  """Checks the uploaded bytes (size, magic bytes) and makes the file READY"""
+  completeUpload(fileId: UUID!): OkPayload! @join__field(graph: NOTES)
+  signUp(input: SignUpInput!): AuthPayload! @join__field(graph: USERS)
+  signIn(input: SignInInput!): AuthPayload! @join__field(graph: USERS)
+  refreshSession(input: RefreshSessionInput!): AuthPayload! @join__field(graph: USERS)
 
   """Ends this device's session (its whole refresh-token family)"""
-  signOut: OkPayload!
-  verifyEmail(input: VerifyEmailInput!): OkPayload!
+  signOut: OkPayload! @join__field(graph: USERS)
+  verifyEmail(input: VerifyEmailInput!): OkPayload! @join__field(graph: USERS)
 
   """Always ok, whether or not an account exists"""
-  requestPasswordReset(input: RequestPasswordResetInput!): OkPayload!
+  requestPasswordReset(input: RequestPasswordResetInput!): OkPayload! @join__field(graph: USERS)
 
   """Sets the password and signs out every device"""
-  resetPassword(input: ResetPasswordInput!): OkPayload!
-  signInWithGoogle(input: SignInWithGoogleInput!): AuthPayload!
-  oauthExchange(input: OAuthExchangeInput!): AuthPayload!
-  completeRegistration(input: CompleteRegistrationInput!): OkPayload!
+  resetPassword(input: ResetPasswordInput!): OkPayload! @join__field(graph: USERS)
+  signInWithGoogle(input: SignInWithGoogleInput!): AuthPayload! @join__field(graph: USERS)
+  oauthExchange(input: OAuthExchangeInput!): AuthPayload! @join__field(graph: USERS)
+  completeRegistration(input: CompleteRegistrationInput!): OkPayload! @join__field(graph: USERS)
 
   """
   Adds or replaces the college or organisation email; a code is sent to it
   """
-  setInstitutionalEmail(input: SetInstitutionalEmailInput!): OkPayload!
-  verifyInstitutionalEmail(input: VerifyInstitutionalEmailInput!): OkPayload!
-  resendInstitutionalEmailCode: OkPayload!
+  setInstitutionalEmail(input: SetInstitutionalEmailInput!): OkPayload! @join__field(graph: USERS)
+  verifyInstitutionalEmail(input: VerifyInstitutionalEmailInput!): OkPayload! @join__field(graph: USERS)
+  resendInstitutionalEmailCode: OkPayload! @join__field(graph: USERS)
+  requestTeacherVerification(input: RequestTeacherVerificationInput!): VerificationRequestPayload! @join__field(graph: USERS)
+  requestDocumentVerification(input: RequestDocumentVerificationInput!): VerificationRequestPayload! @join__field(graph: USERS)
+  withdrawVerificationRequest(requestId: UUID!): OkPayload! @join__field(graph: USERS)
+
+  """
+  Teachers: requests addressed to them. Platform admins: all, including documents.
+  """
+  reviewVerificationRequest(input: ReviewVerificationRequestInput!): VerificationRequestPayload! @join__field(graph: USERS)
+
+  """Platform admins"""
+  decideDomainReview(input: DecideDomainReviewInput!): OkPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins: TEACHER is granted by review, not by an email address (§5, ADR-0017)
+  """
+  setGlobalRole(input: SetGlobalRoleInput!): OkPayload! @join__field(graph: USERS)
 }
 
 """
@@ -160,6 +237,7 @@ enum OAuthProvider
 }
 
 type OkPayload
+  @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
   ok: Boolean!
@@ -167,16 +245,38 @@ type OkPayload
 }
 
 type Query
+  @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
   """The signed-in user, null for anonymous visitors"""
-  viewer: User
+  viewer: User @join__field(graph: USERS)
 
   """
   Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2)
   """
-  termsVersion: String!
-  signInOptions: SignInOptions!
+  termsVersion: String! @join__field(graph: USERS)
+  signInOptions: SignInOptions! @join__field(graph: USERS)
+  myVerificationRequests: [VerificationRequest!]! @join__field(graph: USERS)
+
+  """
+  Teachers: pending requests addressed to them. Platform admins: every pending request. Oldest first; `after` is the last id seen.
+  """
+  verificationRequestsToReview(first: Int, after: UUID): [VerificationRequest!]! @join__field(graph: USERS)
+
+  """
+  Platform admins only: a 15-minute link to one document; the view is written to the audit log
+  """
+  verificationDocumentUrl(requestId: UUID!, fileId: UUID!): SignedUrl! @join__field(graph: USERS)
+
+  """
+  Verified teachers whose name or handle matches, to ask one of them for verification
+  """
+  teachers(search: String!): [User!]! @join__field(graph: USERS)
+
+  """
+  Platform admins: institutional email domains waiting for review (ADR-0017)
+  """
+  domainReviews(status: DomainReviewStatus): [DomainReview!]! @join__field(graph: USERS)
 }
 
 input RefreshSessionInput
@@ -186,10 +286,27 @@ input RefreshSessionInput
   refreshToken: String
 }
 
+"""
+fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by platform admins only, deleted 30 days after the decision
+"""
+input RequestDocumentVerificationInput
+  @join__type(graph: USERS)
+{
+  fileIds: [UUID!]!
+  message: String
+}
+
 input RequestPasswordResetInput
   @join__type(graph: USERS)
 {
   email: String!
+}
+
+input RequestTeacherVerificationInput
+  @join__type(graph: USERS)
+{
+  teacherId: UUID!
+  message: String
 }
 
 input ResetPasswordInput
@@ -197,6 +314,16 @@ input ResetPasswordInput
 {
   token: String!
   password: String!
+}
+
+input ReviewVerificationRequestInput
+  @join__type(graph: USERS)
+{
+  requestId: UUID!
+  approve: Boolean!
+
+  """Required when rejecting"""
+  reason: String
 }
 
 type Session
@@ -215,10 +342,24 @@ type Session
   user: User!
 }
 
+input SetGlobalRoleInput
+  @join__type(graph: USERS)
+{
+  userId: UUID!
+  role: GlobalRole!
+}
+
 input SetInstitutionalEmailInput
   @join__type(graph: USERS)
 {
   email: String!
+}
+
+type SignedUrl
+  @join__type(graph: USERS)
+{
+  url: String!
+  expiresAt: DateTime!
 }
 
 input SignInInput
@@ -260,6 +401,32 @@ input SignUpInput
   dateOfBirth: String!
   institutionalEmail: String
   acceptedTermsVersion: String!
+}
+
+type UploadHeader
+  @join__type(graph: NOTES)
+{
+  name: String!
+  value: String!
+}
+
+"""
+Upload the bytes with PUT to uploadUrl and exactly these headers within 10 minutes, then call completeUpload.
+"""
+type UploadIntent
+  @join__type(graph: NOTES)
+{
+  fileId: UUID!
+  uploadUrl: String!
+  uploadHeaders: [UploadHeader!]!
+  expiresAt: DateTime!
+}
+
+type UploadIntentPayload
+  @join__type(graph: NOTES)
+{
+  intent: UploadIntent
+  userErrors: [UserError!]!
 }
 
 """
@@ -308,6 +475,7 @@ type User
 An expected failure of a mutation; `field` is the dotted input path, e.g. ["input", "email"]
 """
 type UserError
+  @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
   field: [String!]
@@ -316,7 +484,17 @@ type UserError
 }
 
 scalar UUID
+  @join__type(graph: NOTES)
   @join__type(graph: USERS)
+
+type VerificationDocument
+  @join__type(graph: USERS)
+{
+  fileId: UUID!
+  fileName: String!
+  mimeType: String!
+  sizeBytes: Int!
+}
 
 enum VerificationMethod
   @join__type(graph: USERS)
@@ -324,6 +502,46 @@ enum VerificationMethod
   INSTITUTIONAL_EMAIL @join__enumValue(graph: USERS)
   TEACHER @join__enumValue(graph: USERS)
   DOCUMENTS @join__enumValue(graph: USERS)
+}
+
+"""
+Shown to the requester, the addressed teacher and platform admins. Documents are listed for platform admins only.
+"""
+type VerificationRequest
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  method: VerificationMethod!
+  status: VerificationRequestStatus!
+  message: String
+  createdAt: DateTime!
+  decidedAt: DateTime
+  reason: String
+  requester: User!
+
+  """TEACHER method: the teacher asked to vouch"""
+  teacher: User
+
+  """
+  Platform admins only; open one with verificationDocumentUrl (every view is audited)
+  """
+  documents: [VerificationDocument!]!
+}
+
+type VerificationRequestPayload
+  @join__type(graph: USERS)
+{
+  request: VerificationRequest
+  userErrors: [UserError!]!
+}
+
+enum VerificationRequestStatus
+  @join__type(graph: USERS)
+{
+  PENDING @join__enumValue(graph: USERS)
+  APPROVED @join__enumValue(graph: USERS)
+  REJECTED @join__enumValue(graph: USERS)
+  WITHDRAWN @join__enumValue(graph: USERS)
 }
 
 input VerifyEmailInput

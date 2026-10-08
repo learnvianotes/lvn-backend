@@ -4,7 +4,7 @@ import { AiModule } from '@lvn-backend/ai'
 import { CommunicationModule } from '@lvn-backend/communication'
 import { CoreModule } from '@lvn-backend/core'
 import type { SubgraphDefinition } from '@lvn-backend/graphql'
-import { NotesModule } from '@lvn-backend/notes'
+import { NotesModule, notesSubgraph } from '@lvn-backend/notes'
 import { UsersModule, usersSubgraph } from '@lvn-backend/users'
 
 /** Audience of LVN access tokens. */
@@ -35,7 +35,7 @@ export function contextModules(config: ApiConfig): (Type | DynamicModule)[] {
           : undefined,
       oauthRedirectUris: config.OAUTH_REDIRECT_URIS,
     }),
-    NotesModule,
+    NotesModule.forRoot({ env: config.APP_ENV, bucket: config.S3_BUCKET, restrictedBucket: config.S3_RESTRICTED_BUCKET }),
     CoreModule,
     AiModule,
     CommunicationModule.forRoot({
@@ -51,4 +51,4 @@ export function contextModules(config: ApiConfig): (Type | DynamicModule)[] {
  * Contexts that serve GraphQL today, each as its own federation subgraph. A context joins when it ships its first
  * resolver (spec §18: later-phase code is not written early).
  */
-export const SUBGRAPHS: SubgraphDefinition[] = [usersSubgraph]
+export const SUBGRAPHS: SubgraphDefinition[] = [usersSubgraph, notesSubgraph]
