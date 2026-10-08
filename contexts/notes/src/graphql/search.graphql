@@ -1,0 +1,22 @@
+# Search (spec §10.4): one field over notes, people and topics. The Postgres provider answers in Phases 2–3.
+
+enum SearchScope { NOTES PEOPLE TOPICS }
+
+type NoteSearchHit {
+  note: Note!
+  "Words around the match from the published version; each match is wrapped in U+E000 … U+E001"
+  snippet: String!
+}
+
+type SearchResults {
+  "Only notes the viewer may read, best match first"
+  notes: [NoteSearchHit!]!
+  "People past the digital-consent age, by handle or name"
+  people: [User!]!
+  topics: [Topic!]!
+}
+
+extend type Query {
+  "At most 100 characters; `first` per group, 1 to 20 (default 5). Works signed out too: public notes only."
+  search(query: String!, scopes: [SearchScope!], first: Int): SearchResults!
+}

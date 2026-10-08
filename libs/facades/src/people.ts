@@ -16,4 +16,6 @@ export interface Person {
 export interface People {
   /** The account with this handle (with or without @) or email address, or null; deleted accounts are not found. */
   find(handleOrEmail: string): Promise<Person | null>
+  /** People whose handle starts with, or whose name contains, the words — for search. Minors are never listed. */
+  search(query: string, limit: number): Promise<Person[]>
 }

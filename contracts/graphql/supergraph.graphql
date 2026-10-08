@@ -854,6 +854,17 @@ type NotePermissions
   fork: Boolean!
 }
 
+type NoteSearchHit
+  @join__type(graph: NOTES)
+{
+  note: Note!
+
+  """
+  Words around the match from the published version; each match is wrapped in U+E000 … U+E001
+  """
+  snippet: String!
+}
+
 """
 A person a note is shared with; EDITORs work on the draft, VIEWERs read the published version
 """
@@ -1012,6 +1023,11 @@ type Query
   """Topics whose title contains the words, curated first (at most 50)"""
   findTopics(query: String!, subjectId: UUID): [Topic!]! @join__field(graph: NOTES)
 
+  """
+  At most 100 characters; `first` per group, 1 to 20 (default 5). Works signed out too: public notes only.
+  """
+  search(query: String!, scopes: [SearchScope!], first: Int): SearchResults! @join__field(graph: NOTES)
+
   """Notes other people shared with the viewer, most recently changed first"""
   sharedWithMe(first: Int, after: String): NoteConnection! @join__field(graph: NOTES)
 
@@ -1135,6 +1151,25 @@ input ReviewVerificationRequestInput
 
   """Required when rejecting"""
   reason: String
+}
+
+type SearchResults
+  @join__type(graph: NOTES)
+{
+  """Only notes the viewer may read, best match first"""
+  notes: [NoteSearchHit!]!
+
+  """People past the digital-consent age, by handle or name"""
+  people: [User!]!
+  topics: [Topic!]!
+}
+
+enum SearchScope
+  @join__type(graph: NOTES)
+{
+  NOTES @join__enumValue(graph: NOTES)
+  PEOPLE @join__enumValue(graph: NOTES)
+  TOPICS @join__enumValue(graph: NOTES)
 }
 
 type Session

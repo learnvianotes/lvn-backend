@@ -673,12 +673,13 @@ model Note {
   createdAt            DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt            DateTime        @updatedAt @db.Timestamptz(3)
 
-  folder           Folder?          @relation(fields: [folderId], references: [id])
-  publishedVersion NoteVersion?     @relation("PublishedVersion", fields: [publishedVersionId], references: [id])
+  folder           Folder?             @relation(fields: [folderId], references: [id])
+  publishedVersion NoteVersion?        @relation("PublishedVersion", fields: [publishedVersionId], references: [id])
   cards            Card[]
-  versions         NoteVersion[]    @relation("NoteVersions")
+  versions         NoteVersion[]       @relation("NoteVersions")
   shares           NoteShare[]
   attachments      NoteAttachment[]
+  searchDocument   NoteSearchDocument?
   tags             NoteTag[]
   topics           NoteTopic[]
 
@@ -742,6 +743,25 @@ model NoteShare {
 
   @@id([noteId, userId])
   @@index([userId])
+  @@schema("notes")
+}
+
+/// What search finds of a note (§10.4, P2e): its published version, rebuilt by the `search` queue on every publish.
+/// Who may see a hit is decided at query time by the note's read predicate, never by this row.
+model NoteSearchDocument {
+  noteId    String                   @id @db.Uuid
+  versionId String                   @db.Uuid
+  title     String
+  topics    String
+  body      String
+  /// title (A), topics (B) and body (C), English stemming; written with SQL by the indexer
+  document  Unsupported("tsvector")?
+  updatedAt DateTime                 @updatedAt @db.Timestamptz(3)
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@index([document], type: Gin)
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin)
   @@schema("notes")
 }
 
