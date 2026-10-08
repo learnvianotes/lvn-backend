@@ -20,8 +20,11 @@ export async function workerDatabase(migratedUrl: string, workerId = process.env
   return url.toString()
 }
 
-/** Reference data that migrations insert (the FREE plan and its entitlements, ADR-0024); resets keep it. */
-export const SEEDED_TABLES = ['users.Plan', 'users.Entitlement']
+/**
+ * Reference data that migrations insert — the FREE plan and its entitlements (ADR-0024), the curated subjects and
+ * topics (§4.1); resets keep it, except topics that users proposed.
+ */
+export const SEEDED_TABLES = ['users.Plan', 'users.Entitlement', 'notes.Subject', 'notes.Topic']
 
 /** Empties every table of the context schemas except migration-seeded reference data, so each test file starts clean. */
 export async function resetDatabase(databaseUrl: string): Promise<void> {
@@ -34,6 +37,7 @@ export async function resetDatabase(databaseUrl: string): Promise<void> {
       [SEEDED_TABLES],
     )
     if (rows.length) await client.query(`TRUNCATE ${rows.map((r) => r.name).join(', ')}`)
+    await client.query(`DELETE FROM "notes"."Topic" WHERE "origin" = 'PROPOSED'`)
   } finally {
     await client.end()
   }
