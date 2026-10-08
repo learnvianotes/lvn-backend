@@ -1,7 +1,8 @@
 # ADR-0036: A local environment on a VM, deployed with Terraform, until the AWS sandbox exists
 
 - Status: Accepted (owner direction, 2026-10-08: "create a separate vm environment and install the terraform and use
-  locally for now"; "complete phase 1")
+  locally for now"; "complete phase 1"). Amended the same day: "for now, lets skip deployment to AWS, lets use my
+  system with VM, and i can set it up later" — the local environment is the sandbox until the owner sets AWS up.
 - Date: 2026-10-08
 - Deciders: owner; Backend agent
 - Spec sections: §16.1 (Environments), §16.2 (Deployment), §18 (Phase 1 exit criteria)
@@ -17,8 +18,9 @@ Terraform installed in it, used locally for now.
 
 ## Decision
 
-1. **A fourth, local environment: `local`.** It stands in for the sandbox on this machine. It is not a replacement:
-   the sandbox on AWS stays the target, and nothing in it changes.
+1. **A fourth, local environment: `local`.** It stands in for the sandbox on this machine, and is where shared testing
+   and phase exit checks run until the owner sets up AWS. It is not a replacement: the AWS sandbox (ADR-0035) stays
+   the target, ready to deploy, and nothing in it changes.
 2. **A VM, not the host.** `infra/local-vm/vm.sh` runs a Debian 13 cloud image under QEMU/KVM with Docker and
    Terraform (from HashiCorp's apt repository, key pinned by fingerprint). Its disk, SSH key and logs live outside the
    repository (`~/.local/share/lvn-vm`). QEMU publishes the entrance (port 8080) and the S3 endpoint (8081) on the

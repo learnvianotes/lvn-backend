@@ -1,13 +1,15 @@
-# Phase 1 — Foundation (exit criteria shown on the local environment; Google there and the AWS sandbox run remain)
+# Phase 1 — Foundation (closed on the local environment; AWS deferred by the owner)
 
 Spec: [lvn-architecture-v2.md](../architecture/lvn-architecture-v2.md) §18. Scope: repositories, configuration, NestJS +
 Prisma + Redis + S3, sign-in (email and three providers), registration with date of birth and institutional email,
 verification, old-site data, student profile, plan limits, sessions, roles, `PolicyService`, uploads, logging, error
 codes, Testcontainers, Docker Compose, Terraform for sandbox, CI, Sentry, OpenTelemetry.
 
-Everything below runs and is tested locally. Until the AWS account exists, the exit criteria were shown on the
-**local environment** (ADR-0036): the sandbox's images, generated secrets, migration step and single entrance, on a VM
-on the dev machine, deployed with Terraform. The same checks run against the AWS sandbox once it exists.
+Everything below runs and is tested locally. The exit criteria were shown on the **local environment** (ADR-0036):
+the sandbox's images, generated secrets, migration step and single entrance, on a VM on the dev machine, deployed with
+Terraform. Owner decision, 2026-10-08: the AWS deployment waits — "lets use my system with VM, and i can set it up
+later" — so the local environment is the sandbox for now. The AWS sandbox (ADR-0035) is ready to deploy; the same
+checks then run against it.
 
 ## Shipped
 
@@ -84,26 +86,25 @@ Owner decisions of 2026-10-08: sign-in at launch shows **email and Google**; Git
 switched off until configured, for later. The sandbox needs **no domain** and is configured from one `.env`
 (ADR-0035). The owner creates the Sentry organisation and publishes the repositories.
 
-- [ ] **Web and mobile sign in with email and Google** — email: done on both in dev and on the local environment
-  (Playwright live 4/4, Maestro 5/5). Google: done for real in dev on the owner's phone (native Google Sign-In →
-  Firebase → API) and on the web (Firebase popup); offered on the local environment, which accepts the same tokens,
-  and waiting for one tap by the owner there (below). AWS sandbox: when the account exists.
+- [x] **Web and mobile sign in with email and Google** — email: on both, in dev and on the local environment
+  (Playwright live 4/4, Maestro 5/5). Google: checked by the owner on the web and the phone in dev on 2026-10-08 (six
+  successful `signInWithGoogle` exchanges); the local environment runs the same images with the same Firebase project
+  and offers Google (live spec), but no Google sign-in has gone through it yet — one click at its address does that.
 - [x] **Migration deploys** — on the local environment, as its own step on every new image (`deploy-local.sh`); in CI
   on an empty database. AWS sandbox: `deploy.sh` runs the migrate task.
 - [x] **File upload round-trips** — on the local environment through its published S3 endpoint, into both buckets
   (`pnpm smoke`). AWS sandbox: the same command against its URL.
 - [x] **Security suite scaffold passes.**
 
-On AWS the same three checks are `infra/scripts/deploy.sh sandbox`, `pnpm smoke <public_url>` and the live specs.
+On AWS, when the owner sets it up, the same checks are `infra/scripts/deploy.sh sandbox`, `pnpm smoke <public_url>`
+and the live specs.
 
 ## Needed from the owner
 
-- **Google on the local environment (one tap each):** on the web, add `100.70.234.41` to Firebase → Authentication →
-  Settings → Authorized domains, open `http://100.70.234.41:8080` and Continue with Google; on the phone, a development
-  build pointed at the environment (`EXPO_PUBLIC_API_URL=http://100.70.234.41:8080/graphql` in
-  `env/development.local.env`) and Continue with Google.
+- **Google on the local environment (one click):** `100.70.234.41` is an authorized domain in Firebase (done); open
+  `http://100.70.234.41:8080` and Continue with Google.
 
-- **AWS:** an account with an administrator CLI profile on the deploying machine (AWS CLI v2, Terraform ≥ 1.9, Docker,
+- **AWS (deferred by the owner, 2026-10-08):** an account with an administrator CLI profile on the deploying machine (AWS CLI v2, Terraform ≥ 1.9, Docker,
   `jq`), and a sender email address for SES. Everything else is created by `infra/terraform/bootstrap.sh` and
   `infra/scripts/deploy.sh` from `infra/terraform/envs/sandbox/.env` (`infra/terraform/README.md`).
 - **Firebase:** Google enabled; the web app's config; Android apps with the signing key's SHA-1; the Web client ID
