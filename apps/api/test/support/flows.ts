@@ -18,7 +18,7 @@ export interface Intent {
   uploadHeaders: { name: string; value: string }[]
 }
 
-export async function createIntent(t: TestApp, token: string, input: { fileName: string; mimeType: string; sizeBytes: number; purpose: string }) {
+export async function createIntent(t: TestApp, token: string, input: { fileName: string; mimeType: string; sizeBytes: number; purpose: string; parentId?: string }) {
   const res = await t.gql<{ createUploadIntent: { intent: Intent | null; userErrors: { field: string[] | null; message: string; code: string }[] } }>(INTENT, { input }, token)
   if (res.errors) return { intent: null, userErrors: res.errors.map((e) => ({ field: null, message: e.message, code: e.extensions.code })) }
   return res.data!.createUploadIntent
@@ -35,8 +35,8 @@ export async function complete(t: TestApp, token: string, fileId: string) {
 }
 
 /** The whole upload flow (§8.1); returns the READY file's id. */
-export async function upload(t: TestApp, token: string, purpose: string, mimeType: string, bytes: Uint8Array, fileName = 'file'): Promise<string> {
-  const { intent, userErrors } = await createIntent(t, token, { fileName, mimeType, sizeBytes: bytes.length, purpose })
+export async function upload(t: TestApp, token: string, purpose: string, mimeType: string, bytes: Uint8Array, fileName = 'file', parentId?: string): Promise<string> {
+  const { intent, userErrors } = await createIntent(t, token, { fileName, mimeType, sizeBytes: bytes.length, purpose, ...(parentId ? { parentId } : {}) })
   if (!intent) throw new Error(`upload intent refused: ${JSON.stringify(userErrors)}`)
   expect(await put(intent, bytes)).toBe(200)
   expect(await complete(t, token, intent.fileId)).toEqual({ ok: true, userErrors: [] })

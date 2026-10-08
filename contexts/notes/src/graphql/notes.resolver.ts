@@ -4,6 +4,7 @@ import { CurrentViewer, SignedInGuard, type RequestContext, type Viewer } from '
 import { withUserErrors, type UserError } from '@lvn-backend/errors'
 import { connection, requestLoader } from '@lvn-backend/graphql'
 import { notePermissions, type NoteAccessRow } from '../domain/note-access'
+import { AttachmentsService } from '../application/attachments.service'
 import { DraftsService, type CardOpResult } from '../application/drafts.service'
 import { NotesService, type NoteRow, type OpenedNote } from '../application/notes.service'
 import { OrganiseService } from '../application/organise.service'
@@ -36,6 +37,7 @@ export class NotesResolver {
     private readonly notes: NotesService,
     private readonly drafts: DraftsService,
     private readonly organise: OrganiseService,
+    private readonly attachments: AttachmentsService,
   ) {}
 
   // ── Queries ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -145,7 +147,8 @@ export class NotesResolver {
   @ResolveField('cards')
   async cards(@Parent() n: NoteParent, @Args() { first, after }: NoteCardsArgs) {
     const { rows, size, cursorOf } = await this.drafts.cards(n.opened, first, after)
-    return connection(rows, size, cursorOf, (c) => c)
+    // Card.media needs the note the card is on (published cards are snapshots without it).
+    return connection(rows, size, cursorOf, (c) => ({ ...c, noteId: n.id }))
   }
 
   @ResolveField('versions')
@@ -211,7 +214,7 @@ export class NotesResolver {
   @UseGuards(SignedInGuard)
   deleteNoteForever(@Args() { input }: MutationDeleteNoteForeverArgs, @CurrentViewer() viewer: Viewer): Promise<OkPayload> {
     return withUserErrors<OkPayload>(async () => {
-      await this.notes.destroy(viewer.userId, input.noteId)
+      await this.attachments.purgeUnlinked(await this.notes.destroy(viewer.userId, input.noteId))
       return { ok: true }
     }, { ok: false })
   }
@@ -228,8 +231,8 @@ export class NoteVersionResolver {
   }
 
   @ResolveField('cards')
-  async cards(@Parent() v: { id: string }, @Args() { first, after }: NoteCardsArgs) {
+  async cards(@Parent() v: { id: string; noteId: string }, @Args() { first, after }: NoteCardsArgs) {
     const { rows, size, cursorOf } = await this.drafts.versionCards(v.id, first, after)
-    return connection(rows, size, cursorOf, (c) => c)
+    return connection(rows, size, cursorOf, (c) => ({ ...c, noteId: v.noteId }))
   }
 }

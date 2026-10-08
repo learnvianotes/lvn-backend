@@ -7,6 +7,7 @@ import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { detectMimeType, Storage } from '@lvn-backend/storage'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
+import { NotesService } from './notes.service'
 
 const UPLOAD_URL_TTL_SECONDS = 10 * 60
 const READ_URL_TTL_SECONDS = 15 * 60
@@ -14,16 +15,25 @@ const READ_URL_TTL_SECONDS = 15 * 60
 const PENDING_TTL_MS = 24 * 60 * 60 * 1000
 const IMAGES = ['image/jpeg', 'image/png', 'image/webp']
 
+/** What a note may show (§8.1 limits by kind): pictures, video, audio and PDF documents. */
+const NOTE_MEDIA: Record<string, number> = {
+  ...Object.fromEntries([...IMAGES, 'image/gif'].map((m) => [m, UploadLimits.image])),
+  ...Object.fromEntries(['video/mp4', 'video/webm', 'video/quicktime'].map((m) => [m, UploadLimits.video])),
+  ...Object.fromEntries(['audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/webm'].map((m) => [m, UploadLimits.audio])),
+  'application/pdf': UploadLimits.document,
+}
+
 interface PurposeRule {
   parentType: FileParentKind
   mimeTypes: string[]
-  maxBytes: number
+  maxBytes: number | ((mimeType: string) => number)
   /** Stored in the restricted bucket (ADR-0019) */
   restricted: boolean
 }
 
-/** Purposes open in Phase 1; note media (ATTACHMENT, COVER, VOICE_NOTE) and IMPORT arrive with notes in Phase 2. */
+/** Purposes open so far; COVER, VOICE_NOTE and IMPORT arrive with their features. */
 const PURPOSES: Partial<Record<FilePurposeKind, PurposeRule>> = {
+  ATTACHMENT: { parentType: 'NOTE', mimeTypes: Object.keys(NOTE_MEDIA), maxBytes: (m) => NOTE_MEDIA[m]!, restricted: false },
   AVATAR: { parentType: 'AVATAR', mimeTypes: IMAGES, maxBytes: UploadLimits.image, restricted: false },
   VERIFICATION_DOCUMENT: { parentType: 'VERIFICATION_REQUEST', mimeTypes: [...IMAGES, 'application/pdf'], maxBytes: UploadLimits.document, restricted: true },
 }
@@ -39,6 +49,15 @@ export interface UploadRequest {
 const field = (name: string) => ['input', name]
 
 /**
+ * Whether the bytes are what was declared. WebM and MP4 are containers: a recording made in the browser is audio/webm
+ * whose bytes look like video/webm, and many .m4a files carry an MP4 brand.
+ */
+function sameKind(declared: string, detected: string | null): boolean {
+  if (declared === detected) return true
+  return (declared === 'audio/webm' && detected === 'video/webm') || (declared === 'audio/mp4' && detected === 'video/mp4')
+}
+
+/**
  * The upload flow of §8.1 and the FileObject record of §8.2: a row first, then a pre-signed PUT bound to the declared
  * type and size, then completeUpload checks what actually arrived (existence, size, magic bytes) before READY.
  * Clients only ever see file ids; keys are `{env}/{ownerId}/{fileId}/original`.
@@ -49,6 +68,7 @@ export class FilesService implements Files {
     private readonly db: PrismaService,
     private readonly storage: Storage,
     private readonly limiter: RateLimiter,
+    private readonly notes: NotesService,
     @Inject(POLICY) private readonly policy: Policy,
     @Inject(ENTITLEMENTS) private readonly entitlements: Entitlements,
     @Inject(EVENT_BUS) private readonly events: EventBus,
@@ -65,7 +85,8 @@ export class FilesService implements Files {
     if (!fileName) throw Errors.validation('Give the file a name.', field('fileName'))
     if (!rule.mimeTypes.includes(input.mimeType)) throw Errors.validation(`This kind of file is not accepted here (${rule.mimeTypes.join(', ')}).`, field('mimeType'))
     if (!Number.isInteger(input.sizeBytes) || input.sizeBytes < 1) throw Errors.validation('The file is empty.', field('sizeBytes'))
-    if (input.sizeBytes > rule.maxBytes) throw Errors.validation(`Files can be at most ${Math.round(rule.maxBytes / 1024 ** 2)} MB.`, field('sizeBytes'))
+    const maxBytes = typeof rule.maxBytes === 'number' ? rule.maxBytes : rule.maxBytes(input.mimeType)
+    if (input.sizeBytes > maxBytes) throw Errors.validation(`Files like this can be at most ${Math.round(maxBytes / 1024 ** 2)} MB.`, field('sizeBytes'))
 
     if (input.purpose === 'VERIFICATION_DOCUMENT') {
       // ADR-0019: restricted minors never upload identity documents; verified accounts have nothing to prove.
@@ -75,18 +96,26 @@ export class FilesService implements Files {
       if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many documents today. Try again tomorrow.')
     }
     if (input.purpose === 'AVATAR' && input.parentId && input.parentId !== ownerId) throw Errors.forbidden()
+    if (input.purpose === 'ATTACHMENT') {
+      // Files go to a note the uploader may edit: its owner or a share editor (§5). Its readers then see them.
+      if (!input.parentId) throw Errors.validation('Say which note the file is for.', field('parentId'))
+      await this.notes.require(ownerId, input.parentId, 'edit')
+      const limit = await this.limiter.hit(`uploads:${ownerId}`, { max: 300, windowSeconds: 3600 })
+      if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'You have uploaded a lot in the last hour. Try again later.')
+    }
 
     await this.assertQuota(ownerId, input.sizeBytes)
 
     const id = newId()
     const bucket = rule.restricted ? this.config.restrictedBucket : this.config.bucket
     const storageKey = `${this.config.env}/${ownerId}/${id}/original`
+    const parentId = input.purpose === 'AVATAR' ? ownerId : input.purpose === 'ATTACHMENT' ? input.parentId! : null
     await this.db.fileObject.create({
       data: {
         id,
         ownerId,
         parentType: rule.parentType,
-        parentId: input.purpose === 'AVATAR' ? ownerId : null,
+        parentId,
         purpose: input.purpose,
         bucket,
         storageKey,
@@ -94,6 +123,7 @@ export class FilesService implements Files {
         sizeBytes: BigInt(input.sizeBytes),
         originalFileName: fileName,
         expiresAt: new Date(Date.now() + PENDING_TTL_MS),
+        ...(input.purpose === 'ATTACHMENT' ? { attachments: { create: { noteId: parentId! } } } : {}),
       },
     })
     // S3 metadata mirrors the identity fields so lifecycle rules and forensics work from S3 alone (§8.2).
@@ -121,7 +151,7 @@ export class FilesService implements Files {
     }
     if (object.sizeBytes !== Number(file.sizeBytes)) await fail('The uploaded file is not the size that was declared.')
     const detected = detectMimeType(await this.storage.firstBytes(file.bucket, file.storageKey))
-    if (detected !== file.mimeType) await fail('The file content does not match its type.')
+    if (!sameKind(file.mimeType, detected)) await fail('The file content does not match its type.')
 
     await this.db.fileObject.update({ where: { id: file.id }, data: { status: 'READY', detectedMimeType: detected, expiresAt: null } })
     await this.events.publish('FileReady', { fileId: file.id, ownerId, mimeType: file.mimeType })
@@ -159,6 +189,19 @@ export class FilesService implements Files {
     if (!file || file.status !== 'READY' || file.deletedAt) throw Errors.notFound('File not found.')
     await this.db.fileObject.update({ where: { id: fileId }, data: { accessCount: { increment: 1 }, lastAccessedAt: new Date() } })
     return this.storage.presignGet(file.bucket, file.storageKey, { expiresInSeconds: READ_URL_TTL_SECONDS, downloadName: file.originalFileName })
+  }
+
+  /** Read URLs for READY files the caller has already decided the reader may see; one access count update. */
+  async readUrls(fileIds: string[]) {
+    const files = fileIds.length ? await this.db.fileObject.findMany({ where: { id: { in: [...new Set(fileIds)] }, status: 'READY', deletedAt: null } }) : []
+    if (files.length) await this.db.fileObject.updateMany({ where: { id: { in: files.map((f) => f.id) } }, data: { accessCount: { increment: 1 }, lastAccessedAt: new Date() } })
+    const signed = await Promise.all(
+      files.map(async (f) => {
+        const { url, expiresAt } = await this.storage.presignGet(f.bucket, f.storageKey, { expiresInSeconds: READ_URL_TTL_SECONDS, downloadName: f.originalFileName })
+        return [f.id, { file: f, url, expiresAt }] as const
+      }),
+    )
+    return new Map(signed)
   }
 
   async delete(fileIds: string[]): Promise<void> {

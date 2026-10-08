@@ -45,6 +45,11 @@ type Card
   Send it back as baseRevision when changing or deleting the card (§13.2)
   """
   revision: Int!
+
+  """
+  The file of an image, video, audio or file card; null for other cards, or when the file is gone
+  """
+  media: MediaFile
 }
 
 type CardConnection
@@ -274,7 +279,7 @@ enum ErrorCode
 }
 
 """
-What an upload is for. Phase 1 accepts AVATAR and VERIFICATION_DOCUMENT; note media arrives with notes (Phase 2).
+What an upload is for: AVATAR, VERIFICATION_DOCUMENT, and ATTACHMENT (a picture, video, audio or PDF for a note you can edit, given as parentId). Other purposes arrive with their features.
 """
 enum FilePurpose
   @join__type(graph: NOTES)
@@ -434,6 +439,23 @@ enum link__Purpose {
   `EXECUTION` features provide metadata necessary for operation execution.
   """
   EXECUTION
+}
+
+"""
+A file a media card shows. The url works for 15 minutes (until expiresAt); load the card again for a new one.
+"""
+type MediaFile
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  url: String!
+  expiresAt: DateTime!
+  mimeType: String!
+  fileName: String!
+  sizeBytes: Int!
+  width: Int
+  height: Int
+  durationMs: Int
 }
 
 type Mutation

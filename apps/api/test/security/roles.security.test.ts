@@ -20,7 +20,7 @@ describe('security: roles', () => {
 
   const mutations = () => Object.values(schema.getMutationType()!.getFields())
 
-  it('no mutation takes a role, except the platform-admin tool setGlobalRole', () => {
+  it('no mutation takes a role, except the platform-admin tool setGlobalRole and an owner sharing their note', () => {
     const roleInputs: string[] = []
     const visit = (type: GraphQLInputType, path: string, seen: Set<string>) => {
       const named = getNamedType(type)
@@ -29,7 +29,8 @@ describe('security: roles', () => {
       for (const f of Object.values(named.getFields())) visit(f.type, `${path}.${f.name}`, new Set([...seen, named.name]))
     }
     for (const m of mutations()) for (const a of m.args) visit(a.type, `${m.name}(${a.name})`, new Set())
-    expect(roleInputs).toEqual(['setGlobalRole(input).role'])
+    // shareNote's role is what the owner lets one person do with one note (§5: EDITOR or VIEWER), never an account role.
+    expect(roleInputs.sort()).toEqual(['setGlobalRole(input).role', 'shareNote(input).role'])
   })
 
   it('every mutation, called by a student with every role value and their own or a teacher’s id, leaves them a student', async () => {

@@ -58,7 +58,7 @@ describe('uploads', () => {
     [{ mimeType: 'text/html' }, ['input', 'mimeType']],
     [{ sizeBytes: 21 * 1024 * 1024 }, ['input', 'sizeBytes']],
     [{ sizeBytes: 0 }, ['input', 'sizeBytes']],
-    [{ purpose: 'ATTACHMENT' }, ['input', 'purpose']],
+    [{ purpose: 'COVER' }, ['input', 'purpose']],
     [{ fileName: '/// ' }, ['input', 'fileName']],
   ])('refuses %j', async (over, field) => {
     const res = await createIntent(t, token, { fileName: 'a.png', mimeType: 'image/png', sizeBytes: 100, purpose: 'AVATAR', ...over })

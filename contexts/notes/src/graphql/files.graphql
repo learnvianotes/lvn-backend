@@ -18,7 +18,7 @@ type OkPayload @shareable {
   userErrors: [UserError!]!
 }
 
-"What an upload is for. Phase 1 accepts AVATAR and VERIFICATION_DOCUMENT; note media arrives with notes (Phase 2)."
+"What an upload is for: AVATAR, VERIFICATION_DOCUMENT, and ATTACHMENT (a picture, video, audio or PDF for a note you can edit, given as parentId). Other purposes arrive with their features."
 enum FilePurpose { ATTACHMENT COVER VOICE_NOTE AVATAR IMPORT EXPORT VERIFICATION_DOCUMENT }
 
 input CreateUploadIntentInput {

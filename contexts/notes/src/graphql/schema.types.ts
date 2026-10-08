@@ -9,6 +9,8 @@ export interface Card {
   content: unknown
   /** Send it back as baseRevision when changing or deleting the card (§13.2) */
   revision: number
+  /** The file of an image, video, audio or file card; null for other cards, or when the file is gone */
+  media?: MediaFile | null
 }
 
 export interface CardConnection {
@@ -85,7 +87,7 @@ export interface CreateUploadIntentInput {
 /** Fixed error vocabulary (§6.2) */
 export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL'
 
-/** What an upload is for. Phase 1 accepts AVATAR and VERIFICATION_DOCUMENT; note media arrives with notes (Phase 2). */
+/** What an upload is for: AVATAR, VERIFICATION_DOCUMENT, and ATTACHMENT (a picture, video, audio or PDF for a note you can edit, given as parentId). Other purposes arrive with their features. */
 export type FilePurpose = 'ATTACHMENT' | 'COVER' | 'VOICE_NOTE' | 'AVATAR' | 'IMPORT' | 'EXPORT' | 'VERIFICATION_DOCUMENT'
 
 /** The viewer's folder; nested up to 5 levels */
@@ -111,6 +113,19 @@ export interface ForkCredit {
 
 export interface IdInput {
   id: string
+}
+
+/** A file a media card shows. The url works for 15 minutes (until expiresAt); load the card again for a new one. */
+export interface MediaFile {
+  id: string
+  url: string
+  expiresAt: Date
+  mimeType: string
+  fileName: string
+  sizeBytes: number
+  width: number | null
+  height: number | null
+  durationMs: number | null
 }
 
 export interface MutationCreateUploadIntentArgs {
