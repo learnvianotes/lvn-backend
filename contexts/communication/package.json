@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@lvn-backend/facades": "workspace:*",
+    "@lvn/contracts": "workspace:@learnvianotes/contracts@*",
     "@nestjs/common": "^11.2.7",
     "@react-email/components": "^1.0.12",
     "@react-email/render": "^2.1.0",

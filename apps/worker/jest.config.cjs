@@ -1,2 +1,2 @@
-/** Tests live in test/unit, test/integration and test/e2e; src/ holds no tests. */
-module.exports = { testEnvironment: 'node', testMatch: ['<rootDir>/test/**/*.test.ts'], transform: { '^.+\\.ts$': 'ts-jest' } }
+/** Tests live in test/unit and test/integration; integration tests start their own containers. */
+module.exports = { testEnvironment: 'node', testMatch: ['<rootDir>/test/**/*.test.ts'], transform: { '^.+\\.ts$': 'ts-jest' }, testTimeout: 120_000 }

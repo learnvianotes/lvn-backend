@@ -1,4 +1,5 @@
 import { Module, type DynamicModule } from '@nestjs/common'
+import type { ApiConfig } from '@lvn/contracts/config'
 import { MailService } from './mail/mail.service'
 import { ResendTransport, SmtpTransport, type MailTransport } from './mail/transport'
 
@@ -8,6 +9,13 @@ export interface CommunicationConfig {
   smtpUrl?: string
   resendApiKey?: string
 }
+
+export const communicationConfigFrom = (c: ApiConfig): CommunicationConfig => ({
+  mailFrom: c.MAIL_FROM,
+  mailTransport: c.MAIL_TRANSPORT,
+  smtpUrl: c.SMTP_URL,
+  resendApiKey: c.RESEND_API_KEY,
+})
 
 /**
  * The `communication` bounded context (spec §6.1) — Postgres schema `comms`.

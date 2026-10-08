@@ -56,6 +56,8 @@ export const events = {
   DataExportReady: eventEnvelope('DataExportReady', 1, z.object({ exportId: uuid, userId: uuid, fileId: uuid, expiresAt: z.iso.datetime() })),
   /** A user claimed their old learnvianotes.in data; core and notes import their parts from the snapshot (ADR-0023). */
   LegacyDataClaimed: eventEnvelope('LegacyDataClaimed', 1, z.object({ userId: uuid, legacyUid: z.string().min(1) })),
+  /** The user removed (or never wanted) their old-site data: contexts delete what they imported from it (ADR-0023). */
+  LegacyDataDeclined: eventEnvelope('LegacyDataDeclined', 1, z.object({ userId: uuid, legacyUid: z.string().min(1) })),
   LegacyImportPartDone: eventEnvelope('LegacyImportPartDone', 1, z.object({
     userId: uuid,
     context: z.enum(enumValues(BoundedContext)),

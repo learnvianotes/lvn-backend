@@ -40,6 +40,35 @@ input CompleteRegistrationInput
   acceptedTermsVersion: String!
 }
 
+type CoreProblemMark
+  @join__type(graph: CORE)
+{
+  problemId: String!
+  mark: ProblemMark!
+}
+
+"""
+Progress on a /core subject — the old site's history plus everything recorded since
+"""
+type CoreSubjectProgress
+  @join__type(graph: CORE)
+{
+  subjectId: String!
+  topics: [CoreTopicProgress!]!
+  problems: [CoreProblemMark!]!
+}
+
+"""topicKey = subjectId/topicId of the /core content"""
+type CoreTopicProgress
+  @join__type(graph: CORE)
+{
+  topicKey: String!
+  completed: Boolean!
+  revisit: Boolean!
+  secondsStudied: Int!
+  lastStudiedAt: DateTime
+}
+
 input CreateUploadIntentInput
   @join__type(graph: NOTES)
 {
@@ -52,6 +81,7 @@ input CreateUploadIntentInput
 }
 
 scalar DateTime
+  @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 
@@ -147,8 +177,63 @@ enum InstitutionalEmailStatus
 scalar join__FieldSet
 
 enum join__Graph {
+  CORE @join__graph(name: "core", url: "local://core")
   NOTES @join__graph(name: "notes", url: "local://notes")
   USERS @join__graph(name: "users", url: "local://users")
+}
+
+type LegacyCounts
+  @join__type(graph: USERS)
+{
+  notes: Int!
+  completedTopics: Int!
+  markedProblems: Int!
+  studyDays: Int!
+  studyMinutes: Int!
+}
+
+type LegacyImport
+  @join__type(graph: USERS)
+{
+  status: LegacyImportStatus!
+  counts: LegacyCounts
+  claimedAt: DateTime
+}
+
+enum LegacyImportStatus
+  @join__type(graph: USERS)
+{
+  NOT_FOUND @join__enumValue(graph: USERS)
+  AVAILABLE @join__enumValue(graph: USERS)
+  CLAIMED @join__enumValue(graph: USERS)
+  DECLINED @join__enumValue(graph: USERS)
+}
+
+"""
+A plan limit and current use, for "3 of 5 groups" and early warnings; limit null = unlimited
+"""
+type Limit
+  @join__type(graph: USERS)
+{
+  key: LimitKey!
+  limit: Float
+  used: Float!
+}
+
+enum LimitKey
+  @join__type(graph: USERS)
+{
+  STORAGE_BYTES @join__enumValue(graph: USERS)
+  AI_TOKENS_DAILY @join__enumValue(graph: USERS)
+  PDF_PAGES_MONTHLY @join__enumValue(graph: USERS)
+  GROUPS_OWNED @join__enumValue(graph: USERS)
+  GROUP_MEMBERS @join__enumValue(graph: USERS)
+  CLASSROOMS_OWNED @join__enumValue(graph: USERS)
+  CLASSROOM_MEMBERS @join__enumValue(graph: USERS)
+  PROJECT_WORKSPACES @join__enumValue(graph: USERS)
+  EXPORTS_DAILY @join__enumValue(graph: USERS)
+  IMPORTS_DAILY @join__enumValue(graph: USERS)
+  ORG_SEATS @join__enumValue(graph: USERS)
 }
 
 scalar link__Import
@@ -186,6 +271,13 @@ type Mutation
 
   """Sets the password and signs out every device"""
   resetPassword(input: ResetPasswordInput!): OkPayload! @join__field(graph: USERS)
+  updateProfile(input: UpdateProfileInput!): ProfilePayload! @join__field(graph: USERS)
+
+  """Attach the old site's data to this account"""
+  claimLegacyData: OkPayload! @join__field(graph: USERS)
+
+  """Decline the old site's data, or remove it after it was attached"""
+  declineLegacyData: OkPayload! @join__field(graph: USERS)
   signInWithGoogle(input: SignInWithGoogleInput!): AuthPayload! @join__field(graph: USERS)
   oauthExchange(input: OAuthExchangeInput!): AuthPayload! @join__field(graph: USERS)
   completeRegistration(input: CompleteRegistrationInput!): OkPayload! @join__field(graph: USERS)
@@ -244,10 +336,30 @@ type OkPayload
   userErrors: [UserError!]!
 }
 
+enum ProblemMark
+  @join__type(graph: CORE)
+{
+  SOLVED @join__enumValue(graph: CORE)
+  REVISIT @join__enumValue(graph: CORE)
+}
+
+type ProfilePayload
+  @join__type(graph: USERS)
+{
+  profile: StudentProfile
+  userErrors: [UserError!]!
+}
+
 type Query
+  @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
+  """
+  Signed-in users: their progress on a /core subject (web reads it on /core pages)
+  """
+  coreProgress(subjectId: String!): CoreSubjectProgress! @join__field(graph: CORE)
+
   """The signed-in user, null for anonymous visitors"""
   viewer: User @join__field(graph: USERS)
 
@@ -403,6 +515,32 @@ input SignUpInput
   acceptedTermsVersion: String!
 }
 
+"""
+Department and year are shown to others only if showOnProfile; interests stay private
+"""
+type StudentProfile
+  @join__type(graph: USERS)
+{
+  department: String
+  yearOfStudy: YearOfStudy
+
+  """
+  Viewer only. Topics arrive with notes (Phase 2), which will add the resolved `interests`.
+  """
+  interestTopicIds: [UUID!]
+  showOnProfile: Boolean!
+}
+
+"""Omitted fields stay as they are; null clears a field"""
+input UpdateProfileInput
+  @join__type(graph: USERS)
+{
+  department: String
+  yearOfStudy: YearOfStudy
+  interestTopicIds: [UUID!]
+  showOnProfile: Boolean
+}
+
 type UploadHeader
   @join__type(graph: NOTES)
 {
@@ -453,6 +591,15 @@ type User
   verificationMethod: VerificationMethod
   globalRole: GlobalRole!
   createdAt: DateTime!
+
+  """The viewer's own profile; for others only when they show it"""
+  profile: StudentProfile
+
+  """Viewer only"""
+  limits: [Limit!]
+
+  """Viewer only: data from the old learnvianotes.in site (ADR-0023)"""
+  legacyImport: LegacyImport
 
   """
   Viewer only (ADR-0017): the confirmed address, or the one waiting for its code
@@ -554,4 +701,18 @@ input VerifyInstitutionalEmailInput
   @join__type(graph: USERS)
 {
   code: String!
+}
+
+enum YearOfStudy
+  @join__type(graph: USERS)
+{
+  YEAR_1 @join__enumValue(graph: USERS)
+  YEAR_2 @join__enumValue(graph: USERS)
+  YEAR_3 @join__enumValue(graph: USERS)
+  YEAR_4 @join__enumValue(graph: USERS)
+  YEAR_5 @join__enumValue(graph: USERS)
+  POSTGRADUATE @join__enumValue(graph: USERS)
+  GRADUATED @join__enumValue(graph: USERS)
+  SCHOOL @join__enumValue(graph: USERS)
+  NOT_STUDYING @join__enumValue(graph: USERS)
 }

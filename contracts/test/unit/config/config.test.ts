@@ -92,10 +92,12 @@ describe('apiConfigSchema (Phase 1)', () => {
 })
 
 describe('workerConfigSchema', () => {
-  it('needs storage and mail but no auth keys', () => {
-    const cfg = loadConfig(workerConfigSchema, { APP_ENV: 'development', DATABASE_URL: valid.DATABASE_URL, REDIS_URL: valid.REDIS_URL, ...storageAndMail })
+  it('reads the API variables plus its own', () => {
+    const cfg = loadConfig(workerConfigSchema, { ...valid, LEGACY_FIREBASE_PROJECT_ID: 'learnvianotes-old' })
     expect(cfg.WORKER_HEALTH_PORT).toBe(4001)
-    expect(() => loadConfig(workerConfigSchema, { APP_ENV: 'development', DATABASE_URL: valid.DATABASE_URL, REDIS_URL: valid.REDIS_URL })).toThrow(/S3_BUCKET/)
+    expect(cfg.S3_BUCKET).toBe('lvn-files')
+    expect(cfg.LEGACY_FIREBASE_PROJECT_ID).toBe('learnvianotes-old')
+    expect(() => loadConfig(workerConfigSchema, { ...valid, S3_BUCKET: undefined })).toThrow(/S3_BUCKET/)
   })
 })
 

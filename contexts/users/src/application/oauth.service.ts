@@ -6,6 +6,7 @@ import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { freeHandle } from './handles'
 import { githubIdentity, linkedinIdentity, type CodeExchange } from './oauth-clients'
 import { GOOGLE_ID_TOKENS, type GoogleIdTokens, type ProviderIdentity } from './providers'
+import { LegacyService } from './legacy.service'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
 
 const NAMES = { GOOGLE: 'Google', GITHUB: 'GitHub', LINKEDIN: 'LinkedIn' } as const
@@ -22,6 +23,7 @@ export class OAuthService {
   constructor(
     private readonly db: PrismaService,
     private readonly sessions: SessionService,
+    private readonly legacy: LegacyService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
     @Optional() @Inject(GOOGLE_ID_TOKENS) private readonly google: GoogleIdTokens | null,
@@ -36,7 +38,10 @@ export class OAuthService {
     if (!this.google) throw Errors.validation('Google sign-in is not available here.')
     const identity = await this.google.verify(idToken)
     if (!identity) throw Errors.unauthenticated('Google sign-in could not be verified. Try again.')
-    return this.signInWith(identity, device, correlationId)
+    const session = await this.signInWith(identity, device, correlationId)
+    // Google sign-in carries the old site's Firebase UID (ADR-0023).
+    await this.legacy.match(session.userId, { firebaseUid: identity.providerUserId, verifiedEmail: identity.email ?? undefined })
+    return session
   }
 
   async exchange(provider: 'GITHUB' | 'LINKEDIN', x: CodeExchange, device: DeviceInfo, correlationId?: string): Promise<IssuedSession> {

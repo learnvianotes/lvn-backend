@@ -45,4 +45,12 @@ describe('events', () => {
     expect(() => parseEvent('UserDeleted', { ...base, type: 'UserDeleted', version: 2, payload: { userId: uuid(2) } })).toThrow()
     expect(() => parseEvent('UserDeleted', { ...base, type: 'UserDeleted', version: 1, payload: {} })).toThrow()
   })
+
+  it('carries the old-site uid when old data is claimed or declined (ADR-0023)', () => {
+    for (const type of ['LegacyDataClaimed', 'LegacyDataDeclined'] as const) {
+      const e = parseEvent(type, { ...base, type, version: 1, payload: { userId: uuid(5), legacyUid: 'Xy12firebaseUid' } })
+      expect(e.payload.legacyUid).toBe('Xy12firebaseUid')
+      expect(() => parseEvent(type, { ...base, type, version: 1, payload: { userId: uuid(5), legacyUid: '' } })).toThrow()
+    }
+  })
 })

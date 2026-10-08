@@ -1,0 +1,67 @@
+# Student profile (ADR-0026), plan limits (ADR-0024) and old-site data (ADR-0023).
+
+enum YearOfStudy { YEAR_1 YEAR_2 YEAR_3 YEAR_4 YEAR_5 POSTGRADUATE GRADUATED SCHOOL NOT_STUDYING }
+
+"Department and year are shown to others only if showOnProfile; interests stay private"
+type StudentProfile {
+  department: String
+  yearOfStudy: YearOfStudy
+  "Viewer only. Topics arrive with notes (Phase 2), which will add the resolved `interests`."
+  interestTopicIds: [UUID!]
+  showOnProfile: Boolean!
+}
+
+"Omitted fields stay as they are; null clears a field"
+input UpdateProfileInput {
+  department: String
+  yearOfStudy: YearOfStudy
+  interestTopicIds: [UUID!]
+  showOnProfile: Boolean
+}
+
+type ProfilePayload {
+  profile: StudentProfile
+  userErrors: [UserError!]!
+}
+
+enum LimitKey { STORAGE_BYTES AI_TOKENS_DAILY PDF_PAGES_MONTHLY GROUPS_OWNED GROUP_MEMBERS CLASSROOMS_OWNED CLASSROOM_MEMBERS PROJECT_WORKSPACES EXPORTS_DAILY IMPORTS_DAILY ORG_SEATS }
+
+"A plan limit and current use, for \"3 of 5 groups\" and early warnings; limit null = unlimited"
+type Limit {
+  key: LimitKey!
+  limit: Float
+  used: Float!
+}
+
+enum LegacyImportStatus { NOT_FOUND AVAILABLE CLAIMED DECLINED }
+
+type LegacyCounts {
+  notes: Int!
+  completedTopics: Int!
+  markedProblems: Int!
+  studyDays: Int!
+  studyMinutes: Int!
+}
+
+type LegacyImport {
+  status: LegacyImportStatus!
+  counts: LegacyCounts
+  claimedAt: DateTime
+}
+
+extend type User {
+  "The viewer's own profile; for others only when they show it"
+  profile: StudentProfile
+  "Viewer only"
+  limits: [Limit!]
+  "Viewer only: data from the old learnvianotes.in site (ADR-0023)"
+  legacyImport: LegacyImport
+}
+
+extend type Mutation {
+  updateProfile(input: UpdateProfileInput!): ProfilePayload!
+  "Attach the old site's data to this account"
+  claimLegacyData: OkPayload!
+  "Decline the old site's data, or remove it after it was attached"
+  declineLegacyData: OkPayload!
+}

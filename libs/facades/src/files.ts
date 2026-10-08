@@ -28,4 +28,6 @@ export interface Files {
   readUrl(fileId: string): Promise<{ url: string; expiresAt: Date }>
   /** Deletes the bytes and marks the rows DELETED (§8.2: the row stays as a record). */
   delete(fileIds: string[]): Promise<void>
+  /** Bytes a user's files take up, counted against STORAGE_BYTES (ADR-0024). */
+  storageUsed(ownerId: string): Promise<bigint>
 }

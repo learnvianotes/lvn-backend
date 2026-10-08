@@ -110,7 +110,7 @@ const providersConfigured = (
   if (c.GITHUB_CLIENT_ID || c.LINKEDIN_CLIENT_ID) need(c.OAUTH_REDIRECT_URIS.length > 0, 'OAUTH_REDIRECT_URIS', 'required when GitHub or LinkedIn sign-in is on')
 }
 
-export const apiConfigSchema = backendBase
+const apiShape = backendBase
   .extend({
     API_HOST: z.string().default('0.0.0.0'),
     API_PORT: port.default(4000),
@@ -120,17 +120,22 @@ export const apiConfigSchema = backendBase
   .extend(storage.shape)
   .extend(mail.shape)
   .extend(auth.shape)
-  .superRefine(mailTransportConfigured)
-  .superRefine(providersConfigured)
+
+export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured)
 export type ApiConfig = z.infer<typeof apiConfigSchema>
 
-export const workerConfigSchema = backendBase
+/**
+ * The worker runs the same five contexts as the API (their jobs need the same storage, mail and keys), so it reads
+ * the API's variables plus its own. Deployments give both tasks the same environment.
+ */
+export const workerConfigSchema = apiShape
   .extend({
     WORKER_HEALTH_PORT: port.default(4001),
+    /** The old Firebase project read by `legacy:snapshot` (ADR-0023); credentials via GOOGLE_APPLICATION_CREDENTIALS. */
+    LEGACY_FIREBASE_PROJECT_ID: z.string().min(1).optional(),
   })
-  .extend(storage.shape)
-  .extend(mail.shape)
   .superRefine(mailTransportConfigured)
+  .superRefine(providersConfigured)
 export type WorkerConfig = z.infer<typeof workerConfigSchema>
 
 /** Public (browser-visible) web variables. Server-only web secrets get their own schema in Phase 1. */

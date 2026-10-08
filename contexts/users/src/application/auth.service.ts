@@ -17,6 +17,7 @@ import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { freeHandle } from './handles'
 import { parseField } from './input'
 import { InstitutionalEmailService } from './institutional-email.service'
+import { LegacyService } from './legacy.service'
 import { PasswordService } from './password.service'
 import { randomToken, sha256 } from './secrets'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
@@ -44,6 +45,7 @@ export class AuthService {
     private readonly sessions: SessionService,
     private readonly limiter: RateLimiter,
     private readonly institutional: InstitutionalEmailService,
+    private readonly legacy: LegacyService,
     @Inject(MAILER) private readonly mailer: Mailer,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
@@ -100,11 +102,12 @@ export class AuthService {
     const limit = await this.limiter.hit(`signin:${email}`, LIMITS.signIn)
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many sign-in attempts. Try again in a few minutes.')
 
-    const user = await this.db.user.findUnique({ where: { email }, select: { id: true, passwordHash: true, deletedAt: true } })
+    const user = await this.db.user.findUnique({ where: { email }, select: { id: true, passwordHash: true, deletedAt: true, emailVerifiedAt: true } })
     const ok = await this.passwords.verify(user && !user.deletedAt ? user.passwordHash : null, password)
     if (!user || !ok) throw Errors.validation('Email or password is incorrect.')
 
     await this.limiter.reset(`signin:${email}`)
+    if (user.emailVerifiedAt) await this.legacy.match(user.id, { verifiedEmail: email })
     if (this.passwords.needsRehash(user.passwordHash!)) {
       await this.db.user.update({ where: { id: user.id }, data: { passwordHash: await this.passwords.hash(password) } })
     }
@@ -114,7 +117,9 @@ export class AuthService {
   /** Confirms the sign-in email from the link in the verification email. */
   async verifyEmail(token: string): Promise<void> {
     const row = await this.consumeToken(token, 'VERIFY_EMAIL')
-    await this.db.user.update({ where: { id: row.userId }, data: { emailVerifiedAt: new Date() } })
+    const user = await this.db.user.update({ where: { id: row.userId }, data: { emailVerifiedAt: new Date() }, select: { id: true, email: true } })
+    // A verified email may find the learner's data from the old site (ADR-0023).
+    await this.legacy.match(user.id, { verifiedEmail: user.email })
   }
 
   /** Always succeeds for the caller (no account enumeration); emails a link only if an account exists. */

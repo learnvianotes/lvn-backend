@@ -8,6 +8,8 @@ import type { GlobalRole } from '@lvn/contracts/domain'
  */
 
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60
+/** Audience of every LVN access token. */
+export const TOKEN_AUDIENCE = 'lvn'
 const CLOCK_SKEW_SECONDS = 5
 
 export interface AccessClaims {

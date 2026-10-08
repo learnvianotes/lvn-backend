@@ -169,11 +169,15 @@ export class FilesService implements Files {
     await this.db.fileObject.updateMany({ where: { id: { in: files.map((f) => f.id) } }, data: { status: 'DELETED', deletedAt: new Date() } })
   }
 
+  async storageUsed(ownerId: string): Promise<bigint> {
+    const used = await this.db.fileObject.aggregate({ where: { ownerId, deletedAt: null, status: { notIn: ['FAILED', 'DELETED'] } }, _sum: { sizeBytes: true } })
+    return used._sum.sizeBytes ?? 0n
+  }
+
   /** §8.1 quotas: 5 GB per student, 20 GB per teacher — from the plan's STORAGE_BYTES entitlement (ADR-0024). */
   private async assertQuota(ownerId: string, sizeBytes: number): Promise<void> {
     const limit = await this.entitlements.limit(ownerId, 'STORAGE_BYTES')
     if (limit === null) return
-    const used = await this.db.fileObject.aggregate({ where: { ownerId, deletedAt: null, status: { notIn: ['FAILED', 'DELETED'] } }, _sum: { sizeBytes: true } })
-    if ((used._sum.sizeBytes ?? 0n) + BigInt(sizeBytes) > limit) throw Errors.validation('Your storage is full. Delete files to make room.', field('sizeBytes'))
+    if ((await this.storageUsed(ownerId)) + BigInt(sizeBytes) > limit) throw Errors.validation('Your storage is full. Delete files to make room.', field('sizeBytes'))
   }
 }

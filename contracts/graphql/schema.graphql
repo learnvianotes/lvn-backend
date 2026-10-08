@@ -14,6 +14,29 @@ input CompleteRegistrationInput {
   institutionalEmail: String
 }
 
+type CoreProblemMark {
+  mark: ProblemMark!
+  problemId: String!
+}
+
+"""
+Progress on a /core subject — the old site's history plus everything recorded since
+"""
+type CoreSubjectProgress {
+  problems: [CoreProblemMark!]!
+  subjectId: String!
+  topics: [CoreTopicProgress!]!
+}
+
+"""topicKey = subjectId/topicId of the /core content"""
+type CoreTopicProgress {
+  completed: Boolean!
+  lastStudiedAt: DateTime
+  revisit: Boolean!
+  secondsStudied: Int!
+  topicKey: String!
+}
+
 input CreateUploadIntentInput {
   """Shown to people; never part of the storage key"""
   fileName: String!
@@ -97,7 +120,53 @@ enum InstitutionalEmailStatus {
   PENDING_REVIEW
 }
 
+type LegacyCounts {
+  completedTopics: Int!
+  markedProblems: Int!
+  notes: Int!
+  studyDays: Int!
+  studyMinutes: Int!
+}
+
+type LegacyImport {
+  claimedAt: DateTime
+  counts: LegacyCounts
+  status: LegacyImportStatus!
+}
+
+enum LegacyImportStatus {
+  AVAILABLE
+  CLAIMED
+  DECLINED
+  NOT_FOUND
+}
+
+"""
+A plan limit and current use, for "3 of 5 groups" and early warnings; limit null = unlimited
+"""
+type Limit {
+  key: LimitKey!
+  limit: Float
+  used: Float!
+}
+
+enum LimitKey {
+  AI_TOKENS_DAILY
+  CLASSROOMS_OWNED
+  CLASSROOM_MEMBERS
+  EXPORTS_DAILY
+  GROUPS_OWNED
+  GROUP_MEMBERS
+  IMPORTS_DAILY
+  ORG_SEATS
+  PDF_PAGES_MONTHLY
+  PROJECT_WORKSPACES
+  STORAGE_BYTES
+}
+
 type Mutation {
+  """Attach the old site's data to this account"""
+  claimLegacyData: OkPayload!
   completeRegistration(input: CompleteRegistrationInput!): OkPayload!
 
   """Checks the uploaded bytes (size, magic bytes) and makes the file READY"""
@@ -106,6 +175,9 @@ type Mutation {
 
   """Platform admins"""
   decideDomainReview(input: DecideDomainReviewInput!): OkPayload!
+
+  """Decline the old site's data, or remove it after it was attached"""
+  declineLegacyData: OkPayload!
   oauthExchange(input: OAuthExchangeInput!): AuthPayload!
   refreshSession(input: RefreshSessionInput!): AuthPayload!
   requestDocumentVerification(input: RequestDocumentVerificationInput!): VerificationRequestPayload!
@@ -138,6 +210,7 @@ type Mutation {
   """Ends this device's session (its whole refresh-token family)"""
   signOut: OkPayload!
   signUp(input: SignUpInput!): AuthPayload!
+  updateProfile(input: UpdateProfileInput!): ProfilePayload!
   verifyEmail(input: VerifyEmailInput!): OkPayload!
   verifyInstitutionalEmail(input: VerifyInstitutionalEmailInput!): OkPayload!
   withdrawVerificationRequest(requestId: UUID!): OkPayload!
@@ -166,7 +239,22 @@ type OkPayload {
   userErrors: [UserError!]!
 }
 
+enum ProblemMark {
+  REVISIT
+  SOLVED
+}
+
+type ProfilePayload {
+  profile: StudentProfile
+  userErrors: [UserError!]!
+}
+
 type Query {
+  """
+  Signed-in users: their progress on a /core subject (web reads it on /core pages)
+  """
+  coreProgress(subjectId: String!): CoreSubjectProgress!
+
   """
   Platform admins: institutional email domains waiting for review (ADR-0017)
   """
@@ -294,7 +382,29 @@ type SignedUrl {
   url: String!
 }
 
+"""
+Department and year are shown to others only if showOnProfile; interests stay private
+"""
+type StudentProfile {
+  department: String
+
+  """
+  Viewer only. Topics arrive with notes (Phase 2), which will add the resolved `interests`.
+  """
+  interestTopicIds: [UUID!]
+  showOnProfile: Boolean!
+  yearOfStudy: YearOfStudy
+}
+
 scalar UUID
+
+"""Omitted fields stay as they are; null clears a field"""
+input UpdateProfileInput {
+  department: String
+  interestTopicIds: [UUID!]
+  showOnProfile: Boolean
+  yearOfStudy: YearOfStudy
+}
 
 type UploadHeader {
   name: String!
@@ -340,6 +450,15 @@ type User {
 
   """Viewer only"""
   institutionalEmailStatus: InstitutionalEmailStatus
+
+  """Viewer only: data from the old learnvianotes.in site (ADR-0023)"""
+  legacyImport: LegacyImport
+
+  """Viewer only"""
+  limits: [Limit!]
+
+  """The viewer's own profile; for others only when they show it"""
+  profile: StudentProfile
 
   """False until the registration details are given (ADR-0017)"""
   registrationComplete: Boolean!
@@ -418,4 +537,16 @@ input VerifyEmailInput {
 
 input VerifyInstitutionalEmailInput {
   code: String!
+}
+
+enum YearOfStudy {
+  GRADUATED
+  NOT_STUDYING
+  POSTGRADUATE
+  SCHOOL
+  YEAR_1
+  YEAR_2
+  YEAR_3
+  YEAR_4
+  YEAR_5
 }

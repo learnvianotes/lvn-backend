@@ -4,16 +4,19 @@ import { AuditService } from './application/audit.service'
 import { AuthService } from './application/auth.service'
 import { EntitlementService } from './application/entitlement.service'
 import { InstitutionalEmailService } from './application/institutional-email.service'
+import { LegacyService } from './application/legacy.service'
 import { UsersMaintenance } from './application/maintenance'
 import { OAuthService } from './application/oauth.service'
 import { PasswordService } from './application/password.service'
 import { PolicyService } from './application/policy.service'
+import { ProfileService } from './application/profile.service'
 import { DnsMxLookup, FirebaseGoogleIdTokens, GOOGLE_ID_TOKENS, MX_LOOKUP } from './application/providers'
 import { RegistrationService } from './application/registration.service'
 import { SessionService } from './application/session.service'
 import { UsersService } from './application/users.service'
 import { VerificationService } from './application/verification.service'
 import { AuthResolver } from './graphql/auth.resolver'
+import { ProfileResolver } from './graphql/profile.resolver'
 import { RegistrationResolver } from './graphql/registration.resolver'
 import { VerificationResolver } from './graphql/verification.resolver'
 import { ViewerResolver } from './graphql/viewer.resolver'
@@ -51,10 +54,13 @@ export class UsersModule {
         VerificationService,
         AdminService,
         UsersMaintenance,
+        ProfileService,
+        LegacyService,
         ViewerResolver,
         AuthResolver,
         RegistrationResolver,
         VerificationResolver,
+        ProfileResolver,
       ],
       exports: [PolicyService, EntitlementService, UsersMaintenance],
     }

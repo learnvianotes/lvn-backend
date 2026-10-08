@@ -6,6 +6,7 @@ import { graphqlModules } from '@lvn-backend/graphql'
 import { PrismaModule } from '@lvn-backend/prisma-base'
 import { EventBusModule } from '@lvn-backend/event-bus'
 import { RedisModule, SessionRevocations } from '@lvn-backend/redis'
+import { StorageModule } from '@lvn-backend/storage'
 import { FILES, MAILER } from '@lvn-backend/facades'
 import { Global } from '@nestjs/common'
 import { AccessTokenVerifier } from '@lvn-backend/auth-guard'
@@ -62,7 +63,10 @@ class ProbeModule {}
 @Module({
   providers: [
     { provide: MAILER, useValue: { send: async () => undefined } },
-    { provide: FILES, useValue: { attach: async () => undefined, describe: async () => [], readUrl: async () => ({ url: '', expiresAt: new Date() }), delete: async () => undefined } },
+    {
+      provide: FILES,
+      useValue: { attach: async () => undefined, describe: async () => [], readUrl: async () => ({ url: '', expiresAt: new Date() }), delete: async () => undefined, storageUsed: async () => 0n },
+    },
   ],
   exports: [MAILER, FILES],
 })
@@ -76,6 +80,7 @@ describe('federation across in-process subgraphs', () => {
       imports: [
         PrismaModule.forRoot(config.DATABASE_URL),
         RedisModule.forRoot(config.REDIS_URL),
+        StorageModule.forRoot({ region: 'us-east-1', forcePathStyle: true }),
         EventBusModule,
         NoMailModule,
         contextModules(config)[0]!,

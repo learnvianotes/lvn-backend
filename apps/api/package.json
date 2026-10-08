@@ -40,6 +40,7 @@
     "rxjs": "^7.8.2"
   },
   "devDependencies": {
+    "@lvn-backend/legacy": "workspace:*",
     "@lvn-backend/testing": "workspace:*",
     "@nestjs/cli": "^11.0.24",
     "@nestjs/testing": "^11.2.7",

@@ -27,7 +27,8 @@ sign-in (ADR-0007) `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DO
 
 ## lvn-backend
 
-Schemas: `apiConfigSchema` and `workerConfigSchema` in `@lvn/contracts/config`, loaded by `libs/config`. Secrets are
+Schemas: `apiConfigSchema` and `workerConfigSchema` in `@lvn/contracts/config`, loaded by `libs/config`. The worker
+runs the same contexts as the API, so it reads every API variable as well as its own; give both tasks one environment. Secrets are
 never listed with values; sandbox and production read them from AWS Secrets Manager.
 
 | Variable | Process | Required | Default | Purpose |
@@ -40,6 +41,7 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `API_PORT` | api | no | `4000` | HTTP + WebSocket port |
 | `CORS_ORIGINS` | api | yes | — | Comma-separated allow-list (§7.2) |
 | `WORKER_HEALTH_PORT` | worker | no | `4001` | `/health/live` for the ECS health check |
+| `LEGACY_FIREBASE_PROJECT_ID` | worker | no | — | Old Firebase project read once by `pnpm --filter @lvn-backend/worker legacy:snapshot` (ADR-0023); credentials from `GOOGLE_APPLICATION_CREDENTIALS` (a read-only service account in Secrets Manager) |
 | `S3_ENDPOINT` | api, worker | no | — (AWS) | S3-compatible endpoint; `http://localhost:59000` for RustFS locally (ADR-0032); unset on AWS |
 | `S3_REGION` | api, worker | yes | — | `us-east-1` locally; `ap-south-1` in India deployments (§15.2) |
 | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | api, worker | no (secret) | — | Local credentials; on AWS the task role is used instead |

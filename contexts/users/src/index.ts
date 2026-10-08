@@ -3,8 +3,10 @@ import { usersTypeDefs } from './graphql/schema'
 import { UsersModule } from './users.module'
 
 export { UsersModule }
-export type { UsersConfig } from './users.config'
+export { usersConfigFrom, type UsersConfig } from './users.config'
 export { UsersMaintenance } from './application/maintenance'
+/** ADR-0023 one-off snapshot of the old site, run by apps/worker's `legacy:snapshot` command. */
+export { firestoreLegacySource, snapshotOldSite, type LegacyAccount, type LegacySink, type LegacySource, type SnapshotReport } from './application/legacy-snapshot.job'
 /** Implementations of the POLICY and ENTITLEMENTS facades, bound by the composition roots. */
 export { PolicyService } from './application/policy.service'
 export { EntitlementService } from './application/entitlement.service'

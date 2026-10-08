@@ -38,6 +38,13 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm boundaries
 ```
 
 Emails the API sends locally are at http://localhost:58025 (Mailpit); stored files at http://localhost:59001 (RustFS).
+
+The worker (`apps/worker`) runs the contexts' BullMQ jobs (e.g. the daily purge of decided verification documents,
+ADR-0019) and one-off commands:
+
+```bash
+pnpm --filter @lvn-backend/worker legacy:snapshot   # copy the old site's data into the restricted bucket (ADR-0023)
+```
 Docker must be running for the integration and e2e tests: they start their own containers (Testcontainers).
 
 ## GraphQL

@@ -7,7 +7,7 @@ import { PrismaModule } from '@lvn-backend/prisma-base'
 import { RedisModule, SessionRevocations } from '@lvn-backend/redis'
 import { StorageModule } from '@lvn-backend/storage'
 import { contextModules, SUBGRAPHS, TOKEN_AUDIENCE } from './contexts'
-import { FacadesModule } from './facades'
+import { facades } from './facades'
 import { buildRequestContext } from './graphql/request-context'
 import { HealthController } from './health/health.controller'
 
@@ -34,7 +34,7 @@ export class AppModule {
           forcePathStyle: config.S3_FORCE_PATH_STYLE,
         }),
         EventBusModule,
-        FacadesModule,
+        facades(),
         ...contextModules(config),
         ...graphqlModules({
           subgraphs: SUBGRAPHS,

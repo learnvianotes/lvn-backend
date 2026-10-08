@@ -40,6 +40,31 @@ export interface Institution {
 
 export type InstitutionalEmailStatus = 'NONE' | 'CODE_SENT' | 'CONFIRMED' | 'PENDING_REVIEW'
 
+export interface LegacyCounts {
+  notes: number
+  completedTopics: number
+  markedProblems: number
+  studyDays: number
+  studyMinutes: number
+}
+
+export interface LegacyImport {
+  status: LegacyImportStatus
+  counts: LegacyCounts | null
+  claimedAt: Date | null
+}
+
+export type LegacyImportStatus = 'NOT_FOUND' | 'AVAILABLE' | 'CLAIMED' | 'DECLINED'
+
+/** A plan limit and current use, for "3 of 5 groups" and early warnings; limit null = unlimited */
+export interface Limit {
+  key: LimitKey
+  limit: number | null
+  used: number
+}
+
+export type LimitKey = 'STORAGE_BYTES' | 'AI_TOKENS_DAILY' | 'PDF_PAGES_MONTHLY' | 'GROUPS_OWNED' | 'GROUP_MEMBERS' | 'CLASSROOMS_OWNED' | 'CLASSROOM_MEMBERS' | 'PROJECT_WORKSPACES' | 'EXPORTS_DAILY' | 'IMPORTS_DAILY' | 'ORG_SEATS'
+
 export interface MutationSignUpArgs {
   input: SignUpInput
 }
@@ -62,6 +87,10 @@ export interface MutationRequestPasswordResetArgs {
 
 export interface MutationResetPasswordArgs {
   input: ResetPasswordInput
+}
+
+export interface MutationUpdateProfileArgs {
+  input: UpdateProfileInput
 }
 
 export interface MutationSignInWithGoogleArgs {
@@ -121,6 +150,11 @@ export type OAuthProvider = 'GITHUB' | 'LINKEDIN'
 
 export interface OkPayload {
   ok: boolean
+  userErrors: Array<UserError>
+}
+
+export interface ProfilePayload {
+  profile: StudentProfile | null
   userErrors: Array<UserError>
 }
 
@@ -226,6 +260,23 @@ export interface SignUpInput {
   acceptedTermsVersion: string
 }
 
+/** Department and year are shown to others only if showOnProfile; interests stay private */
+export interface StudentProfile {
+  department: string | null
+  yearOfStudy: YearOfStudy | null
+  /** Viewer only. Topics arrive with notes (Phase 2), which will add the resolved `interests`. */
+  interestTopicIds: Array<string> | null
+  showOnProfile: boolean
+}
+
+/** Omitted fields stay as they are; null clears a field */
+export interface UpdateProfileInput {
+  department?: string | null
+  yearOfStudy?: YearOfStudy | null
+  interestTopicIds?: Array<string> | null
+  showOnProfile?: boolean | null
+}
+
 /** A person on LVN (§4.1). Fields marked viewer-only are null for anyone else. */
 export interface User {
   id: string
@@ -241,14 +292,20 @@ export interface User {
   verificationMethod: VerificationMethod | null
   globalRole: GlobalRole
   createdAt: Date
-  /** Viewer only (ADR-0017): the confirmed address, or the one waiting for its code */
-  institutionalEmail: string | null
+  /** The viewer's own profile; for others only when they show it */
+  profile?: StudentProfile | null
   /** Viewer only */
-  institutionalEmailStatus: InstitutionalEmailStatus | null
+  limits?: Array<Limit> | null
+  /** Viewer only: data from the old learnvianotes.in site (ADR-0023) */
+  legacyImport?: LegacyImport | null
+  /** Viewer only (ADR-0017): the confirmed address, or the one waiting for its code */
+  institutionalEmail?: string | null
+  /** Viewer only */
+  institutionalEmailStatus?: InstitutionalEmailStatus | null
   /** The confirmed college or organisation */
-  institution: Institution | null
+  institution?: Institution | null
   /** Viewer only: a minor without verified consent (§15.2) — no public publishing, no DMs */
-  restrictedMinor: boolean | null
+  restrictedMinor?: boolean | null
 }
 
 /** An expected failure of a mutation; `field` is the dotted input path, e.g. ["input", "email"] */
@@ -297,3 +354,5 @@ export interface VerifyEmailInput {
 export interface VerifyInstitutionalEmailInput {
   code: string
 }
+
+export type YearOfStudy = 'YEAR_1' | 'YEAR_2' | 'YEAR_3' | 'YEAR_4' | 'YEAR_5' | 'POSTGRADUATE' | 'GRADUATED' | 'SCHOOL' | 'NOT_STUDYING'

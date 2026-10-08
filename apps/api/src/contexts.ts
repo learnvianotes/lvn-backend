@@ -1,49 +1,25 @@
-import type { DynamicModule, Type } from '@nestjs/common'
+import type { DynamicModule } from '@nestjs/common'
 import type { ApiConfig } from '@lvn-backend/config'
 import { AiModule } from '@lvn-backend/ai'
-import { CommunicationModule } from '@lvn-backend/communication'
-import { CoreModule } from '@lvn-backend/core'
+import { CommunicationModule, communicationConfigFrom } from '@lvn-backend/communication'
+import { CoreModule, coreConfigFrom, coreSubgraph } from '@lvn-backend/core'
 import type { SubgraphDefinition } from '@lvn-backend/graphql'
-import { NotesModule, notesSubgraph } from '@lvn-backend/notes'
-import { UsersModule, usersSubgraph } from '@lvn-backend/users'
+import { NotesModule, notesConfigFrom, notesSubgraph } from '@lvn-backend/notes'
+import { UsersModule, usersConfigFrom, usersSubgraph } from '@lvn-backend/users'
 
-/** Audience of LVN access tokens. */
-export const TOKEN_AUDIENCE = 'lvn'
+export { TOKEN_AUDIENCE } from '@lvn-backend/auth-guard'
 
 /**
- * The five bounded contexts this process composes (spec §6), each given only the configuration it needs.
+ * The five bounded contexts this process composes (spec §6), each given its own slice of the configuration.
  * Extracting a context (§6.5 step 4) removes it from this list and from apps/worker, and adds apps/<name>-service.
  */
-export function contextModules(config: ApiConfig): (Type | DynamicModule)[] {
+export function contextModules(config: ApiConfig): (DynamicModule | typeof AiModule)[] {
   return [
-    UsersModule.forRoot({
-      jwtPrivateKey: config.JWT_PRIVATE_KEY,
-      jwtIssuer: config.JWT_ISSUER,
-      tokenAudience: TOKEN_AUDIENCE,
-      webUrl: config.WEB_URL,
-      codeHmacSecret: config.CODE_HMAC_SECRET,
-      digitalConsentAge: config.DIGITAL_CONSENT_AGE,
-      passwordBreachApiUrl: config.PASSWORD_BREACH_API_URL,
-      firebaseProjectId: config.FIREBASE_PROJECT_ID,
-      github:
-        config.GITHUB_CLIENT_ID && config.GITHUB_CLIENT_SECRET
-          ? { clientId: config.GITHUB_CLIENT_ID, clientSecret: config.GITHUB_CLIENT_SECRET, oauthUrl: config.GITHUB_OAUTH_URL!, apiUrl: config.GITHUB_API_URL! }
-          : undefined,
-      linkedin:
-        config.LINKEDIN_CLIENT_ID && config.LINKEDIN_CLIENT_SECRET
-          ? { clientId: config.LINKEDIN_CLIENT_ID, clientSecret: config.LINKEDIN_CLIENT_SECRET, oauthUrl: config.LINKEDIN_OAUTH_URL!, apiUrl: config.LINKEDIN_API_URL! }
-          : undefined,
-      oauthRedirectUris: config.OAUTH_REDIRECT_URIS,
-    }),
-    NotesModule.forRoot({ env: config.APP_ENV, bucket: config.S3_BUCKET, restrictedBucket: config.S3_RESTRICTED_BUCKET }),
-    CoreModule,
+    UsersModule.forRoot(usersConfigFrom(config)),
+    NotesModule.forRoot(notesConfigFrom(config)),
+    CoreModule.forRoot(coreConfigFrom(config)),
     AiModule,
-    CommunicationModule.forRoot({
-      mailFrom: config.MAIL_FROM,
-      mailTransport: config.MAIL_TRANSPORT,
-      smtpUrl: config.SMTP_URL,
-      resendApiKey: config.RESEND_API_KEY,
-    }),
+    CommunicationModule.forRoot(communicationConfigFrom(config)),
   ]
 }
 
@@ -51,4 +27,4 @@ export function contextModules(config: ApiConfig): (Type | DynamicModule)[] {
  * Contexts that serve GraphQL today, each as its own federation subgraph. A context joins when it ships its first
  * resolver (spec §18: later-phase code is not written early).
  */
-export const SUBGRAPHS: SubgraphDefinition[] = [usersSubgraph, notesSubgraph]
+export const SUBGRAPHS: SubgraphDefinition[] = [usersSubgraph, notesSubgraph, coreSubgraph]

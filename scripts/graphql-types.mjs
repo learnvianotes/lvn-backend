@@ -57,7 +57,9 @@ for (const t of types) {
     if (!fields.length) continue
     const root = t.name === 'Query' || t.name === 'Mutation' || t.name === 'Subscription'
     if (!root) {
-      out.push(`${doc(t.description)}export interface ${t.name} {`, ...fields.map((f) => `${doc(f.description, '  ')}  ${f.name}: ${ts(f.type)}`), '}', '')
+      // Fields added by `extend type` usually have their own field resolvers, so parents may omit them.
+      const extended = new Set((t.extensionASTNodes ?? []).flatMap((n) => (n.fields ?? []).map((f) => f.name.value)))
+      out.push(`${doc(t.description)}export interface ${t.name} {`, ...fields.map((f) => `${doc(f.description, '  ')}  ${f.name}${extended.has(f.name) ? '?' : ''}: ${ts(f.type)}`), '}', '')
     }
     for (const f of fields.filter((f) => f.args.length)) {
       const name = `${t.name}${f.name[0].toUpperCase()}${f.name.slice(1)}Args`
