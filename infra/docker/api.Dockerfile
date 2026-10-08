@@ -25,6 +25,10 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store rm -rf node_modules */*/node_m
 FROM ${NODE_IMAGE}
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates tini && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
+# Amazon RDS certificate authorities: Node does not trust them by default, and DATABASE_URL verifies the server
+# (sslmode=verify-full). Readable by the unprivileged user.
+ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/rds-global-bundle.pem
 WORKDIR /app
 COPY --from=build --chown=node:node /repo /app
 USER node
