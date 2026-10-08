@@ -497,3 +497,53 @@ model FileObject {
   @@index([status, expiresAt])
   @@schema("notes")
 }
+
+// ── core ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// Where a progress row came from: the old learnvianotes.in site (ADR-0023) or LVN itself. Declining the old data
+/// deletes exactly the LEGACY rows.
+enum ProgressOrigin {
+  LEGACY
+  LVN
+
+  @@schema("core")
+}
+
+enum ProblemMark {
+  SOLVED
+  REVISIT
+
+  @@schema("core")
+}
+
+/// Progress on a /core topic (skeleton CoreTopicProgress). topicKey = "subjectId/topicId" of the static content.
+model CoreTopicProgress {
+  /// Cross-context reference to users.User
+  userId         String         @db.Uuid
+  topicKey       String
+  subjectId      String
+  origin         ProgressOrigin
+  completed      Boolean        @default(false)
+  revisit        Boolean        @default(false)
+  secondsStudied Int            @default(0)
+  lastStudiedAt  DateTime?      @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@id([userId, topicKey, origin])
+  @@index([userId, subjectId])
+  @@schema("core")
+}
+
+/// A mark on a /core interview problem (skeleton CoreProblemMark).
+model CoreProblemMark {
+  userId    String         @db.Uuid
+  subjectId String
+  problemId String
+  origin    ProgressOrigin
+  mark      ProblemMark
+  markedAt  DateTime       @default(now()) @db.Timestamptz(3)
+
+  @@id([userId, subjectId, problemId, origin])
+  @@index([userId, subjectId])
+  @@schema("core")
+}

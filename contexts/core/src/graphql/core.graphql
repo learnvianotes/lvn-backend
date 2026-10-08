@@ -1,0 +1,32 @@
+# Progress on the /core study content (ADR-0023). Subgraph of the `core` context (ADR-0033).
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.6", import: ["@shareable"])
+
+scalar DateTime
+
+enum ProblemMark { SOLVED REVISIT }
+
+"topicKey = subjectId/topicId of the /core content"
+type CoreTopicProgress {
+  topicKey: String!
+  completed: Boolean!
+  revisit: Boolean!
+  secondsStudied: Int!
+  lastStudiedAt: DateTime
+}
+
+type CoreProblemMark {
+  problemId: String!
+  mark: ProblemMark!
+}
+
+"Progress on a /core subject — the old site's history plus everything recorded since"
+type CoreSubjectProgress {
+  subjectId: String!
+  topics: [CoreTopicProgress!]!
+  problems: [CoreProblemMark!]!
+}
+
+type Query {
+  "Signed-in users: their progress on a /core subject (web reads it on /core pages)"
+  coreProgress(subjectId: String!): CoreSubjectProgress!
+}
