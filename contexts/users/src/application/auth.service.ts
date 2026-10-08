@@ -135,7 +135,7 @@ export class AuthService {
     })
     await this.mailer.send(email, 'resetPassword', {
       displayName: user.displayName,
-      link: this.link('/reset-password', token),
+      link: this.link('/reset', token),
       expiresInMinutes: RESET_PASSWORD_TTL_MINUTES,
     })
   }
@@ -160,7 +160,7 @@ export class AuthService {
     await this.db.emailToken.create({
       data: { id: newId(), userId, purpose: 'VERIFY_EMAIL', tokenHash: sha256(token), expiresAt: new Date(Date.now() + VERIFY_EMAIL_TTL_HOURS * 3_600_000) },
     })
-    await this.mailer.send(email, 'verifyEmail', { displayName, link: this.link('/verify-email', token) })
+    await this.mailer.send(email, 'verifyEmail', { displayName, link: this.link('/verify', token) })
   }
 
   /** Marks a single-use email token used, or throws VALIDATION if it is unknown, used or expired. */

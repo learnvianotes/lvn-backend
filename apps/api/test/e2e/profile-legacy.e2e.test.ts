@@ -155,7 +155,7 @@ describe('profile, limits and old-site data', () => {
         const token = res.data!.signUp.session.accessToken
         expect((await fresh.gql<{ viewer: { legacyImport: { status: string } } }>(LEGACY, {}, token)).data!.viewer.legacyImport.status).toBe('NOT_FOUND')
 
-        const link = /href="([^"]+verify-email[^"]+)"/.exec((await new Mailbox(infra().mail.apiUrl).latestTo(email)).html)![1]!.replace(/&amp;/g, '&')
+        const link = /href="([^"]+\/verify\?token=[^"]+)"/.exec((await new Mailbox(infra().mail.apiUrl).latestTo(email)).html)![1]!.replace(/&amp;/g, '&')
         await fresh.gql('mutation ($t: String!) { verifyEmail(input: { token: $t }) { ok } }', { t: new URL(link).searchParams.get('token') })
         expect((await fresh.gql<{ viewer: { legacyImport: { status: string } } }>(LEGACY, {}, token)).data!.viewer.legacyImport.status).toBe('AVAILABLE')
         await fresh.app.get(InProcessEventBus).drain()

@@ -63,7 +63,7 @@ describe('auth', () => {
 
       const email = await mail.latestTo(input.email)
       expect(email.subject).toBe('Confirm your email')
-      const token = new URL(/href="([^"]+verify-email[^"]+)"/.exec(email.html)![1]!.replace(/&amp;/g, '&')).searchParams.get('token')!
+      const token = new URL(/href="([^"]+\/verify\?token=[^"]+)"/.exec(email.html)![1]!.replace(/&amp;/g, '&')).searchParams.get('token')!
       const verified = await t.gql<{ verifyEmail: { ok: boolean } }>('mutation ($t: String!) { verifyEmail(input: { token: $t }) { ok userErrors { code } } }', { t: token })
       expect(verified.data!.verifyEmail.ok).toBe(true)
       expect((await t.gql(VIEWER, {}, session.accessToken)).data).toEqual({ viewer: { id: session.user.id, emailVerified: true } })
@@ -204,7 +204,7 @@ describe('auth', () => {
       await t.gql(RESET_REQ, { e: input.email })
       const email = await mail.latestTo(input.email)
       expect(email.subject).toBe('Reset your password')
-      const token = new URL(/href="([^"]+reset-password[^"]+)"/.exec(email.html)![1]!.replace(/&amp;/g, '&')).searchParams.get('token')!
+      const token = new URL(/href="([^"]+\/reset\?token=[^"]+)"/.exec(email.html)![1]!.replace(/&amp;/g, '&')).searchParams.get('token')!
 
       const weak = await t.gql<{ resetPassword: { ok: boolean; userErrors: { field: string[] }[] } }>(RESET, { t: token, p: 'short' })
       expect(weak.data!.resetPassword.userErrors[0]!.field).toEqual(['input', 'password'])
