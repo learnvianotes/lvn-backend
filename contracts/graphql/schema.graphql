@@ -402,6 +402,11 @@ type Note {
   """Editors only"""
   draftUpdatedAt: DateTime
 
+  """
+  The first words of the note (at most 180 characters), for lists and previews
+  """
+  excerpt: String!
+
   """The owner's folder; null for anyone else"""
   folder: Folder
   forkingEnabled: Boolean!

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { Action, can, type CardType } from '@lvn/contracts/domain'
-import { inlineText, isValidPosition, NOTE_LIMITS, noteTitleSchema, slugify } from '@lvn/contracts/validation'
+import { cardPlainText, inlineText, isValidPosition, NOTE_LIMITS, noteTitleSchema, slugify } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { decodeCursor, pageSize } from '@lvn-backend/graphql'
@@ -44,6 +44,12 @@ export interface DraftUpdate {
   tagNames?: string[] | null
   topicIds?: string[] | null
   ops?: CardOp[] | null
+}
+
+/** At most 180 characters of a card's words, on one line. */
+function excerptOf(type: CardType, content: unknown): string {
+  const text = cardPlainText(type, content).replace(/\s+/g, ' ').trim()
+  return text.length > 180 ? `${text.slice(0, 179).trimEnd()}…` : text
 }
 
 const byPosition = (a: { position: string; id: string }, b: { position: string; id: string }) => (a.position < b.position ? -1 : a.position > b.position ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
@@ -236,6 +242,27 @@ export class DraftsService {
   async cardCount(opened: OpenedNote): Promise<number> {
     if (opened.access === 'READER') return (await this.versionSnapshot(opened.note.publishedVersionId!)).length
     return this.db.card.count({ where: { noteId: opened.note.id, deletedAt: null } })
+  }
+
+  /**
+   * The first words of several notes at once, for lists: the first card with text in each draft (owner and editors)
+   * or published version (readers). One query for the drafts, whatever the number of notes.
+   */
+  async excerpts(notes: OpenedNote[]): Promise<Map<string, string>> {
+    const result = new Map<string, string>()
+    const drafts = notes.filter((o) => o.access !== 'READER').map((o) => o.note.id)
+    if (drafts.length) {
+      const rows = await this.db.$queryRaw<{ noteId: string; type: CardType; content: unknown }[]>`
+        SELECT DISTINCT ON ("noteId") "noteId", "type", "content" FROM "notes"."Card"
+        WHERE "noteId" = ANY(${drafts}::uuid[]) AND "deletedAt" IS NULL AND "type" <> 'heading' AND "type" NOT IN ('image', 'video', 'audio', 'file')
+        ORDER BY "noteId", "position", "id"`
+      for (const r of rows) result.set(r.noteId, excerptOf(r.type, r.content))
+    }
+    for (const o of notes.filter((n) => n.access === 'READER')) {
+      const first = (await this.versionSnapshot(o.note.publishedVersionId!)).find((c) => c.type !== 'heading' && cardPlainText(c.type, c.content).trim())
+      result.set(o.note.id, first ? excerptOf(first.type, first.content) : '')
+    }
+    return result
   }
 
   /** The headings, for navigation (§6.3: metadata and outline first, cards after). */

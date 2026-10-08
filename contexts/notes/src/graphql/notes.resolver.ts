@@ -129,6 +129,14 @@ export class NotesResolver {
     return this.drafts.cardCount(n.opened)
   }
 
+  @ResolveField('excerpt')
+  excerpt(@Parent() n: NoteParent, @Context() context: RequestContext) {
+    return requestLoader<OpenedNote, string>(context, 'notes.excerpt', async (opened) => {
+      const map = await this.drafts.excerpts([...opened])
+      return opened.map((o) => map.get(o.note.id) ?? '')
+    }).load(n.opened)
+  }
+
   @ResolveField('outline')
   outline(@Parent() n: NoteParent) {
     return this.drafts.outline(n.opened)

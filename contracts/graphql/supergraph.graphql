@@ -540,6 +540,11 @@ type Note
   forkingEnabled: Boolean!
   cardCount: Int!
 
+  """
+  The first words of the note (at most 180 characters), for lists and previews
+  """
+  excerpt: String!
+
   """The headings, for navigation"""
   outline: [OutlineItem!]!
 

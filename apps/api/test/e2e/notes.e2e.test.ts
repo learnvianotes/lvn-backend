@@ -105,6 +105,21 @@ describe('notes', () => {
       expect(note!.viewerCan).toEqual({ edit: true, publish: true, delete: true, share: true, fork: true })
     })
 
+    it('lists notes with the first words of each, in one query for the page', async () => {
+      const first = await create(owner.token, { title: 'Excerpts', cards: [
+        { id: newId(), type: 'heading', position: 'a0', content: heading('Skipped: headings are titles') },
+        { id: newId(), type: 'text', position: 'a1', content: text(`Queues ${'keep order. '.repeat(30)}`) },
+      ] })
+      await create(owner.token, { title: 'Empty one' })
+      const res = await t.gql<{ myNotes: { edges: { node: { id: string; title: string; excerpt: string } }[] } }>('{ myNotes(first: 50) { edges { node { id title excerpt } } } }', {}, owner.token)
+      const byTitle = Object.fromEntries(res.data!.myNotes.edges.map((e) => [e.node.title, e.node.excerpt]))
+      expect(byTitle['Excerpts']).toMatch(/^Queues keep order\. keep order\./)
+      expect(byTitle['Excerpts']!.length).toBeLessThanOrEqual(180)
+      expect(byTitle['Excerpts']!.endsWith('…')).toBe(true)
+      expect(byTitle['Empty one']).toBe('')
+      expect(first.note!.id).toBeDefined()
+    })
+
     it('pages through cards with a cursor', async () => {
       const keys = positionsBetween(null, null, 7)
       const { note } = await create(owner.token, { cards: keys.map((position, i) => ({ id: newId(), type: 'text', position, content: text(`card ${i}`) })) })

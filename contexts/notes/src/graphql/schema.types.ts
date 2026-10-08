@@ -187,6 +187,8 @@ export interface Note {
   publishedAt: Date | null
   forkingEnabled: boolean
   cardCount: number
+  /** The first words of the note (at most 180 characters), for lists and previews */
+  excerpt: string
   /** The headings, for navigation */
   outline: Array<OutlineItem>
   /** In order; at most 100 per page */
