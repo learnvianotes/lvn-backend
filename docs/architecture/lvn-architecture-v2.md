@@ -42,6 +42,7 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0030](../adr/0030-rhythm-instead-of-streaks.md) | Rhythm — weekly, forgiving habit system with a Today ring and Exam Readiness instead of daily streaks. (§14.2) |
 | [0008](../adr/0008-mobile-builds-without-eas.md) | Mobile is built locally (prebuild + Gradle/Xcode) without an Expo account; no EAS Build/Update, no OTA for now. (§2, §13.1, §13.3, §16.1, §16.2) |
 | [0035](../adr/0035-domain-free-aws-sandbox-from-env.md) | The sandbox needs no domain: CloudFront's default HTTPS address in front of an internal ALB (VPC origin); settings in one `.env`; generated secrets; mail through SES with the task role. (§16.1, §16.2) |
+| [0036](../adr/0036-local-vm-environment.md) | Until the AWS sandbox exists, a `local` environment runs the sandbox's shape on a VM on the dev machine: Debian under QEMU/KVM, Terraform in the VM (Docker provider, local state), the same images, migration step and single entrance; `pnpm smoke` and a live Playwright spec check it. (§16.1, §16.2, §18) |
 
 **Errata (owner-approved, 2026-10-08).** Wording conflicts inside v2, corrected in place and marked *[Erratum E#]*:
 E1 role-brief sections · E2 three repositories, not a monorepo · E3 AI prompts path · E4 web/mobile own repositories,
@@ -648,6 +649,7 @@ Three fully isolated environments, infrastructure as code, immutable container i
 | --- | --- | --- | --- |
 | Purpose | Local laptop | Shared staging, QA, demo, mobile store review | Real users |
 | Infra | Docker Compose: Postgres, Redis, MinIO, Typesense, Mailpit, Ollama (optional) | Terraform, separate AWS account | Terraform, separate AWS account |
+| Infra *[Amended: ADR-0036]* | Docker Compose; plus a `local` environment — the sandbox's images, migration step and entrance on a VM, deployed with Terraform — until the sandbox account exists | Terraform, separate AWS account | Terraform, separate AWS account |
 | Data | Seed script, deterministic | Synthetic + anonymised fixtures, reset weekly | Real; never copied downward |
 | Domains | `localhost`, `*.lvn.local` | `sandbox.learnvianotes.com`, `api.sandbox…` | `learnvianotes.com`, `api.learnvianotes.com` |
 | Domains *[Amended: ADR-0022]* | from `.env` (`localhost`, the dev machine's address for phones) | `sandbox.learnvianotes.in`, `api.sandbox.learnvianotes.in` *[Amended: ADR-0035 — no domain: CloudFront's default `https://<id>.cloudfront.net`, API at `/graphql`]* | `www.learnvianotes.in`, `api.learnvianotes.in` — all set in the environment, never in code |

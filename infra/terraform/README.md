@@ -6,6 +6,7 @@ own account with production sizes.
 
 ```text
 envs/sandbox   root module of the sandbox; settings in envs/sandbox/.env (template .env.example)
+envs/local     the local environment on a VM until the sandbox exists (ADR-0036); settings in envs/local/.env
 bootstrap      the bucket for the Terraform state (once per account)
 modules/network   VPC; public and private subnets; optional NAT; security groups CloudFront → ALB → tasks → data
 modules/data      RDS PostgreSQL 16 (TLS only, generated password) and ElastiCache Redis 7 (encrypted)
@@ -16,9 +17,36 @@ modules/service   ECR, ECS Fargate (api, worker, web, one-off migrate), internal
 modules/edge      CloudFront with HTTPS on its default address, reaching the ALB through a VPC origin
 run.sh, bootstrap.sh, lib.sh   wrappers that load envs/<env>/.env
 ../scripts/deploy.sh           build, push, migrate, roll out
+../scripts/deploy-local.sh     the same for the local environment
+../local-vm/vm.sh              the local environment's VM
 ```
 
-## What you need
+## The local environment (no AWS account yet)
+
+ADR-0036. The sandbox's shape — the same images, generated secrets, a migration step, one entrance for web and API —
+on a Debian VM on this machine, with Terraform and Docker inside the VM and the state kept there. It needs QEMU with
+KVM (`/dev/kvm`), Docker, `curl`, `xz`, `rsync` and `python3`; nothing else is installed on the host.
+
+```bash
+cp infra/terraform/envs/local/.env.example infra/terraform/envs/local/.env   # add the Tailscale address, Firebase values
+infra/local-vm/vm.sh up                      # first run: downloads Debian 13, installs Docker and Terraform (~3 min)
+infra/scripts/deploy-local.sh                # images → VM, terraform apply in the VM: services, buckets, migration, apps
+pnpm smoke http://127.0.0.1:8080 --mailpit http://127.0.0.1:8025
+```
+
+| What | Where |
+| --- | --- |
+| Web, and the API at `/graphql` | `TF_VAR_public_url` (port 8080 on each `LVN_VM_PUBLISH_ADDRESSES`) |
+| S3 endpoint of pre-signed URLs | `TF_VAR_s3_public_url` (port 8081) |
+| Every email sent | Mailpit, `http://127.0.0.1:8025` |
+| A shell in the VM | `infra/local-vm/vm.sh ssh` (then `docker ps`, `docker logs lvn-local-api`) |
+| Terraform by hand | `infra/local-vm/vm.sh ssh 'cd lvn/infra/terraform && ./run.sh local plan'` |
+
+`vm.sh stop` shuts the VM down and `vm.sh up` starts it again with everything in place; `vm.sh destroy` deletes its
+disk. The web build bakes in `TF_VAR_public_url`, so deploy again after changing it. Phones use the development build
+pointed at that URL (it allows plain HTTP); for Google sign-in on the web, add its host to Firebase's authorized domains.
+
+## The sandbox on AWS: what you need
 
 - An AWS account and a CLI profile with administrator rights in it (`aws configure sso` or `aws configure`).
 - AWS CLI v2, Terraform 1.9 or later, Docker, `jq`, and lvn-web checked out next to lvn-backend.

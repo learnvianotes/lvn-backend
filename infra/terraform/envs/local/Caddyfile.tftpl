@@ -1,0 +1,16 @@
+# The entrance, as CloudFront and the load balancer are in the sandbox: one origin, /graphql and /health/* to the API,
+# everything else to the web. Caddy replaces any X-Forwarded-For a client sends with the address it sees.
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	@api path /graphql /graphql/* /health/*
+	handle @api {
+		reverse_proxy ${api}
+	}
+	handle {
+		reverse_proxy ${web}
+	}
+}

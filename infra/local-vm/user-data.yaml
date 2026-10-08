@@ -1,0 +1,32 @@
+#cloud-config
+# First boot of the local environment's VM (vm.sh up): an `lvn` user reachable only with this machine's VM key,
+# Docker, and Terraform from HashiCorp's signed apt repository. cloud-init is switched off once this has run.
+hostname: lvn-local
+groups: [docker]
+users:
+  - name: lvn
+    groups: [sudo, docker]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
+    ssh_authorized_keys: ["@SSH_PUBLIC_KEY@"]
+ssh_pwauth: false
+disable_root: true
+package_update: true
+package_upgrade: true
+packages: [docker.io, rsync, jq, curl, gnupg, ca-certificates, unzip]
+runcmd:
+  - |
+    set -eu
+    # HashiCorp's package signing key, accepted only with the fingerprint pinned in vm.sh.
+    curl -fsSL https://apt.releases.hashicorp.com/gpg -o /tmp/hashicorp.asc
+    fpr=$(gpg --show-keys --with-colons /tmp/hashicorp.asc | awk -F: '$1 == "fpr" { print $10; exit }')
+    [ "$fpr" = "@HASHICORP_KEY_FINGERPRINT@" ] || { echo "unexpected HashiCorp key $fpr" >&2; exit 1; }
+    gpg --dearmor -o /usr/share/keyrings/hashicorp.gpg /tmp/hashicorp.asc
+    codename=$(. /etc/os-release; echo "$VERSION_CODENAME")
+    echo "deb [signed-by=/usr/share/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com $codename main" > /etc/apt/sources.list.d/hashicorp.list
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y "terraform=@TERRAFORM_VERSION@-*"
+    apt-mark hold terraform
+    systemctl enable --now docker
+    touch /etc/cloud/cloud-init.disabled
