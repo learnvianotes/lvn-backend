@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { Action, can, type CardType } from '@lvn/contracts/domain'
-import { NOTE_LIMITS, noteTitleSchema, parseCardContent, positionsBetween } from '@lvn/contracts/validation'
+import { Action, can, HighlightColor, HighlightKind, type CardType } from '@lvn/contracts/domain'
+import { CARD_LIMITS, HIGHLIGHT_LIMITS, NOTE_LIMITS, noteTitleSchema, pageRectSchema, parseCardContent, positionsBetween } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { POLICY, type Policy } from '@lvn-backend/facades'
@@ -36,7 +36,23 @@ interface NoteToCreate {
   cards: ImportedCard[]
   /** Pictures and files to store first: card index → archive path */
   files: { index: number; path: string }[]
+  /** Cards made from a PDF (ADR-0040): card index → archive path of the PDF their anchor points into */
+  anchors?: { index: number; path: string }[]
+  /** PDF highlights of an LVN export, with the export's card ids so they find their cards again */
+  highlights?: ExportedHighlight[]
+  cardIds?: (string | undefined)[]
   forkedFrom: { noteId?: string | null; versionId?: string | null; ownerId: string; originVisibility?: string | null; forkedAs?: string | null } | null
+}
+
+interface ExportedHighlight {
+  media: string | null
+  page: number
+  kind: string
+  color: string
+  rects: unknown
+  quote?: string | null
+  comment?: string | null
+  cardId?: string | null
 }
 
 class ImportRefused extends Error {}
@@ -161,15 +177,28 @@ export class NoteImportService {
     for (const [file, data] of entries) {
       if (!file.startsWith('notes/') || !file.endsWith('/note.json')) continue
       try {
-        const n = JSON.parse(strFromU8(data)) as { format: string; title: string; kind: NoteToCreate['kind']; folder?: string; tags?: string[]; topicIds?: string[]; forkedFrom?: NoteToCreate['forkedFrom']; draft: { type: CardType; content: unknown; media?: string | null }[] }
+        const n = JSON.parse(strFromU8(data)) as {
+          format: string
+          title: string
+          kind: NoteToCreate['kind']
+          folder?: string
+          tags?: string[]
+          topicIds?: string[]
+          forkedFrom?: NoteToCreate['forkedFrom']
+          draft: { id?: string; type: CardType; content: unknown; media?: string | null; anchorMedia?: string | null }[]
+          highlights?: ExportedHighlight[]
+        }
         if (n.format !== 'lvn-note/1') continue
         const dir = path.posix.dirname(file)
         const files: NoteToCreate['files'] = []
+        const anchors: NonNullable<NoteToCreate['anchors']> = []
         const cards = n.draft.map((c, index) => {
           if (c.media) files.push({ index, path: path.posix.join(dir, c.media) })
+          if (c.anchorMedia) anchors.push({ index, path: path.posix.join(dir, c.anchorMedia) })
           return { type: c.type, content: c.content }
         })
-        notes.push({ path: file, title: n.title ?? '', kind: n.kind, folder: (n.folder ?? '').split('/').filter(Boolean), tags: n.tags ?? [], topicIds: n.topicIds ?? [], cards, files, forkedFrom: n.forkedFrom ?? null })
+        const highlights = (n.highlights ?? []).map((h) => ({ ...h, media: h.media ? path.posix.join(dir, h.media) : null }))
+        notes.push({ path: file, title: n.title ?? '', kind: n.kind, folder: (n.folder ?? '').split('/').filter(Boolean), tags: n.tags ?? [], topicIds: n.topicIds ?? [], cards, files, anchors, highlights, cardIds: n.draft.map((c) => c.id), forkedFrom: n.forkedFrom ?? null })
       } catch {
         report.skipped.push({ path: file, reason: 'not a readable note.json' })
       }
@@ -228,11 +257,20 @@ export class NoteImportService {
     const fork = n.forkedFrom ? await this.forkCredit(n.forkedFrom) : null
     const id = newId()
     await this.db.note.create({ data: { id, ownerId: userId, kind, title: title.success ? title.data : 'Imported note', folderId, ...fork } })
-    // Files go to the note first, so the cards can point at them.
+    // Files go to the note first, so the cards can point at them; a file several cards use is stored once.
     const cards = [...n.cards]
+    const storedFiles = new Map<string, Promise<{ fileId: string } | { refused: string }>>()
+    const store = (p: string) => {
+      if (!storedFiles.has(p)) {
+        const data = entries.get(p)
+        // LVN exports name files `<id8>-<name>`; the note gets the name back.
+        const name = path.posix.basename(p).replace(/^[0-9a-f]{8}-/, '')
+        storedFiles.set(p, data ? this.files.storeAttachment(userId, id, name, data) : Promise.resolve({ refused: /^https?:/i.test(p) ? 'pictures from the web are not downloaded' : 'not found in the archive' }))
+      }
+      return storedFiles.get(p)!
+    }
     for (const f of n.files) {
-      const data = entries.get(f.path)
-      const stored = data ? await this.files.storeAttachment(userId, id, path.posix.basename(f.path), data) : { refused: /^https?:/i.test(f.path) ? 'pictures from the web are not downloaded' : 'not found in the archive' }
+      const stored = await store(f.path)
       const card = cards[f.index]!
       if ('fileId' in stored) cards[f.index] = { type: card.type, content: { ...(card.content as object), fileId: stored.fileId } }
       else {
@@ -240,16 +278,64 @@ export class NoteImportService {
         cards[f.index] = { type: 'text', content: { doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `[${path.posix.basename(f.path)} was not imported]` }] }] } } }
       }
     }
-    const valid = cards.filter((c) => parseCardContent(c.type, c.content).ok).slice(0, NOTE_LIMITS.cardsPerNote)
+    // A card keeps its page when its PDF came along (ADR-0040); otherwise it stays without the anchor.
+    for (const a of n.anchors ?? []) {
+      const stored = await store(a.path)
+      const { anchor, ...rest } = cards[a.index]!.content as { anchor?: object }
+      cards[a.index] = { type: cards[a.index]!.type, content: 'fileId' in stored && anchor ? { ...rest, anchor: { ...anchor, fileId: stored.fileId } } : rest }
+    }
+    // Anchors whose PDF is not in the archive cannot point anywhere.
+    for (const [i, c] of cards.entries()) {
+      if ((n.anchors ?? []).some((a) => a.index === i)) continue
+      const { anchor, ...rest } = (c.content ?? {}) as { anchor?: object }
+      if (anchor) cards[i] = { type: c.type, content: rest }
+    }
+    const valid = cards.map((c, index) => ({ ...c, index, newId: newId() })).filter((c) => parseCardContent(c.type, c.content).ok).slice(0, NOTE_LIMITS.cardsPerNote)
     if (valid.length < cards.length) report.skipped.push({ path: n.path, reason: `${cards.length - valid.length} card(s) left out (not valid, or over ${NOTE_LIMITS.cardsPerNote})` })
     const positions = positionsBetween(null, null, valid.length)
+    const cardIdFor = new Map(valid.flatMap((c) => (n.cardIds?.[c.index] ? [[n.cardIds[c.index]!, c.newId] as const] : [])))
+    const highlights = await this.highlights(n, store, cardIdFor, report)
     await this.db.$transaction(async (tx) => {
-      if (valid.length) await tx.card.createMany({ data: valid.map((c, i) => ({ id: newId(), noteId: id, type: c.type, position: positions[i]!, content: parseCardContentOrThrow(c) })) })
+      if (valid.length) await tx.card.createMany({ data: valid.map((c, i) => ({ id: c.newId, noteId: id, type: c.type, position: positions[i]!, content: parseCardContentOrThrow(c) })) })
+      if (highlights.length) await tx.noteHighlight.createMany({ data: highlights.map((h) => ({ ...h, id: newId(), noteId: id, createdById: userId })) })
       await tx.note.update({ where: { id }, data: { draftRevision: valid.length ? 1 : 0 } })
       if (n.tags.length) await this.organise.setTags(tx, userId, id, n.tags.slice(0, 20), ['tagNames']).catch(() => report.skipped.push({ path: n.path, reason: 'some tags were not valid' }))
       if (topicIds.length) await tx.noteTopic.createMany({ data: topicIds.map((topicId) => ({ noteId: id, topicId })) })
     })
     return { id, title: title.success ? title.data : 'Imported note' }
+  }
+
+  /** The highlights of an LVN export whose PDF came along, checked like new ones (ADR-0040). */
+  private async highlights(
+    n: NoteToCreate,
+    store: (p: string) => Promise<{ fileId: string } | { refused: string }>,
+    cardIdFor: Map<string, string>,
+    report: Report,
+  ): Promise<Omit<Prisma.NoteHighlightCreateManyInput, 'id' | 'noteId' | 'createdById'>[]> {
+    const out: Omit<Prisma.NoteHighlightCreateManyInput, 'id' | 'noteId' | 'createdById'>[] = []
+    let dropped = 0
+    for (const h of (n.highlights ?? []).slice(0, HIGHLIGHT_LIMITS.perNote)) {
+      const stored = h.media ? await store(h.media) : null
+      const rects = Array.isArray(h.rects) && h.rects.length <= CARD_LIMITS.anchorRects ? h.rects.map((r) => pageRectSchema.safeParse(r)) : []
+      const usable =
+        stored && 'fileId' in stored && Number.isInteger(h.page) && h.page >= 1 && rects.length && rects.every((r) => r.success) && Object.values(HighlightKind).includes(h.kind as HighlightKind)
+      if (!usable) {
+        dropped++
+        continue
+      }
+      out.push({
+        fileId: stored.fileId,
+        page: h.page,
+        kind: h.kind as HighlightKind,
+        color: Object.values(HighlightColor).includes(h.color as HighlightColor) ? (h.color as HighlightColor) : HighlightColor.YELLOW,
+        rects: rects.map((r) => r.data!),
+        quote: h.quote?.slice(0, CARD_LIMITS.anchorQuote) || null,
+        comment: h.comment?.slice(0, HIGHLIGHT_LIMITS.comment) || null,
+        cardId: (h.cardId && cardIdFor.get(h.cardId)) || null,
+      })
+    }
+    if (dropped) report.skipped.push({ path: n.path, reason: `${dropped} highlight(s) left out (their PDF is not in the archive, or they are not valid)` })
+    return out
   }
 
   /** Fork credit survives (ADR-0010): the author always; the origin only where it still exists. Unknown visibility counts as not public. */

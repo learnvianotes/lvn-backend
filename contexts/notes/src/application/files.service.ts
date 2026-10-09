@@ -248,12 +248,12 @@ export class FilesService implements Files {
   }
 
   /** Read URLs for READY files the caller has already decided the reader may see; one access count update. */
-  async readUrls(fileIds: string[]) {
+  async readUrls(fileIds: string[], opts: { ttlSeconds?: number } = {}) {
     const files = fileIds.length ? await this.db.fileObject.findMany({ where: { id: { in: [...new Set(fileIds)] }, status: 'READY', deletedAt: null } }) : []
     if (files.length) await this.db.fileObject.updateMany({ where: { id: { in: files.map((f) => f.id) } }, data: { accessCount: { increment: 1 }, lastAccessedAt: new Date() } })
     const signed = await Promise.all(
       files.map(async (f) => {
-        const { url, expiresAt } = await this.storage.presignGet(f.bucket, f.storageKey, { expiresInSeconds: READ_URL_TTL_SECONDS, downloadName: f.originalFileName })
+        const { url, expiresAt } = await this.storage.presignGet(f.bucket, f.storageKey, { expiresInSeconds: opts.ttlSeconds ?? READ_URL_TTL_SECONDS, downloadName: f.originalFileName })
         return [f.id, { file: f, url, expiresAt }] as const
       }),
     )

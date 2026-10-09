@@ -90,7 +90,9 @@ resource "aws_s3_bucket_cors_configuration" "this" {
   cors_rule {
     allowed_methods = ["PUT", "GET"]
     allowed_origins = var.web_origins
-    allowed_headers = ["content-type", "content-length", "x-amz-*"]
+    # range: the PDF reader (ADR-0040) loads large PDFs piece by piece and reads where each piece sits.
+    allowed_headers = ["content-type", "content-length", "range", "x-amz-*"]
+    expose_headers  = ["accept-ranges", "content-range", "content-length", "etag"]
     max_age_seconds = 600
   }
 }

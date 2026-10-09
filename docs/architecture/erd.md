@@ -196,6 +196,7 @@ erDiagram
   Tag ||--o{ NoteTag : ""
   Note ||--o{ Attachment : ""
   Attachment }o--|| FileObject : ""
+  Attachment ||--o{ NoteHighlight : "PDF reader (ADR-0040)"
   Note |o--o{ Note : "forkedFrom"
 
   Subject {
@@ -293,6 +294,19 @@ erDiagram
     uuid noteId FK
     uuid cardId FK
     uuid fileId FK
+  }
+  NoteHighlight {
+    uuid id PK
+    uuid noteId FK
+    uuid fileId FK "with noteId: the attachment"
+    int page
+    enum kind "TEXT | AREA"
+    enum color "YELLOW … PURPLE"
+    jsonb rects "fractions of the page"
+    text quote
+    text comment
+    uuid cardId "the card made from it"
+    uuid createdById "→ users.User"
   }
 ```
 

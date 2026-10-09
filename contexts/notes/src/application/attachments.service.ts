@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { MEDIA_CARD_TYPES } from '@lvn/contracts/validation'
+import { cardAnchor, MEDIA_CARD_TYPES } from '@lvn/contracts/validation'
 import type { CardType } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { PrismaService, type Prisma } from '@lvn-backend/prisma-base'
@@ -18,6 +18,12 @@ export function mediaFileId(type: CardType, content: unknown): string | null {
   if (!MEDIA_CARD_TYPES.has(type)) return null
   const id = (content as { fileId?: unknown } | null)?.fileId
   return typeof id === 'string' ? id : null
+}
+
+/** The files a card uses: the one a media card shows and the PDF its anchor points into (ADR-0040). */
+export function cardFileIds(type: CardType, content: unknown): string[] {
+  const ids = [mediaFileId(type, content), cardAnchor(content)?.fileId].filter((id): id is string => !!id)
+  return [...new Set(ids)]
 }
 
 export interface MediaFile {
@@ -45,21 +51,30 @@ export class AttachmentsService {
     private readonly files: FilesService,
   ) {}
 
-  /** Media cards in a save must show a finished upload of their kind, linked to the note. */
+  /**
+   * Media cards in a save must show a finished upload of their kind, and anchors must point into a PDF (ADR-0040) —
+   * both linked to the note.
+   */
   async assertUsable(noteId: string, cards: { type: CardType; content: unknown; at: string[] }[]): Promise<void> {
-    const wanted = cards.map((c) => ({ ...c, fileId: mediaFileId(c.type, c.content) })).filter((c) => c.fileId)
+    const wanted = cards.flatMap((c) => {
+      const media = mediaFileId(c.type, c.content)
+      const anchor = cardAnchor(c.content)?.fileId
+      return [
+        ...(media ? [{ ...c, fileId: media, at: [...c.at, 'content', 'fileId'], accepts: ACCEPTS[c.type]!, refusal: `This file cannot be shown in a ${c.type} card.` }] : []),
+        ...(anchor ? [{ ...c, fileId: anchor, at: [...c.at, 'content', 'anchor', 'fileId'], accepts: (m: string) => m === 'application/pdf', refusal: 'This file cannot be used in an anchor.' }] : []),
+      ]
+    })
     if (!wanted.length) return
     const linked = await this.db.noteAttachment.findMany({
-      where: { noteId, fileId: { in: wanted.map((c) => c.fileId!) } },
+      where: { noteId, fileId: { in: [...new Set(wanted.map((c) => c.fileId))] } },
       include: { file: { select: { status: true, mimeType: true, deletedAt: true } } },
     })
     const files = new Map(linked.map((a) => [a.fileId, a.file]))
-    for (const card of wanted) {
-      const file = files.get(card.fileId!)
-      const at = [...card.at, 'content', 'fileId']
-      if (!file || file.deletedAt) throw Errors.validation('Upload the file to this note first.', at)
-      if (file.status !== 'READY') throw Errors.validation('This file has not finished uploading.', at)
-      if (!ACCEPTS[card.type]!(file.mimeType)) throw Errors.validation(`This file cannot be shown in a ${card.type} card.`, at)
+    for (const use of wanted) {
+      const file = files.get(use.fileId)
+      if (!file || file.deletedAt) throw Errors.validation('Upload the file to this note first.', use.at)
+      if (file.status !== 'READY') throw Errors.validation('This file has not finished uploading.', use.at)
+      if (!use.accepts(file.mimeType)) throw Errors.validation(use.refusal, use.at)
     }
   }
 
@@ -87,9 +102,9 @@ export class AttachmentsService {
     return out
   }
 
-  /** Links the files the copied cards show to the copy (§4.4): the copy keeps working when the origin goes away. */
+  /** Links the files the copied cards use to the copy (§4.4): the copy keeps working when the origin goes away. */
   async carryOver(tx: Prisma.TransactionClient, fromNoteId: string, toNoteId: string, cards: { type: CardType; content: unknown }[]): Promise<void> {
-    const fileIds = [...new Set(cards.map((c) => mediaFileId(c.type, c.content)).filter((id): id is string => !!id))]
+    const fileIds = [...new Set(cards.flatMap((c) => cardFileIds(c.type, c.content)))]
     if (!fileIds.length) return
     const linked = await tx.noteAttachment.findMany({ where: { noteId: fromNoteId, fileId: { in: fileIds } }, select: { fileId: true } })
     if (linked.length) await tx.noteAttachment.createMany({ data: linked.map((a) => ({ noteId: toNoteId, fileId: a.fileId })), skipDuplicates: true })

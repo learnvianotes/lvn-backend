@@ -864,11 +864,56 @@ model NoteAttachment {
   fileId    String   @db.Uuid
   createdAt DateTime @default(now()) @db.Timestamptz(3)
 
-  note Note       @relation(fields: [noteId], references: [id], onDelete: Cascade)
-  file FileObject @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  note       Note            @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  file       FileObject      @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  highlights NoteHighlight[]
 
   @@id([noteId, fileId])
   @@index([fileId])
+  @@schema("notes")
+}
+
+/// A highlight in the PDF reader (ADR-0040): a passage or an area of one page of a PDF attached to the note. The note's
+/// owner and editors see and change them, as they see the draft; they are not versioned and copies do not take them.
+model NoteHighlight {
+  id          String         @id @db.Uuid
+  noteId      String         @db.Uuid
+  fileId      String         @db.Uuid
+  /// 1-based
+  page        Int
+  kind        HighlightKind
+  color       HighlightColor
+  /// [[x0, y0, x1, y1], …] as fractions of the page from its top left (@lvn/contracts pageRectSchema)
+  rects       Json
+  quote       String?
+  comment     String?
+  /// The card made from it (not a foreign key: cards are soft-deleted and restored with versions)
+  cardId      String?        @db.Uuid
+  /// Cross-context reference to users.User
+  createdById String         @db.Uuid
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
+
+  attachment NoteAttachment @relation(fields: [noteId, fileId], references: [noteId, fileId], onDelete: Cascade)
+
+  @@index([noteId, fileId, page])
+  @@schema("notes")
+}
+
+enum HighlightKind {
+  TEXT
+  AREA
+
+  @@schema("notes")
+}
+
+enum HighlightColor {
+  YELLOW
+  GREEN
+  BLUE
+  PINK
+  PURPLE
+
   @@schema("notes")
 }
 

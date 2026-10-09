@@ -186,7 +186,8 @@ resource "docker_container" "s3" {
 # match listed AllowedHeaders (any requested header failed the preflight), so the local rule allows all headers; the
 # sandbox's S3 keeps the narrow list (modules/storage).
 locals {
-  files_cors = jsonencode({ CORSRules = [{ AllowedMethods = ["PUT", "GET"], AllowedOrigins = [var.public_url], AllowedHeaders = ["*"], MaxAgeSeconds = 600 }] })
+  # ExposeHeaders: the PDF reader (ADR-0040) loads large PDFs by range requests.
+  files_cors = jsonencode({ CORSRules = [{ AllowedMethods = ["PUT", "GET"], AllowedOrigins = [var.public_url], AllowedHeaders = ["*"], ExposeHeaders = ["Accept-Ranges", "Content-Range", "Content-Length", "ETag"], MaxAgeSeconds = 600 }] })
 }
 
 # The two buckets of envs/sandbox (modules/storage), with the files bucket's CORS rule.

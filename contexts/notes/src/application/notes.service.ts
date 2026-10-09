@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { Action, can, type Actor, type CardType } from '@lvn/contracts/domain'
-import { isValidPosition, MEDIA_CARD_TYPES, NOTE_LIMITS, noteTitleSchema, parseCardContent } from '@lvn/contracts/validation'
+import { cardAnchor, isValidPosition, MEDIA_CARD_TYPES, NOTE_LIMITS, noteTitleSchema, parseCardContent } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { POLICY, type Policy } from '@lvn-backend/facades'
@@ -37,14 +37,15 @@ export interface NoteListFilter {
 }
 
 /**
- * Checks one card from a client and returns its content as stored; `path` names it in the error. Media cards need the
- * note's attachments (AttachmentsService.assertUsable), so only saves to an existing note accept them.
+ * Checks one card from a client and returns its content as stored; `path` names it in the error. Media cards and
+ * anchors need the note's attachments (AttachmentsService.assertUsable), so only saves to an existing note accept them.
  */
 export function checkCard(card: CardInput, path: (string | number)[], opts: { media?: boolean } = {}): unknown {
   if (MEDIA_CARD_TYPES.has(card.type) && !opts.media) throw Errors.validation('Add pictures, video, audio and files once the note exists.', [...path.map(String), 'type'])
   if (!isValidPosition(card.position)) throw Errors.validation('This card position is not valid.', [...path.map(String), 'position'])
   const parsed = parseCardContent(card.type, card.content)
   if (!parsed.ok) throw Errors.validation(`This ${card.type} card is not valid: ${parsed.message}.`, [...path.map(String), 'content'])
+  if (!opts.media && cardAnchor(parsed.content)) throw Errors.validation('Add cards from a PDF once the note exists.', [...path.map(String), 'content', 'anchor'])
   return parsed.content
 }
 

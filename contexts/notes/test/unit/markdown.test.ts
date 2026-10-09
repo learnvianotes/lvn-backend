@@ -1,4 +1,4 @@
-import { cardToMarkdown, docToMarkdown } from '../../src/domain/markdown'
+import { cardToMarkdown, docToMarkdown, highlightsToMarkdown } from '../../src/domain/markdown'
 
 /** ADR-0018: exported notes read well as Markdown in any editor. */
 const t = (text: string, marks?: { type: string; attrs?: object }[]) => ({ type: 'text', text, ...(marks ? { marks } : {}) })
@@ -27,5 +27,33 @@ describe('cards as Markdown', () => {
     expect(cardToMarkdown('quiz', { question: { type: 'doc', content: [p(t('BFS uses'))] }, choices: [{ id: 'a', content: [t('stack')] }, { id: 'b', content: [t('queue')] }], correct: ['b'], multiple: false }, none)).toBe('**Quiz:** BFS uses\n\n- [ ] stack\n- [x] queue')
     expect(cardToMarkdown('image', { fileId: 'f1', alt: 'A tree', caption: [t('Fig. 1')] }, () => ({ path: 'media/f1 tree.png', name: 'tree.png' }))).toBe('![A tree](media/f1%20tree.png)\n\n_Fig. 1_')
     expect(cardToMarkdown('video', { fileId: 'f2' }, none)).toBe('_(video not included in this export)_')
+  })
+})
+
+describe('PDF anchors and highlights as Markdown (ADR-0040)', () => {
+  const pdf = '01920000-0000-7000-8000-0000000000aa'
+  const media = (id: string) => (id === pdf ? { path: 'media/0000aa-biology notes.pdf', name: 'biology notes.pdf' } : null)
+  const quote = { doc: { type: 'doc', content: [p(t('Cells divide'))] } }
+
+  it('ends a card made from a PDF with the page it came from, linked when the PDF is in the export', () => {
+    expect(cardToMarkdown('quote', { ...quote, anchor: { fileId: pdf, page: 4 } }, media)).toBe('> Cells divide\n\n_From page 4 of [biology notes.pdf](media/0000aa-biology%20notes.pdf#page=4)_')
+    expect(cardToMarkdown('quote', { ...quote, anchor: { fileId: pdf, page: 4 } }, none)).toBe('> Cells divide\n\n_From page 4 of a PDF not included in this export_')
+    expect(cardToMarkdown('quote', quote, media)).toBe('> Cells divide')
+  })
+
+  it('lists highlights per PDF in page order, with colours and comments', () => {
+    const md = highlightsToMarkdown(
+      [
+        { fileId: pdf, page: 9, kind: 'AREA', color: 'GREEN', quote: null, comment: 'the diagram' },
+        { fileId: pdf, page: 2, kind: 'TEXT', color: 'YELLOW', quote: 'Mitosis has\nfour phases', comment: null },
+      ],
+      media,
+    )
+    expect(md).toBe(
+      '## Highlights\n\n### biology notes.pdf\n\n' +
+        '- [page 2](media/0000aa-biology%20notes.pdf#page=2), yellow: “Mitosis has four phases”\n' +
+        '- [page 9](media/0000aa-biology%20notes.pdf#page=9), green: (an area of the page) — the diagram',
+    )
+    expect(highlightsToMarkdown([], media)).toBe('')
   })
 })

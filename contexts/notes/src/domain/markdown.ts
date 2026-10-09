@@ -1,5 +1,5 @@
 import type { CardType } from '@lvn/contracts/domain'
-import type { BlockNode, Doc, Inline } from '@lvn/contracts/validation'
+import { cardAnchor, type BlockNode, type Doc, type Inline } from '@lvn/contracts/validation'
 
 /**
  * Cards as Markdown (ADR-0018 exports): readable in any editor and by other note apps. Exports also carry each card's
@@ -47,8 +47,54 @@ const cell = (inline: Inline) => inlineToMarkdown(inline).replace(/\n/g, ' ') ||
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- each card type's content is checked by its schema
 type Any = any
 
-/** One card as Markdown; `media` gives the archive path of a file card's file, or null when it is not included. */
-export function cardToMarkdown(type: CardType, content: unknown, media: (fileId: string) => { path: string; name: string } | null): string {
+type MediaPath = (fileId: string) => { path: string; name: string } | null
+
+/** Where a passage came from (ADR-0040): the page, linked to the PDF when the export includes it. */
+function pageOf(fileId: string, page: number, media: MediaPath): string {
+  const file = media(fileId)
+  return file ? `page ${page} of [${escape(file.name)}](${encodeURI(file.path)}#page=${page})` : `page ${page} of a PDF not included in this export`
+}
+
+/**
+ * One card as Markdown; `media` gives the archive path of a file the card uses, or null when it is not included. A
+ * card made from a PDF ends with the page it came from.
+ */
+export function cardToMarkdown(type: CardType, content: unknown, media: MediaPath): string {
+  const body = cardBody(type, content, media)
+  const anchor = cardAnchor(content)
+  return anchor && body ? `${body}\n\n_From ${pageOf(anchor.fileId, anchor.page, media)}_` : body
+}
+
+export interface HighlightForMarkdown {
+  fileId: string
+  page: number
+  kind: 'TEXT' | 'AREA'
+  color: string
+  quote: string | null
+  comment: string | null
+}
+
+/** The highlights of a note (ADR-0040) as a Markdown section, one list per PDF in page order; empty when there are none. */
+export function highlightsToMarkdown(highlights: HighlightForMarkdown[], media: MediaPath): string {
+  if (!highlights.length) return ''
+  const byFile = new Map<string, HighlightForMarkdown[]>()
+  for (const h of highlights) byFile.set(h.fileId, [...(byFile.get(h.fileId) ?? []), h])
+  const sections = [...byFile].map(([fileId, list]) => {
+    const file = media(fileId)
+    const name = file?.name ?? 'A PDF not included in this export'
+    const at = (page: number) => (file ? `[page ${page}](${encodeURI(file.path)}#page=${page})` : `page ${page}`)
+    const lines = list
+      .sort((a, b) => a.page - b.page)
+      .map((h) => {
+        const what = h.kind === 'AREA' ? '(an area of the page)' : `“${escape((h.quote ?? '').replace(/\s+/g, ' ').trim())}”`
+        return `- ${at(h.page)}, ${h.color.toLowerCase()}: ${what}${h.comment ? ` — ${escape(h.comment.replace(/\s+/g, ' '))}` : ''}`
+      })
+    return `### ${escape(name)}\n\n${lines.join('\n')}`
+  })
+  return `## Highlights\n\n${sections.join('\n\n')}`
+}
+
+function cardBody(type: CardType, content: unknown, media: MediaPath): string {
   const c = content as Any
   switch (type) {
     case 'text':
