@@ -67,6 +67,18 @@ rsync -a -e "$("$vm" ssh-command)" "$backend/infra/terraform/envs/local/.env" lv
   [ -d envs/local/.terraform ] || ./run.sh local init
   ./run.sh local apply -input=false -auto-approve"
 
+echo "==> Old images"
+# Each repository keeps the image just deployed and the one before it (to roll back to); older builds go, here and in
+# the VM, where each API image is about 800 MB.
+prune() {
+  for repo in lvn-backend lvn-web; do
+    docker images "$repo" --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' | sort -r | cut -f2 | grep -vxF -e "$1" -e "$2" | tail -n +2 |
+      xargs -r docker image rm >/dev/null 2>&1 || true
+  done
+}
+prune "$api_image" "$web_image"
+"$vm" ssh bash -s -- "$api_image" "$web_image" <<<"$(declare -f prune); prune \"\$1\" \"\$2\""
+
 ready=$(curl -fsS "$public_url/health/ready" || true)
 echo "Ready: $ready"
 echo "Deployed $api_image (api, worker) and $web_image (web) to $public_url"
