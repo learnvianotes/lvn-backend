@@ -95,6 +95,15 @@ resource "aws_s3_bucket_cors_configuration" "this" {
     expose_headers  = ["accept-ranges", "content-range", "content-length", "etag"]
     max_age_seconds = 600
   }
+  # Reads from anywhere: a pre-signed read URL is itself the permission, and the phone's PDF reader runs in a web view
+  # without a web origin (ADR-0040).
+  cors_rule {
+    allowed_methods = ["GET"]
+    allowed_origins = ["*"]
+    allowed_headers = ["range"]
+    expose_headers  = ["accept-ranges", "content-range", "content-length", "etag"]
+    max_age_seconds = 600
+  }
 }
 
 data "aws_iam_policy_document" "tls_only" {
