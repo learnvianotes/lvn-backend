@@ -244,6 +244,9 @@ resource "docker_container" "clamav" {
     "CLAMD_CONF_StreamMaxLength=600M",
     "CLAMD_CONF_MaxScanSize=600M",
     "CLAMD_CONF_MaxFileSize=600M",
+    # Signatures take about 1 GB; reloading them beside the loaded set would double that past the cap. Scans wait for
+    # the few seconds of a reload instead.
+    "CLAMD_CONF_ConcurrentDatabaseReload=no",
   ]
   networks_advanced {
     name    = docker_network.this.id

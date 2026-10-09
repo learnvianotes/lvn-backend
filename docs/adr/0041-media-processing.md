@@ -30,7 +30,9 @@ Constraints:
      and its cards show it as unavailable. `FileQuarantined` is published.
    - A scanner error retries; the last attempt leaves `scanResult ERROR` and the file served, and logs it.
    - Without `CLAMAV_URL` (development) nothing is scanned and `scanResult` stays empty.
-   - ClamAV (GPL-2.0) runs as its own container and is called over the network, never linked.
+   - ClamAV (GPL-2.0) runs as its own container and is called over the network, never linked. It reloads new
+     signatures in place (`ConcurrentDatabaseReload no`), so a reload pauses scans for seconds instead of doubling
+     its memory.
 3. **Variants**, next to the original as `{env}/{ownerId}/{fileId}/<variant>`:
 
    | Kind | Variants | Facts |
@@ -58,6 +60,9 @@ Constraints:
 ## Consequences
 
 - People never wait for processing to use what they uploaded, and see better files a moment later.
-- The backend image grows by ffmpeg, about 200 MB. The local environment runs a ClamAV container: about 1.5 GB of
-  memory once its signatures load. The local VM goes to 8 GB.
+- The backend image grows by ffmpeg and sharp, about 0.5 GB (2.4 GB to 2.9 GB). The local environment runs a ClamAV
+  container: about 1 GB of memory with its 3.6 million signatures, under a 2 GB cap. The local VM goes to 8 GB.
+- ClamAV matches the EICAR test string only at the start of what it scans, and it scans each PDF stream on its own.
+  Tests therefore use EICAR as a PDF stream: an upload must start with real PDF bytes, and the real scanner flags it
+  (`Eicar-Signature`).
 - A file found infected after someone saw it is removed then; the scan is minutes, not a gate.

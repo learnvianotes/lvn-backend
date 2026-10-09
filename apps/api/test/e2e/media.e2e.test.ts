@@ -9,7 +9,7 @@ import { Queues } from '@lvn-backend/queue'
 import { Storage } from '@lvn-backend/storage'
 import sharp from 'sharp'
 import { createTestApp, type TestApp } from '../support/app'
-import { EICAR, startFakeClamd } from '../support/fake-clamd'
+import { EICAR, EICAR_PDF, startFakeClamd } from '../support/fake-clamd'
 import { SAMPLES, upload } from '../support/flows'
 import { seedUser, tokenFor } from '../support/seed'
 
@@ -120,8 +120,7 @@ describe('media processing', () => {
   })
 
   it('quarantines an infected file: kept in the restricted bucket, never served again', async () => {
-    const infected = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.from(EICAR), Buffer.from('\n%%EOF\n')])
-    const fileId = await upload(t, me.token, 'ATTACHMENT', 'application/pdf', infected, 'invoice.pdf', noteId)
+    const fileId = await upload(t, me.token, 'ATTACHMENT', 'application/pdf', EICAR_PDF, 'invoice.pdf', noteId)
     const row = await db.fileObject.findUniqueOrThrow({ where: { id: fileId } })
     // Someone used it in a card before the scan finished.
     await addCard(fileId, 'file')

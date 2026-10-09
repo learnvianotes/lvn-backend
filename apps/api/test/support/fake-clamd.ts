@@ -4,6 +4,13 @@ import { createServer, type Server } from 'node:net'
 export const EICAR = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
 
 /**
+ * A PDF the real ClamAV calls infected: EICAR as the body of a stream object, which clamd unpacks and scans on its own
+ * (EICAR elsewhere in a file is not matched, as the test string must start what is scanned). Checked against ClamAV
+ * 1.5.4 on the local environment: `Eicar-Signature FOUND`.
+ */
+export const EICAR_PDF = Buffer.from(`%PDF-1.7\n1 0 obj\n<< /Length ${EICAR.length} >>\nstream\n${EICAR}\nendstream\nendobj\ntrailer << >>\n%%EOF\n`, 'latin1')
+
+/**
  * A stand-in for ClamAV's clamd (ADR-0041): speaks zINSTREAM and finds the EICAR string anywhere in the stream. The
  * real clamd runs on the local environment; this keeps tests fast and offline.
  */

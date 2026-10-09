@@ -4,13 +4,15 @@
  * smoke.mjs: two people, A and B. A writes a note, publishes it, shares it with B, makes it public; anonymous visitors
  * read its page, the sitemap lists it and search finds it; B copies it; A publishes a second version and the page
  * follows; A makes it private again and it leaves the page, the sitemap and search; a device of A's syncs it and sends
- * an edit made offline; A moves it to the trash and back. Publishing needs a verified account: on the local
- * environment A is verified through its database (--vm), elsewhere pass a verified account's token (--token-a).
+ * an edit made offline; A moves it to the trash and back; a picture on it gets its sizes and an infected file is
+ * quarantined (ADR-0041, with the environment's ClamAV). Publishing needs a verified account: on the local environment
+ * A is verified through its database (--vm), elsewhere pass a verified account's token (--token-a).
  *
  *   node scripts/lifecycle-check.mjs <public_url> --vm infra/local-vm/vm.sh
  *   node scripts/lifecycle-check.mjs <public_url> --token-a <access token of a verified account>
  */
 import { execFileSync } from 'node:child_process'
+import { crc32, deflateSync } from 'node:zlib'
 
 const base = process.argv[2]?.replace(/\/$/, '')
 const opt = (name) => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : undefined)
@@ -66,6 +68,9 @@ const page = async (path) => {
   const res = await fetch(`${base}${path}`, { redirect: 'manual' })
   return { status: res.status, body: res.status === 200 ? await res.text() : '' }
 }
+// The EICAR test string as a PDF stream, which ClamAV unpacks and flags (apps/api/test/support/fake-clamd.ts).
+const EICAR = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
+const EICAR_PDF = Buffer.from(`%PDF-1.7\n1 0 obj\n<< /Length ${EICAR.length} >>\nstream\n${EICAR}\nendstream\nendobj\ntrailer << >>\n%%EOF\n`, 'latin1')
 const stamp = Date.now()
 const WORD = `lifecycle${stamp}`
 
@@ -148,9 +153,67 @@ await gql('mutation ($input: NoteIdInput!) { restoreNote(input: $input) { note {
 const restored = await gql('query ($id: UUID!) { note(id: $id) { deletedAt cards { edges { node { id } } } } }', { id }, A.token)
 ok(restored.note.deletedAt === null && restored.note.cards.edges.length === 3, 'and restores it with its three cards')
 
+// Media (ADR-0041): processed after the upload by the worker, scanned by the environment's ClamAV.
+let uploads = 0
+const uploadTo = async (mimeType, fileName, bytes) => {
+  const r = await gql('mutation ($input: CreateUploadIntentInput!) { createUploadIntent(input: $input) { intent { fileId uploadUrl uploadHeaders { name value } } userErrors { message } } }', { input: { fileName, mimeType, sizeBytes: bytes.length, purpose: 'ATTACHMENT', parentId: id } }, A.token)
+  const intent = r.createUploadIntent.intent
+  if (!intent) throw new Error(r.createUploadIntent.userErrors[0]?.message)
+  const put = await fetch(intent.uploadUrl, { method: 'PUT', headers: Object.fromEntries(intent.uploadHeaders.map((h) => [h.name, h.value])), body: bytes })
+  if (!put.ok) throw new Error(`PUT: HTTP ${put.status}`)
+  await gql('mutation ($id: UUID!) { completeUpload(fileId: $id) { ok } }', { id: intent.fileId }, A.token)
+  const image = mimeType.startsWith('image/')
+  await gql('mutation ($input: UpdateNoteDraftInput!) { updateNoteDraft(input: $input) { results { status } } }', { input: { noteId: id, ops: [{ kind: 'UPSERT', id: newId(), type: image ? 'image' : 'file', position: `a${3 + uploads++}`, content: image ? { fileId: intent.fileId, alt: fileName } : { fileId: intent.fileId } }] } }, A.token)
+  return intent.fileId
+}
+const mediaOf = async (fileId) => {
+  const { note } = await gql('query ($id: UUID!) { note(id: $id) { cards { edges { node { content media { url width thumbUrl mediumUrl largeUrl } } } } } }', { id }, A.token)
+  return note.cards.edges.find((e) => e.node.content?.fileId === fileId)?.node.media ?? null
+}
+const picture = await uploadTo('image/png', 'board.png', png(1200, 800))
+let shown
+const sized = await eventually(async () => !!(shown = await mediaOf(picture))?.largeUrl, 120_000)
+const widths = sized ? await Promise.all([shown.thumbUrl, shown.mediumUrl, shown.largeUrl].map(async (u) => webpWidth(Buffer.from(await (await fetch(u)).arrayBuffer())))) : []
+ok(sized && widths.join() === '320,960,1200', 'a picture on the note gets three WebP sizes, never enlarged', widths.join(' '))
+const infected = await uploadTo('application/pdf', 'invoice.pdf', EICAR_PDF)
+const before = await mediaOf(infected)
+ok(await eventually(async () => (await mediaOf(infected)) === null, 120_000), 'an infected file is quarantined: its card shows it unavailable')
+ok(before !== null && !(await fetch(before.url)).ok, 'and its old read URL no longer serves it')
+
 console.log(`1..${n}`)
 if (failed) {
   console.log(`# ${failed} of ${n} checks failed`)
   process.exit(1)
 }
 console.log(`# all ${n} checks passed`)
+
+/** A PNG of one colour, made here so the check needs nothing installed. */
+function png(width, height) {
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type), data])
+    const out = Buffer.alloc(body.length + 8)
+    out.writeUInt32BE(data.length, 0)
+    body.copy(out, 4)
+    out.writeUInt32BE(crc32(body), body.length + 4)
+    return out
+  }
+  const header = Buffer.alloc(13)
+  header.writeUInt32BE(width, 0)
+  header.writeUInt32BE(height, 4)
+  header[8] = 8 // 8 bits per channel
+  header[9] = 2 // RGB
+  const row = Buffer.alloc(1 + width * 3)
+  for (let x = 0; x < width; x++) row.set([0x4f, 0x46, 0xe5], 1 + x * 3)
+  const pixels = deflateSync(Buffer.concat(Array.from({ length: height }, () => row)))
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), chunk('IDAT', pixels), chunk('IEND', Buffer.alloc(0))])
+}
+
+/** The width of a WebP picture from its header (lossy, lossless or extended), or null if it is not one. */
+function webpWidth(b) {
+  if (b.toString('latin1', 0, 4) !== 'RIFF' || b.toString('latin1', 8, 12) !== 'WEBP') return null
+  const kind = b.toString('latin1', 12, 16)
+  if (kind === 'VP8 ') return b.readUInt16LE(26) & 0x3fff
+  if (kind === 'VP8L') return 1 + (((b[22] & 0x3f) << 8) | b[21])
+  if (kind === 'VP8X') return 1 + b.readUIntLE(24, 3)
+  return null
+}
