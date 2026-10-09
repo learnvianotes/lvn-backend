@@ -1,12 +1,15 @@
 import { getNamedType, isObjectType, type GraphQLSchema } from 'graphql'
+import { PdfConversionService, SearchIndex } from '@lvn-backend/notes'
+import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { createTestApp, type TestApp } from '../support/app'
+import { SAMPLES, upload } from '../support/flows'
 import { seedActors, type Actors } from './support/actors'
 import { publicSchema } from './support/fuzz'
 
 /**
- * §17.1: B cannot read A's private data through any channel. In Phase 1 the private data is account data; notes,
- * groups, classrooms, search, recommendations, RAG, subscriptions and SEO pages arrive later and their assertions are
- * listed as todos until then.
+ * §17.1: B cannot read A's private data through any channel: account data (Phase 1); notes, their files, PDF
+ * highlights and conversions, public pages, copies, search and exports (Phase 2). Groups, classrooms, comments,
+ * recommendations, RAG and subscriptions arrive later; their assertions are todos until then.
  */
 describe('security: privacy', () => {
   let t: TestApp
@@ -81,10 +84,91 @@ describe('security: privacy', () => {
       const own = await t.gql<{ note: { title: string; deletedAt: string | null } }>('query ($id: UUID!) { note(id: $id) { title deletedAt } }', { id }, actors.a.token)
       expect(own.data!.note).toEqual({ title: 'A’s diary', deletedAt: null })
     })
-    it.todo('B cannot read A’s private note through a public-note SEO page or a file URL (P2c, P2d)')
-    it.todo('B cannot fork or comment on A’s private note')
-    it.todo('B gets no search results, recommendations or Ask AI answers that draw on A’s private notes')
-    it.todo('unpublishing a note removes it from search, recommendations and RAG within 60 seconds')
+    describe('A’s private note with a PDF, a highlight and a published version', () => {
+      const WORD = `zygomorphic${Date.now()}`
+      let noteId = ''
+      let pdf = ''
+      let highlight = ''
+      beforeAll(async () => {
+        // A must be verified to publish; the note stays PRIVATE (published only for A and their shares).
+        await t.app.get(PrismaService).user.update({ where: { id: actors.a.id }, data: { verifiedAt: new Date(), verificationMethod: 'INSTITUTIONAL_EMAIL' } })
+        const created = await t.gql<{ createNote: { note: { id: string } } }>(`mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } } }`, { input: { title: `Private ${WORD}`, cards: [{ id: newId(), type: 'text', position: 'a0', content: { doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `secret ${WORD}` }] }] } } }] } }, actors.a.token)
+        noteId = created.data!.createNote.note.id
+        pdf = await upload(t, actors.a.token, 'ATTACHMENT', 'application/pdf', SAMPLES.pdf, 'private.pdf', noteId)
+        await t.gql('mutation ($input: UpdateNoteDraftInput!) { updateNoteDraft(input: $input) { results { status } } }', { input: { noteId, ops: [{ kind: 'UPSERT', id: newId(), type: 'file', position: 'a1', content: { fileId: pdf } }] } }, actors.a.token)
+        await t.gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId } }, actors.a.token)
+        const added = await t.gql<{ addPdfHighlight: { highlight: { id: string } } }>('mutation ($input: AddPdfHighlightInput!) { addPdfHighlight(input: $input) { highlight { id } } }', { input: { noteId, fileId: pdf, page: 1, kind: 'TEXT', rects: [[0, 0, 0.5, 0.1]], quote: 'secret' } }, actors.a.token)
+        highlight = added.data!.addPdfHighlight.highlight.id
+        await t.app.get(SearchIndex).indexNote(noteId)
+      })
+
+      it('B cannot read it through the public-note pages, sitemaps or a file URL (P2c, P2d)', async () => {
+        for (const token of [actors.b.token, undefined]) {
+          const listed = await t.gql<{ publicNotes: { edges: { node: { id: string } }[] } }>('{ publicNotes(first: 100) { edges { node { id } } } }', {}, token)
+          expect(listed.data!.publicNotes.edges.map((e) => e.node.id)).not.toContain(noteId)
+          const file = await t.gql<{ noteFile: unknown }>('query ($n: UUID!, $f: UUID!) { noteFile(noteId: $n, fileId: $f) { url } }', { n: noteId, f: pdf }, token)
+          expect(file.data!.noteFile).toBeNull()
+        }
+      })
+
+      it('B cannot copy it, study or convert its PDF, or see or touch its highlights (P2c, P2h)', async () => {
+        const missing = '01920000-0000-7000-8000-0000000000fe'
+        const attempt = async (id: string) => {
+          const fork = await t.gql<{ forkNote: { note: unknown; userErrors: { code: string }[] } }>('mutation ($id: UUID!) { forkNote(input: { noteId: $id }) { note { id } userErrors { code } } }', { id }, actors.b.token)
+          const study = await t.gql<{ studyPdf: { note: unknown; userErrors: { code: string }[] } }>('mutation ($n: UUID!, $f: UUID!) { studyPdf(input: { noteId: $n, fileId: $f }) { note { id } userErrors { code } } }', { n: id, f: pdf }, actors.b.token)
+          const convert = await t.gql<{ convertPdfToNote: { conversion: unknown; userErrors: { code: string }[] } }>('mutation ($n: UUID!, $f: UUID!) { convertPdfToNote(input: { noteId: $n, fileId: $f }) { conversion { id } userErrors { code } } }', { n: id, f: pdf }, actors.b.token)
+          return [fork.data!.forkNote, study.data!.studyPdf, convert.data!.convertPdfToNote]
+        }
+        // Exactly like a note that does not exist.
+        expect(await attempt(noteId)).toEqual(await attempt(missing))
+        expect((await attempt(noteId)).map((p) => p.userErrors[0]?.code)).toEqual(['NOT_FOUND', 'NOT_FOUND', 'NOT_FOUND'])
+        const touch = await t.gql<{ updatePdfHighlight: { userErrors: { code: string }[] }; removePdfHighlight: { userErrors: { code: string }[] } }>(
+          'mutation ($id: UUID!) { updatePdfHighlight(input: { highlightId: $id, comment: "mine" }) { userErrors { code } } removePdfHighlight(input: { highlightId: $id }) { userErrors { code } } }',
+          { id: highlight },
+          actors.b.token,
+        )
+        expect(touch.data!.updatePdfHighlight.userErrors[0]?.code).toBe('NOT_FOUND')
+        expect(touch.data!.removePdfHighlight.userErrors[0]?.code).toBe('NOT_FOUND')
+        expect(await t.app.get(PrismaService).noteHighlight.count({ where: { id: highlight } })).toBe(1)
+      })
+
+      it('B gets no search results that draw on it, and A does', async () => {
+        const find = async (token?: string) => (await t.gql<{ search: { notes: { note: { id: string } }[] } }>('query ($q: String!) { search(query: $q) { notes { note { id } } } }', { q: WORD }, token)).data!.search.notes.map((n) => n.note.id)
+        expect(await find(actors.a.token)).toContain(noteId)
+        expect(await find(actors.b.token)).toEqual([])
+        expect(await find()).toEqual([])
+      })
+
+      it('B never sees A’s PDF conversions or data exports', async () => {
+        const conversions = t.app.get(PdfConversionService)
+        const asked = await conversions.request(actors.a.id, noteId, pdf)
+        const seen = await t.gql<{ pdfConversion: unknown }>('query ($id: UUID!) { pdfConversion(id: $id) { id } }', { id: asked.conversion.id }, actors.b.token)
+        expect(seen.data!.pdfConversion).toBeNull()
+        await conversions.failed({ conversionId: asked.conversion.id, error: 'test' })
+        const exports = await t.gql<{ myDataExports: { id: string }[] }>('{ myDataExports { id } }', {}, actors.b.token)
+        expect(exports.data!.myDataExports).toEqual([])
+      })
+    })
+
+    it('a note made private leaves public search at once (unpublishing)', async () => {
+      const db = t.app.get(PrismaService)
+      await db.user.update({ where: { id: actors.a.id }, data: { verifiedAt: new Date(), verificationMethod: 'INSTITUTIONAL_EMAIL' } })
+      const word = `quokka${Date.now()}`
+      const created = await t.gql<{ createNote: { note: { id: string } } }>(`mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } } }`, { input: { title: `Public ${word}` } }, actors.a.token)
+      const id = created.data!.createNote.note.id
+      await t.gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId: id } }, actors.a.token)
+      await t.gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { id } } }', { input: { noteId: id, visibility: 'PUBLIC' } }, actors.a.token)
+      await t.app.get(SearchIndex).indexNote(id)
+      const find = async () => (await t.gql<{ search: { notes: { note: { id: string } }[] } }>('query ($q: String!) { search(query: $q) { notes { note { id } } } }', { q: word }, actors.b.token)).data!.search.notes.map((n) => n.note.id)
+      expect(await find()).toEqual([id])
+      await t.gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { id } } }', { input: { noteId: id, visibility: 'PRIVATE' } }, actors.a.token)
+      // No reindex needed: search filters by who may read, at query time.
+      expect(await find()).toEqual([])
+    })
+
+    it.todo('B cannot comment on A’s private note (comments arrive with groups, Phase 3)')
+    it.todo('B gets no recommendations or Ask AI answers that draw on A’s private notes (Phase 5)')
+    it.todo('unpublishing removes a note from recommendations and RAG within 60 seconds (Phase 5)')
     it.todo('subscriptions never deliver A’s private note events to B')
   })
 
