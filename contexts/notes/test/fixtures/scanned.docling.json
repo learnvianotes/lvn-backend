@@ -1,0 +1,102 @@
+{
+ "schema_name": "DoclingDocument",
+ "version": "1.10.0",
+ "name": "scanned",
+ "origin": {
+  "mimetype": "application/pdf",
+  "binary_hash": 16915278945374228381,
+  "filename": "scanned.pdf"
+ },
+ "furniture": {
+  "self_ref": "#/furniture",
+  "children": [],
+  "content_layer": "furniture",
+  "name": "_root_",
+  "label": "unspecified"
+ },
+ "body": {
+  "self_ref": "#/body",
+  "children": [
+   {
+    "$ref": "#/texts/0"
+   },
+   {
+    "$ref": "#/texts/1"
+   }
+  ],
+  "content_layer": "body",
+  "name": "_root_",
+  "label": "unspecified"
+ },
+ "groups": [],
+ "texts": [
+  {
+   "self_ref": "#/texts/0",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "section_header",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 36.333333333333336,
+      "t": 800.88,
+      "r": 272.0,
+      "b": 767.2133333333334,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      22
+     ]
+    }
+   ],
+   "orig": "Chapter Respiration 4:",
+   "text": "Chapter Respiration 4:",
+   "level": 1
+  },
+  {
+   "self_ref": "#/texts/1",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 40.333333333333336,
+      "t": 750.2133333333334,
+      "r": 532.3333333333333,
+      "b": 707.2133333333334,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      181
+     ]
+    }
+   ],
+   "orig": "Respiration releases the energy stored in glucose. Cells use this energy to grow, move and repair themselves. Aerobic respiration needs oxygen and produces carbon dioxide and water.",
+   "text": "Respiration releases the energy stored in glucose. Cells use this energy to grow, move and repair themselves. Aerobic respiration needs oxygen and produces carbon dioxide and water."
+  }
+ ],
+ "pictures": [],
+ "tables": [],
+ "key_value_items": [],
+ "form_items": [],
+ "pages": {
+  "1": {
+   "size": {
+    "width": 595.91998,
+    "height": 842.88
+   },
+   "page_no": 1
+  }
+ }
+}

@@ -32,6 +32,18 @@ variable "web_image" {
   default     = ""
 }
 
+variable "pdf_engine_image" {
+  description = "PDF engine image (workers/pdf-engine, ADR-0028) loaded into the VM by deploy-local.sh; empty runs none"
+  type        = string
+  default     = ""
+}
+
+variable "pdf_engine_memory_mb" {
+  description = "Memory the PDF engine may use; Docling on CPU needs about 2 GB for a large page"
+  type        = number
+  default     = 3072
+}
+
 variable "mail_from_address" {
   type    = string
   default = "no-reply@learnvianotes.local"

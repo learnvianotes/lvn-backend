@@ -13,6 +13,7 @@ locals {
   }
   apps    = var.api_image == "" ? 0 : 1
   web     = var.web_image == "" ? 0 : 1
+  engine  = var.pdf_engine_image == "" ? 0 : 1
   buckets = { files = "${var.name}-files", restricted = "${var.name}-restricted" }
   s3_keys = { AWS_ACCESS_KEY_ID = random_password.s3_access_key.result, AWS_SECRET_ACCESS_KEY = random_password.s3_secret_key.result }
   # Container logs rotate instead of filling the disk.
@@ -283,6 +284,32 @@ resource "docker_container" "worker" {
   wait         = true
   wait_timeout = 180
   depends_on   = [terraform_data.migrate, terraform_data.buckets, docker_container.redis, docker_container.mailpit]
+}
+
+# The PDF engine (ADR-0028): Docling and RapidOCR on CPU, one PDF at a time, reading jobs from Redis and files from
+# storage inside the network. It answers the notes context through Redis; nothing reaches it from outside.
+resource "docker_container" "pdf_engine" {
+  count        = local.engine
+  name         = "${var.name}-pdf-engine"
+  image        = var.pdf_engine_image
+  restart      = "unless-stopped"
+  log_opts     = local.log_opts
+  memory       = var.pdf_engine_memory_mb
+  stop_timeout = 60
+  env = [
+    "REDIS_URL=redis://:${random_password.redis.result}@redis:6379",
+    "S3_ENDPOINT=http://s3:9000",
+    "S3_REGION=us-east-1",
+    "S3_FORCE_PATH_STYLE=true",
+    "S3_ACCESS_KEY_ID=${random_password.s3_access_key.result}",
+    "S3_SECRET_ACCESS_KEY=${random_password.s3_secret_key.result}",
+    "PDF_ENGINE_CONCURRENCY=1",
+    "PDF_ENGINE_OCR_LANGUAGES=en",
+  ]
+  networks_advanced {
+    name = docker_network.this.id
+  }
+  depends_on = [terraform_data.buckets, docker_container.redis]
 }
 
 resource "docker_container" "web" {

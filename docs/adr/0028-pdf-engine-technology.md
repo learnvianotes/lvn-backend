@@ -69,3 +69,58 @@ with its own Dockerfile, typed I/O (JSON Schema shared with `@lvn/contracts`), t
 - PDF conversion works on cheap CPU from Phase 2, with quality measured on our own pages, not vendor benchmarks.
 - One extra runtime (Python) to operate; scoped to a stateless converter behind a queue.
 - Handwriting and Indic scans improve in Phase 5 and later, behind budgets.
+
+## Implementation notes (2026-10-09, P2h-2)
+
+How Phase 2 built this, where it differs from the plan above:
+
+- **Triage moved into the engine; decisions stay in Node.** The engine reports facts about a PDF (pages, pages with
+  fewer than 20 characters in their text layer, SHA-256, password-protected) using pdfium (`pypdfium2`, Apache-2.0 or
+  BSD-3), which Docling already ships. The notes context decides:
+  - the per-file cap of 300 pages;
+  - `PDF_PAGES_MONTHLY` (no row in the FREE plan yet, so unlimited until the owner sets one);
+  - whether to OCR;
+  - the cache.
+
+  `pdfjs-dist` is ESM-only and awkward in the CommonJS worker and its tests.
+- **Queues.**
+  - `notes.pdf-parse` (the engine's): `triage`, then `parse`.
+  - `notes.pdf` (the notes context's): `triaged`, `map`, `parse-failed`, and an hourly `expire-stuck` that fails
+    conversions the engine never answered.
+
+  The typed messages are `workers/pdf-engine/src/pdf_engine/jobs.py` and the interfaces in
+  `contexts/notes/src/application/pdf-conversion.service.ts`. Both sides' tests check the same shapes; a shared JSON
+  Schema in `@lvn/contracts` is still to come.
+- **One PDF, one job.** No 20-page chunks yet: one conversion per person at a time and one PDF at a time per engine.
+  This keeps the engine's memory predictable. Chunking comes back if large PDFs need it.
+- **Cache.** The engine writes `pdf-engine/<sha256>/` in the restricted bucket: `document.json` (Docling's JSON, with
+  pictures named rather than embedded), `pictures/<n>.png` and `result.json`. The same PDF converted again is mapped
+  from these without parsing.
+- **Versions.** Docling 2.135.0; **RapidOCR 3.9.2**, because 3.10.0 drops `PP_OCRV6_LANGS`, which Docling reads.
+  PP-OCRv6 English is the default recogniser.
+  - Hindi uses Docling's `devanagari` script model (to be measured on the evaluation set).
+  - Telugu is not in RapidOCR's PP-OCRv6 list. Whether the PP-OCRv5 Telugu model works through Docling is open; it is
+    checked when the owner's labelled pages arrive.
+  - CPU PyTorch from PyTorch's CPU index.
+- **Image.** About 4 GB, with the models downloaded by a warm-up conversion while the image is built, so a running
+  engine never reaches the internet. It runs as a non-root user. On the local VM it gets a 3 GB memory cap and one
+  job at a time. Speed is about 3 s a page on the development machine, with and without OCR.
+- **Mapping (stage 5).**
+  - Docling reports every section header at level 1, so heading levels come from numbering: "Chapter 3" is 1, "3.1"
+    is 2, "3.1.2" is 3.
+  - Paragraphs and lists on one page gather into text cards of up to about 3,000 characters.
+  - A "Figure …" or "Table …" line straight after a picture or table is its caption, even when Docling calls it a
+    header.
+  - Page headers and footers, and the words drawn inside a figure, are dropped.
+  - Every card carries the anchor of ADR-0040: the page and its boxes.
+  - Pictures become files of the new note.
+
+  Low-confidence flags wait for stage 4.
+- **Where the cards go.** Each conversion makes a new private note of the asker's own (ADR-0025, through `studyPdf`).
+  The cards are reviewed beside the PDF in the reader of ADR-0040.
+- **Evaluation.**
+  - `python -m pdf_engine.evaluate <folder>` reads `<name>.pdf` with `<name>.expected.json` (headings, phrases,
+    tables, pictures). It reports heading and phrase recall and seconds per page, and fails below a recall threshold
+    (90 % by default).
+  - Two generated pages (a digital chapter, a scanned page) score 100 % today.
+  - The owner's ~200 labelled pages are still to come.

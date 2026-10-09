@@ -9,6 +9,7 @@ import { contextModules, facades } from './contexts'
 import { MaintenanceJobs } from './maintenance.jobs'
 import { SearchJobs } from './search.jobs'
 import { DataJobs } from './data.jobs'
+import { PdfJobs } from './pdf.jobs'
 
 /** Composition root for background jobs (spec §3 apps/worker): the contexts and their BullMQ processors. */
 @Module({})
@@ -31,7 +32,7 @@ export class WorkerModule {
         facades(),
         ...contextModules(config),
       ],
-      providers: options.jobs === false ? [] : [MaintenanceJobs, SearchJobs, DataJobs],
+      providers: options.jobs === false ? [] : [MaintenanceJobs, SearchJobs, DataJobs, PdfJobs],
     }
   }
 }

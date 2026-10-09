@@ -36,6 +36,8 @@ tag_of() {
 }
 api_image="lvn-backend:$(tag_of "$backend")"
 web_image="lvn-web:$(tag_of "$web")"
+# The PDF engine (ADR-0028) is tagged by its own folder's tree, so its large image is rebuilt only when it changes.
+engine_image="lvn-pdf-engine:$(git -C "$backend" rev-parse --short=12 HEAD:workers/pdf-engine)"
 
 echo "==> VM"
 "$vm" status | grep -q '^running' || "$vm" up
@@ -52,7 +54,8 @@ docker image inspect "$web_image" >/dev/null 2>&1 || docker build -t "$web_image
   --build-arg NEXT_PUBLIC_FIREBASE_APP_ID="${NEXT_PUBLIC_FIREBASE_APP_ID:-}" \
   --build-arg NEXT_PUBLIC_SENTRY_DSN="${NEXT_PUBLIC_SENTRY_DSN:-}" \
   "$web"
-for image in "$api_image" "$web_image"; do
+docker image inspect "$engine_image" >/dev/null 2>&1 || docker build -t "$engine_image" "$backend/workers/pdf-engine"
+for image in "$api_image" "$web_image" "$engine_image"; do
   "$vm" ssh docker image inspect "$image" >/dev/null 2>&1 || { echo "loading $image into the VM"; docker save "$image" | "$vm" ssh docker load; }
 done
 
@@ -63,7 +66,7 @@ rsync -a --mkpath --delete -e "$("$vm" ssh-command)" --exclude .terraform/ --exc
 rsync -a -e "$("$vm" ssh-command)" "$backend/infra/terraform/envs/local/.env" lvn@127.0.0.1:lvn/infra/terraform/envs/local/.env
 "$vm" ssh "set -euo pipefail
   cd lvn/infra/terraform
-  printf 'api_image = \"%s\"\nweb_image = \"%s\"\n' '$api_image' '$web_image' > envs/local/images.auto.tfvars
+  printf 'api_image = \"%s\"\nweb_image = \"%s\"\npdf_engine_image = \"%s\"\n' '$api_image' '$web_image' '$engine_image' > envs/local/images.auto.tfvars
   [ -d envs/local/.terraform ] || ./run.sh local init
   ./run.sh local apply -input=false -auto-approve"
 
@@ -71,14 +74,14 @@ echo "==> Old images"
 # Each repository keeps the image just deployed and the one before it (to roll back to); older builds go, here and in
 # the VM, where each API image is about 800 MB.
 prune() {
-  for repo in lvn-backend lvn-web; do
-    docker images "$repo" --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' | sort -r | cut -f2 | grep -vxF -e "$1" -e "$2" | tail -n +2 |
+  for repo in lvn-backend lvn-web lvn-pdf-engine; do
+    docker images "$repo" --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' | sort -r | cut -f2 | grep -vxF -e "$1" -e "$2" -e "$3" | tail -n +2 |
       xargs -r docker image rm >/dev/null 2>&1 || true
   done
 }
-prune "$api_image" "$web_image"
-"$vm" ssh bash -s -- "$api_image" "$web_image" <<<"$(declare -f prune); prune \"\$1\" \"\$2\""
+prune "$api_image" "$web_image" "$engine_image"
+"$vm" ssh bash -s -- "$api_image" "$web_image" "$engine_image" <<<"$(declare -f prune); prune \"\$1\" \"\$2\" \"\$3\""
 
 ready=$(curl -fsS "$public_url/health/ready" || true)
 echo "Ready: $ready"
-echo "Deployed $api_image (api, worker) and $web_image (web) to $public_url"
+echo "Deployed $api_image (api, worker), $web_image (web) and $engine_image (pdf-engine) to $public_url"

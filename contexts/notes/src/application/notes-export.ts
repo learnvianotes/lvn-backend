@@ -7,7 +7,7 @@ import { Storage } from '@lvn-backend/storage'
 import { stringify } from 'yaml'
 import { cardToMarkdown, highlightsToMarkdown } from '../domain/markdown'
 import { mediaFileId } from './attachments.service'
-import type { SnapshotCard } from './drafts.service'
+import type { SnapshotCard } from '../domain/snapshot'
 
 const text = (s: string) => new TextEncoder().encode(s)
 const json = (v: unknown) => text(JSON.stringify(v, null, 2))

@@ -14,6 +14,7 @@ export { NOTES_SEARCH_QUEUE, SearchIndex } from './application/search-index'
 export { NotesExport } from './application/notes-export'
 /** Imports of notes (ADR-0018), run by apps/worker from the notes.import queue. */
 export { NOTES_IMPORT_QUEUE, NoteImportService } from './application/note-import.service'
+export { NOTES_PDF_QUEUE, PDF_ENGINE_QUEUE, PDF_LIMITS, PdfConversionService } from './application/pdf-conversion.service'
 /** Nightly housekeeping (version pruning, emptying the trash), run by apps/worker. */
 export { NotesMaintenance } from './application/notes-maintenance'
 
