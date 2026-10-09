@@ -76,6 +76,12 @@ export interface ChangeNoteVisibilityInput {
   visibility: Visibility
 }
 
+export interface ConvertPdfInput {
+  noteId: string
+  /** A PDF of the note the viewer can read */
+  fileId: string
+}
+
 export interface CreateFolderInput {
   name: string
   parentId?: string | null
@@ -173,6 +179,10 @@ export interface MutationCreateUploadIntentArgs {
 
 export interface MutationCompleteUploadArgs {
   fileId: string
+}
+
+export interface MutationConvertPdfToNoteArgs {
+  input: ConvertPdfInput
 }
 
 export interface MutationImportNotesArgs {
@@ -315,6 +325,8 @@ export interface Note {
   updatedAt: Date
   /** Set while the note is in the trash (owner only) */
   deletedAt: Date | null
+  /** The latest conversion filling this note, for the person who asked for it */
+  pdfConversion?: PdfConversion | null
   /** Owner only; null for everyone else */
   moderation?: NoteModeration | null
   /** The owner's and editors' highlights, in page order (empty for readers); only those on one PDF with `fileId` */
@@ -483,6 +495,32 @@ export interface PageInfo {
   endCursor: string | null
 }
 
+export interface PdfConversion {
+  id: string
+  status: PdfConversionStatus
+  /** 0 to 100 */
+  progress: number
+  pages: number | null
+  /** Pages without a text layer, read with OCR */
+  scannedPages: number | null
+  cards: number | null
+  /** Why it failed, in words for people */
+  error: string | null
+  /** The PDF */
+  fileId: string
+  /** The new note the cards go into */
+  note: Note | null
+  createdAt: Date
+  finishedAt: Date | null
+}
+
+export interface PdfConversionPayload {
+  conversion: PdfConversion | null
+  userErrors: Array<UserError>
+}
+
+export type PdfConversionStatus = 'QUEUED' | 'TRIAGE' | 'PARSING' | 'MAPPING' | 'DONE' | 'FAILED'
+
 /** A highlight on one page of a PDF attached to the note */
 export interface PdfHighlight {
   id: string
@@ -512,10 +550,21 @@ export interface PdfHighlightPayload {
   userErrors: Array<UserError>
 }
 
+export interface PdfPagesUsage {
+  /** Pages converted this month (UTC) */
+  used: number
+  /** null when there is no limit */
+  limit: number | null
+}
+
 export interface ProposeTopicInput {
   subjectId: string
   parentId?: string | null
   title: string
+}
+
+export interface QueryPdfConversionArgs {
+  id: string
 }
 
 export interface QueryNoteArgs {

@@ -714,6 +714,7 @@ model Note {
   shares           NoteShare[]
   attachments      NoteAttachment[]
   searchDocument   NoteSearchDocument?
+  pdfConversions   PdfConversion[]
   tags             NoteTag[]
   topics           NoteTopic[]
 
@@ -897,6 +898,46 @@ model NoteHighlight {
   attachment NoteAttachment @relation(fields: [noteId, fileId], references: [noteId, fileId], onDelete: Cascade)
 
   @@index([noteId, fileId, page])
+  @@schema("notes")
+}
+
+/// Converting a PDF into a note (ADR-0025, ADR-0028): triage in the notes context, parsing in workers/pdf-engine, the
+/// cards made here. The new note is the asker's own; its pages count against PDF_PAGES_MONTHLY unless it failed.
+model PdfConversion {
+  id           String              @id @db.Uuid
+  /// Cross-context reference to users.User: who asked
+  userId       String              @db.Uuid
+  /// The note the PDF was in
+  sourceNoteId String              @db.Uuid
+  fileId       String              @db.Uuid
+  /// The new note the cards go into
+  noteId       String              @db.Uuid
+  status       PdfConversionStatus @default(QUEUED)
+  /// 0 to 100
+  progress     Int                 @default(0)
+  pages        Int?
+  /// Pages without a text layer, read with OCR
+  scannedPages Int?
+  cards        Int?
+  error        String?
+  createdAt    DateTime            @default(now()) @db.Timestamptz(3)
+  finishedAt   DateTime?           @db.Timestamptz(3)
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([noteId, createdAt])
+  @@schema("notes")
+}
+
+enum PdfConversionStatus {
+  QUEUED
+  TRIAGE
+  PARSING
+  MAPPING
+  DONE
+  FAILED
+
   @@schema("notes")
 }
 

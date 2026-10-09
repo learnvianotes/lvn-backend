@@ -1,0 +1,47 @@
+[project]
+name = "lvn-pdf-engine"
+version = "0.1.0"
+description = "LearnViaNotes PDF engine (ADR-0028): parses PDFs with Docling and RapidOCR for the notes context."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "docling==2.135.0",
+  "rapidocr==3.9.2",  # 3.10.0 drops PP_OCRV6_LANGS, which docling 2.135 reads
+  "onnxruntime>=1.22",
+  "bullmq==3.3.2",
+  "boto3>=1.40",
+  # Direct, so they come from the CPU index below.
+  "torch",
+  "torchvision",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.4", "pytest-asyncio>=1.2", "ruff>=0.13", "pypdfium2"]
+
+[tool.uv]
+# CPU wheels of PyTorch: the engine runs without a GPU (ADR-0028).
+index-strategy = "unsafe-best-match"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pdf_engine"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["models: needs Docling's models (downloaded on first use; slow)"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"

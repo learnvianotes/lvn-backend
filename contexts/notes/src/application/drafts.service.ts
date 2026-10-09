@@ -13,16 +13,11 @@ import { SearchIndex } from './search-index'
 import { checkCard, NotesService, type OpenedNote } from './notes.service'
 import { OrganiseService } from './organise.service'
 
+import type { SnapshotCard } from '../domain/snapshot'
+
 type Tx = Prisma.TransactionClient
 
-/** A card as stored in a version snapshot. */
-export interface SnapshotCard {
-  id: string
-  type: CardType
-  position: string
-  content: unknown
-  revision: number
-}
+export type { SnapshotCard } from '../domain/snapshot'
 
 export interface CardOp {
   kind: 'UPSERT' | 'MOVE' | 'DELETE'

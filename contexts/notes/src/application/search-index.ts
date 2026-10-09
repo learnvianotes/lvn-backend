@@ -3,7 +3,7 @@ import { cardPlainText } from '@lvn/contracts/validation'
 import type { CardType } from '@lvn/contracts/domain'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
-import type { SnapshotCard } from './drafts.service'
+import type { SnapshotCard } from '../domain/snapshot'
 
 /** The notes context's search queue (§9.1 `search`): index-note, remove-note, reindex-all; run by apps/worker. */
 export const NOTES_SEARCH_QUEUE = 'notes.search'

@@ -9,7 +9,7 @@ import { RateLimiter } from '@lvn-backend/redis'
 import { noteFacts, visibleNotesWhere } from '../domain/note-access'
 import { AttachmentsService } from './attachments.service'
 import { NoteModerationService } from './moderation.service'
-import type { SnapshotCard } from './drafts.service'
+import type { SnapshotCard } from '../domain/snapshot'
 import { NotesService, type OpenedNote } from './notes.service'
 
 const SHARES_PER_NOTE = 100

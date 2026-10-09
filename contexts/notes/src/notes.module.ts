@@ -9,6 +9,7 @@ import { NoteImportService } from './application/note-import.service'
 import { NotesExport } from './application/notes-export'
 import { NotesMaintenance } from './application/notes-maintenance'
 import { OrganiseService } from './application/organise.service'
+import { PdfConversionService } from './application/pdf-conversion.service'
 import { PdfReaderService } from './application/pdf-reader.service'
 import { PublicPages } from './application/public-pages'
 import { SearchIndex } from './application/search-index'
@@ -21,6 +22,7 @@ import { CardResolver } from './graphql/media.resolver'
 import { NotesResolver, NoteVersionResolver } from './graphql/notes.resolver'
 import { OrganiseResolver, SubjectResolver, TopicResolver } from './graphql/organise.resolver'
 import { ReaderResolver } from './graphql/reader.resolver'
+import { ConversionResolver, NoteConversionResolver } from './graphql/convert.resolver'
 import { SearchResolver } from './graphql/search.resolver'
 import { SharingResolver } from './graphql/sharing.resolver'
 import { SyncResolver } from './graphql/sync.resolver'
@@ -70,8 +72,11 @@ export class NotesModule {
         SharingResolver,
         PdfReaderService,
         ReaderResolver,
+        PdfConversionService,
+        ConversionResolver,
+        NoteConversionResolver,
       ],
-      exports: [FilesService, NotesMaintenance, NoteModerationService, SearchIndex, NoteImportService],
+      exports: [FilesService, NotesMaintenance, NoteModerationService, SearchIndex, NoteImportService, PdfConversionService],
     }
   }
 }

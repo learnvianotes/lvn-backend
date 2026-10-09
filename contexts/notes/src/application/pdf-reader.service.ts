@@ -6,7 +6,7 @@ import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { noteFacts } from '../domain/note-access'
 import { cardFileIds, type MediaFile } from './attachments.service'
-import type { SnapshotCard } from './drafts.service'
+import type { SnapshotCard } from '../domain/snapshot'
 import { FilesService } from './files.service'
 import { NotesService, type OpenedNote } from './notes.service'
 

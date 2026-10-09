@@ -1,0 +1,877 @@
+{
+ "schema_name": "DoclingDocument",
+ "version": "1.10.0",
+ "name": "chapter",
+ "origin": {
+  "mimetype": "application/pdf",
+  "binary_hash": 8880095597262409343,
+  "filename": "chapter.pdf"
+ },
+ "furniture": {
+  "self_ref": "#/furniture",
+  "children": [],
+  "content_layer": "furniture",
+  "name": "_root_",
+  "label": "unspecified"
+ },
+ "body": {
+  "self_ref": "#/body",
+  "children": [
+   {
+    "$ref": "#/texts/0"
+   },
+   {
+    "$ref": "#/texts/1"
+   },
+   {
+    "$ref": "#/texts/2"
+   },
+   {
+    "$ref": "#/groups/0"
+   },
+   {
+    "$ref": "#/texts/6"
+   },
+   {
+    "$ref": "#/texts/7"
+   },
+   {
+    "$ref": "#/tables/0"
+   },
+   {
+    "$ref": "#/pictures/0"
+   },
+   {
+    "$ref": "#/texts/10"
+   },
+   {
+    "$ref": "#/texts/11"
+   }
+  ],
+  "content_layer": "body",
+  "name": "_root_",
+  "label": "unspecified"
+ },
+ "groups": [
+  {
+   "self_ref": "#/groups/0",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [
+    {
+     "$ref": "#/texts/3"
+    },
+    {
+     "$ref": "#/texts/4"
+    },
+    {
+     "$ref": "#/texts/5"
+    }
+   ],
+   "content_layer": "body",
+   "name": "list",
+   "label": "list"
+  }
+ ],
+ "texts": [
+  {
+   "self_ref": "#/texts/0",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "section_header",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 41.99999825,
+      "t": 796.1800507458313,
+      "r": 294.10325884569704,
+      "b": 771.2630597090393,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      25
+     ]
+    }
+   ],
+   "orig": "Chapter 3: Photosynthesis",
+   "text": "Chapter 3: Photosynthesis",
+   "level": 1
+  },
+  {
+   "self_ref": "#/texts/1",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 41.99999825,
+      "t": 750.1550282635407,
+      "r": 541.6746622552212,
+      "b": 720.4465334638946,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      186
+     ]
+    }
+   ],
+   "orig": "Photosynthesis is the process by which green plants turn light energy into chemical energy. It takes place in the chloroplasts of leaf cells, which contain the green pigment chlorophyll.",
+   "text": "Photosynthesis is the process by which green plants turn light energy into chemical energy. It takes place in the chloroplasts of leaf cells, which contain the green pigment chlorophyll."
+  },
+  {
+   "self_ref": "#/texts/2",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "section_header",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 41.99999825,
+      "t": 694.915040325207,
+      "r": 195.3010166849573,
+      "b": 677.4731465994525,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      22
+     ]
+    }
+   ],
+   "orig": "3.1 What a plant needs",
+   "text": "3.1 What a plant needs",
+   "level": 1
+  },
+  {
+   "self_ref": "#/texts/3",
+   "parent": {
+    "$ref": "#/groups/0"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "list_item",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 71.999997,
+      "t": 658.6550320760407,
+      "r": 197.59020174207456,
+      "b": 646.1965365576447,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      27
+     ]
+    }
+   ],
+   "orig": "Carbon dioxide from the air",
+   "text": "Carbon dioxide from the air",
+   "enumerated": false,
+   "marker": ""
+  },
+  {
+   "self_ref": "#/texts/4",
+   "parent": {
+    "$ref": "#/groups/0"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "list_item",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 71.999997,
+      "t": 641.4050327947906,
+      "r": 158.8798762300049,
+      "b": 628.9465372763947,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      19
+     ]
+    }
+   ],
+   "orig": "Water from the soil",
+   "text": "Water from the soil",
+   "enumerated": false,
+   "marker": ""
+  },
+  {
+   "self_ref": "#/texts/5",
+   "parent": {
+    "$ref": "#/groups/0"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "list_item",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 71.999997,
+      "t": 624.9050334822906,
+      "r": 156.05089674787902,
+      "b": 612.4465379638946,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      18
+     ]
+    }
+   ],
+   "orig": "Light from the sun",
+   "text": "Light from the sun",
+   "enumerated": false,
+   "marker": ""
+  },
+  {
+   "self_ref": "#/texts/6",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 41.99999825,
+      "t": 596.4050346697907,
+      "r": 535.5937283585931,
+      "b": 567.4465398388946,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      126
+     ]
+    }
+   ],
+   "orig": "The overall reaction combines six molecules of carbon dioxide and six of water into one molecule of glucose, releasing oxygen.",
+   "text": "The overall reaction combines six molecules of carbon dioxide and six of water into one molecule of glucose, releasing oxygen."
+  },
+  {
+   "self_ref": "#/texts/7",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "section_header",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 41.99999825,
+      "t": 541.1650467314569,
+      "r": 232.92260093989123,
+      "b": 523.7231530057026,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      28
+     ]
+    }
+   ],
+   "orig": "3.2 Light and dark reactions",
+   "text": "3.2 Light and dark reactions",
+   "level": 1
+  },
+  {
+   "self_ref": "#/texts/8",
+   "parent": {
+    "$ref": "#/pictures/0"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 66.49218472949218,
+      "t": 380.3233786331934,
+      "r": 122.49022931624023,
+      "b": 367.0343167469043,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      11
+     ]
+    }
+   ],
+   "orig": "Chloroplast",
+   "text": "Chloroplast"
+  },
+  {
+   "self_ref": "#/texts/9",
+   "parent": {
+    "$ref": "#/pictures/0"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 247.33592719433594,
+      "t": 380.3233786331934,
+      "r": 286.65819131590814,
+      "b": 367.0343167469043,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      7
+     ]
+    }
+   ],
+   "orig": "Glucose",
+   "text": "Glucose"
+  },
+  {
+   "self_ref": "#/texts/10",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "section_header",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 41.99999825,
+      "t": 304.8183768992352,
+      "r": 313.21470934438656,
+      "b": 294.02101411662545,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      68
+     ]
+    }
+   ],
+   "orig": "Figure 3.1: Light energy becomes chemical energy in the chloroplast.",
+   "text": "Figure 3.1: Light energy becomes chemical energy in the chloroplast.",
+   "level": 1
+  },
+  {
+   "self_ref": "#/texts/11",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 41.99999825,
+      "t": 277.6550479510406,
+      "r": 533.6601353641595,
+      "b": 265.1965524326447,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      111
+     ]
+    }
+   ],
+   "orig": "Factors such as light intensity, temperature and the amount of carbon dioxide limit the rate of photosynthesis.",
+   "text": "Factors such as light intensity, temperature and the amount of carbon dioxide limit the rate of photosynthesis."
+  }
+ ],
+ "pictures": [
+  {
+   "self_ref": "#/pictures/0",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [
+    {
+     "$ref": "#/texts/8"
+    },
+    {
+     "$ref": "#/texts/9"
+    }
+   ],
+   "content_layer": "body",
+   "label": "picture",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 47.79262416529406,
+      "t": 405.9257292593416,
+      "r": 305.0522383380926,
+      "b": 343.3919380421486,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      0
+     ]
+    }
+   ],
+   "captions": [],
+   "references": [],
+   "footnotes": [],
+   "image": {
+    "mimetype": "image/png",
+    "dpi": 144,
+    "size": {
+     "width": 514.0,
+     "height": 125.0
+    },
+    "uri": "pictures/0.png"
+   },
+   "annotations": []
+  }
+ ],
+ "tables": [
+  {
+   "self_ref": "#/tables/0",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "children": [],
+   "content_layer": "body",
+   "label": "table",
+   "prov": [
+    {
+     "page_no": 1,
+     "bbox": {
+      "l": 41.68710551197999,
+      "t": 507.9068462939279,
+      "r": 296.6733280558777,
+      "b": 446.245184330516,
+      "coord_origin": "BOTTOMLEFT"
+     },
+     "charspan": [
+      0,
+      0
+     ]
+    }
+   ],
+   "captions": [],
+   "references": [],
+   "footnotes": [],
+   "data": {
+    "table_cells": [
+     {
+      "bbox": {
+       "l": 72.41015323291015,
+       "t": 338.80662652305665,
+       "r": 100.40624578640625,
+       "b": 352.0956884093457,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 0,
+      "end_row_offset_idx": 1,
+      "start_col_offset_idx": 0,
+      "end_col_offset_idx": 1,
+      "text": "Stage",
+      "column_header": true,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "bbox": {
+       "l": 145.7578064267578,
+       "t": 338.80662652305665,
+       "r": 180.19335191194335,
+       "b": 352.0956884093457,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 0,
+      "end_row_offset_idx": 1,
+      "start_col_offset_idx": 1,
+      "end_col_offset_idx": 2,
+      "text": "Where",
+      "column_header": true,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "bbox": {
+       "l": 225.60936559960936,
+       "t": 338.80662652305665,
+       "r": 266.71873881171877,
+       "b": 352.0956884093457,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 0,
+      "end_row_offset_idx": 1,
+      "start_col_offset_idx": 2,
+      "end_col_offset_idx": 3,
+      "text": "Product",
+      "column_header": true,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "bbox": {
+       "l": 50.249997906249995,
+       "t": 359.05662567930665,
+       "r": 122.56054181331055,
+       "b": 372.3456875655957,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 1,
+      "end_row_offset_idx": 2,
+      "start_col_offset_idx": 0,
+      "end_col_offset_idx": 1,
+      "text": "Light reactions",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "bbox": {
+       "l": 138.31640423681623,
+       "t": 359.05662567930665,
+       "r": 187.64062090164046,
+       "b": 372.3456875655957,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 1,
+      "end_row_offset_idx": 2,
+      "start_col_offset_idx": 1,
+      "end_col_offset_idx": 2,
+      "text": "Thylakoid",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "bbox": {
+       "l": 203.3906165253906,
+       "t": 359.05662567930665,
+       "r": 288.9492067704493,
+       "b": 372.3456875655957,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 1,
+      "end_row_offset_idx": 2,
+      "start_col_offset_idx": 2,
+      "end_col_offset_idx": 3,
+      "text": "ATP and NADPH",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "bbox": {
+       "l": 50.249997906249995,
+       "t": 379.30662483555665,
+       "r": 110.56054243331054,
+       "b": 392.59568672184565,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 2,
+      "end_row_offset_idx": 3,
+      "start_col_offset_idx": 0,
+      "end_col_offset_idx": 1,
+      "text": "Calvin cycle",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "bbox": {
+       "l": 138.31640423681623,
+       "t": 379.30662483555665,
+       "r": 172.98046523248033,
+       "b": 392.59568672184565,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 2,
+      "end_row_offset_idx": 3,
+      "start_col_offset_idx": 1,
+      "end_col_offset_idx": 2,
+      "text": "Stroma",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     },
+     {
+      "bbox": {
+       "l": 203.3906165253906,
+       "t": 379.30662483555665,
+       "r": 242.71288064696284,
+       "b": 392.59568672184565,
+       "coord_origin": "TOPLEFT"
+      },
+      "row_span": 1,
+      "col_span": 1,
+      "start_row_offset_idx": 2,
+      "end_row_offset_idx": 3,
+      "start_col_offset_idx": 2,
+      "end_col_offset_idx": 3,
+      "text": "Glucose",
+      "column_header": false,
+      "row_header": false,
+      "row_section": false,
+      "fillable": false
+     }
+    ],
+    "num_rows": 3,
+    "num_cols": 3,
+    "orientation": "rot_0",
+    "grid": [
+     [
+      {
+       "bbox": {
+        "l": 72.41015323291015,
+        "t": 338.80662652305665,
+        "r": 100.40624578640625,
+        "b": 352.0956884093457,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 0,
+       "end_row_offset_idx": 1,
+       "start_col_offset_idx": 0,
+       "end_col_offset_idx": 1,
+       "text": "Stage",
+       "column_header": true,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "bbox": {
+        "l": 145.7578064267578,
+        "t": 338.80662652305665,
+        "r": 180.19335191194335,
+        "b": 352.0956884093457,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 0,
+       "end_row_offset_idx": 1,
+       "start_col_offset_idx": 1,
+       "end_col_offset_idx": 2,
+       "text": "Where",
+       "column_header": true,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "bbox": {
+        "l": 225.60936559960936,
+        "t": 338.80662652305665,
+        "r": 266.71873881171877,
+        "b": 352.0956884093457,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 0,
+       "end_row_offset_idx": 1,
+       "start_col_offset_idx": 2,
+       "end_col_offset_idx": 3,
+       "text": "Product",
+       "column_header": true,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      }
+     ],
+     [
+      {
+       "bbox": {
+        "l": 50.249997906249995,
+        "t": 359.05662567930665,
+        "r": 122.56054181331055,
+        "b": 372.3456875655957,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 1,
+       "end_row_offset_idx": 2,
+       "start_col_offset_idx": 0,
+       "end_col_offset_idx": 1,
+       "text": "Light reactions",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "bbox": {
+        "l": 138.31640423681623,
+        "t": 359.05662567930665,
+        "r": 187.64062090164046,
+        "b": 372.3456875655957,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 1,
+       "end_row_offset_idx": 2,
+       "start_col_offset_idx": 1,
+       "end_col_offset_idx": 2,
+       "text": "Thylakoid",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "bbox": {
+        "l": 203.3906165253906,
+        "t": 359.05662567930665,
+        "r": 288.9492067704493,
+        "b": 372.3456875655957,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 1,
+       "end_row_offset_idx": 2,
+       "start_col_offset_idx": 2,
+       "end_col_offset_idx": 3,
+       "text": "ATP and NADPH",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      }
+     ],
+     [
+      {
+       "bbox": {
+        "l": 50.249997906249995,
+        "t": 379.30662483555665,
+        "r": 110.56054243331054,
+        "b": 392.59568672184565,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 2,
+       "end_row_offset_idx": 3,
+       "start_col_offset_idx": 0,
+       "end_col_offset_idx": 1,
+       "text": "Calvin cycle",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "bbox": {
+        "l": 138.31640423681623,
+        "t": 379.30662483555665,
+        "r": 172.98046523248033,
+        "b": 392.59568672184565,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 2,
+       "end_row_offset_idx": 3,
+       "start_col_offset_idx": 1,
+       "end_col_offset_idx": 2,
+       "text": "Stroma",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      },
+      {
+       "bbox": {
+        "l": 203.3906165253906,
+        "t": 379.30662483555665,
+        "r": 242.71288064696284,
+        "b": 392.59568672184565,
+        "coord_origin": "TOPLEFT"
+       },
+       "row_span": 1,
+       "col_span": 1,
+       "start_row_offset_idx": 2,
+       "end_row_offset_idx": 3,
+       "start_col_offset_idx": 2,
+       "end_col_offset_idx": 3,
+       "text": "Glucose",
+       "column_header": false,
+       "row_header": false,
+       "row_section": false,
+       "fillable": false
+      }
+     ]
+    ]
+   },
+   "annotations": []
+  }
+ ],
+ "key_value_items": [],
+ "form_items": [],
+ "pages": {
+  "1": {
+   "size": {
+    "width": 595.91998,
+    "height": 842.88
+   },
+   "page_no": 1
+  }
+ }
+}

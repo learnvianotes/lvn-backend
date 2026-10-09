@@ -4,7 +4,7 @@ import type { CardType } from '@lvn/contracts/domain'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { MODERATION, type ModeratedNote, type Moderation, type ModerationStateKind, type NoteModeration } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
-import type { SnapshotCard } from './drafts.service'
+import type { SnapshotCard } from '../domain/snapshot'
 import { NotesService } from './notes.service'
 
 const EXCERPT_CHARS = 600
