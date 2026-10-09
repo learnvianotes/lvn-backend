@@ -86,6 +86,22 @@ Local services (`pnpm infra:up`, `infra/docker/compose.yaml`) listen on 55432 (P
 Still to come: Sentry variables (Phase 1 hardening) and, in Phase 3, `FCM_SERVICE_ACCOUNT_JSON` (secret) for push
 delivery through the FCM HTTP v1 API (ADR-0021).
 
+### workers/pdf-engine (Python, ADR-0028)
+
+Read by `src/pdf_engine/config.py` at start-up; a missing or malformed value stops it. Its README lists them too.
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `REDIS_URL` | yes | — | The API's Redis (BullMQ) |
+| `S3_ENDPOINT` | no | AWS | Storage endpoint; inside the network on the local VM (`http://s3:9000`) |
+| `S3_REGION` | no | `us-east-1` | |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | no | the task role | |
+| `S3_FORCE_PATH_STYLE` | no | `false` | `true` for RustFS |
+| `PDF_ENGINE_QUEUE` | no | `notes.pdf-parse` | The jobs it takes |
+| `PDF_ENGINE_RESULT_QUEUE` | no | `notes.pdf` | Where it answers |
+| `PDF_ENGINE_CONCURRENCY` | no | `1` | PDFs at a time, 1–8 (about 2 GB each) |
+| `PDF_ENGINE_OCR_LANGUAGES` | no | `en` | PP-OCR recognisers, comma-separated |
+
 ## lvn-mobile
 
 Schema: `mobileConfigSchema`, mirrored by lvn-mobile `lib/parse-env.ts` until the package is published. Values live
