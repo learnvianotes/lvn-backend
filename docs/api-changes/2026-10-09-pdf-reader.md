@@ -57,7 +57,8 @@ Highlights are deleted with their note.
   - Readers: a file the published cards show or anchor into.
   - Anyone else gets null.
 
-  Storage CORS exposes `Accept-Ranges` and `Content-Range`, so pdf.js can load by range requests.
+  Storage CORS exposes `Accept-Ranges` and `Content-Range`, so pdf.js can load by range requests. It also allows GET
+  from any origin: the phone's reader runs in a web view without one, and a read URL is the permission itself.
 - `studyPdf({ noteId, fileId })`: a new PRIVATE note of the viewer's own. Its title comes from the file name, and it
   has one file card with the PDF (linked, not copied).
   - It follows the fork rule (`file.convertToNote`): FORBIDDEN when copies are off.

@@ -84,7 +84,11 @@ LearnViaNotes data: it is searchable, synced, exported and shared under the note
 6. **Engines.**
    - **Web:** `pdfjs-dist` 6.3.289, using its `PDFViewer` with our highlight layer above the text layer.
    - **Phone:** the same pdf.js in an Expo DOM component, as ADR-0039 does for Tiptap. Text is selected with the
-     system's long press.
+     system's long press. Details:
+     - pdf.js parses inside the web view's page: a web view cannot load a worker from the app's files.
+     - Character maps, fonts and decoders come from the web app's `/pdfjs/<version>/`, which allows any origin.
+     - The page has no web origin, so the files bucket allows GET from any origin. A pre-signed read URL is itself
+       the permission; uploads stay limited to the web's origin.
 
 ## Consequences
 
@@ -94,8 +98,8 @@ LearnViaNotes data: it is searchable, synced, exported and shared under the note
 - Some PDFs have fonts without Unicode maps, which is common in Hindi and Telugu PDFs. Passages copied from them come
   out garbled. Area snips work on any page, and the engine's OCR (P2h-2) gives the real text.
 - PDFs stay at the §8.1 limit of 50 MB.
-- pdf.js in a web view is slower than a native renderer on low-end phones. It is measured on a mid-range phone before
-  release.
+- pdf.js in a web view is slower than a native renderer on low-end phones, more so with its parsing on the page's own
+  thread. It is measured on a mid-range phone before release; a worker served over HTTP is the next step if needed.
 
 ## Sources
 
