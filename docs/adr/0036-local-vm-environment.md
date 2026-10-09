@@ -48,4 +48,5 @@ Terraform installed in it, used locally for now.
 - Pre-signed URLs point at the published S3 endpoint; the API inside the VM reaches it through the host.
 - Google sign-in needs the environment's host in Firebase's authorized domains (web) and works from the development
   build (mobile).
-- The VM uses 6 CPUs, 6 GB of memory and up to 40 GB of disk by default (`LVN_VM_*` in `.env`).
+- The VM uses 6 CPUs, 8 GB of memory (6 GB until ClamAV joined it, ADR-0041) and up to 40 GB of disk by default
+  (`LVN_VM_*` in `.env`).

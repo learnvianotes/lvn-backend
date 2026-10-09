@@ -23,7 +23,7 @@ fi
 
 dir=${LVN_VM_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/lvn-vm}
 cpus=${LVN_VM_CPUS:-6}
-memory=${LVN_VM_MEMORY_MB:-6144}
+memory=${LVN_VM_MEMORY_MB:-8192}
 disk_size=${LVN_VM_DISK:-40G}
 ssh_port=${LVN_VM_SSH_PORT:-2222}
 # Where the environment is reachable on this machine: the entrance (web + API) and the S3 endpoint that pre-signed
