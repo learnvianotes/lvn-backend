@@ -1,5 +1,5 @@
 import { CardType } from '../../../src/domain/enums'
-import { CARD_CONTENT, cardPlainText, MEDIA_CARD_TYPES, parseCardContent } from '../../../src/validation/cards'
+import { CARD_CONTENT, CARD_LIMITS, cardAnchor, cardPlainText, MEDIA_CARD_TYPES, parseCardContent } from '../../../src/validation/cards'
 
 const p = (text: string, marks?: unknown[]) => ({ type: 'paragraph', content: [{ type: 'text', text, ...(marks ? { marks } : {}) }] })
 const doc = (...blocks: unknown[]) => ({ type: 'doc', content: blocks })
@@ -90,5 +90,33 @@ describe('card content (§4.1)', () => {
     expect(cardPlainText('image', VALID.image)).toBe('A diagram\nFigure 1')
     for (const type of Object.values(CardType)) expect(typeof cardPlainText(type, VALID[type])).toBe('string')
     expect(cardPlainText('text', { nonsense: true })).toBe('')
+  })
+})
+
+describe('card anchors (ADR-0040)', () => {
+  const anchor = { fileId, page: 12, rects: [[0.1, 0.2, 0.6, 0.25]], quote: 'The mitochondria is the powerhouse of the cell' }
+
+  it.each(Object.entries(VALID))('keeps the anchor of a %s card', (type, content) => {
+    const r = parseCardContent(type as CardType, { ...(content as object), anchor })
+    expect(r).toMatchObject({ ok: true, content: { anchor } })
+  })
+
+  it('anchors a page without a passage', () => {
+    expect(parseCardContent('text', { ...(VALID.text as object), anchor: { fileId, page: 3 } })).toMatchObject({ ok: true, content: { anchor: { fileId, page: 3 } } })
+    expect(cardAnchor({ anchor: { fileId, page: 3 } })).toEqual({ fileId, page: 3 })
+    expect(cardAnchor({ doc: {} })).toBeNull()
+  })
+
+  it.each([
+    ['a page before the first', { fileId, page: 0 }],
+    ['a page that is not whole', { fileId, page: 1.5 }],
+    ['a rectangle off the page', { fileId, page: 1, rects: [[0, 0, 1.2, 0.5]] }],
+    ['a rectangle drawn backwards', { fileId, page: 1, rects: [[0.5, 0.5, 0.1, 0.6]] }],
+    ['too many rectangles', { fileId, page: 1, rects: Array.from({ length: CARD_LIMITS.anchorRects + 1 }, () => [0, 0, 0.1, 0.1]) }],
+    ['a quote that is too long', { fileId, page: 1, quote: 'x'.repeat(CARD_LIMITS.anchorQuote + 1) }],
+    ['a file that is not an id', { fileId: 'https://example.com/a.pdf', page: 1 }],
+  ])('refuses %s', (_, bad) => {
+    expect(parseCardContent('quote', { ...(VALID.quote as object), anchor: bad })).toMatchObject({ ok: false })
+    expect(cardAnchor({ anchor: bad })).toBeNull()
   })
 })

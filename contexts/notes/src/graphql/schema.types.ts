@@ -1,5 +1,20 @@
 // Generated from this folder's *.graphql by scripts/graphql-types.mjs (ADR-0033). Do not edit.
 
+export interface AddPdfHighlightInput {
+  noteId: string
+  /** A PDF attached to the note */
+  fileId: string
+  page: number
+  kind: HighlightKind
+  /** YELLOW when left out */
+  color?: HighlightColor | null
+  /** One rectangle for an AREA; up to 100 lines for TEXT */
+  rects: Array<Array<number>>
+  quote?: string | null
+  comment?: string | null
+  cardId?: string | null
+}
+
 /** One block of a note (§4.1). `position` orders cards (a fractional index: compare as plain strings, then by id). */
 export interface Card {
   id: string
@@ -113,6 +128,10 @@ export interface ForkCredit {
   title: string | null
 }
 
+export type HighlightColor = 'YELLOW' | 'GREEN' | 'BLUE' | 'PINK' | 'PURPLE'
+
+export type HighlightKind = 'TEXT' | 'AREA'
+
 export interface IdInput {
   id: string
 }
@@ -216,6 +235,22 @@ export interface MutationProposeTopicArgs {
   input: ProposeTopicInput
 }
 
+export interface MutationAddPdfHighlightArgs {
+  input: AddPdfHighlightInput
+}
+
+export interface MutationUpdatePdfHighlightArgs {
+  input: UpdatePdfHighlightInput
+}
+
+export interface MutationRemovePdfHighlightArgs {
+  input: PdfHighlightIdInput
+}
+
+export interface MutationStudyPdfArgs {
+  input: StudyPdfInput
+}
+
 export interface MutationChangeNoteVisibilityArgs {
   input: ChangeNoteVisibilityInput
 }
@@ -282,6 +317,8 @@ export interface Note {
   deletedAt: Date | null
   /** Owner only; null for everyone else */
   moderation?: NoteModeration | null
+  /** The owner's and editors' highlights, in page order (empty for readers); only those on one PDF with `fileId` */
+  highlights?: Array<PdfHighlight>
   /** Owner only: the people the note is shared with; null for anyone else */
   shares?: Array<NoteShare> | null
   /** Set on a copy of another note; it cannot be removed */
@@ -300,6 +337,10 @@ export interface NoteVersionsArgs {
 
 export interface NoteVersionArgs {
   id: string
+}
+
+export interface NoteHighlightsArgs {
+  fileId?: string | null
 }
 
 /** OWNER and EDITOR work on the draft; READER sees the published version (§4.3) */
@@ -442,6 +483,35 @@ export interface PageInfo {
   endCursor: string | null
 }
 
+/** A highlight on one page of a PDF attached to the note */
+export interface PdfHighlight {
+  id: string
+  fileId: string
+  /** 1-based */
+  page: number
+  kind: HighlightKind
+  color: HighlightColor
+  /** [x0, y0, x1, y1] rectangles as fractions of the page's width and height from its top left */
+  rects: Array<Array<number>>
+  /** The highlighted words (TEXT) */
+  quote: string | null
+  comment: string | null
+  /** The card made from it */
+  cardId: string | null
+  createdBy: User
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface PdfHighlightIdInput {
+  highlightId: string
+}
+
+export interface PdfHighlightPayload {
+  highlight: PdfHighlight | null
+  userErrors: Array<UserError>
+}
+
 export interface ProposeTopicInput {
   subjectId: string
   parentId?: string | null
@@ -470,6 +540,11 @@ export interface QuerySubjectArgs {
 export interface QueryFindTopicsArgs {
   query: string
   subjectId?: string | null
+}
+
+export interface QueryNoteFileArgs {
+  noteId: string
+  fileId: string
 }
 
 export interface QuerySearchArgs {
@@ -519,6 +594,11 @@ export interface ShareNoteInput {
   /** A handle (@asha or asha) or an email address */
   person: string
   role: NoteShareRole
+}
+
+export interface StudyPdfInput {
+  noteId: string
+  fileId: string
 }
 
 export interface Subject {
@@ -640,6 +720,15 @@ export interface UpdateNoteDraftPayload {
   /** The other device's version of conflicting cards, restorable from version history */
   conflictVersion: NoteVersion | null
   userErrors: Array<UserError>
+}
+
+export interface UpdatePdfHighlightInput {
+  highlightId: string
+  color?: HighlightColor | null
+  /** An empty comment removes it */
+  comment?: string | null
+  /** null unlinks the card */
+  cardId?: string | null
 }
 
 export interface UploadHeader {

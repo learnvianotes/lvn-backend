@@ -1,0 +1,92 @@
+# The PDF reader (ADR-0040): the PDF next to its note, highlights, and cards that remember their page. Cards made in the
+# reader are ordinary cards whose content carries an `anchor` (@lvn/contracts/validation cardAnchorSchema), saved with
+# updateNoteDraft.
+
+enum HighlightKind {
+  "A passage of text"
+  TEXT
+  "An area of the page, such as a figure or a formula"
+  AREA
+}
+
+enum HighlightColor { YELLOW GREEN BLUE PINK PURPLE }
+
+"A highlight on one page of a PDF attached to the note"
+type PdfHighlight {
+  id: UUID!
+  fileId: UUID!
+  "1-based"
+  page: Int!
+  kind: HighlightKind!
+  color: HighlightColor!
+  "[x0, y0, x1, y1] rectangles as fractions of the page's width and height from its top left"
+  rects: [[Float!]!]!
+  "The highlighted words (TEXT)"
+  quote: String
+  comment: String
+  "The card made from it"
+  cardId: UUID
+  createdBy: User!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+extend type Note {
+  "The owner's and editors' highlights, in page order (empty for readers); only those on one PDF with `fileId`"
+  highlights(fileId: UUID): [PdfHighlight!]!
+}
+
+input AddPdfHighlightInput {
+  noteId: UUID!
+  "A PDF attached to the note"
+  fileId: UUID!
+  page: Int!
+  kind: HighlightKind!
+  "YELLOW when left out"
+  color: HighlightColor
+  "One rectangle for an AREA; up to 100 lines for TEXT"
+  rects: [[Float!]!]!
+  quote: String
+  comment: String
+  cardId: UUID
+}
+
+input UpdatePdfHighlightInput {
+  highlightId: UUID!
+  color: HighlightColor
+  "An empty comment removes it"
+  comment: String
+  "null unlinks the card"
+  cardId: UUID
+}
+
+input PdfHighlightIdInput {
+  highlightId: UUID!
+}
+
+input StudyPdfInput {
+  noteId: UUID!
+  fileId: UUID!
+}
+
+type PdfHighlightPayload {
+  highlight: PdfHighlight
+  userErrors: [UserError!]!
+}
+
+extend type Query {
+  "A PDF (or other file) of a note to read, with a link that works for an hour; null when the viewer may not open it"
+  noteFile(noteId: UUID!, fileId: UUID!): MediaFile
+}
+
+extend type Mutation {
+  "Owner and editors"
+  addPdfHighlight(input: AddPdfHighlightInput!): PdfHighlightPayload!
+  updatePdfHighlight(input: UpdatePdfHighlightInput!): PdfHighlightPayload!
+  removePdfHighlight(input: PdfHighlightIdInput!): OkPayload!
+  """
+  Start notes of your own on a PDF of a note you can read (the rule for copies): a new PRIVATE note with the PDF in a
+  file card, crediting the original note when it was someone else's
+  """
+  studyPdf(input: StudyPdfInput!): NotePayload!
+}

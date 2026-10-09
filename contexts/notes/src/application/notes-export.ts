@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common'
-import { slugify } from '@lvn/contracts/validation'
+import { cardAnchor, slugify } from '@lvn/contracts/validation'
 import type { CardType } from '@lvn/contracts/domain'
 import type { DataExportPart, ExportFile } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { Storage } from '@lvn-backend/storage'
 import { stringify } from 'yaml'
-import { cardToMarkdown } from '../domain/markdown'
+import { cardToMarkdown, highlightsToMarkdown } from '../domain/markdown'
 import { mediaFileId } from './attachments.service'
 import type { SnapshotCard } from './drafts.service'
 
@@ -15,8 +15,8 @@ const json = (v: unknown) => text(JSON.stringify(v, null, 2))
 /**
  * The notes part of a data export (ADR-0018): every note the person owns, of every kind, in the trash too — the draft
  * as Markdown with front matter (`index.md`, what other apps and the importer read), the draft and every version as
- * card JSON (`note.json`, lossless), and the files its cards show (`media/`). Folders, tags, topics, shares granted and
- * fork credits come along; other people's notes do not.
+ * card JSON (`note.json`, lossless), the files its cards use (`media/`) and its PDF highlights (ADR-0040). Folders,
+ * tags, topics, shares granted and fork credits come along; other people's notes do not.
  */
 @Injectable()
 export class NotesExport implements DataExportPart {
@@ -34,7 +34,7 @@ export class NotesExport implements DataExportPart {
           topics: { include: { topic: { include: { subject: true } } } },
           versions: { orderBy: { number: 'asc' } },
           shares: true,
-          attachments: { include: { file: true } },
+          attachments: { include: { file: true, highlights: { orderBy: [{ page: 'asc' }, { createdAt: 'asc' }] } } },
           cards: { where: { deletedAt: null }, orderBy: [{ position: 'asc' }, { id: 'asc' }] },
         },
         orderBy: { createdAt: 'asc' },
@@ -90,8 +90,11 @@ export class NotesExport implements DataExportPart {
         moderation: note.moderation === 'OK' ? undefined : { state: note.moderation, reason: note.moderationReason },
         forkedFrom: forkedFrom ?? undefined,
       }
-      const body = note.cards
-        .map((c) => cardToMarkdown(c.type as CardType, c.content, (id) => media.get(id) ?? null))
+      const highlights = note.attachments.flatMap((a) => a.highlights)
+      const body = [
+        ...note.cards.map((c) => cardToMarkdown(c.type as CardType, c.content, (id) => media.get(id) ?? null)),
+        highlightsToMarkdown(highlights, (id) => media.get(id) ?? null),
+      ]
         .filter((s) => s.trim())
         .join('\n\n')
       files.push({ path: `${dir}/index.md`, bytes: text(`---\n${stringify(front)}---\n\n# ${note.title || 'Untitled note'}\n\n${body}\n`) })
@@ -103,13 +106,18 @@ export class NotesExport implements DataExportPart {
           topicIds: note.topics.map((t) => t.topicId),
           sharedWith: note.shares.map((s) => ({ userId: s.userId, role: s.role, since: s.createdAt })),
           forkingEnabled: note.forkingEnabled,
-          draft: note.cards.map((c) => ({ id: c.id, type: c.type, position: c.position, content: c.content, media: mediaFileId(c.type as CardType, c.content) ? (media.get(mediaFileId(c.type as CardType, c.content)!)?.path ?? null) : undefined })),
+          draft: note.cards.map((c) => {
+            const shown = mediaFileId(c.type as CardType, c.content)
+            const anchor = cardAnchor(c.content)
+            return { id: c.id, type: c.type, position: c.position, content: c.content, media: shown ? (media.get(shown)?.path ?? null) : undefined, anchorMedia: anchor ? (media.get(anchor.fileId)?.path ?? null) : undefined }
+          }),
+          highlights: highlights.map((h) => ({ id: h.id, fileId: h.fileId, media: media.get(h.fileId)?.path ?? null, page: h.page, kind: h.kind, color: h.color, rects: h.rects, quote: h.quote, comment: h.comment, cardId: h.cardId, createdAt: h.createdAt })),
           versions: note.versions.map((v) => ({ number: v.number, kind: v.kind, title: v.title, createdAt: v.createdAt, cards: v.cards as unknown as SnapshotCard[] })),
         }),
       })
     }
     files.push({ path: 'notes/folders.json', bytes: json(folders.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId, path: folderPath(f.id).join('/') }))) })
     files.push({ path: 'notes/tags.json', bytes: json(tags.map((t) => ({ id: t.id, name: t.name }))) })
-    return { files, counts: { notes: notes.length, versions: notes.reduce((n, x) => n + x.versions.length, 0), media: files.filter((f) => f.path.includes('/media/')).length }, omitted }
+    return { files, counts: { notes: notes.length, versions: notes.reduce((n, x) => n + x.versions.length, 0), highlights: notes.reduce((n, x) => n + x.attachments.reduce((m, a) => m + a.highlights.length, 0), 0), media: files.filter((f) => f.path.includes('/media/')).length }, omitted }
   }
 }

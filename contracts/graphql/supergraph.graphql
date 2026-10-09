@@ -28,6 +28,26 @@ input AcceptTermsInput
   version: String!
 }
 
+input AddPdfHighlightInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+
+  """A PDF attached to the note"""
+  fileId: UUID!
+  page: Int!
+  kind: HighlightKind!
+
+  """YELLOW when left out"""
+  color: HighlightColor
+
+  """One rectangle for an AREA; up to 100 lines for TEXT"""
+  rects: [[Float!]!]!
+  quote: String
+  comment: String
+  cardId: UUID
+}
+
 input AppealModerationInput
   @join__type(graph: CORE)
 {
@@ -385,6 +405,26 @@ enum GlobalRole
   PLATFORM_ADMIN @join__enumValue(graph: USERS)
 }
 
+enum HighlightColor
+  @join__type(graph: NOTES)
+{
+  YELLOW @join__enumValue(graph: NOTES)
+  GREEN @join__enumValue(graph: NOTES)
+  BLUE @join__enumValue(graph: NOTES)
+  PINK @join__enumValue(graph: NOTES)
+  PURPLE @join__enumValue(graph: NOTES)
+}
+
+enum HighlightKind
+  @join__type(graph: NOTES)
+{
+  """A passage of text"""
+  TEXT @join__enumValue(graph: NOTES)
+
+  """An area of the page, such as a figure or a formula"""
+  AREA @join__enumValue(graph: NOTES)
+}
+
 input IdInput
   @join__type(graph: NOTES)
 {
@@ -686,6 +726,17 @@ type Mutation
   deleteTag(input: IdInput!): OkPayload! @join__field(graph: NOTES)
   proposeTopic(input: ProposeTopicInput!): TopicPayload! @join__field(graph: NOTES)
 
+  """Owner and editors"""
+  addPdfHighlight(input: AddPdfHighlightInput!): PdfHighlightPayload! @join__field(graph: NOTES)
+  updatePdfHighlight(input: UpdatePdfHighlightInput!): PdfHighlightPayload! @join__field(graph: NOTES)
+  removePdfHighlight(input: PdfHighlightIdInput!): OkPayload! @join__field(graph: NOTES)
+
+  """
+  Start notes of your own on a PDF of a note you can read (the rule for copies): a new PRIVATE note with the PDF in a
+  file card, crediting the original note when it was someone else's
+  """
+  studyPdf(input: StudyPdfInput!): NotePayload! @join__field(graph: NOTES)
+
   """
   PRIVATE, SHARED or PUBLIC (owner, verified account); PUBLIC needs a published version
   """
@@ -824,6 +875,11 @@ type Note
 
   """Owner only; null for everyone else"""
   moderation: NoteModeration
+
+  """
+  The owner's and editors' highlights, in page order (empty for readers); only those on one PDF with `fileId`
+  """
+  highlights(fileId: UUID): [PdfHighlight!]!
 
   """Owner only: the people the note is shared with; null for anyone else"""
   shares: [NoteShare!]
@@ -1082,6 +1138,47 @@ type PageInfo
   endCursor: String
 }
 
+"""A highlight on one page of a PDF attached to the note"""
+type PdfHighlight
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  fileId: UUID!
+
+  """1-based"""
+  page: Int!
+  kind: HighlightKind!
+  color: HighlightColor!
+
+  """
+  [x0, y0, x1, y1] rectangles as fractions of the page's width and height from its top left
+  """
+  rects: [[Float!]!]!
+
+  """The highlighted words (TEXT)"""
+  quote: String
+  comment: String
+
+  """The card made from it"""
+  cardId: UUID
+  createdBy: User!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+input PdfHighlightIdInput
+  @join__type(graph: NOTES)
+{
+  highlightId: UUID!
+}
+
+type PdfHighlightPayload
+  @join__type(graph: NOTES)
+{
+  highlight: PdfHighlight
+  userErrors: [UserError!]!
+}
+
 enum ProblemMark
   @join__type(graph: CORE)
 {
@@ -1139,6 +1236,11 @@ type Query
 
   """Topics whose title contains the words, curated first (at most 50)"""
   findTopics(query: String!, subjectId: UUID): [Topic!]! @join__field(graph: NOTES)
+
+  """
+  A PDF (or other file) of a note to read, with a link that works for an hour; null when the viewer may not open it
+  """
+  noteFile(noteId: UUID!, fileId: UUID!): MediaFile @join__field(graph: NOTES)
 
   """
   At most 100 characters; `first` per group, 1 to 20 (default 5). Works signed out too: public notes only.
@@ -1407,6 +1509,13 @@ type StudentProfile
   showOnProfile: Boolean!
 }
 
+input StudyPdfInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+  fileId: UUID!
+}
+
 type Subject
   @join__type(graph: NOTES)
 {
@@ -1601,6 +1710,19 @@ type UpdateNoteDraftPayload
   """
   conflictVersion: NoteVersion
   userErrors: [UserError!]!
+}
+
+input UpdatePdfHighlightInput
+  @join__type(graph: NOTES)
+{
+  highlightId: UUID!
+  color: HighlightColor
+
+  """An empty comment removes it"""
+  comment: String
+
+  """null unlinks the card"""
+  cardId: UUID
 }
 
 """Omitted fields stay as they are; null clears a field"""
