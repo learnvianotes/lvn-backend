@@ -23,7 +23,7 @@ the AWS sandbox, which the owner has deferred.
 | --- | --- | --- |
 | Notes core (§4) | Notes of 16 card types (Tiptap JSON checked per type in `@lvn/contracts`), fractional positions, drafts with per-card revisions and conflict versions, publish and versions, trash and restore, folders, tags, curated topics | `contexts/notes`, `contracts` |
 | Sharing (§4.2, §4.4) | PRIVATE ⇄ SHARED ⇄ PUBLIC; user shares (editor or viewer); copies with a permanent credit; age gate and consent before going public | `contexts/notes` |
-| Media (§8) | Uploads to notes, `NoteAttachment` links, media cards checked on save, read URLs; unlinked files purged | `contexts/notes` |
+| Media (§8) | Uploads to notes, `NoteAttachment` links, media cards checked on save, read URLs; unlinked files purged. Since P2c-3 (ADR-0041): ClamAV scan and quarantine, picture sizes, 720p video with a poster, normalised audio, page counts, nightly reconciliation | `contexts/notes`, `apps/worker` |
 | Moderation (ADR-0037) | A rule-based scorer on the way to public; reports (three hold a note); admin queue; one appeal | `contexts/core`, `contexts/notes` |
 | Public pages (P2d) | `publicNotes`, on-demand revalidation of the web's ISR pages, sitemap data | `contexts/notes` |
 | Search (§11) | `tsvector` over published versions plus trigram titles, filtered by the read rule at query time, indexed by a queue | `contexts/notes`, `apps/worker` |
@@ -129,10 +129,22 @@ Bugs the new suites found and fixed in this phase:
 - **AWS (still deferred).** Its Terraform needs the revalidation settings, the web's internal API URL and an ECS
   service for the PDF engine, added when the sandbox is built.
 
+## After the exit: media processing (P2c-3)
+
+The exit left media processing undone; P2c-3 closed it the same day (ADR-0041). Deployed with lvn-backend `26188aa`
+and lvn-web `60614c5`:
+
+| Check | Result |
+| --- | --- |
+| `pnpm lifecycle` | 24/24: the 21 above, then a 1200-pixel picture gets WebP sizes of 320, 960 and 1200 pixels, and an EICAR PDF is quarantined by the real ClamAV (`Eicar-Signature`) and its old read URL stops serving it |
+| `pnpm smoke` / Playwright live | 13/13 / 14/14 |
+| Tests | API 208 + 9 todo (9 media e2e: sizes, never enlarged, video and audio with real ffmpeg, page counts, quarantine, scanner away, damaged file, reconciliation, the clamd protocol); storage 19; web Playwright 143 and Vitest 83 |
+| Footprint | ClamAV 0.96 GB of its 2 GB cap; VM 2.9 GB of 8 GB in use; server image 2.9 GB (was 2.4 GB) |
+
 ## Known gaps carried forward
 
 **Media:**
-- No media processing yet: image sizes, video transcoding, audio normalising, ClamAV.
+- Not yet: same-owner deduplication by SHA-256, HLS for long videos, PDF text for search and AI (Phase 5).
 - On the phone, pictures, video and audio show placeholders; PDFs open in the reader.
 - Exports include media up to 300 MB.
 

@@ -23,7 +23,8 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store rm -rf node_modules */*/node_m
   && find . -path ./node_modules -prune -o \( -name '*.ts' ! -name '*.d.ts' ! -name 'prisma.config.ts' \) -type f -print | xargs rm -f
 
 FROM ${NODE_IMAGE}
-RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates tini && rm -rf /var/lib/apt/lists/*
+# ffmpeg: the worker's video transcodes, posters and audio (ADR-0041), run as separate processes.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates tini ffmpeg && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 # Amazon RDS certificate authorities: Node does not trust them by default, and DATABASE_URL verifies the server
 # (sslmode=verify-full). Readable by the unprivileged user.

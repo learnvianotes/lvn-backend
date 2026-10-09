@@ -9,6 +9,8 @@ export interface NotesConfig {
   restrictedBucket: string
   /** Where to tell the web app that a public note page changed; null when not configured (P2d) */
   revalidate: { url: string; secret: string } | null
+  /** clamd for scanning uploads (ADR-0041); null: not scanned */
+  clamav: { host: string; port: number } | null
 }
 
 export const NOTES_CONFIG = Symbol('NOTES_CONFIG')
@@ -18,4 +20,5 @@ export const notesConfigFrom = (c: ApiConfig): NotesConfig => ({
   bucket: c.S3_BUCKET,
   restrictedBucket: c.S3_RESTRICTED_BUCKET,
   revalidate: c.WEB_REVALIDATE_URL && c.REVALIDATE_SECRET ? { url: c.WEB_REVALIDATE_URL, secret: c.REVALIDATE_SECRET } : null,
+  clamav: c.CLAMAV_URL ? { host: new URL(c.CLAMAV_URL).hostname, port: Number(new URL(c.CLAMAV_URL).port) } : null,
 })

@@ -50,6 +50,7 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `WEB_REVALIDATE_URL` | api | no | — (off) | The web app's `/api/revalidate`: public note pages refresh when a note changes (P2d) |
 | `REVALIDATE_SECRET` | api | no | — | Sent with those calls; at least 32 characters; the same value as the web app's |
 | `MODERATION_WORDS_FILE` | api | no | — (built-in spam phrases only) | A file of `REASON: phrase` lines (REASON as in ReportReason, `#` comments) that hold content for review on its way to the public (ADR-0037) |
+| `CLAMAV_URL` | worker | no | — (uploads not scanned) | ClamAV's clamd, `tcp://host:3310`: uploads are scanned and infected ones quarantined (ADR-0041) |
 | `API_HOST` | api | no | `0.0.0.0` | Bind address |
 | `API_PORT` | api | no | `4000` | HTTP + WebSocket port |
 | `CORS_ORIGINS` | api | yes | — | Comma-separated allow-list (§7.2) |
