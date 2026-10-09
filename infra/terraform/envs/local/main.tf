@@ -10,6 +10,7 @@ locals {
     mailpit  = "axllent/mailpit:v1.31.4"
     proxy    = "caddy:2.11.7-alpine"
     awscli   = "amazon/aws-cli:2.37.10"
+    clamav   = "clamav/clamav:1.5.4"
   }
   apps    = var.api_image == "" ? 0 : 1
   web     = var.web_image == "" ? 0 : 1
@@ -55,6 +56,8 @@ locals {
       # Public note pages refresh when a note changes (P2d): the API calls the web container directly.
       WEB_REVALIDATE_URL = "http://web:3000/api/revalidate"
       REVALIDATE_SECRET  = random_password.revalidate.result
+      # Upload scans (ADR-0041).
+      CLAMAV_URL = "tcp://clamav:3310"
     },
     { for k, v in local.optional : k => v if v != "" },
     var.extra_backend_environment,
@@ -111,7 +114,7 @@ resource "docker_network" "this" {
 }
 
 resource "docker_volume" "this" {
-  for_each = toset(["postgres", "s3"])
+  for_each = toset(["postgres", "s3", "clamav"])
   name     = "${var.name}-${each.key}"
 }
 
@@ -225,6 +228,30 @@ resource "docker_container" "mailpit" {
   ports {
     internal = 8025
     external = 8025
+  }
+}
+
+# ClamAV's clamd for the worker's upload scans (ADR-0041). It loads its signatures on start (and fetches updates), so
+# it needs about 1.5 GB of memory and a few minutes before it answers; until then scans are retried.
+resource "docker_container" "clamav" {
+  name     = "${var.name}-clamav"
+  image    = docker_image.this["clamav"].image_id
+  restart  = "unless-stopped"
+  log_opts = local.log_opts
+  memory   = 2048
+  env = [
+    # Uploads go up to 500 MB (video, §8.1): clamd must take streams that large.
+    "CLAMD_CONF_StreamMaxLength=600M",
+    "CLAMD_CONF_MaxScanSize=600M",
+    "CLAMD_CONF_MaxFileSize=600M",
+  ]
+  networks_advanced {
+    name    = docker_network.this.id
+    aliases = ["clamav"]
+  }
+  volumes {
+    container_path = "/var/lib/clamav"
+    volume_name    = docker_volume.this["clamav"].name
   }
 }
 

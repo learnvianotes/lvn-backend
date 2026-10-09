@@ -10,6 +10,7 @@ import { NotesExport } from './application/notes-export'
 import { NotesMaintenance } from './application/notes-maintenance'
 import { OrganiseService } from './application/organise.service'
 import { PdfConversionService } from './application/pdf-conversion.service'
+import { MediaProcessingService } from './application/media-processing.service'
 import { PdfReaderService } from './application/pdf-reader.service'
 import { PublicPages } from './application/public-pages'
 import { SearchIndex } from './application/search-index'
@@ -73,10 +74,11 @@ export class NotesModule {
         PdfReaderService,
         ReaderResolver,
         PdfConversionService,
+        MediaProcessingService,
         ConversionResolver,
         NoteConversionResolver,
       ],
-      exports: [FilesService, NotesMaintenance, NoteModerationService, SearchIndex, NoteImportService, PdfConversionService],
+      exports: [FilesService, NotesMaintenance, NoteModerationService, SearchIndex, NoteImportService, PdfConversionService, MediaProcessingService],
     }
   }
 }

@@ -583,6 +583,20 @@ type MediaFile
   width: Int
   height: Int
   durationMs: Int
+  pageCount: Int
+
+  """
+  Made after the upload (ADR-0041); null until made: pictures 320, 960 and 1920 pixels wide (WebP)
+  """
+  thumbUrl: String
+  mediumUrl: String
+  largeUrl: String
+
+  """A frame of a video (WebP)"""
+  posterUrl: String
+
+  """The 720p H.264 transcode of a video, or the loudness-normalised audio"""
+  playbackUrl: String
 }
 
 input ModerateContentInput

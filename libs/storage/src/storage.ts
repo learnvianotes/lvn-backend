@@ -1,9 +1,15 @@
+import { createReadStream, createWriteStream } from 'node:fs'
+import { stat } from 'node:fs/promises'
+import type { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import {
+  CopyObjectCommand,
   CreateBucketCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3'
@@ -92,6 +98,33 @@ export class Storage {
   async firstBytes(bucket: string, key: string, bytes = 64): Promise<Uint8Array> {
     const r = await this.client.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: `bytes=0-${bytes - 1}` }))
     return r.Body ? await r.Body.transformToByteArray() : new Uint8Array()
+  }
+
+  /** An object streamed to a file (media processing reads large files this way). */
+  async download(bucket: string, key: string, path: string): Promise<void> {
+    const r = await this.client.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+    if (!r.Body) throw new Error(`No object ${key}`)
+    await pipeline(r.Body as Readable, createWriteStream(path))
+  }
+
+  /** A file streamed to an object (variants the server made). */
+  async putFile(bucket: string, key: string, path: string, opts: { contentType: string }): Promise<void> {
+    const { size } = await stat(path)
+    await this.client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: createReadStream(path), ContentLength: size, ContentType: opts.contentType }))
+  }
+
+  async copy(from: { bucket: string; key: string }, to: { bucket: string; key: string }): Promise<void> {
+    await this.client.send(new CopyObjectCommand({ CopySource: `${from.bucket}/${encodeURIComponent(from.key).replace(/%2F/g, '/')}`, Bucket: to.bucket, Key: to.key }))
+  }
+
+  /** Every key under a prefix, a page at a time (reconciliation). */
+  async *list(bucket: string, prefix: string, pageSize = 1000): AsyncGenerator<string> {
+    let token: string | undefined
+    do {
+      const page = await this.client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token, MaxKeys: pageSize }))
+      for (const o of page.Contents ?? []) if (o.Key) yield o.Key
+      token = page.IsTruncated ? page.NextContinuationToken : undefined
+    } while (token)
   }
 
   async delete(bucket: string, keys: string[]): Promise<void> {

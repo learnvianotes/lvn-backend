@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { startS3 } from '@lvn-backend/testing'
 import { detectMimeType } from '../../src/magic'
 import { Storage } from '../../src/storage'
@@ -12,7 +15,7 @@ describe('Storage against an S3-compatible server', () => {
     const s3 = await startS3()
     stop = () => s3.container.stop()
     storage = new Storage({ endpoint: s3.endpoint, region: 'us-east-1', accessKeyId: s3.accessKeyId, secretAccessKey: s3.secretAccessKey, forcePathStyle: true })
-    await storage.ensureBuckets(['lvn-files'])
+    await storage.ensureBuckets(['lvn-files', 'lvn-restricted'])
   })
 
   afterAll(() => stop())
@@ -28,6 +31,29 @@ describe('Storage against an S3-compatible server', () => {
     expect(body).toEqual(PNG)
     await storage.delete('lvn-files', ['test/u1/f1/original'])
     expect(await storage.head('lvn-files', 'test/u1/f1/original')).toBeNull()
+  })
+
+  it('streams files down and up, copies between buckets and lists a prefix page by page', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'lvn-storage-test-'))
+    try {
+      const big = Buffer.alloc(3 * 1024 * 1024 + 7, 'x')
+      writeFileSync(path.join(dir, 'up'), big)
+      await storage.putFile('lvn-files', 'test/u2/f1/large', path.join(dir, 'up'), { contentType: 'image/webp' })
+      expect(await storage.head('lvn-files', 'test/u2/f1/large')).toEqual({ sizeBytes: big.length, contentType: 'image/webp' })
+      await storage.download('lvn-files', 'test/u2/f1/large', path.join(dir, 'down'))
+      expect(readFileSync(path.join(dir, 'down')).equals(big)).toBe(true)
+      await expect(storage.download('lvn-files', 'test/u2/none', path.join(dir, 'none'))).rejects.toThrow()
+
+      await storage.put('lvn-files', 'test/u2/f2/my notes #1.png', PNG, { contentType: 'image/png' })
+      await storage.copy({ bucket: 'lvn-files', key: 'test/u2/f2/my notes #1.png' }, { bucket: 'lvn-restricted', key: 'quarantine/test/u2/f2/my notes #1.png' })
+      expect(await storage.head('lvn-restricted', 'quarantine/test/u2/f2/my notes #1.png')).toEqual({ sizeBytes: PNG.length, contentType: 'image/png' })
+
+      const listed: string[] = []
+      for await (const key of storage.list('lvn-files', 'test/u2/', 1)) listed.push(key)
+      expect(listed.sort()).toEqual(['test/u2/f1/large', 'test/u2/f2/my notes #1.png'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('refuses an upload of another size than signed', async () => {

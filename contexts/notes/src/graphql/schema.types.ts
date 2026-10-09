@@ -169,6 +169,15 @@ export interface MediaFile {
   width: number | null
   height: number | null
   durationMs: number | null
+  pageCount: number | null
+  /** Made after the upload (ADR-0041); null until made: pictures 320, 960 and 1920 pixels wide (WebP) */
+  thumbUrl: string | null
+  mediumUrl: string | null
+  largeUrl: string | null
+  /** A frame of a video (WebP) */
+  posterUrl: string | null
+  /** The 720p H.264 transcode of a video, or the loudness-normalised audio */
+  playbackUrl: string | null
 }
 
 export type ModerationState = 'OK' | 'PENDING_REVIEW' | 'HIDDEN' | 'REMOVED'

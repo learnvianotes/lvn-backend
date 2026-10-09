@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      # Media processing tests transcode with the system ffmpeg (ADR-0041).
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       # Every URL and connection string comes from .env (ADR-0022); CI uses the documented development values.
       - run: cp .env.example .env
       - run: pnpm build

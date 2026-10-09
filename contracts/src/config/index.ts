@@ -88,6 +88,8 @@ const auth = z.object({
   WEB_REVALIDATE_URL: httpUrl.optional(),
   /** Shared with the web app's REVALIDATE_SECRET; at least 32 characters. */
   REVALIDATE_SECRET: z.string().min(32).optional(),
+  /** ClamAV's clamd for scanning uploads (ADR-0041), `tcp://host:3310`; without it uploads are not scanned (development). */
+  CLAMAV_URL: z.string().regex(/^tcp:\/\/[^:/]+:\d+$/, 'Use tcp://host:port').optional(),
   /** k-anonymity range API for the breached-password check (§7.1); unset only in tests. */
   PASSWORD_BREACH_API_URL: z.url().optional(),
   /** Firebase project whose ID tokens signInWithGoogle accepts (ADR-0007). */

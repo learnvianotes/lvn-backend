@@ -15,6 +15,8 @@ export { NotesExport } from './application/notes-export'
 /** Imports of notes (ADR-0018), run by apps/worker from the notes.import queue. */
 export { NOTES_IMPORT_QUEUE, NoteImportService } from './application/note-import.service'
 export { NOTES_PDF_QUEUE, PDF_ENGINE_QUEUE, PDF_LIMITS, PdfConversionService } from './application/pdf-conversion.service'
+export { IMAGE_SIZES, MediaProcessingService, NOTES_MEDIA_QUEUE, variantKey } from './application/media-processing.service'
+export { clamdScan } from './application/clamav'
 /** Nightly housekeeping (version pruning, emptying the trash), run by apps/worker. */
 export { NotesMaintenance } from './application/notes-maintenance'
 

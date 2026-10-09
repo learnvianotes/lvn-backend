@@ -251,10 +251,16 @@ export class FilesService implements Files {
   async readUrls(fileIds: string[], opts: { ttlSeconds?: number } = {}) {
     const files = fileIds.length ? await this.db.fileObject.findMany({ where: { id: { in: [...new Set(fileIds)] }, status: 'READY', deletedAt: null } }) : []
     if (files.length) await this.db.fileObject.updateMany({ where: { id: { in: files.map((f) => f.id) } }, data: { accessCount: { increment: 1 }, lastAccessedAt: new Date() } })
+    const ttl = opts.ttlSeconds ?? READ_URL_TTL_SECONDS
     const signed = await Promise.all(
       files.map(async (f) => {
-        const { url, expiresAt } = await this.storage.presignGet(f.bucket, f.storageKey, { expiresInSeconds: opts.ttlSeconds ?? READ_URL_TTL_SECONDS, downloadName: f.originalFileName })
-        return [f.id, { file: f, url, expiresAt }] as const
+        const { url, expiresAt } = await this.storage.presignGet(f.bucket, f.storageKey, { expiresInSeconds: ttl, downloadName: f.originalFileName })
+        // Sizes, transcodes and posters made after the upload (ADR-0041), signed like the original.
+        const variants: Record<string, string> = {}
+        for (const [name, key] of Object.entries((f.variants ?? {}) as Record<string, string>)) {
+          if (typeof key === 'string' && key) variants[name] = (await this.storage.presignGet(f.bucket, key, { expiresInSeconds: ttl })).url
+        }
+        return [f.id, { file: f, url, expiresAt, variants }] as const
       }),
     )
     return new Map(signed)

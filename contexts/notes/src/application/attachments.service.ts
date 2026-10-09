@@ -36,6 +36,36 @@ export interface MediaFile {
   width: number | null
   height: number | null
   durationMs: number | null
+  pageCount: number | null
+  /** ADR-0041: signed URLs of what processing made, null until it is made */
+  thumbUrl: string | null
+  mediumUrl: string | null
+  largeUrl: string | null
+  posterUrl: string | null
+  playbackUrl: string | null
+}
+
+/** A MediaFile from a signed file (FilesService.readUrls). */
+export function mediaFileOf(signed: { file: { id: string; mimeType: string; originalFileName: string; sizeBytes: bigint; width: number | null; height: number | null; durationMs: number | null; pageCount: number | null }; url: string; expiresAt: Date; variants: Record<string, string> }): MediaFile {
+  const f = signed.file
+  const v = signed.variants
+  return {
+    id: f.id,
+    url: signed.url,
+    expiresAt: signed.expiresAt,
+    mimeType: f.mimeType,
+    fileName: f.originalFileName,
+    sizeBytes: Number(f.sizeBytes),
+    width: f.width,
+    height: f.height,
+    durationMs: f.durationMs,
+    pageCount: f.pageCount,
+    thumbUrl: v.thumb ?? null,
+    mediumUrl: v.medium ?? null,
+    largeUrl: v.large ?? null,
+    posterUrl: v.poster ?? null,
+    playbackUrl: v.video720 ?? v.audio ?? null,
+  }
 }
 
 /**
@@ -86,18 +116,7 @@ export class AttachmentsService {
     for (const a of linked) {
       const signed = urls.get(a.fileId)
       if (!signed) continue
-      const f = signed.file
-      out.set(`${a.noteId}:${a.fileId}`, {
-        id: f.id,
-        url: signed.url,
-        expiresAt: signed.expiresAt,
-        mimeType: f.mimeType,
-        fileName: f.originalFileName,
-        sizeBytes: Number(f.sizeBytes),
-        width: f.width,
-        height: f.height,
-        durationMs: f.durationMs,
-      })
+      out.set(`${a.noteId}:${a.fileId}`, mediaFileOf(signed))
     }
     return out
   }

@@ -115,6 +115,8 @@ export const events = {
     z.object({ kind: z.literal('CLASSROOM'), classroomId: uuid }),
   ]) })),
   FileReady: eventEnvelope('FileReady', 1, z.object({ fileId: uuid, ownerId: uuid, mimeType: z.string() })),
+  // ADR-0041: ClamAV found something; the file is kept in quarantine and no longer served.
+  FileQuarantined: eventEnvelope('FileQuarantined', 1, z.object({ fileId: uuid, ownerId: uuid, signature: z.string().max(200) })),
   // core
   GroupMembershipChanged: eventEnvelope('GroupMembershipChanged', 1, membership.extend({ groupId: uuid })),
   ClassroomMembershipChanged: eventEnvelope('ClassroomMembershipChanged', 1, membership.extend({ classroomId: uuid })),
