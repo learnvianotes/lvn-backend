@@ -9,7 +9,6 @@ import { RateLimiter } from '@lvn-backend/redis'
 import { noteFacts } from '../domain/note-access'
 import { AttachmentsService } from './attachments.service'
 import { NoteModerationService } from './moderation.service'
-import { SearchIndex } from './search-index'
 import { checkCard, NotesService, type OpenedNote } from './notes.service'
 import { OrganiseService } from './organise.service'
 
@@ -67,7 +66,6 @@ export class DraftsService {
     private readonly limiter: RateLimiter,
     private readonly attachments: AttachmentsService,
     private readonly moderation: NoteModerationService,
-    private readonly searchIndex: SearchIndex,
     @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
 
@@ -170,8 +168,6 @@ export class DraftsService {
       }
       return { results, conflictVersionId }
     })
-    // Topics are part of what search finds; the published version's words change only on publish.
-    if (topicIds && opened.note.publishedVersionId) await this.searchIndex.enqueue(input.noteId, null)
     return { opened: (await this.notes.open(viewerId, input.noteId, opened.actor))!, ...outcome }
   }
 
@@ -191,8 +187,8 @@ export class DraftsService {
       await tx.note.update({ where: { id: noteId }, data: { publishedVersionId: id, publishedAt: new Date(), slug: slugify(note.title) } })
       return id
     })
+    // Search re-indexes from the outbox row the new published version left (ADR-0055).
     const note = opened.note
-    await this.searchIndex.enqueue(noteId, versionId)
     if (note.visibility !== 'PUBLIC') {
       await this.events.publish('NotePublished', { noteId, versionId, ownerId, visibility: note.visibility, kind: note.kind })
     } else if (await this.moderation.screen(noteId)) {

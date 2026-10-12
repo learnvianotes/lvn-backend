@@ -1,11 +1,13 @@
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
-import { NOTES_SEARCH_QUEUE, SearchIndex } from '@lvn-backend/notes'
-import { Queues } from '@lvn-backend/queue'
-import { createTestApp, type TestApp } from '../support/app'
+import { SearchIndex } from '@lvn-backend/notes'
+import { createTestApp, infra, type TestApp } from '../support/app'
 import { seedUser, tokenFor } from '../support/seed'
 
-/** Search (§10.4): published words, while typing and with typos, and only what the searcher may read (§5). */
-describe('search', () => {
+/**
+ * Search (§11): published words, while typing and with typos, and only what the searcher may read (§5) — the same
+ * answers from either provider (ADR-0055).
+ */
+describe.each(['postgres', 'typesense'] as const)('search on %s', (provider) => {
   let t: TestApp
   let db: PrismaService
   let index: SearchIndex
@@ -30,15 +32,21 @@ describe('search', () => {
     const id = created.data!.createNote.note.id
     await t.gql(`mutation ($input: NoteIdInput!) { publishNote(input: $input) { ${ERRORS} } }`, { input: { noteId: id } }, owner.token)
     if (visibility !== 'PRIVATE') await t.gql(`mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { ${ERRORS} } }`, { input: { noteId: id, visibility } }, owner.token)
-    // The worker indexes from the queue; here the job runs in place.
-    await index.indexNote(id)
+    // The worker drains the search outbox; here a turn runs in place.
+    await index.drainAll()
     return id
   }
 
   beforeAll(async () => {
-    t = await createTestApp()
+    const typesense = infra().typesense
+    t = await createTestApp(
+      provider === 'typesense' ? { SEARCH_PROVIDER: 'typesense', TYPESENSE_URL: typesense.url, TYPESENSE_API_KEY: typesense.apiKey, TYPESENSE_COLLECTION_PREFIX: `e${Date.now().toString(36)}_` } : {},
+    )
     db = t.app.get(PrismaService)
     index = t.app.get(SearchIndex)
+    // The worker creates Typesense's collections when it starts (filling them with people and topics).
+    await index.ensureCollections()
+    await index.drainAll()
     const u = async (name: string, handle: string) => {
       const s = await seedUser(t.app, { verified: true, displayName: name, handle })
       return { id: s.id, token: tokenFor(t.config, s.id) }
@@ -46,18 +54,26 @@ describe('search', () => {
     owner = await u('Asha Rao', `asha${Date.now()}`)
     friend = await u('Ravi Kumar', `ravi${Date.now()}`)
     stranger = await u('Meera Iyer', `meera${Date.now()}`)
+    // Seeded straight into the database: no UserRegistered event marks them for people search.
+    await index.touchAll('USER')
     ids.public = await write("Dijkstra's algorithm", 'Always settle the closest unvisited vertex; heaps make it fast.', 'PUBLIC')
     ids.shared = await write('Graph exam notes', 'Dijkstra fails with negative edges.', 'SHARED')
     await db.noteShare.create({ data: { noteId: ids.shared, userId: friend.id, role: 'VIEWER', createdById: owner.id } })
+    await index.drainAll()
     ids.private = await write('My Dijkstra mistakes', 'I forgot to use a priority queue.', 'PRIVATE')
   })
 
   afterAll(() => t.close())
 
-  it('queues the published version for indexing', async () => {
+  it('a publish leaves a row in the search outbox, which the drainer takes', async () => {
     const note = await db.note.findUniqueOrThrow({ where: { id: ids.public } })
-    const job = await t.app.get(Queues).queue(NOTES_SEARCH_QUEUE).getJob(`${note.id}.${note.publishedVersionId}`)
-    expect(job?.name).toBe('index-note')
+    await db.note.update({ where: { id: note.id }, data: { publishedVersionId: note.publishedVersionId } })
+    expect(await db.searchChange.count({ where: { entityId: note.id } })).toBe(0)
+    await db.note.update({ where: { id: note.id }, data: { visibility: 'SHARED' } })
+    await db.note.update({ where: { id: note.id }, data: { visibility: 'PUBLIC' } })
+    expect(await db.searchChange.count({ where: { entity: 'NOTE', entityId: note.id } })).toBe(2)
+    await index.drainAll()
+    expect(await db.searchChange.count()).toBe(0)
   })
 
   it('finds only what each person may read', async () => {
@@ -79,14 +95,17 @@ describe('search', () => {
     await db.note.update({ where: { id: ids.public }, data: { visibility: 'PRIVATE' } })
     expect(await titles('dijkstra')).toEqual([])
     await db.note.update({ where: { id: ids.public }, data: { visibility: 'PUBLIC' } })
+    await index.drainAll()
     await t.gql(`mutation ($input: UpdateNoteDraftInput!) { updateNoteDraft(input: $input) { ${ERRORS} } }`, { input: { noteId: ids.public, title: 'Bellman-Ford instead' } }, owner.token)
-    await index.indexNote(ids.public!)
+    await index.drainAll()
     expect(await titles('bellman')).toEqual([])
   })
 
   it('finds adults by handle or name, never minors, and topics', async () => {
     const minor = await seedUser(t.app, { verified: true, displayName: 'Ravi Junior', handle: `ravijr${Date.now()}` })
     await db.user.update({ where: { id: minor.id }, data: { dateOfBirth: new Date('2014-05-01') } })
+    await index.touch('USER', [minor.id])
+    await index.drainAll()
     const people = (await search('ravi', stranger.token, ['PEOPLE'])).data!.people.map((p) => p.id)
     expect(people).toContain(friend.id)
     expect(people).not.toContain(minor.id)

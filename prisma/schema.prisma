@@ -864,6 +864,41 @@ model NoteSearchDocument {
   @@schema("notes")
 }
 
+/// What a search document is about (ADR-0055).
+enum SearchEntity {
+  NOTE
+  USER
+  TOPIC
+
+  @@schema("notes")
+}
+
+/// Something that may change a search document (ADR-0055): written by triggers on notes' own tables (in the changing
+/// transaction) and by handlers of other contexts' events. The worker drains it in order and deletes the rows it read.
+model SearchChange {
+  id         BigInt       @id @default(autoincrement())
+  entity     SearchEntity
+  entityId   String       @db.Uuid
+  createdAt  DateTime     @default(now()) @db.Timestamptz(3)
+  /// The Postgres index has it; set only while Typesense is unreachable, so the fallback's index keeps moving
+  postgresAt DateTime?    @db.Timestamptz(3)
+
+  @@index([entity, id])
+  @@schema("notes")
+}
+
+/// A Typesense collection's version behind its alias (ADR-0055). `marker`: the SearchChange id the drainer must pass
+/// before the alias moves to this version; null once it has.
+model SearchCollection {
+  name      String    @id
+  version   Int
+  marker    BigInt?
+  aliasedAt DateTime? @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@schema("notes")
+}
+
 /// Sync operations already applied (§13.2): a device that retries gets the first answer again, never a second write.
 /// Kept 30 days.
 model SyncOpLog {

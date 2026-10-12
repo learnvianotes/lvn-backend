@@ -13,6 +13,16 @@ export interface Person {
   globalRole: GlobalRole
 }
 
+/**
+ * What people search indexes of an account (ADR-0055). `adultFrom` is the day the account passes the digital-consent
+ * age (§15.2): search decides with it who may be found, while the date of birth itself stays in `users`.
+ */
+export interface SearchProfile extends Person {
+  headline: string | null
+  bio: string | null
+  adultFrom: Date
+}
+
 export interface People {
   /** The account with this handle (with or without @) or email address, or null; deleted accounts are not found. */
   find(handleOrEmail: string): Promise<Person | null>
@@ -37,4 +47,8 @@ export interface People {
   followingIds(userId: string): Promise<string[]>
   /** `restricterId` restricts `restrictedId` (ADR-0016): their comments wait for approval and cause no notification. */
   restricts(restricterId: string, restrictedId: string): Promise<boolean>
+  /** People search's documents for these accounts (ADR-0055); deleted accounts and ones without a date of birth are left out. */
+  searchProfiles(ids: string[]): Promise<SearchProfile[]>
+  /** Account ids after `after`, in id order, `take` at a time: for re-indexing everyone (ADR-0055). */
+  personIdsAfter(after: string | null, take: number): Promise<string[]>
 }

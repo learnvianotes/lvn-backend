@@ -1,6 +1,6 @@
 # The local environment (ADR-0036): the sandbox's services as containers on one VM — PostgreSQL 16 with pgvector,
-# Redis 7, S3-compatible storage (RustFS, ADR-0032), Mailpit instead of SES, the migration, the API, the worker, the web
-# and one entrance. Secrets are generated here, as in the sandbox, and live only in the VM's state.
+# Redis 7, S3-compatible storage (RustFS, ADR-0032), Mailpit instead of SES, Typesense (ADR-0055), the migration, the
+# API, the worker, the web and one entrance. Secrets are generated here, as in the sandbox, and live only in the VM's state.
 
 locals {
   images = {
@@ -10,7 +10,8 @@ locals {
     mailpit  = "axllent/mailpit:v1.31.4"
     proxy    = "caddy:2.11.7-alpine"
     awscli   = "amazon/aws-cli:2.37.10"
-    clamav   = "clamav/clamav:1.5.4"
+    clamav    = "clamav/clamav:1.5.4"
+    typesense = "typesense/typesense:30.2"
   }
   apps    = var.api_image == "" ? 0 : 1
   web     = var.web_image == "" ? 0 : 1
@@ -61,6 +62,10 @@ locals {
       # Project workspaces' repository cards (ADR-0048): the providers' public APIs, no token.
       GITHUB_API_URL = "https://api.github.com"
       GITLAB_API_URL = "https://gitlab.com/api/v4"
+      # Search on Typesense (ADR-0055); Postgres answers when it cannot.
+      SEARCH_PROVIDER   = "typesense"
+      TYPESENSE_URL     = "http://typesense:8108"
+      TYPESENSE_API_KEY = random_password.typesense.result
     },
     { for k, v in local.optional : k => v if v != "" },
     var.extra_backend_environment,
@@ -96,6 +101,11 @@ resource "random_password" "redis" {
   special = false
 }
 
+resource "random_password" "typesense" {
+  length  = 40
+  special = false
+}
+
 resource "random_password" "s3_access_key" {
   length  = 20
   special = false
@@ -117,7 +127,7 @@ resource "docker_network" "this" {
 }
 
 resource "docker_volume" "this" {
-  for_each = toset(["postgres", "s3", "clamav"])
+  for_each = toset(["postgres", "s3", "clamav", "typesense"])
   name     = "${var.name}-${each.key}"
 }
 
@@ -261,6 +271,32 @@ resource "docker_container" "clamav" {
   }
 }
 
+# Search (ADR-0055). Derived data: the worker rebuilds every collection from Postgres if this volume is lost.
+resource "docker_container" "typesense" {
+  name     = "${var.name}-typesense"
+  image    = docker_image.this["typesense"].image_id
+  restart  = "unless-stopped"
+  log_opts = local.log_opts
+  memory   = 1024
+  command  = ["--data-dir", "/data", "--api-key", random_password.typesense.result]
+  networks_advanced {
+    name    = docker_network.this.id
+    aliases = ["typesense"]
+  }
+  volumes {
+    volume_name    = docker_volume.this["typesense"].name
+    container_path = "/data"
+  }
+  healthcheck {
+    # The image has bash but neither curl nor wget.
+    test     = ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8108 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"ok\":true' <&3"]
+    interval = "5s"
+    retries  = 24
+  }
+  wait         = true
+  wait_timeout = 120
+}
+
 # Migrations with the new backend image, before any api or worker container on it starts (deploy.sh's migrate task).
 resource "terraform_data" "migrate" {
   count            = local.apps
@@ -294,7 +330,7 @@ resource "docker_container" "api" {
   }
   wait         = true
   wait_timeout = 180
-  depends_on   = [terraform_data.migrate, terraform_data.buckets, docker_container.redis, docker_container.mailpit]
+  depends_on   = [terraform_data.migrate, terraform_data.buckets, docker_container.redis, docker_container.mailpit, docker_container.typesense]
 }
 
 resource "docker_container" "worker" {
@@ -317,7 +353,7 @@ resource "docker_container" "worker" {
   }
   wait         = true
   wait_timeout = 180
-  depends_on   = [terraform_data.migrate, terraform_data.buckets, docker_container.redis, docker_container.mailpit]
+  depends_on   = [terraform_data.migrate, terraform_data.buckets, docker_container.redis, docker_container.mailpit, docker_container.typesense]
 }
 
 # The PDF engine (ADR-0028): Docling and RapidOCR on CPU, one PDF at a time, reading jobs from Redis and files from

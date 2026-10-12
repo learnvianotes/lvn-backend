@@ -34,6 +34,9 @@ describe('worker', () => {
       SMTP_URL: infra.mail.smtpUrl,
       JWT_ISSUER: 'http://localhost:4000',
       WEB_URL: 'http://localhost:3000',
+      SEARCH_PROVIDER: 'typesense',
+      TYPESENSE_URL: infra.typesense.url,
+      TYPESENSE_API_KEY: infra.typesense.apiKey,
       ...testSecrets(),
     })
     app = await NestFactory.createApplicationContext(WorkerModule.forRoot(config), { logger: false })
@@ -75,23 +78,29 @@ describe('worker', () => {
     expect(await app.get(Storage).head('lvn-restricted', key)).toBeNull()
   })
 
-  it('indexes a published note for search when its job runs, and schedules the nightly reindex', async () => {
+  it('indexes a published note in both search indexes on its own, and schedules the nightly reindex (ADR-0055)', async () => {
     const db = app.get(PrismaService)
     const ownerId = newId()
     await db.user.create({ data: { id: ownerId, email: `s${ownerId.slice(-8)}@example.com`, handle: `s${ownerId.slice(-8)}`, displayName: 'S' } })
     const noteId = newId()
     const versionId = newId()
-    await db.note.create({ data: { id: noteId, ownerId, title: 'Tries' } })
+    await db.note.create({ data: { id: noteId, ownerId, title: 'Tries', visibility: 'PUBLIC' } })
     await db.noteVersion.create({ data: { id: versionId, noteId, number: 1, kind: 'PUBLISHED', title: 'Tries', createdById: ownerId, cards: [{ id: newId(), type: 'text', position: 'a0', revision: 1, content: { doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Prefix trees for autocomplete.' }] }] } } }] } })
-    await db.note.update({ where: { id: noteId }, data: { publishedVersionId: versionId } })
+    // Publishing leaves a row in the search outbox (a trigger); the worker's drainer takes it from there.
+    await db.note.update({ where: { id: noteId }, data: { publishedVersionId: versionId, publishedAt: new Date() } })
 
-    const job = await app.get(Queues).queue(NOTES_SEARCH_QUEUE).add('index-note', { noteId })
-    const deadline = Date.now() + 20_000
-    while (!(await job.isCompleted())) {
-      if (Date.now() > deadline || (await job.isFailed())) throw new Error(`job did not complete: ${job.failedReason ?? 'timeout'}`)
+    const deadline = Date.now() + 30_000
+    const typesense = async () => {
+      const res = await fetch(`${infra.typesense.url}/collections/lvn_notes/documents/${noteId}`, { headers: { 'X-TYPESENSE-API-KEY': infra.typesense.apiKey } })
+      return res.ok ? ((await res.json()) as { title: string; visibility: string }) : null
+    }
+    while (!(await db.noteSearchDocument.findUnique({ where: { noteId } })) || !(await typesense())) {
+      if (Date.now() > deadline) throw new Error('the note was not indexed in time')
       await new Promise((r) => setTimeout(r, 200))
     }
     expect(await db.noteSearchDocument.findUniqueOrThrow({ where: { noteId } })).toMatchObject({ versionId, title: 'Tries', body: 'Prefix trees for autocomplete.' })
+    expect(await typesense()).toMatchObject({ title: 'Tries', visibility: 'PUBLIC' })
+    expect(await db.searchChange.count()).toBe(0)
     const schedulers = await app.get(Queues).queue(NOTES_SEARCH_QUEUE).getJobSchedulers()
     expect(schedulers.map((x) => [x.key, x.pattern])).toEqual([['reindex-all', '15 4 * * *']])
   })

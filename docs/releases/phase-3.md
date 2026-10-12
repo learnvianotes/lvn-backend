@@ -118,7 +118,7 @@ Bugs the new suites found and fixed in this phase:
   - Through the API, action by action (`apps/api/test/security/matrix.security.test.ts`): every community action
     (groups, workspaces, classrooms, people, teachers, reports and moderation) is refused to someone the matrix
     refuses and allowed to someone it allows. A new action without cases fails the suite. Quizzes and class
-    performance arrive in Phase 4.
+    performance come later (Phases 5 and 6; corrected in the [Phase 4 plan](../plans/phase-4.md#a-correction-to-the-phase-3-notes)).
   - The leakage suite: B sees nothing of a group or class B is not in; a post moderators hid reaches no other member;
     an author never learns who reported them; no role is taken through any mutation.
 
@@ -197,7 +197,7 @@ unchanged) and `lvn-pdf-engine:ba7b4eb92070`.
 - Structured fields are plain text on the phone: a field formatted on the web keeps its formatting until it is
   changed on the phone.
 - Voice notes are not built (on either), so the Create sheet keeps them "coming soon", with Quiz and Flashcards
-  (Phase 4 and the AI generation of Phase 5).
+  (Phase 5's generation; corrected from "Phase 4" in the [Phase 4 plan](../plans/phase-4.md#a-correction-to-the-phase-3-notes)).
 
 **Pipelines:**
 - The GitHub workflows of the three repos have never run, since nothing is pushed yet. Each step was run locally for
@@ -210,7 +210,8 @@ unchanged) and `lvn-pdf-engine:ba7b4eb92070`.
 **Not built yet:**
 - A people picker for mentions: the writer types `@handle`.
 - Feeds are read-time queries; a precomputed timeline waits for measurements.
-- Quizzes and class performance (Phase 4).
+- Quizzes and class performance (Phases 5 and 6; this said Phase 4, corrected in the
+  [Phase 4 plan](../plans/phase-4.md#a-correction-to-the-phase-3-notes)).
 - The owner's notes for Phase 5 are recorded in ADR-0025: quizzes, flashcards and revision sheets generated from notes.
 
 GraphQL schema: `contracts/graphql/schema.graphql` as of `@lvn/contracts` 0.29.0.

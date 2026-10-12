@@ -1,5 +1,5 @@
 # Local services for lvn-backend (spec §2, §16.1): PostgreSQL 16 + pgvector, Redis 7, S3-compatible storage
-# (RustFS, ADR-0032) and Mailpit for email. Host ports avoid the defaults so other projects on the same machine keep
+# (RustFS, ADR-0032), Mailpit for email and Typesense for search (ADR-0055). Host ports avoid the defaults so other projects on the same machine keep
 # theirs; the apps read every URL from .env (ADR-0022), which points at these ports.
 #
 #   docker compose -f infra/docker/compose.yaml up -d      (or: pnpm infra:up)
@@ -44,6 +44,14 @@ services:
     image: axllent/mailpit:v1.31.4
     ports: ["${LVN_SMTP_PORT:-51025}:1025", "${LVN_MAILPIT_PORT:-58025}:8025"]
 
+  # Search (ADR-0055) on :58108. Its data can be thrown away: the worker rebuilds the collections from Postgres.
+  typesense:
+    image: typesense/typesense:30.2
+    command: ["--data-dir", "/data", "--api-key", "lvn-dev-typesense-key"]
+    ports: ["${LVN_TYPESENSE_PORT:-58108}:8108"]
+    volumes: [typesense:/data]
+
 volumes:
   postgres:
   s3:
+  typesense:

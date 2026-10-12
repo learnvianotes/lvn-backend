@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import type { People, Person } from '@lvn-backend/facades'
+import type { People, Person, SearchProfile } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { isRestrictedMinor } from '../domain/rules'
 import type { User } from '../graphql/schema.types'
@@ -93,6 +93,26 @@ export class UsersService implements People {
   /** People facade (ADR-0016, ADR-0047): the first restricts the second. */
   async restricts(restricterId: string, restrictedId: string): Promise<boolean> {
     return (await this.db.restriction.count({ where: { restricterId, restrictedId } })) > 0
+  }
+
+  /** People facade (ADR-0055): what people search indexes; `adultFrom` instead of the date of birth. */
+  async searchProfiles(ids: string[]): Promise<SearchProfile[]> {
+    if (!ids.length) return []
+    const rows = await this.db.user.findMany({
+      where: { id: { in: ids }, deletedAt: null, dateOfBirth: { not: null } },
+      select: { id: true, handle: true, displayName: true, globalRole: true, dateOfBirth: true, teacherProfile: { select: { headline: true, bio: true } } },
+    })
+    return rows.map((u) => {
+      const adultFrom = new Date(u.dateOfBirth!)
+      adultFrom.setUTCFullYear(adultFrom.getUTCFullYear() + this.config.digitalConsentAge)
+      return { id: u.id, handle: u.handle, displayName: u.displayName, globalRole: u.globalRole, headline: u.teacherProfile?.headline ?? null, bio: u.teacherProfile?.bio ?? null, adultFrom }
+    })
+  }
+
+  /** People facade (ADR-0055): every account id, in pages, for re-indexing. */
+  async personIdsAfter(after: string | null, take: number): Promise<string[]> {
+    const rows = await this.db.user.findMany({ where: after ? { id: { gt: after } } : {}, select: { id: true }, orderBy: { id: 'asc' }, take })
+    return rows.map((r) => r.id)
   }
 
   /** Anyone's view of a user: no email, institutional address, verification details or age signal. */

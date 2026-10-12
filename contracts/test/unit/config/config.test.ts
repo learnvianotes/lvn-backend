@@ -94,6 +94,19 @@ describe('apiConfigSchema (Phase 1)', () => {
   it('requires a long code secret', () => {
     expect(() => loadConfig(apiConfigSchema, { ...valid, CODE_HMAC_SECRET: 'short' })).toThrow(/CODE_HMAC_SECRET/)
   })
+
+  it('searches on Postgres by default; Typesense needs its address and key together (ADR-0055)', () => {
+    const cfg = loadConfig(apiConfigSchema, valid)
+    expect(cfg.SEARCH_PROVIDER).toBe('postgres')
+    expect(cfg.TYPESENSE_COLLECTION_PREFIX).toBe('lvn_')
+    expect(cfg.SEARCH_TIMEOUT_MS).toBe(800)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, SEARCH_PROVIDER: 'typesense' })).toThrow(/TYPESENSE_URL/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, TYPESENSE_URL: 'http://typesense:8108' })).toThrow(/TYPESENSE_API_KEY/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, TYPESENSE_URL: 'typesense:8108', TYPESENSE_API_KEY: 'k'.repeat(32) })).toThrow(/TYPESENSE_URL/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, TYPESENSE_COLLECTION_PREFIX: 'LVN-' })).toThrow(/TYPESENSE_COLLECTION_PREFIX/)
+    const typesense = loadConfig(workerConfigSchema, { ...valid, SEARCH_PROVIDER: 'typesense', TYPESENSE_URL: 'http://typesense:8108', TYPESENSE_API_KEY: 'k'.repeat(32), SEARCH_TIMEOUT_MS: '300' })
+    expect(typesense).toMatchObject({ SEARCH_PROVIDER: 'typesense', TYPESENSE_URL: 'http://typesense:8108', SEARCH_TIMEOUT_MS: 300 })
+  })
 })
 
 describe('workerConfigSchema', () => {
