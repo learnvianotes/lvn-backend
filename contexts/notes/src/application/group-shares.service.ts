@@ -32,6 +32,11 @@ export class GroupSharesService implements OnModuleInit {
       await group(payload.groupId)
       await this.db.groupRead.update({ where: { id: payload.groupId }, data: { deletedAt: new Date() } })
     })
+    // Moderators put a removed group back (ADR-0053): its members read its notes again.
+    this.events.subscribe('GroupRestored', async ({ payload }) => {
+      await group(payload.groupId)
+      await this.db.groupRead.update({ where: { id: payload.groupId }, data: { deletedAt: null } })
+    })
     this.events.subscribe('GroupMembershipChanged', async ({ payload }) => {
       await group(payload.groupId)
       if (payload.change === 'LEFT') await this.db.groupMemberRead.deleteMany({ where: { groupId: payload.groupId, userId: payload.userId } })

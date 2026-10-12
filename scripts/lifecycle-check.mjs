@@ -308,6 +308,22 @@ if (opt('--vm')) {
   // is inside stays out of B's reach.
   const unseenPost = await gql('mutation ($input: ReportContentInput!) { reportContent(input: $input) { ok userErrors { code } } }', { input: { entityType: 'GROUP_POST', entityId: wsPost.id, reason: 'SPAM' } }, B.token)
   ok(unseenPost.reportContent.userErrors[0]?.code === 'NOT_FOUND', 'B cannot report a post in the private workspace B is not in')
+
+  // Account standing (ADR-0053): a platform admin suspends D for a day; D reads why, can no longer post, appeals once;
+  // the admin lifts it and D posts again.
+  const admin = await signUp('admin')
+  sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'INSTITUTIONAL_EMAIL', \\"globalRole\\" = 'PLATFORM_ADMIN' WHERE id = '${admin.id}'`)
+  await decide(admin, { entityType: 'USER', entityId: D.id, action: 'SUSPEND', reason: 'Posting the same link everywhere.', suspendDays: 1 })
+  const standing = (await gql('{ myStanding { suspendedUntil suspensionReason canAppeal } }', {}, D.token)).myStanding
+  const refused = await gql('mutation ($input: CreateGroupPostInput!) { createGroupPost(input: $input) { post { id } } }', { input: { groupId: ws.id, body: text('Still here').doc } }, D.token).catch((e) => e.message)
+  ok(!!standing.suspendedUntil && standing.suspensionReason === 'Posting the same link everywhere.' && standing.canAppeal && /suspended until/.test(String(refused)), 'a platform admin suspends D: D reads until when and why, and posting says it is the suspension', String(refused))
+  await gql('mutation ($input: AppealModerationInput!) { appealModeration(input: $input) { ok } }', { input: { entityType: 'USER', entityId: D.id, message: 'It was for the class.' } }, D.token)
+  const appealedCase = (await gql('{ moderationQueue(first: 100) { edges { node { entityId suspendedUntil appeal { message } } } } }', {}, admin.token)).moderationQueue.edges.find((e) => e.node.entityId === D.id)?.node
+  await decide(admin, { entityType: 'USER', entityId: D.id, action: 'APPROVE' })
+  const back = await gql('mutation ($input: CreateGroupPostInput!) { createGroupPost(input: $input) { post { id } userErrors { message } } }', { input: { groupId: ws.id, body: text('Back again').doc } }, D.token).catch((e) => ({ error: e.message }))
+  const posted = back.createGroupPost?.post
+  const toldLifted = await eventually(() => moderated(D, 'RESTORED', 'USER'))
+  ok(appealedCase?.appeal?.message === 'It was for the class.' && !!appealedCase.suspendedUntil && !!posted && toldLifted, 'D appeals once, the admin lifts the suspension, D is told and posts again', JSON.stringify({ appealedCase, back, toldLifted }))
 }
 
 // Media (ADR-0041): processed after the upload by the worker, scanned by the environment's ClamAV.

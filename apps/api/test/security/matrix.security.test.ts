@@ -278,6 +278,27 @@ describe('security: the permission matrix, action by action', () => {
     ])
   })
 
+  it('a suspension (ADR-0053): only platform admins suspend; the suspended moderator, owner or teacher acts for nobody', async () => {
+    const suspended = await person({ name: 'Suspended moderator' })
+    await run(suspended, 'joinGroup', { groupId: openGroup })
+    await t.gql('mutation ($input: SetGroupRoleInput!) { setGroupRole(input: $input) { group { id } } }', { input: { groupId: openGroup, userId: suspended.id, role: 'MODERATOR' } }, owner.token)
+    const theirPost = await postIn(owner, openGroup)
+    await expectCases([
+      ['suspend, a group moderator', 'refused', () => run(moderator, 'moderateContent', { entityType: 'USER', entityId: suspended.id, action: 'SUSPEND', reason: 'Spam', suspendDays: 7 })],
+      ['suspend, a teacher', 'refused', () => run(teacher, 'moderateContent', { entityType: 'USER', entityId: suspended.id, action: 'SUSPEND', reason: 'Spam', suspendDays: 7 })],
+      ['suspend, a platform admin', 'allowed', () => run(platformAdmin, 'moderateContent', { entityType: 'USER', entityId: suspended.id, action: 'SUSPEND', reason: 'Spam', suspendDays: 7 })],
+      ['post while suspended', 'refused', () => run(suspended, 'createGroupPost', { groupId: openGroup, body: doc('Hi') })],
+      ['moderate one’s group while suspended', 'refused', () => run(suspended, 'deleteGroupPost', { postId: theirPost })],
+      ['follow while suspended', 'refused', () => run(suspended, 'followUser', { userId: teacher.id })],
+      ['create a group while suspended', 'refused', () => run(suspended, 'createGroup', { name: 'Again', privacy: 'PUBLIC', joinPolicy: 'OPEN' })],
+      ['report while suspended', 'allowed', () => run(suspended, 'reportContent', { entityType: 'GROUP_POST', entityId: theirPost, reason: 'SPAM' })],
+      ['block while suspended', 'allowed', () => run(suspended, 'blockUser', { userId: outsider.id })],
+      ['lift it, a group moderator', 'refused', () => run(moderator, 'moderateContent', { entityType: 'USER', entityId: suspended.id, action: 'APPROVE' })],
+      ['lift it, a platform admin', 'allowed', () => run(platformAdmin, 'moderateContent', { entityType: 'USER', entityId: suspended.id, action: 'APPROVE' })],
+      ['post once it is lifted', 'allowed', () => run(suspended, 'createGroupPost', { groupId: openGroup, body: doc('Back') })],
+    ])
+  })
+
   /** Actions whose channel arrives in a later phase; each stays here until it has cases above. */
   const NOT_YET: Record<string, string> = {
     [Action.CLASSROOM_PUBLISH_QUIZ]: 'Phase 4: quizzes',

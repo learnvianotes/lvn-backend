@@ -1,4 +1,5 @@
 import { Module, type DynamicModule } from '@nestjs/common'
+import { APP_INTERCEPTOR } from '@nestjs/core'
 import type { ApiConfig } from '@lvn-backend/config'
 import { AccessTokenVerifier } from '@lvn-backend/auth-guard'
 import { EventBusModule } from '@lvn-backend/event-bus'
@@ -10,6 +11,7 @@ import { StorageModule } from '@lvn-backend/storage'
 import { contextModules, SUBGRAPHS, TOKEN_AUDIENCE } from './contexts'
 import { facades } from './facades'
 import { buildRequestContext } from './graphql/request-context'
+import { SuspendedRefusals } from './graphql/suspended-refusals'
 import { HealthController } from './health/health.controller'
 
 export { TOKEN_AUDIENCE }
@@ -46,6 +48,8 @@ export class AppModule {
         }),
       ],
       controllers: [HealthController],
+      // A suspended person's refused change says why (ADR-0053).
+      providers: [{ provide: APP_INTERCEPTOR, useClass: SuspendedRefusals }],
     }
   }
 }

@@ -151,6 +151,10 @@ model User {
   avatarFileId            String?             @db.Uuid
   deletionRequestedAt     DateTime?           @db.Timestamptz(3)
   deletedAt               DateTime?           @db.Timestamptz(3)
+  /// Suspended by platform moderators until this time (ADR-0053); nothing reaches other people meanwhile
+  suspendedUntil          DateTime?           @db.Timestamptz(3)
+  /// Why, for the account's owner alone
+  suspensionReason        String?
   createdAt               DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt               DateTime            @updatedAt @db.Timestamptz(3)
 
@@ -1399,6 +1403,8 @@ model Group {
   createdAt      DateTime           @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime           @updatedAt @db.Timestamptz(3)
   deletedAt      DateTime?          @db.Timestamptz(3)
+  /// Set when platform moderators removed the group (ADR-0053): why, for its owner alone; the owner may appeal once
+  removedReason  String?
   /// Project workspaces (ADR-0048): the PUBLIC PROJECT note that credits the team; cross-context reference to notes.Note
   showcaseNoteId String?            @db.Uuid
   members        GroupMember[]

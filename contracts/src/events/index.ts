@@ -125,6 +125,8 @@ export const events = {
   /** A group came to be or went (ADR-0045): notes keeps a read model of groups for notes shared to them. */
   GroupCreated: eventEnvelope('GroupCreated', 1, z.object({ groupId: uuid, ownerId: uuid })),
   GroupDeleted: eventEnvelope('GroupDeleted', 1, z.object({ groupId: uuid })),
+  /** Platform moderators put back a group they had removed (an appeal granted, ADR-0053): it is readable again. */
+  GroupRestored: eventEnvelope('GroupRestored', 1, z.object({ groupId: uuid })),
   GroupMembershipChanged: eventEnvelope('GroupMembershipChanged', 1, membership.extend({ groupId: uuid })),
   /** A classroom came to be or went (ADR-0046): notes keeps a read model for notes shared to classes. */
   ClassroomCreated: eventEnvelope('ClassroomCreated', 1, z.object({ classroomId: uuid, ownerId: uuid })),
@@ -187,14 +189,15 @@ export const events = {
   QuizPublished: eventEnvelope('QuizPublished', 1, z.object({ quizId: uuid, classroomId: uuid.optional() })),
   ContentReported: eventEnvelope('ContentReported', 1, z.object({ reportId: uuid, entityType: z.string(), entityId: uuid })),
   /**
-   * A moderator's decision about someone's comment, post, announcement or doubt (ADR-0051), so its author is told:
-   * where it was (path, and the group, class or note) and what happened; never the content or the reason.
+   * A moderator's decision about someone's comment, post, announcement, doubt, group or account (ADR-0051, ADR-0053),
+   * so its author is told: where it was (path, and the group, class or note) and what happened; never the content or
+   * the reason. SUSPENDED and, when one is lifted, RESTORED are about the person's account (entityType USER).
    */
   ContentModerated: eventEnvelope('ContentModerated', 1, z.object({
     entityType: z.string(),
     entityId: uuid,
     authorId: uuid,
-    kind: z.enum(['HIDDEN', 'REMOVED', 'WARNED', 'RESTORED']),
+    kind: z.enum(['HIDDEN', 'REMOVED', 'WARNED', 'RESTORED', 'SUSPENDED']),
     path: z.string().max(512),
     groupId: uuid.optional(),
     classroomId: uuid.optional(),
