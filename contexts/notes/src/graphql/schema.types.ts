@@ -76,6 +76,18 @@ export interface ChangeNoteVisibilityInput {
   visibility: Visibility
 }
 
+/** A class, owned by the core subgraph; notes adds what its staff shared to it (ADR-0046) */
+export interface Classroom {
+  id: string
+  /** Members only: notes shared to the class that the viewer may open, the most recently shared first */
+  sharedNotes: NoteConnection | null
+}
+
+export interface ClassroomSharedNotesArgs {
+  first?: number | null
+  after?: string | null
+}
+
 export interface ConvertPdfInput {
   noteId: string
   /** A PDF of the note the viewer can read */
@@ -314,6 +326,14 @@ export interface MutationUnshareNoteFromGroupArgs {
   input: NoteGroupInput
 }
 
+export interface MutationShareNoteToClassroomArgs {
+  input: NoteClassroomInput
+}
+
+export interface MutationUnshareNoteFromClassroomArgs {
+  input: NoteClassroomInput
+}
+
 export interface MutationSyncPushArgs {
   ops: Array<SyncOpInput>
 }
@@ -372,6 +392,8 @@ export interface Note {
   sharedWithConnections?: boolean | null
   /** Owner only: the groups the note is shared to */
   groups?: Array<Group> | null
+  /** Owner only: the classes the note is shared to */
+  classrooms?: Array<Classroom> | null
 }
 
 export interface NoteCardsArgs {
@@ -394,6 +416,11 @@ export interface NoteHighlightsArgs {
 
 /** OWNER and EDITOR work on the draft; READER sees the published version (§4.3) */
 export type NoteAccess = 'OWNER' | 'EDITOR' | 'READER'
+
+export interface NoteClassroomInput {
+  noteId: string
+  classroomId: string
+}
 
 export interface NoteConnection {
   edges: Array<NoteEdge>

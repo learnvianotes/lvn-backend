@@ -19,9 +19,10 @@ export interface NoteAccessRow {
   forkedAsRole?: 'OWNER' | 'EDITOR' | 'READER' | null
 }
 
-/** How else the note reaches the actor: shared to a group they are in (ADR-0045). */
+/** How else the note reaches the actor: shared to a group (ADR-0045) or a class (ADR-0046) they are in. */
 export interface ReachFacts {
   inSharedGroup?: boolean
+  inSharedClassroom?: boolean
 }
 
 /** The facts `can()` needs about one note for one actor; `shareRole` is the actor's NoteShare row, if any. */
@@ -32,6 +33,7 @@ export function noteFacts(note: NoteAccessRow, shareRole: 'EDITOR' | 'VIEWER' | 
     forkingEnabled: note.forkingEnabled,
     ...(shareRole ? { shareRole } : {}),
     ...(reach.inSharedGroup ? { sharedToActorsGroup: true } : {}),
+    ...(reach.inSharedClassroom ? { sharedToActorsClassroom: true } : {}),
     ...(note.forkedFromVisibility ? { fork: { originVisibilityAtFork: note.forkedFromVisibility, forkedAsOwnerOrEditor: note.forkedAsRole === 'OWNER' || note.forkedAsRole === 'EDITOR' } } : {}),
   }
 }
@@ -48,7 +50,7 @@ export function noteAccess(actor: Actor | null, note: NoteAccessRow, shareRole: 
   const moderation = note.moderation ?? 'OK'
   if (moderation === 'HIDDEN' || moderation === 'REMOVED') return null
   // Held: only the people it is shared with still read it (shares grant nothing on PRIVATE notes; can() checks that).
-  if (moderation === 'PENDING_REVIEW' && !shareRole && !reach.inSharedGroup) return null
+  if (moderation === 'PENDING_REVIEW' && !shareRole && !reach.inSharedGroup && !reach.inSharedClassroom) return null
   const facts = noteFacts(note, shareRole, reach)
   if (!can(actor, Action.NOTE_READ, { kind: 'note', note: facts })) return null
   if (actor && can(actor, Action.NOTE_EDIT_DRAFT, { kind: 'note', note: facts })) return 'EDITOR'
@@ -74,6 +76,8 @@ export function visibleNotesWhere(actorId: string | null): Prisma.NoteWhereInput
       { visibility: { in: ['SHARED', 'PUBLIC'] }, ...shared, shares: { some: { userId: actorId, role: 'VIEWER' } }, ...published },
       // Shared to a group the viewer is in (ADR-0045): notes' own copy of membership, fed by core's events.
       { visibility: { in: ['SHARED', 'PUBLIC'] }, ...shared, ...published, groupShares: { some: { group: { deletedAt: null, members: { some: { userId: actorId } } } } } },
+      // Shared to a class the viewer is in (ADR-0046), from the same kind of copy.
+      { visibility: { in: ['SHARED', 'PUBLIC'] }, ...shared, ...published, classroomShares: { some: { classroom: { deletedAt: null, members: { some: { userId: actorId } } } } } },
     ],
   }
 }

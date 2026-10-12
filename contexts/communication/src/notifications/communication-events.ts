@@ -57,8 +57,22 @@ export class CommunicationEvents implements OnModuleInit {
       }
     })
     this.events.subscribe('JoinRequestReviewed', async ({ payload }) => {
-      if (payload.scope.kind !== 'GROUP') return
-      await this.notifications.notify({ userId: payload.userId, category: 'JOIN_DECISION', path: `/groups/${payload.scope.groupId}`, groupId: payload.scope.groupId, data: { decision: payload.decision } })
+      const { scope } = payload
+      if (scope.kind === 'GROUP') await this.notifications.notify({ userId: payload.userId, category: 'JOIN_DECISION', path: `/groups/${scope.groupId}`, groupId: scope.groupId, data: { decision: payload.decision } })
+      // Who answered is not named: the class's staff answer together (ADR-0046).
+      else await this.notifications.notify({ userId: payload.userId, category: 'JOIN_DECISION', path: `/classes/${scope.classroomId}`, classroomId: scope.classroomId, data: { decision: payload.decision } })
+    })
+    // Classes (ADR-0046): staff are asked; the invited hear of it; every member reads an announcement.
+    this.events.subscribe('ClassroomJoinRequested', async ({ payload }) => {
+      for (const reviewer of payload.reviewerIds ?? []) {
+        await this.notifications.notify({ userId: reviewer, category: 'JOIN_REQUEST', path: `/classes/${payload.classroomId}`, actorId: payload.userId, classroomId: payload.classroomId })
+      }
+    })
+    this.events.subscribe('ClassroomInvited', async ({ payload }) => {
+      await this.notifications.notify({ userId: payload.userId, category: 'CLASSROOM_INVITE', path: `/classes/${payload.classroomId}`, actorId: payload.invitedBy, classroomId: payload.classroomId })
+    })
+    this.events.subscribe('ClassroomPosted', async ({ payload }) => {
+      await this.notifications.notifyMany(payload.memberIds, { category: 'CLASSROOM_POST', path: `/classes/${payload.classroomId}`, actorId: payload.authorId, classroomId: payload.classroomId })
     })
     // Sockets of a revoked session close on every instance.
     this.events.subscribe('SessionRevoked', async ({ payload }) => {

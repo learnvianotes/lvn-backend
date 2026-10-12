@@ -730,38 +730,39 @@ model Tag {
 
 /// The document (§4.1). Its cards are the draft; readers other than editors see `publishedVersion` (§4.3).
 model Note {
-  id                    String          @id @db.Uuid
+  id                    String           @id @db.Uuid
   /// Cross-context reference to users.User
-  ownerId               String          @db.Uuid
-  folderId              String?         @db.Uuid
-  kind                  NoteKind        @default(NOTE)
-  title                 String          @default("")
-  slug                  String          @default("note")
-  visibility            Visibility      @default(PRIVATE)
+  ownerId               String           @db.Uuid
+  folderId              String?          @db.Uuid
+  kind                  NoteKind         @default(NOTE)
+  title                 String           @default("")
+  slug                  String           @default("note")
+  visibility            Visibility       @default(PRIVATE)
   /// Bumped by every change to the draft (title, folder, tags, topics or any card)
-  draftRevision         Int             @default(0)
-  draftUpdatedAt        DateTime        @default(now()) @db.Timestamptz(3)
-  publishedVersionId    String?         @unique @db.Uuid
-  publishedAt           DateTime?       @db.Timestamptz(3)
-  forkingEnabled        Boolean         @default(true)
+  draftRevision         Int              @default(0)
+  draftUpdatedAt        DateTime         @default(now()) @db.Timestamptz(3)
+  publishedVersionId    String?          @unique @db.Uuid
+  publishedAt           DateTime?        @db.Timestamptz(3)
+  forkingEnabled        Boolean          @default(true)
   /// Every connection of the owner reads it, live (ADR-0013, ADR-0044): materialised as CONNECTIONS share rows
-  sharedWithConnections Boolean         @default(false)
+  sharedWithConnections Boolean          @default(false)
   groupShares           GroupShare[]
+  classroomShares       ClassroomShare[]
   /// ADR-0037: only OK notes are readable on the public path; HIDDEN and REMOVED notes by their owner only
-  moderation            ModerationState @default(OK)
+  moderation            ModerationState  @default(OK)
   /// Why the note is held, hidden or removed; shown to the owner
   moderationReason      String?
   /// Fork credit (§4.4, ADR-0010): the origin, the version copied and its author (credited even when the origin is gone)
-  forkedFromNoteId      String?         @db.Uuid
-  forkedFromVersionId   String?         @db.Uuid
+  forkedFromNoteId      String?          @db.Uuid
+  forkedFromVersionId   String?          @db.Uuid
   /// Cross-context reference to users.User
-  forkedFromOwnerId     String?         @db.Uuid
+  forkedFromOwnerId     String?          @db.Uuid
   /// What the origin was when it was forked: decides whether the fork may become PUBLIC
   forkedFromVisibility  Visibility?
   forkedAsRole          ForkRole?
-  deletedAt             DateTime?       @db.Timestamptz(3)
-  createdAt             DateTime        @default(now()) @db.Timestamptz(3)
-  updatedAt             DateTime        @updatedAt @db.Timestamptz(3)
+  deletedAt             DateTime?        @db.Timestamptz(3)
+  createdAt             DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime         @updatedAt @db.Timestamptz(3)
 
   folder           Folder?             @relation(fields: [folderId], references: [id])
   publishedVersion NoteVersion?        @relation("PublishedVersion", fields: [publishedVersionId], references: [id])
@@ -1207,6 +1208,7 @@ enum NotificationCategory {
   VERIFICATION
   DATA_EXPORT
   NOTES_IMPORT
+  CLASSROOM_INVITE
 
   @@schema("comms")
 }
@@ -1214,22 +1216,24 @@ enum NotificationCategory {
 /// Something that happened for a person, shown in-app first (§9.3, ADR-0042). Ids only: never note, comment or
 /// message text. Read ones go after 90 days, unread ones after a year.
 model Notification {
-  id        String               @id @db.Uuid
+  id          String               @id @db.Uuid
   /// Cross-context reference to users.User: who it is for
-  userId    String               @db.Uuid
-  category  NotificationCategory
+  userId      String               @db.Uuid
+  category    NotificationCategory
   /// In-app path to open ("/notes/<id>"), the same on web and phone
-  path      String
+  path        String
   /// Cross-context reference to users.User: who did it; null for the system or a deleted account
-  actorId   String?              @db.Uuid
+  actorId     String?              @db.Uuid
   /// Cross-context reference to notes.Note when it is about a note
-  noteId    String?              @db.Uuid
+  noteId      String?              @db.Uuid
   /// Cross-context reference to core.Group when it is about a group (ADR-0045)
-  groupId   String?              @db.Uuid
+  groupId     String?              @db.Uuid
+  /// Cross-context reference to core.Classroom when it is about a class (ADR-0046)
+  classroomId String?              @db.Uuid
   /// Category facts that are not user content (a decision, counts)
-  data      Json?
-  readAt    DateTime?            @db.Timestamptz(3)
-  createdAt DateTime             @default(now()) @db.Timestamptz(3)
+  data        Json?
+  readAt      DateTime?            @db.Timestamptz(3)
+  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
 
   @@index([userId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([userId, readAt])
@@ -1471,5 +1475,142 @@ model GroupShare {
 
   @@id([noteId, groupId])
   @@index([groupId, createdAt(sort: Desc)])
+  @@schema("notes")
+}
+
+// ── Classrooms (ADR-0046) ──────────────────────────────────────────────────────────────────────────────────────────
+
+enum ClassroomRole {
+  TEACHER
+  TA
+  STUDENT
+
+  @@schema("core")
+}
+
+enum JoinVia {
+  CODE
+  LINK
+
+  @@schema("core")
+}
+
+/// A class a teacher runs (§4.1, ADR-0046): joined by request with its code, or by a staff invite.
+model Classroom {
+  id          String                 @id @db.Uuid
+  name        String
+  description String?
+  /// Eight characters without look-alikes; replaced on request, the old one then stops working
+  joinCode    String                 @unique
+  /// Cross-context reference to users.User: the TEACHER who runs it
+  ownerId     String                 @db.Uuid
+  createdAt   DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime               @updatedAt @db.Timestamptz(3)
+  deletedAt   DateTime?              @db.Timestamptz(3)
+  members     ClassroomMember[]
+  requests    ClassroomJoinRequest[]
+  invites     ClassroomInvite[]
+  posts       ClassroomPost[]
+
+  @@index([ownerId])
+  @@schema("core")
+}
+
+model ClassroomMember {
+  classroomId String        @db.Uuid
+  /// Cross-context reference to users.User
+  userId      String        @db.Uuid
+  role        ClassroomRole @default(STUDENT)
+  joinedAt    DateTime      @default(now()) @db.Timestamptz(3)
+  classroom   Classroom     @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  @@id([classroomId, userId])
+  @@index([userId])
+  @@schema("core")
+}
+
+/// A request with the class code or link (ADR-0009): one waiting per person and class.
+model ClassroomJoinRequest {
+  id          String            @id @db.Uuid
+  classroomId String            @db.Uuid
+  userId      String            @db.Uuid
+  via         JoinVia           @default(CODE)
+  status      JoinRequestStatus @default(PENDING)
+  reviewedBy  String?           @db.Uuid
+  reviewedAt  DateTime?         @db.Timestamptz(3)
+  createdAt   DateTime          @default(now()) @db.Timestamptz(3)
+  classroom   Classroom         @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  @@index([classroomId, status, createdAt])
+  @@index([userId, status])
+  @@schema("core")
+}
+
+/// A staff invite (ADR-0009): the acceptance given in advance; the invited person accepts it within 14 days.
+model ClassroomInvite {
+  id            String        @id @db.Uuid
+  classroomId   String        @db.Uuid
+  invitedUserId String        @db.Uuid
+  invitedBy     String        @db.Uuid
+  role          ClassroomRole @default(STUDENT)
+  expiresAt     DateTime      @db.Timestamptz(3)
+  acceptedAt    DateTime?     @db.Timestamptz(3)
+  declinedAt    DateTime?     @db.Timestamptz(3)
+  createdAt     DateTime      @default(now()) @db.Timestamptz(3)
+  classroom     Classroom     @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  @@index([invitedUserId, expiresAt])
+  @@index([classroomId])
+  @@schema("core")
+}
+
+/// An announcement by the class's staff (ADR-0046): rich text, read by every member.
+model ClassroomPost {
+  id          String    @id @db.Uuid
+  classroomId String    @db.Uuid
+  authorId    String    @db.Uuid
+  body        Json
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  deletedAt   DateTime? @db.Timestamptz(3)
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  @@index([classroomId, deletedAt, createdAt(sort: Desc)])
+  @@schema("core")
+}
+
+/// notes' copy of the classes that exist (ADR-0046).
+model ClassroomRead {
+  id        String                @id @db.Uuid
+  deletedAt DateTime?             @db.Timestamptz(3)
+  members   ClassroomMemberRead[]
+  shares    ClassroomShare[]
+
+  @@schema("notes")
+}
+
+/// notes' copy of class membership with the role (ADR-0046): the read predicate and co-teaching read it.
+model ClassroomMemberRead {
+  classroomId String        @db.Uuid
+  userId      String        @db.Uuid
+  /// TEACHER, TA or STUDENT
+  role        String
+  classroom   ClassroomRead @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  @@id([classroomId, userId])
+  @@index([userId, classroomId])
+  @@schema("notes")
+}
+
+/// A note a class's staff shared with it (§4.2): its members read the published version.
+model ClassroomShare {
+  noteId      String        @db.Uuid
+  classroomId String        @db.Uuid
+  sharedById  String        @db.Uuid
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+  note        Note          @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  classroom   ClassroomRead @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  @@id([noteId, classroomId])
+  @@index([classroomId, createdAt(sort: Desc)])
   @@schema("notes")
 }

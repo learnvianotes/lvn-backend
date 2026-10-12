@@ -12,6 +12,7 @@ export interface NewNotification {
   actorId?: string | null
   noteId?: string | null
   groupId?: string | null
+  classroomId?: string | null
   /** Category facts that are never user content: a decision, counts */
   data?: Record<string, string | number | boolean>
 }
@@ -24,6 +25,7 @@ export interface NotificationRow {
   actorId: string | null
   noteId: string | null
   groupId: string | null
+  classroomId: string | null
   data: unknown
   readAt: Date | null
   createdAt: Date
@@ -52,14 +54,30 @@ export class NotificationService {
     if (n.actorId && n.actorId === n.userId) return null
     const id = newId()
     const createdAt = new Date()
-    await this.db.notification.create({
-      data: { id, userId: n.userId, category: n.category, path: n.path, actorId: n.actorId ?? null, noteId: n.noteId ?? null, groupId: n.groupId ?? null, data: n.data, createdAt },
-    })
-    // Live delivery is a courtesy: the notification is already stored and the next fetch shows it.
-    await this.live.publish(n.userId, { type: 'event', event: { kind: 'NOTIFICATION', id, at: createdAt.toISOString() } }).catch((err: unknown) => {
+    await this.db.notification.create({ data: this.row(id, n.userId, n, createdAt) })
+    await this.announce(n.userId, id, createdAt)
+    return id
+  }
+
+  /** The same notification for many people (a class announcement): one insert, then each person's sockets. */
+  async notifyMany(userIds: string[], n: Omit<NewNotification, 'userId'>): Promise<number> {
+    const createdAt = new Date()
+    const rows = [...new Set(userIds)].filter((userId) => userId !== n.actorId).map((userId) => this.row(newId(), userId, n, createdAt))
+    if (!rows.length) return 0
+    await this.db.notification.createMany({ data: rows })
+    await Promise.all(rows.map((r) => this.announce(r.userId, r.id, createdAt)))
+    return rows.length
+  }
+
+  private row(id: string, userId: string, n: Omit<NewNotification, 'userId'>, createdAt: Date) {
+    return { id, userId, category: n.category, path: n.path, actorId: n.actorId ?? null, noteId: n.noteId ?? null, groupId: n.groupId ?? null, classroomId: n.classroomId ?? null, data: n.data, createdAt }
+  }
+
+  // Live delivery is a courtesy: the notification is already stored and the next fetch shows it.
+  private async announce(userId: string, id: string, createdAt: Date) {
+    await this.live.publish(userId, { type: 'event', event: { kind: 'NOTIFICATION', id, at: createdAt.toISOString() } }).catch((err: unknown) => {
       this.log.warn(`live delivery of ${id} failed: ${err instanceof Error ? err.message : String(err)}`)
     })
-    return id
   }
 
   /** Newest first; `after` is the [createdAt, id] of the last row of the previous page. */

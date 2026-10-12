@@ -21,6 +21,11 @@ type Group @key(fields: "id", resolvable: false) {
   id: UUID!
 }
 
+"A class, owned by the core subgraph: null when the viewer may no longer see it"
+type Classroom @key(fields: "id", resolvable: false) {
+  id: UUID!
+}
+
 type PageInfo @shareable {
   hasNextPage: Boolean!
   endCursor: String
@@ -51,6 +56,7 @@ enum NotificationCategory {
   VERIFICATION
   DATA_EXPORT
   NOTES_IMPORT
+  CLASSROOM_INVITE
 }
 
 """
@@ -68,6 +74,8 @@ type Notification {
   note: Note
   "The group it is about (JOIN_REQUEST, JOIN_DECISION); null when there is none or the viewer may no longer see it"
   group: Group
+  "The class it is about (JOIN_REQUEST, JOIN_DECISION, CLASSROOM_INVITE, CLASSROOM_POST); null when there is none or the viewer may no longer see it"
+  classroom: Classroom
   "Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED }"
   data: JSON
   readAt: DateTime

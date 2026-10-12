@@ -63,6 +63,13 @@ export class SharingService implements OnModuleInit {
     return (await this.notes.open(ownerId, noteId, actor))!
   }
 
+  /** Both are the teacher or a TA of one class (ADR-0013), from notes' copy of class membership (ADR-0046). */
+  private async coTeach(a: string, b: string): Promise<boolean> {
+    const staff = ['TEACHER', 'TA']
+    const n = await this.db.classroomMemberRead.count({ where: { userId: a, role: { in: staff }, classroom: { deletedAt: null, members: { some: { userId: b, role: { in: staff } } } } } })
+    return n > 0
+  }
+
   /** Shares with one person, or changes their role; a PRIVATE note becomes SHARED (share rows grant nothing on PRIVATE). */
   async share(ownerId: string, noteId: string, personQuery: string, role: 'EDITOR' | 'VIEWER'): Promise<OpenedNote> {
     const opened = await this.notes.require(ownerId, noteId, 'owner')
@@ -74,11 +81,12 @@ export class SharingService implements OnModuleInit {
     // A block stops new shares both ways; the message does not say who blocked whom (ADR-0016, ADR-0043).
     if (await this.people.blockedBetween(ownerId, person.id)) throw Errors.forbidden("This note can't be shared with that person.")
     const recipientIsTeacher = person.globalRole === 'TEACHER'
-    // Teacher to teacher needs a connection (ADR-0013); co-teaching a classroom counts once classrooms exist (P3d).
-    const target = { kind: 'USER' as const, recipientIsTeacher, connectedToRecipient: recipientIsTeacher ? await this.people.connected(ownerId, person.id) : false }
+    // Teacher to teacher needs a connection or a class both teach (ADR-0013, ADR-0046).
+    const [connectedToRecipient, coTeachesWithRecipient] = recipientIsTeacher ? await Promise.all([this.people.connected(ownerId, person.id), this.coTeach(ownerId, person.id)]) : [false, false]
+    const target = { kind: 'USER' as const, recipientIsTeacher, connectedToRecipient, coTeachesWithRecipient }
     if (!can(actor, Action.NOTE_SHARE, { kind: 'note', note: noteFacts(note, null), shareTarget: target })) {
       if (!actor.institutionVerified) throw Errors.forbidden('Verify your account to share notes.')
-      throw Errors.forbidden('Teachers share with other teachers once they are connected.')
+      throw Errors.forbidden('Teachers share with other teachers once they are connected or teach a class together.')
     }
     const limit = await this.limiter.hit(`notes:share:${ownerId}`, { max: 200, windowSeconds: 3600 })
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'You have shared a lot in the last hour. Try again later.')

@@ -6,7 +6,7 @@ import { noteAccess, visibleNotesWhere, type NoteAccessRow } from '../../src/dom
 /**
  * §5: "implement the predicate once as a reusable where builder … unit-test that both produce identical result sets on
  * seeded data." Every combination of visibility, published or not, trashed or not, share role and moderation state
- * (ADR-0037), for five viewers:
+ * (ADR-0037), for seven viewers:
  * the per-note decision (`noteAccess`, used when opening one note) and the query (`visibleNotesWhere`, used for every
  * list) must agree on every pair.
  */
@@ -20,6 +20,9 @@ describe('note visibility: the single-note rule and the list query agree', () =>
   /** In a group the shared notes are shared to (ADR-0045) */
   const member = newId()
   const group = newId()
+  /** In a class the shared notes are shared to (ADR-0046) */
+  const pupil = newId()
+  const classroom = newId()
   const notes: (NoteAccessRow & { shares: Record<string, 'EDITOR' | 'VIEWER'> })[] = []
 
   beforeAll(async () => {
@@ -27,6 +30,7 @@ describe('note visibility: the single-note rule and the list query agree', () =>
     stop = () => pg.container.stop()
     db = new PrismaService(pg.url)
     await db.groupRead.create({ data: { id: group, members: { create: [{ userId: member }] } } })
+    await db.classroomRead.create({ data: { id: classroom, members: { create: [{ userId: pupil, role: 'STUDENT' }] } } })
     for (const visibility of ['PRIVATE', 'SHARED', 'PUBLIC'] as const) {
       for (const published of [false, true]) {
         for (const trashed of [false, true]) {
@@ -43,6 +47,7 @@ describe('note visibility: the single-note rule and the list query agree', () =>
               const shares: Record<string, 'EDITOR' | 'VIEWER'> = shared ? { [editor]: 'EDITOR', [viewer]: 'VIEWER' } : {}
               for (const [userId, role] of Object.entries(shares)) await db.noteShare.create({ data: { noteId: id, userId, role, createdById: owner } })
               if (shared) await db.groupShare.create({ data: { noteId: id, groupId: group, sharedById: owner } })
+              if (shared) await db.classroomShare.create({ data: { noteId: id, classroomId: classroom, sharedById: owner } })
               notes.push({ id, ownerId: owner, visibility, moderation, forkingEnabled: true, publishedVersionId, deletedAt: trashed ? new Date() : null, shares })
             }
           }
@@ -63,6 +68,7 @@ describe('note visibility: the single-note rule and the list query agree', () =>
     ['a share editor', editor],
     ['a share viewer', viewer],
     ['a member of a group it is shared to', member],
+    ['a member of a class it is shared to', pupil],
     ['someone else', stranger],
     ['an anonymous visitor', null],
   ])('%s sees the same notes either way', async (_, id) => {
@@ -70,8 +76,9 @@ describe('note visibility: the single-note rule and the list query agree', () =>
       const a = id ? actor(id, verified) : null
       const listed = new Set((await db.note.findMany({ where: visibleNotesWhere(id), select: { id: true } })).map((n) => n.id))
       // Lists leave the trash out; the owner reaches trashed notes through the trash view.
-      const inSharedGroup = (n: (typeof notes)[number]) => id === member && Object.keys(n.shares).length > 0
-      const opened = new Set(notes.filter((n) => !n.deletedAt && noteAccess(a, n, id ? (n.shares[id] ?? null) : null, { inSharedGroup: inSharedGroup(n) }) !== null).map((n) => n.id))
+      const isShared = (n: (typeof notes)[number]) => Object.keys(n.shares).length > 0
+      const reach = (n: (typeof notes)[number]) => ({ inSharedGroup: id === member && isShared(n), inSharedClassroom: id === pupil && isShared(n) })
+      const opened = new Set(notes.filter((n) => !n.deletedAt && noteAccess(a, n, id ? (n.shares[id] ?? null) : null, reach(n)) !== null).map((n) => n.id))
       expect([...listed].sort()).toEqual([...opened].sort())
     }
   })
@@ -107,5 +114,11 @@ describe('note visibility: the single-note rule and the list query agree', () =>
     expect(inGroup(find('SHARED', false, false, true))).toBeNull()
     expect(inGroup(find('PRIVATE', true, false, true))).toBeNull()
     expect(inGroup(find('SHARED', true, false, true, 'PENDING_REVIEW'))).toBe('READER')
+    // ADR-0046: a class's members likewise.
+    const inClass = (n: (typeof notes)[number]) => noteAccess(actor(pupil, false), n, null, { inSharedClassroom: true })
+    expect(inClass(find('SHARED', true, false, true))).toBe('READER')
+    expect(inClass(find('SHARED', false, false, true))).toBeNull()
+    expect(inClass(find('PRIVATE', true, false, true))).toBeNull()
+    expect(inClass(find('PUBLIC', true, false, true, 'HIDDEN'))).toBeNull()
   })
 })

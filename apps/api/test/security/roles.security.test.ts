@@ -20,7 +20,7 @@ describe('security: roles', () => {
 
   const mutations = () => Object.values(schema.getMutationType()!.getFields())
 
-  it('no mutation takes a role, except the platform-admin tool setGlobalRole, an owner sharing their note and a group admin', () => {
+  it('no mutation takes a role, except the platform-admin tool setGlobalRole, an owner sharing their note, and group and class staff', () => {
     const roleInputs: string[] = []
     const visit = (type: GraphQLInputType, path: string, seen: Set<string>) => {
       const named = getNamedType(type)
@@ -30,8 +30,9 @@ describe('security: roles', () => {
     }
     for (const m of mutations()) for (const a of m.args) visit(a.type, `${m.name}(${a.name})`, new Set())
     // shareNote's role is what the owner lets one person do with one note (§5: EDITOR or VIEWER), never an account role;
-    // setGroupRole is an admin giving a member a role below their own (ADR-0045), tested below.
-    expect(roleInputs.sort()).toEqual(['setGlobalRole(input).role', 'setGroupRole(input).role', 'shareNote(input).role'])
+    // setGroupRole is an admin giving a member a role below their own (ADR-0045); inviteToClassroom and setClassroomRole
+    // are class staff placing someone in their class (ADR-0046). Both are tested below.
+    expect(roleInputs.sort()).toEqual(['inviteToClassroom(input).role', 'setClassroomRole(input).role', 'setGlobalRole(input).role', 'setGroupRole(input).role', 'shareNote(input).role'])
   })
 
   it('every mutation, called by a student with every role value and their own or a teacher’s id, leaves them a student', async () => {
@@ -107,5 +108,34 @@ describe('security: roles', () => {
     expect(await roleOfB()).toBe('MEMBER')
   })
 
-  it.todo('a classroom role cannot be obtained through any classroom mutation (Phase 3: classrooms)')
+  it('a classroom role cannot be obtained through any classroom mutation (ADR-0046)', async () => {
+    const teacher = actors.teacher
+    const db = t.app.get(PrismaService)
+    const gql = <T>(q: string, input: object, token: string) => t.gql<T>(q, { input }, token)
+    const classroomId = (await gql<{ createClassroom: { classroom: { id: string } } }>('mutation ($input: CreateClassroomInput!) { createClassroom(input: $input) { classroom { id } } }', { name: 'Roles C' }, teacher.token)).data!.createClassroom.classroom.id
+    await db.user.update({ where: { id: actors.b.id }, data: { verifiedAt: new Date(), verificationMethod: 'INSTITUTIONAL_EMAIL' } })
+    const b = actors.b
+    const bUser = await db.user.findUniqueOrThrow({ where: { id: b.id } })
+    await gql('mutation ($input: InviteToClassroomInput!) { inviteToClassroom(input: $input) { classroom { id } } }', { classroomId, person: bUser.handle }, teacher.token)
+    const invite = await db.classroomInvite.findFirstOrThrow({ where: { classroomId, invitedUserId: b.id } })
+    await gql('mutation ($input: AnswerClassroomInviteInput!) { answerClassroomInvite(input: $input) { classroom { id } } }', { inviteId: invite.id, accept: true }, b.token)
+    const roleOfB = async () => (await db.classroomMember.findUniqueOrThrow({ where: { classroomId_userId: { classroomId, userId: b.id } } })).role
+    // A refusal comes as an error; NOT_FOUND and CONFLICT as the payload's userErrors.
+    const code = (res: { data?: unknown; errors?: { extensions: { code: string } }[] }) => res.errors?.[0]?.extensions.code ?? Object.values((res.data ?? {}) as Record<string, { userErrors?: { code: string }[] } | null>)[0]?.userErrors?.[0]?.code
+    // Every way a student might try: give themselves a role, take the class, invite themselves as staff, reuse the invite.
+    for (const role of ['TA', 'TEACHER']) {
+      expect(code(await gql('mutation ($input: SetClassroomRoleInput!) { setClassroomRole(input: $input) { classroom { id } } }', { classroomId, userId: b.id, role }, b.token))).toBe('FORBIDDEN')
+    }
+    expect(code(await gql('mutation ($input: InviteToClassroomInput!) { inviteToClassroom(input: $input) { classroom { id } } }', { classroomId, person: bUser.handle, role: 'TA' }, b.token))).toBe('FORBIDDEN')
+    expect(code(await gql('mutation ($input: AnswerClassroomInviteInput!) { answerClassroomInvite(input: $input) { classroom { id } userErrors { code } } }', { inviteId: invite.id, accept: true }, b.token))).toBe('NOT_FOUND')
+    expect(code(await gql('mutation ($input: UpdateClassroomInput!) { updateClassroom(input: $input) { classroom { id } } }', { classroomId, newCode: true }, b.token))).toBe('FORBIDDEN')
+    expect(code(await gql('mutation ($input: ClassroomMemberInput!) { removeClassroomMember(input: $input) { classroom { id } } }', { classroomId, userId: teacher.id }, b.token))).toBe('FORBIDDEN')
+    // A request with the code once in changes nothing either.
+    const joinCode = (await db.classroom.findUniqueOrThrow({ where: { id: classroomId } })).joinCode
+    const again = await gql<{ requestToJoinClassroom: { userErrors: { code: string }[] } }>('mutation ($input: RequestToJoinClassroomInput!) { requestToJoinClassroom(input: $input) { userErrors { code } } }', { code: joinCode }, b.token)
+    expect(again.data!.requestToJoinClassroom.userErrors[0]?.code).toBe('CONFLICT')
+    // Inputs that carry a role are refused at the schema when the value is not a class role.
+    expect((await gql('mutation ($input: SetClassroomRoleInput!) { setClassroomRole(input: $input) { classroom { id } } }', { classroomId, userId: b.id, role: 'CLASSROOM_TEACHER' }, b.token)).errors).toBeDefined()
+    expect(await roleOfB()).toBe('STUDENT')
+  })
 })

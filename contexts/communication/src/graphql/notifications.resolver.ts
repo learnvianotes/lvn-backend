@@ -55,4 +55,9 @@ export class NotificationsResolver {
   group(@Parent() n: NotificationRow) {
     return n.groupId ? { __typename: 'Group', id: n.groupId } : null
   }
+
+  @ResolveField('classroom')
+  classroom(@Parent() n: NotificationRow) {
+    return n.classroomId ? { __typename: 'Classroom', id: n.classroomId } : null
+  }
 }
