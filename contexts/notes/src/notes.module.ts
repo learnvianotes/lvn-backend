@@ -13,8 +13,10 @@ import { PdfConversionService } from './application/pdf-conversion.service'
 import { MediaProcessingService } from './application/media-processing.service'
 import { PdfReaderService } from './application/pdf-reader.service'
 import { PublicPages } from './application/public-pages'
-import { SearchIndex } from './application/search-index'
+import { SearchIndex, TYPESENSE } from './application/search-index'
+import { PostgresSearchProvider, TypesenseSearchProvider } from './application/search-providers'
 import { SearchService } from './application/search.service'
+import { Typesense } from './infrastructure/typesense'
 import { SyncService } from './application/sync.service'
 import { SharingService } from './application/sharing.service'
 import { FilesResolver } from './graphql/files.resolver'
@@ -68,7 +70,14 @@ export class NotesModule {
         NoteImportService,
         ImportResolver,
         PublicPages,
+        {
+          provide: TYPESENSE,
+          useFactory: (c: NotesConfig) => (c.search.typesense ? new Typesense(c.search.typesense.url, c.search.typesense.apiKey) : null),
+          inject: [NOTES_CONFIG],
+        },
         SearchIndex,
+        PostgresSearchProvider,
+        TypesenseSearchProvider,
         SearchService,
         SearchResolver,
         SyncService,

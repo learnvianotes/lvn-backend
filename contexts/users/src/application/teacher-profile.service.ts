@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common'
+import { Inject, Injectable } from '@nestjs/common'
 import { Action, can } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
+import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { AuditService } from './audit.service'
 import { PolicyService } from './policy.service'
@@ -26,6 +27,7 @@ export class TeacherProfileService {
     private readonly db: PrismaService,
     private readonly policy: PolicyService,
     private readonly audit: AuditService,
+    @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
 
   /** For anyone; null for people who are not teachers. */
@@ -63,6 +65,8 @@ export class TeacherProfileService {
       if (skills.length) await tx.teacherSkill.createMany({ data: skills })
     })
     await this.audit.record({ actorId, action: 'teacher.profile', targetType: 'USER', targetId: actorId, metadata: { skills: skills.length } })
+    // People search finds teachers by their headline and bio (ADR-0055).
+    await this.events.publish('PersonChanged', { userId: actorId })
     return (await this.view(actorId))!
   }
 }

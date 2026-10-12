@@ -144,6 +144,26 @@ const providersConfigured = (
   if (c.GITHUB_CLIENT_ID || c.LINKEDIN_CLIENT_ID) need(c.OAUTH_REDIRECT_URIS.length > 0, 'OAUTH_REDIRECT_URIS', 'required when GitHub or LinkedIn sign-in is on')
 }
 
+/**
+ * Search (§11, ADR-0055). SEARCH_PROVIDER chooses who answers; whenever Typesense is configured the worker also keeps
+ * its collections, so reads can switch without a rebuild. The key never leaves the server.
+ */
+const search = z.object({
+  SEARCH_PROVIDER: z.enum(['postgres', 'typesense']).default('postgres'),
+  /** Typesense's HTTP API, e.g. http://typesense:8108 */
+  TYPESENSE_URL: httpUrl.optional(),
+  TYPESENSE_API_KEY: z.string().min(16).optional(),
+  /** Prefix of every collection and alias name, so environments can share a cluster */
+  TYPESENSE_COLLECTION_PREFIX: z.string().regex(/^[a-z0-9_]{0,20}$/, 'lowercase letters, digits and _').default('lvn_'),
+  /** A Typesense answer slower than this is dropped and Postgres answers instead */
+  SEARCH_TIMEOUT_MS: z.coerce.number().int().min(50).max(10_000).default(800),
+})
+
+const searchConfigured = <T extends { SEARCH_PROVIDER: 'postgres' | 'typesense'; TYPESENSE_URL?: string; TYPESENSE_API_KEY?: string }>(c: T, ctx: z.RefinementCtx) => {
+  if (!!c.TYPESENSE_URL !== !!c.TYPESENSE_API_KEY) ctx.addIssue({ code: 'custom', path: [c.TYPESENSE_URL ? 'TYPESENSE_API_KEY' : 'TYPESENSE_URL'], message: 'TYPESENSE_URL and TYPESENSE_API_KEY go together' })
+  if (c.SEARCH_PROVIDER === 'typesense' && !c.TYPESENSE_URL) ctx.addIssue({ code: 'custom', path: ['TYPESENSE_URL'], message: 'required when SEARCH_PROVIDER=typesense' })
+}
+
 const apiShape = backendBase
   .extend({
     API_HOST: z.string().default('0.0.0.0'),
@@ -159,8 +179,9 @@ const apiShape = backendBase
   .extend(storage.shape)
   .extend(mail.shape)
   .extend(auth.shape)
+  .extend(search.shape)
 
-export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured)
+export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(searchConfigured)
 export type ApiConfig = z.infer<typeof apiConfigSchema>
 
 /**
@@ -175,6 +196,7 @@ export const workerConfigSchema = apiShape
   })
   .superRefine(mailTransportConfigured)
   .superRefine(providersConfigured)
+  .superRefine(searchConfigured)
 export type WorkerConfig = z.infer<typeof workerConfigSchema>
 
 const publicId = z.string().min(1).optional()

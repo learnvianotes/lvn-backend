@@ -2,8 +2,8 @@
 /**
  * The note lifecycle on a deployed environment (spec §18, Phase 2 exit), through its single entrance, as TAP like
  * smoke.mjs: two people, A and B. A writes a note, publishes it, shares it with B (every live socket of B's hears of it,
- * on either API instance, ADR-0042), makes it public; anonymous visitors
- * read its page, the sitemap lists it and search finds it; B copies it; A publishes a second version and the page
+ * on either API instance, ADR-0042), makes it public; anonymous visitors read its page, the sitemap lists it and
+ * search finds it (on Typesense, typos and all, ADR-0055); B copies it; A publishes a second version and the page
  * follows; A makes it private again and it leaves the page, the sitemap and search; a device of A's syncs it and sends
  * an edit made offline; A moves it to the trash and back; a picture on it gets its sizes and an infected file is
  * quarantined (ADR-0041, with the environment's ClamAV). On the local environment, groups, classes, workspaces, feeds and
@@ -130,6 +130,9 @@ ok(await eventually(async () => (await page(path)).body.includes(WORD)), 'anonym
 ok(await eventually(async () => (await page('/sitemap.xml')).body.includes(id)), 'the sitemap lists it')
 const found = async (token) => (await gql('query ($q: String!) { search(query: $q) { notes { note { id } } } }', { q: WORD }, token)).search.notes.some((h) => h.note.id === id)
 ok(await eventually(() => found()), 'anonymous search finds it')
+// Only Typesense matches a typo in a note's words (Postgres forgives typos in titles alone): this shows who answers.
+const typo = async () => (await gql('query { search(query: "smalest item on top", scopes: [NOTES], first: 20) { notes { note { id } } } }')).search.notes.some((h) => h.note.id === id)
+ok(await eventually(typo, 15_000), 'a typo in its words finds it too: Typesense answers (ADR-0055)')
 
 // A copy.
 const fork = await gql('mutation ($input: NoteIdInput!) { forkNote(input: $input) { note { id visibility forkedFrom { author { id } } } userErrors { message } } }', { input: { noteId: id } }, B.token)

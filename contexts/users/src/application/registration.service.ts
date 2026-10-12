@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common'
+import { Inject, Injectable } from '@nestjs/common'
 import { Errors } from '@lvn-backend/errors'
+import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { dateOfBirthSchema, displayNameSchema, TERMS_VERSION } from '../domain/rules'
 import { InstitutionalEmailService } from './institutional-email.service'
@@ -21,6 +22,7 @@ export class RegistrationService {
   constructor(
     private readonly db: PrismaService,
     private readonly institutional: InstitutionalEmailService,
+    @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
 
   async complete(userId: string, input: RegistrationDetails): Promise<void> {
@@ -39,6 +41,8 @@ export class RegistrationService {
         data: (['TERMS', 'PRIVACY', 'PUBLIC_CONTENT_LICENCE'] as const).map((kind) => ({ id: newId(), userId, kind, version: TERMS_VERSION })),
       }),
     ])
+    // A name and a date of birth: people search may now find them, once past the consent age (ADR-0055).
+    await this.events.publish('PersonChanged', { userId })
     if (input.institutionalEmail) await this.institutional.start(userId, input.institutionalEmail)
   }
 }

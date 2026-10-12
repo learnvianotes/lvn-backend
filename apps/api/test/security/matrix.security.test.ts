@@ -301,8 +301,8 @@ describe('security: the permission matrix, action by action', () => {
 
   /** Actions whose channel arrives in a later phase; each stays here until it has cases above. */
   const NOT_YET: Record<string, string> = {
-    [Action.CLASSROOM_PUBLISH_QUIZ]: 'Phase 4: quizzes',
-    [Action.CLASSROOM_VIEW_PERFORMANCE]: 'Phase 4: progress',
+    [Action.CLASSROOM_PUBLISH_QUIZ]: 'Phase 5: quizzes, with quiz generation (plans/phase-4.md)',
+    [Action.CLASSROOM_VIEW_PERFORMANCE]: 'Phase 6: progress, from quiz attempts and learning events (plans/phase-4.md)',
   }
 
   it('every community action has cases above or a phase that brings it', () => {

@@ -24,7 +24,7 @@ export class SearchResolver {
     }))
     return {
       notes: notes.filter((n) => n !== null),
-      people: found.people.map((p) => ({ __typename: 'User', id: p.id })),
+      people: found.people.map((id) => ({ __typename: 'User', id })),
       topics: found.topics,
     }
   }

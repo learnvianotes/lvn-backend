@@ -13,6 +13,7 @@ export const IMAGES = {
   redis: 'redis:7-alpine',
   s3: 'rustfs/rustfs:1.0.1',
   mailpit: 'axllent/mailpit:v1.31.4',
+  typesense: 'typesense/typesense:30.2',
 } as const
 
 const REPO_ROOT = path.resolve(__dirname, '../../..')
@@ -23,6 +24,8 @@ export interface TestInfra {
   s3: { endpoint: string; accessKeyId: string; secretAccessKey: string }
   /** SMTP URL the API sends to, and the HTTP API tests read messages from */
   mail: { smtpUrl: string; apiUrl: string }
+  /** For tests that search on Typesense (ADR-0055); each gives its app its own collection prefix */
+  typesense: { url: string; apiKey: string }
   stop(): Promise<void>
 }
 
@@ -61,16 +64,28 @@ export async function startMailpit(): Promise<{ smtpUrl: string; apiUrl: string;
   return { smtpUrl: `smtp://${host}:${container.getMappedPort(1025)}`, apiUrl: `http://${host}:${container.getMappedPort(8025)}`, container }
 }
 
+/** Typesense with an in-memory data directory (a fresh one per run). */
+export async function startTypesense(): Promise<{ url: string; apiKey: string; container: StartedTestContainer }> {
+  const apiKey = 'lvn-test-typesense-key'
+  const container = await new GenericContainer(IMAGES.typesense)
+    .withCommand(['--data-dir', '/tmp', '--api-key', apiKey])
+    .withExposedPorts(8108)
+    .withWaitStrategy(Wait.forHttp('/health', 8108).forStatusCode(200))
+    .start()
+  return { url: `http://${container.getHost()}:${container.getMappedPort(8108)}`, apiKey, container }
+}
+
 /** Everything the API needs, started in parallel. */
 export async function startInfra(): Promise<TestInfra> {
-  const [pg, redis, s3, mail] = await Promise.all([startPostgres(), startRedis(), startS3(), startMailpit()])
+  const [pg, redis, s3, mail, typesense] = await Promise.all([startPostgres(), startRedis(), startS3(), startMailpit(), startTypesense()])
   return {
     databaseUrl: pg.url,
     redisUrl: redis.url,
     s3: { endpoint: s3.endpoint, accessKeyId: s3.accessKeyId, secretAccessKey: s3.secretAccessKey },
     mail: { smtpUrl: mail.smtpUrl, apiUrl: mail.apiUrl },
+    typesense: { url: typesense.url, apiKey: typesense.apiKey },
     stop: async () => {
-      await Promise.all([pg.container.stop(), redis.container.stop(), s3.container.stop(), mail.container.stop()])
+      await Promise.all([pg.container.stop(), redis.container.stop(), s3.container.stop(), mail.container.stop(), typesense.container.stop()])
     },
   }
 }
