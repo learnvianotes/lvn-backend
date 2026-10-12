@@ -1,0 +1,82 @@
+# People (ADR-0013, ADR-0014, ADR-0016, ADR-0020, ADR-0043): follows, blocks, restrictions and public profiles.
+
+type PageInfo @shareable {
+  hasNextPage: Boolean!
+  endCursor: String
+}
+
+"What the viewer may do about a person, from the same rules the API applies"
+type RelationActions {
+  follow: Boolean!
+  unfollow: Boolean!
+  removeFollower: Boolean!
+  block: Boolean!
+  unblock: Boolean!
+  restrict: Boolean!
+  unrestrict: Boolean!
+}
+
+"How the viewer stands with a person"
+type Relation {
+  following: Boolean!
+  followedBy: Boolean!
+  "The viewer blocked them; being blocked by them is never shown"
+  blocked: Boolean!
+  restricted: Boolean!
+  viewerCan: RelationActions!
+}
+
+extend type User {
+  "Viewer only: exact counts"
+  followerCount: Int
+  followingCount: Int
+  "Everyone: followers as a milestone (ADR-0027) — 1000 for 1,000+, null below 1,000"
+  followerMilestone: Int
+  "The viewer's relation to this person; null for anonymous viewers and on one's own profile"
+  relation: Relation
+}
+
+type PersonEdge {
+  cursor: String!
+  node: User!
+  "Since when (followed, blocked, restricted)"
+  since: DateTime!
+}
+
+type PersonConnection {
+  edges: [PersonEdge!]!
+  pageInfo: PageInfo!
+}
+
+extend type Query {
+  "A person by handle (with or without @) or by id; null when there is none, or when they have no public profile (restricted minors, ADR-0043)"
+  userByHandle(handle: String!): User
+  "The viewer's followers, newest first; restricted minors are counted but never listed"
+  myFollowers(first: Int, after: String): PersonConnection!
+  myFollowing(first: Int, after: String): PersonConnection!
+  myBlocked: [PersonEdge!]!
+  myRestricted: [PersonEdge!]!
+}
+
+input PersonInput {
+  userId: UUID!
+}
+
+type PersonPayload {
+  "The person, as the viewer now stands with them"
+  user: User
+  userErrors: [UserError!]!
+}
+
+extend type Mutation {
+  followUser(input: PersonInput!): PersonPayload!
+  unfollowUser(input: PersonInput!): PersonPayload!
+  "Stops someone following you; they are not told"
+  removeFollower(input: PersonInput!): PersonPayload!
+  "Ends follows both ways and stops new interaction both ways; they are not told"
+  blockUser(input: PersonInput!): PersonPayload!
+  unblockUser(input: PersonInput!): PersonPayload!
+  "Their comments wait for your approval and they cause you no notifications; they are not told"
+  restrictUser(input: PersonInput!): PersonPayload!
+  unrestrictUser(input: PersonInput!): PersonPayload!
+}

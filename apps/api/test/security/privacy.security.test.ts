@@ -1,15 +1,17 @@
 import { getNamedType, isObjectType, type GraphQLSchema } from 'graphql'
+import { LIVE_SDL, NotificationService } from '@lvn-backend/communication'
 import { PdfConversionService, SearchIndex } from '@lvn-backend/notes'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { createTestApp, type TestApp } from '../support/app'
 import { SAMPLES, upload } from '../support/flows'
+import { liveUrl, openLive } from '../support/live'
 import { seedActors, type Actors } from './support/actors'
 import { publicSchema } from './support/fuzz'
 
 /**
  * §17.1: B cannot read A's private data through any channel: account data (Phase 1); notes, their files, PDF
- * highlights and conversions, public pages, copies, search and exports (Phase 2). Groups, classrooms, comments,
- * recommendations, RAG and subscriptions arrive later; their assertions are todos until then.
+ * highlights and conversions, public pages, copies, search and exports (Phase 2); notifications and live updates
+ * (Phase 3). Groups, classrooms, comments, recommendations and RAG arrive later; their assertions are todos until then.
  */
 describe('security: privacy', () => {
   let t: TestApp
@@ -169,7 +171,23 @@ describe('security: privacy', () => {
     it.todo('B cannot comment on A’s private note (comments arrive with groups, Phase 3)')
     it.todo('B gets no recommendations or Ask AI answers that draw on A’s private notes (Phase 5)')
     it.todo('unpublishing removes a note from recommendations and RAG within 60 seconds (Phase 5)')
-    it.todo('subscriptions never deliver A’s private note events to B')
+    it('subscriptions never deliver A’s events to B, and cannot ask for anyone else’s (ADR-0042)', async () => {
+      // The live subscription takes no arguments: whose events a socket gets comes only from its token.
+      expect(LIVE_SDL).toMatch(/type Subscription \{\s*live: LiveEvent!\s*\}/)
+      const url = await liveUrl(t)
+      const bSocket = await openLive(url, actors.b.token)
+      const aSocket = await openLive(url, actors.a.token)
+      const id = (await t.app.get(NotificationService).notify({ userId: actors.a.id, category: 'SHARE', path: '/notes/x', actorId: actors.teacher.id }))!
+      expect(await aSocket.next()).toMatchObject({ id })
+      await new Promise((r) => setTimeout(r, 300))
+      expect(bSocket.events).toEqual([])
+      // Nor through the API: B neither sees nor marks A's notification.
+      const bList = await t.gql<{ notifications: { edges: unknown[] } }>('{ notifications { edges { node { id } } } }', {}, actors.b.token)
+      expect(bList.data!.notifications.edges).toEqual([])
+      await t.gql('mutation ($ids: [UUID!]) { markNotificationsRead(input: { ids: $ids }) { unreadCount } }', { ids: [id] }, actors.b.token)
+      expect((await t.app.get(PrismaService).notification.findUniqueOrThrow({ where: { id } })).readAt).toBeNull()
+      await Promise.all([aSocket.close(), bSocket.close()])
+    })
   })
 
   describe('groups and classrooms (Phase 3)', () => {
