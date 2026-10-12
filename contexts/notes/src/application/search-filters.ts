@@ -33,7 +33,54 @@ export function peopleFilter(today: number, blockedIds: string[]): string {
   return blockedIds.length ? `adultFromDays:<=${today} && id:!=${list(blockedIds)}` : `adultFromDays:<=${today}`
 }
 
+/** Where a note comes from for the viewer (ADR-0056). */
+export type NoteSource = 'MINE' | 'SHARED' | 'PUBLIC'
+
+/** What `filters` narrows notes to (ADR-0056); never more than the read predicate allows. */
+export interface NoteFilters {
+  kinds?: string[] | null
+  subjectId?: string | null
+  topicId?: string | null
+  authorId?: string | null
+  sources?: NoteSource[] | null
+}
+
+/**
+ * The filters as a Typesense filter, AND-ed with `visibleNotesFilter`; null when they leave nothing (a signed-out
+ * visitor asking only for their own or shared notes), '' when they narrow nothing.
+ */
+export function noteFiltersFilter(f: NoteFilters, reach: SearchReach): string | null {
+  const parts: string[] = []
+  if (f.kinds?.length) parts.push(`kind:=[${f.kinds.join(',')}]`)
+  if (f.subjectId) parts.push(`subjectIds:=${quote(f.subjectId)}`)
+  if (f.topicId) parts.push(`topicIds:=${quote(f.topicId)}`)
+  if (f.authorId) parts.push(`ownerId:=${quote(f.authorId)}`)
+  if (f.sources?.length) {
+    const me = reach.viewerId ? quote(reach.viewerId) : null
+    const through = me ? [`sharedUserIds:=${me}`, ...(reach.groupIds.length ? [`groupIds:=${list(reach.groupIds)}`] : []), ...(reach.classroomIds.length ? [`classroomIds:=${list(reach.classroomIds)}`] : [])] : []
+    const from = f.sources.flatMap((source) => {
+      if (source === 'PUBLIC') return [me ? `(ownerId:!=${me} && visibility:=PUBLIC)` : 'visibility:=PUBLIC']
+      if (!me) return []
+      return [source === 'MINE' ? `ownerId:=${me}` : `(ownerId:!=${me} && (${through.join(' || ')}))`]
+    })
+    if (!from.length) return null
+    parts.push(`(${from.join(' || ')})`)
+  }
+  return parts.join(' && ')
+}
+
+/** Groups a viewer may find (ADR-0045, ADR-0056): PUBLIC ones, and PRIVATE ones they are in. */
+export function groupsFilter(groupIds: string[]): string {
+  return groupIds.length ? `privacy:=PUBLIC || id:=${list(groupIds)}` : 'privacy:=PUBLIC'
+}
+
+/** Classes a viewer may find: their own (§11, members only); null signed out or in none. */
+export function classroomsFilter(classroomIds: string[]): string | null {
+  return classroomIds.length ? `id:=${list(classroomIds)}` : null
+}
+
 /** Topics a viewer may use (organise.service's rule): curated ones, and the ones they proposed. */
-export function topicsFilter(viewerId: string | null): string {
-  return viewerId ? `origin:=CURATED || proposedById:=${quote(viewerId)}` : 'origin:=CURATED'
+export function topicsFilter(viewerId: string | null, subjectId?: string | null): string {
+  const usable = viewerId ? `(origin:=CURATED || proposedById:=${quote(viewerId)})` : 'origin:=CURATED'
+  return subjectId ? `${usable} && subjectId:=${quote(subjectId)}` : usable
 }

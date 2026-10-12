@@ -129,10 +129,14 @@ export const events = {
   GroupDeleted: eventEnvelope('GroupDeleted', 1, z.object({ groupId: uuid })),
   /** Platform moderators put back a group they had removed (an appeal granted, ADR-0053): it is readable again. */
   GroupRestored: eventEnvelope('GroupRestored', 1, z.object({ groupId: uuid })),
+  /** Name, description or privacy changed (ADR-0056): search re-indexes the group. */
+  GroupUpdated: eventEnvelope('GroupUpdated', 1, z.object({ groupId: uuid })),
   GroupMembershipChanged: eventEnvelope('GroupMembershipChanged', 1, membership.extend({ groupId: uuid })),
   /** A classroom came to be or went (ADR-0046): notes keeps a read model for notes shared to classes. */
   ClassroomCreated: eventEnvelope('ClassroomCreated', 1, z.object({ classroomId: uuid, ownerId: uuid })),
   ClassroomDeleted: eventEnvelope('ClassroomDeleted', 1, z.object({ classroomId: uuid })),
+  /** Name or description changed (ADR-0056): search re-indexes the class. */
+  ClassroomUpdated: eventEnvelope('ClassroomUpdated', 1, z.object({ classroomId: uuid })),
   /** role: TEACHER, TA or STUDENT (ADR-0046). */
   ClassroomMembershipChanged: eventEnvelope('ClassroomMembershipChanged', 1, membership.extend({ classroomId: uuid })),
   /** Staff invited someone (ADR-0046): the invite is the acceptance given in advance. */

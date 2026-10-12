@@ -1,4 +1,4 @@
-import { peopleFilter, topicsFilter, visibleNotesFilter } from '../../src/application/search-filters'
+import { classroomsFilter, groupsFilter, noteFiltersFilter, peopleFilter, topicsFilter, visibleNotesFilter } from '../../src/application/search-filters'
 import { quote } from '../../src/infrastructure/typesense'
 
 /** The read predicate as Typesense filters (ADR-0055); the integration test holds them to Postgres on seeded data. */
@@ -29,8 +29,33 @@ describe('search filters', () => {
     expect(peopleFilter(20_000, ['b1'])).toBe('adultFromDays:<=20000 && id:!=[`b1`]')
   })
 
-  it('offers curated topics, and the ones the viewer proposed', () => {
+  it('offers curated topics, and the ones the viewer proposed, of a subject when asked', () => {
     expect(topicsFilter(null)).toBe('origin:=CURATED')
-    expect(topicsFilter('v1')).toBe('origin:=CURATED || proposedById:=`v1`')
+    expect(topicsFilter('v1')).toBe('(origin:=CURATED || proposedById:=`v1`)')
+    expect(topicsFilter('v1', 's1')).toBe('(origin:=CURATED || proposedById:=`v1`) && subjectId:=`s1`')
+  })
+
+  it('finds public groups, private ones only for their members, and classes only for theirs (ADR-0056)', () => {
+    expect(groupsFilter([])).toBe('privacy:=PUBLIC')
+    expect(groupsFilter(['g1'])).toBe('privacy:=PUBLIC || id:=[`g1`]')
+    expect(classroomsFilter([])).toBeNull()
+    expect(classroomsFilter(['c1', 'c2'])).toBe('id:=[`c1`,`c2`]')
+  })
+
+  describe('filters (ADR-0056)', () => {
+    const viewer = { viewerId: 'v1', groupIds: ['g1'], classroomIds: [], blockedIds: [] }
+    it('narrows by kind, subject, topic and author', () => {
+      expect(noteFiltersFilter({}, viewer)).toBe('')
+      expect(noteFiltersFilter({ kinds: ['BLOG', 'POST'], subjectId: 's1', topicId: 't1', authorId: 'a1' }, viewer)).toBe('kind:=[BLOG,POST] && subjectIds:=`s1` && topicIds:=`t1` && ownerId:=`a1`')
+    })
+    it('tells own, shared and public notes apart', () => {
+      expect(noteFiltersFilter({ sources: ['MINE'] }, viewer)).toBe('(ownerId:=`v1`)')
+      expect(noteFiltersFilter({ sources: ['SHARED', 'PUBLIC'] }, viewer)).toBe('((ownerId:!=`v1` && (sharedUserIds:=`v1` || groupIds:=[`g1`])) || (ownerId:!=`v1` && visibility:=PUBLIC))')
+    })
+    it('gives a signed-out visitor public notes only, and nothing when they ask for none', () => {
+      const anonymous = { viewerId: null, groupIds: [], classroomIds: [], blockedIds: [] }
+      expect(noteFiltersFilter({ sources: ['MINE', 'PUBLIC'] }, anonymous)).toBe('(visibility:=PUBLIC)')
+      expect(noteFiltersFilter({ sources: ['MINE', 'SHARED'] }, anonymous)).toBeNull()
+    })
   })
 })

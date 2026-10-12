@@ -322,6 +322,12 @@ export class DraftsService {
     return rows.map((c) => ({ id: c.id, type: c.type, position: c.position, content: c.content, revision: c.revision }))
   }
 
+  /** The titles of these versions, by id (readers see the published version's title, §4.3). */
+  async versionTitles(ids: string[]): Promise<Map<string, string>> {
+    const rows = await this.db.noteVersion.findMany({ where: { id: { in: ids } }, select: { id: true, title: true } })
+    return new Map(rows.map((r) => [r.id, r.title]))
+  }
+
   private async snapshot(tx: Tx, noteId: string, kind: 'PUBLISHED' | 'CONFLICT' | 'DRAFT', title: string, cards: SnapshotCard[], createdById: string): Promise<string> {
     const last = await tx.noteVersion.aggregate({ where: { noteId }, _max: { number: true } })
     const id = newId()

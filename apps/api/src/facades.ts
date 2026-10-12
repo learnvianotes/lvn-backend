@@ -1,6 +1,6 @@
 import { MailService } from '@lvn-backend/communication'
 import { AUDIT, CORE_DATA_EXPORT, ENTITLEMENTS, FacadesModule, FILES, MAILER, MODERATION, NOTE_ACCESS, PLACES, NOTE_MODERATION, NOTES_DATA_EXPORT, PEOPLE, POLICY } from '@lvn-backend/facades'
-import { ClassroomsService, CoreExport, ModerationService } from '@lvn-backend/core'
+import { CoreExport, ModerationService, PlacesService } from '@lvn-backend/core'
 import { FilesService, NoteAccessFacade, NoteModerationService, NotesExport } from '@lvn-backend/notes'
 import { AuditService, EntitlementService, PolicyService, UsersService } from '@lvn-backend/users'
 
@@ -16,7 +16,7 @@ export const facades = () =>
     [MODERATION, ModerationService],
     [NOTE_MODERATION, NoteModerationService],
     [NOTE_ACCESS, NoteAccessFacade],
-    [PLACES, ClassroomsService],
+    [PLACES, PlacesService],
     [NOTES_DATA_EXPORT, NotesExport],
     [CORE_DATA_EXPORT, CoreExport],
   ])

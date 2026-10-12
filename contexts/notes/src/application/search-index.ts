@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { PEOPLE, type People } from '@lvn-backend/facades'
+import { PEOPLE, PLACES, type People, type Places } from '@lvn-backend/facades'
 import { PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import type { Typesense } from '../infrastructure/typesense'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
 import { aliasName, COLLECTIONS, ENGLISH_STOPWORDS, schemaOf, STOPWORDS_SET, versionName, versionsOf, type CollectionDef, type SearchEntityName } from './search-collections'
-import { forTypesense, noteDocuments, personDocument, topicDocuments, type NoteDocument } from './search-documents'
+import { classroomDocument, forTypesense, groupDocument, noteDocuments, personDocument, topicDocuments, type NoteDocument } from './search-documents'
 
 /** The notes context's search queue (§9.1 `search`): the nightly reindex-all; run by apps/worker. */
 export const NOTES_SEARCH_QUEUE = 'notes.search'
@@ -18,7 +18,7 @@ const TURN = 500
 const LAG_WARNING_MS = 60_000
 /** One drainer at a time, across workers: a transaction-scoped advisory lock on this key. */
 const DRAIN_LOCK = 4_055_055
-const ENTITIES: SearchEntityName[] = ['NOTE', 'USER', 'TOPIC']
+const ENTITIES: SearchEntityName[] = ['NOTE', 'USER', 'TOPIC', 'GROUP', 'CLASSROOM']
 
 /**
  * Keeps search's indexes in step with Postgres (ADR-0055): the Postgres provider's `NoteSearchDocument` and, when
@@ -37,6 +37,7 @@ export class SearchIndex implements OnModuleInit {
     @Inject(NOTES_CONFIG) private readonly config: NotesConfig,
     @Inject(TYPESENSE) private readonly typesense: Typesense | null,
     @Inject(PEOPLE) private readonly people: People,
+    @Inject(PLACES) private readonly places: Places,
     @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
 
@@ -47,6 +48,11 @@ export class SearchIndex implements OnModuleInit {
     this.events.subscribe('PersonChanged', person)
     this.events.subscribe('RoleChanged', person)
     this.events.subscribe('UserDeleted', person)
+    // Groups and classes live in `core` (ADR-0056); a membership changes the member count search ranks them by.
+    const group = ({ payload }: { payload: { groupId: string } }) => this.touch('GROUP', [payload.groupId])
+    for (const name of ['GroupCreated', 'GroupUpdated', 'GroupDeleted', 'GroupRestored', 'GroupMembershipChanged'] as const) this.events.subscribe(name, group)
+    const classroom = ({ payload }: { payload: { classroomId: string } }) => this.touch('CLASSROOM', [payload.classroomId])
+    for (const name of ['ClassroomCreated', 'ClassroomUpdated', 'ClassroomDeleted', 'ClassroomMembershipChanged'] as const) this.events.subscribe(name, classroom)
   }
 
   private get prefix(): string {
@@ -69,10 +75,11 @@ export class SearchIndex implements OnModuleInit {
     } else if (entity === 'TOPIC') {
       await this.db.$executeRaw`INSERT INTO "notes"."SearchChange" ("entity", "entityId") SELECT 'TOPIC', "id" FROM "notes"."Topic"`
     } else {
+      const page = (after: string | null) => (entity === 'USER' ? this.people.personIdsAfter(after, TURN) : this.places.placeIdsAfter(entity, after, TURN))
       for (let after: string | null = null; ; ) {
-        const ids = await this.people.personIdsAfter(after, TURN)
+        const ids = await page(after)
         if (!ids.length) break
-        await this.touch('USER', ids)
+        await this.touch(entity, ids)
         after = ids.at(-1)!
       }
     }
@@ -227,11 +234,13 @@ export class SearchIndex implements OnModuleInit {
     let docs: Map<string, object | null>
     if (entity === 'NOTE') {
       docs = new Map(ids.map((id) => [id, notes.get(id) ? forTypesense(notes.get(id)!) : null]))
-    } else if (entity === 'USER') {
-      docs = new Map<string, object | null>(ids.map((id) => [id, null]))
-      for (const p of await this.people.searchProfiles(ids)) docs.set(p.id, personDocument(p))
-    } else {
+    } else if (entity === 'TOPIC') {
       docs = await topicDocuments(this.db, ids)
+    } else {
+      docs = new Map<string, object | null>(ids.map((id) => [id, null]))
+      if (entity === 'USER') for (const p of await this.people.searchProfiles(ids)) docs.set(p.id, personDocument(p))
+      if (entity === 'GROUP') for (const g of await this.places.groupsForSearch(ids)) docs.set(g.id, groupDocument(g))
+      if (entity === 'CLASSROOM') for (const c of await this.places.classroomsForSearch(ids)) docs.set(c.id, classroomDocument(c))
     }
     await this.writeCollection(COLLECTIONS[entity], docs)
   }

@@ -15,7 +15,7 @@ export const ENGLISH_STOPWORDS = (
 
 export const STOPWORDS_SET = 'english'
 
-export type SearchEntityName = 'NOTE' | 'USER' | 'TOPIC'
+export type SearchEntityName = 'NOTE' | 'USER' | 'TOPIC' | 'GROUP' | 'CLASSROOM'
 
 /** One Typesense collection: `<prefix><name>_v<version>` behind the alias `<prefix><name>` (ADR-0055). */
 export interface CollectionDef {
@@ -75,6 +75,22 @@ export const COLLECTIONS: Record<SearchEntityName, CollectionDef> = {
     entity: 'TOPIC',
     version: 1,
     fields: [text('title'), text('subject'), keyword('subjectId'), keyword('origin'), { name: 'proposedById', type: 'string', facet: true, optional: true }],
+  },
+  /** Groups and project workspaces (ADR-0056): PUBLIC ones for everyone, PRIVATE ones for their members. */
+  GROUP: {
+    name: 'groups',
+    entity: 'GROUP',
+    version: 1,
+    fields: [text('name'), { name: 'description', type: 'string', stem: true, optional: true }, keyword('type'), keyword('privacy'), { name: 'memberCount', type: 'int32' }],
+    defaultSortingField: 'memberCount',
+  },
+  /** Classes, for their members only (§11). */
+  CLASSROOM: {
+    name: 'classrooms',
+    entity: 'CLASSROOM',
+    version: 1,
+    fields: [text('name'), { name: 'description', type: 'string', stem: true, optional: true }, { name: 'memberCount', type: 'int32' }],
+    defaultSortingField: 'memberCount',
   },
 }
 

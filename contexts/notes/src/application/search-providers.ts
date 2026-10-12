@@ -1,33 +1,41 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { PEOPLE, type People } from '@lvn-backend/facades'
-import { PrismaService, type Topic } from '@lvn-backend/prisma-base'
+import { PEOPLE, PLACES, type People, type Places } from '@lvn-backend/facades'
+import { PrismaService, type Prisma, type Topic } from '@lvn-backend/prisma-base'
 import type { Typesense } from '../infrastructure/typesense'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
 import { visibleNotesWhere } from '../domain/note-access'
 import { aliasName, COLLECTIONS, STOPWORDS_SET } from './search-collections'
 import { todayDays } from './search-documents'
-import { peopleFilter, topicsFilter, visibleNotesFilter } from './search-filters'
+import { classroomsFilter, groupsFilter, noteFiltersFilter, peopleFilter, topicsFilter, visibleNotesFilter, type NoteFilters } from './search-filters'
 import { TYPESENSE } from './search-index'
 import { OrganiseService } from './organise.service'
 
 /** Matches in snippets are wrapped in these private-use characters, for clients to highlight. */
-export const MATCH_START = ''
-export const MATCH_END = ''
+export const MATCH_START = '\uE000'
+export const MATCH_END = '\uE001'
+/** Notes one search reaches, page after page, on either provider (ADR-0056). */
+export const MAX_NOTES = 200
 
-export type SearchScope = 'NOTES' | 'PEOPLE' | 'TOPICS'
+export type SearchScope = 'NOTES' | 'PEOPLE' | 'TOPICS' | 'GROUPS' | 'CLASSROOMS'
 
 /** One search, as every provider receives it. */
 export interface SearchQuery {
   viewerId: string | null
   /** The query as typed (trimmed) */
   text: string
-  /** Its words: letters and digits only, at most eight */
+  /** Its words: letters and digits only, at most eight; none when filters alone list notes */
   terms: string[]
-  /** Results per scope */
+  /** Results per kind */
   size: number
+  /** Notes already given on earlier pages (only notes come back past the first page) */
+  offset: number
   scopes: Set<SearchScope>
+  filters: NoteFilters
   /** People a block keeps apart from the viewer (ADR-0043) */
   blockedIds: string[]
+  /** Groups and classes the viewer is in, from notes' read models; deleted places left out */
+  groupIds: string[]
+  classroomIds: string[]
 }
 
 export interface NoteHit {
@@ -37,9 +45,13 @@ export interface NoteHit {
 
 export interface Found {
   notes: NoteHit[]
-  /** Person ids, best first */
+  /** How many notes the search reaches in all, up to MAX_NOTES */
+  notesTotal: number
+  /** Ids, best first */
   people: string[]
   topics: Topic[]
+  groups: string[]
+  classrooms: string[]
 }
 
 /** §11: clients call one `search` field and never know which provider answered. */
@@ -48,12 +60,39 @@ export interface SearchProvider {
   find(q: SearchQuery): Promise<Found>
 }
 
-const CANDIDATES = 200
+const LEAD_WORDS = 24
+const lead = (body: string) => body.split(/\s+/).filter(Boolean).slice(0, LEAD_WORDS).join(' ')
+
+/** The filters (ADR-0056) as Prisma conditions on notes, with the viewer's places for SHARED; null when nothing is left. */
+function noteFiltersWhere(f: NoteFilters, q: SearchQuery): Prisma.NoteWhereInput[] | null {
+  const and: Prisma.NoteWhereInput[] = []
+  if (f.kinds?.length) and.push({ kind: { in: f.kinds as Prisma.EnumNoteKindFilter['in'] } })
+  if (f.subjectId) and.push({ topics: { some: { topic: { subjectId: f.subjectId } } } })
+  if (f.topicId) and.push({ topics: { some: { topicId: f.topicId } } })
+  if (f.authorId) and.push({ ownerId: f.authorId })
+  if (f.sources?.length) {
+    const me = q.viewerId
+    const from = f.sources.flatMap((source): Prisma.NoteWhereInput[] => {
+      if (source === 'PUBLIC') return [me ? { ownerId: { not: me }, visibility: 'PUBLIC' } : { visibility: 'PUBLIC' }]
+      if (!me) return []
+      if (source === 'MINE') return [{ ownerId: me }]
+      return [
+        {
+          ownerId: { not: me },
+          OR: [{ shares: { some: { userId: me } } }, { groupShares: { some: { groupId: { in: q.groupIds } } } }, { classroomShares: { some: { classroomId: { in: q.classroomIds } } } }],
+        },
+      ]
+    })
+    if (!from.length) return null
+    and.push({ OR: from })
+  }
+  return and
+}
 
 /**
  * The Postgres provider of Phases 2–3. Notes match on their published version (full text with English stemming, the
  * last word as a prefix so results come while typing, and trigram similarity of titles for typos); candidates are
- * filtered by the read predicate (§5). People and topics are read from their tables.
+ * filtered by the read predicate (§5) and the filters. People, topics, groups and classes are read from their tables.
  */
 @Injectable()
 export class PostgresSearchProvider implements SearchProvider {
@@ -63,33 +102,49 @@ export class PostgresSearchProvider implements SearchProvider {
     private readonly db: PrismaService,
     private readonly organise: OrganiseService,
     @Inject(PEOPLE) private readonly people: People,
+    @Inject(PLACES) private readonly places: Places,
   ) {}
 
   async find(q: SearchQuery): Promise<Found> {
-    const [notes, people, topics] = await Promise.all([
-      q.scopes.has('NOTES') ? this.notes(q) : [],
-      q.scopes.has('PEOPLE') ? this.people.search(q.text, q.size, q.viewerId).then((p) => p.map((x) => x.id)) : [],
-      q.scopes.has('TOPICS') ? this.organise.findTopics(q.text, null, q.viewerId).then((t) => t.slice(0, q.size)) : [],
+    const words = q.terms.length > 0
+    const first = q.offset === 0
+    const [notes, people, topics, groups, classrooms] = await Promise.all([
+      q.scopes.has('NOTES') ? this.notes(q) : { hits: [], total: 0 },
+      first && words && q.scopes.has('PEOPLE') ? this.people.search(q.text, q.size, q.viewerId).then((p) => p.map((x) => x.id)) : [],
+      first && words && q.scopes.has('TOPICS') ? this.organise.findTopics(q.text, q.filters.subjectId, q.viewerId).then((t) => t.slice(0, q.size)) : [],
+      first && words && q.scopes.has('GROUPS') ? this.places.findGroups(q.terms, q.groupIds, q.size) : [],
+      first && words && q.scopes.has('CLASSROOMS') ? this.places.findClassrooms(q.terms, q.classroomIds, q.size) : [],
     ])
-    return { notes, people, topics }
+    return { notes: notes.hits, notesTotal: notes.total, people, topics, groups, classrooms }
   }
 
-  private async notes({ viewerId, text, terms, size, blockedIds }: SearchQuery): Promise<NoteHit[]> {
-    const tsquery = terms.map((t, i) => (i === terms.length - 1 ? `${t}:*` : t)).join(' & ')
+  private async notes(q: SearchQuery): Promise<{ hits: NoteHit[]; total: number }> {
+    const filters = noteFiltersWhere(q.filters, q)
+    if (!filters) return { hits: [], total: 0 }
+    const where = (ids?: string[]): Prisma.NoteWhereInput => ({
+      AND: [visibleNotesWhere(q.viewerId), { publishedVersionId: { not: null } }, ...filters, ...(ids ? [{ id: { in: ids } }] : []), ...(q.blockedIds.length ? [{ ownerId: { notIn: q.blockedIds } }] : [])],
+    })
+    if (!q.terms.length) {
+      // Filters alone: the notes they allow, newest first.
+      const [total, rows] = await Promise.all([
+        this.db.note.count({ where: where() }),
+        this.db.note.findMany({ where: where(), select: { id: true, searchDocument: { select: { body: true } } }, orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }], skip: q.offset, take: q.size }),
+      ])
+      return { hits: rows.map((r) => ({ noteId: r.id, snippet: lead(r.searchDocument?.body ?? '') })), total: Math.min(total, MAX_NOTES) }
+    }
+    const tsquery = q.terms.map((t, i) => (i === q.terms.length - 1 ? `${t}:*` : t)).join(' & ')
     const options = `StartSel=${MATCH_START}, StopSel=${MATCH_END}, MaxWords=24, MinWords=10, MaxFragments=1`
     const candidates = await this.db.$queryRaw<{ noteId: string; snippet: string }[]>`
       SELECT d."noteId", ts_headline('english', d."body", q, ${options}) AS snippet
       FROM "notes"."NoteSearchDocument" d, to_tsquery('english', ${tsquery}) q
-      WHERE d."document" @@ q OR d."title" % ${text}
-      ORDER BY ts_rank_cd(d."document", q) + similarity(d."title", ${text}) DESC, d."noteId"
-      LIMIT ${CANDIDATES}`
-    if (!candidates.length) return []
-    const visible = await this.db.note.findMany({
-      where: { AND: [visibleNotesWhere(viewerId), { id: { in: candidates.map((c) => c.noteId) } }, ...(blockedIds.length ? [{ ownerId: { notIn: blockedIds } }] : [])] },
-      select: { id: true },
-    })
+      WHERE d."document" @@ q OR d."title" % ${q.text}
+      ORDER BY ts_rank_cd(d."document", q) + similarity(d."title", ${q.text}) DESC, d."noteId"
+      LIMIT ${MAX_NOTES}`
+    if (!candidates.length) return { hits: [], total: 0 }
+    const visible = await this.db.note.findMany({ where: where(candidates.map((c) => c.noteId)), select: { id: true } })
     const ok = new Set(visible.map((n) => n.id))
-    return candidates.filter((c) => ok.has(c.noteId)).slice(0, size)
+    const all = candidates.filter((c) => ok.has(c.noteId))
+    return { hits: all.slice(q.offset, q.offset + q.size), total: all.length }
   }
 }
 
@@ -97,7 +152,7 @@ export class PostgresSearchProvider implements SearchProvider {
 const widen = (snippet: string) => snippet.replace(new RegExp(`${MATCH_END}([\\p{L}\\p{N}]+)`, 'gu'), `$1${MATCH_END}`)
 
 /**
- * The Typesense provider (ADR-0055): all scopes in one request, each filtered in the engine by the viewer's reach,
+ * The Typesense provider (ADR-0055): all kinds in one request, each filtered in the engine by the viewer's reach,
  * built now from their groups, classes and blocks. Every word must match (the last as a prefix), with English
  * stemming and PostgreSQL's stop words; typos are tried only when nothing matches exactly.
  */
@@ -115,48 +170,62 @@ export class TypesenseSearchProvider implements SearchProvider {
     const ts = this.typesense
     if (!ts) throw new Error('Typesense is not configured')
     const prefix = this.config.search.typesense!.prefix
-    const words = { drop_tokens_threshold: 0, per_page: q.size, include_fields: 'id' }
+    const words = q.terms.length > 0
+    const first = q.offset === 0
+    const matching = { drop_tokens_threshold: 0, include_fields: 'id' }
+    const firstOnes = { ...matching, per_page: q.size }
     const stopwords = prefix + STOPWORDS_SET
     const searches: { scope: SearchScope; params: Record<string, unknown> }[] = []
-    if (q.scopes.has('NOTES')) {
+    const narrowed = noteFiltersFilter(q.filters, { viewerId: q.viewerId, groupIds: q.groupIds, classroomIds: q.classroomIds, blockedIds: q.blockedIds })
+    if (q.scopes.has('NOTES') && narrowed !== null) {
+      const visible = visibleNotesFilter({ viewerId: q.viewerId, groupIds: q.groupIds, classroomIds: q.classroomIds, blockedIds: q.blockedIds })
       searches.push({
         scope: 'NOTES',
         params: {
           collection: aliasName(prefix, COLLECTIONS.NOTE),
-          q: q.text,
-          query_by: 'title,topics,body',
-          query_by_weights: '3,2,1',
-          filter_by: visibleNotesFilter({ viewerId: q.viewerId, blockedIds: q.blockedIds, ...(await placesOf(this.db, q.viewerId)) }),
-          ...words,
-          stopwords,
+          filter_by: narrowed ? `(${visible}) && ${narrowed}` : visible,
+          ...matching,
+          offset: q.offset,
+          limit: q.size,
           include_fields: 'id,lead',
-          highlight_fields: 'body',
-          highlight_start_tag: MATCH_START,
-          highlight_end_tag: MATCH_END,
-          highlight_affix_num_tokens: 12,
+          ...(words
+            ? { q: q.text, query_by: 'title,topics,body', query_by_weights: '3,2,1', stopwords, highlight_fields: 'body', highlight_start_tag: MATCH_START, highlight_end_tag: MATCH_END, highlight_affix_num_tokens: 12 }
+            : { q: '*', sort_by: 'publishedAt:desc' }),
         },
       })
     }
     const person = q.text.replace(/^@/, '')
-    if (q.scopes.has('PEOPLE') && person.length >= 2) {
-      searches.push({
-        scope: 'PEOPLE',
-        params: { collection: aliasName(prefix, COLLECTIONS.USER), q: person, query_by: 'handle,displayName,headline,bio', query_by_weights: '4,4,1,1', filter_by: peopleFilter(todayDays(), q.blockedIds), ...words },
-      })
+    if (first && words && q.scopes.has('PEOPLE') && person.length >= 2) {
+      searches.push({ scope: 'PEOPLE', params: { collection: aliasName(prefix, COLLECTIONS.USER), q: person, query_by: 'handle,displayName,headline,bio', query_by_weights: '4,4,1,1', filter_by: peopleFilter(todayDays(), q.blockedIds), ...firstOnes } })
     }
-    if (q.scopes.has('TOPICS')) {
-      searches.push({ scope: 'TOPICS', params: { collection: aliasName(prefix, COLLECTIONS.TOPIC), q: q.text, query_by: 'title,subject', query_by_weights: '2,1', filter_by: topicsFilter(q.viewerId), ...words, stopwords } })
+    if (first && words && q.scopes.has('TOPICS')) {
+      searches.push({ scope: 'TOPICS', params: { collection: aliasName(prefix, COLLECTIONS.TOPIC), q: q.text, query_by: 'title,subject', query_by_weights: '2,1', filter_by: topicsFilter(q.viewerId, q.filters.subjectId), ...firstOnes, stopwords } })
+    }
+    if (first && words && q.scopes.has('GROUPS')) {
+      searches.push({ scope: 'GROUPS', params: { collection: aliasName(prefix, COLLECTIONS.GROUP), q: q.text, query_by: 'name,description', query_by_weights: '3,1', filter_by: groupsFilter(q.groupIds), ...firstOnes, stopwords } })
+    }
+    const ownClasses = classroomsFilter(q.classroomIds)
+    if (first && words && q.scopes.has('CLASSROOMS') && ownClasses) {
+      searches.push({ scope: 'CLASSROOMS', params: { collection: aliasName(prefix, COLLECTIONS.CLASSROOM), q: q.text, query_by: 'name,description', query_by_weights: '3,1', filter_by: ownClasses, ...firstOnes, stopwords } })
     }
     const results = searches.length ? await ts.multiSearch<{ id: string; lead?: string }>(searches.map((s) => s.params), this.config.search.timeoutMs) : []
-    const of = (scope: SearchScope) => results[searches.findIndex((s) => s.scope === scope)]?.hits ?? []
-    const notes = of('NOTES').map((h) => {
+    const of = (scope: SearchScope) => results[searches.findIndex((s) => s.scope === scope)]
+    const ids = (scope: SearchScope) => of(scope)?.hits.map((h) => h.document.id) ?? []
+    const notes = (of('NOTES')?.hits ?? []).map((h) => {
       const body = h.highlights?.find((x) => x.field === 'body')?.snippet
       return { noteId: h.document.id, snippet: body ? widen(body) : (h.document.lead ?? '') }
     })
-    const topicIds = of('TOPICS').map((h) => h.document.id)
+    const topicIds = ids('TOPICS')
     const rows = topicIds.length ? await this.db.topic.findMany({ where: { id: { in: topicIds } } }) : []
     const byId = new Map(rows.map((t) => [t.id, t]))
-    return { notes, people: of('PEOPLE').map((h) => h.document.id), topics: topicIds.map((id) => byId.get(id)).filter((t): t is Topic => !!t) }
+    return {
+      notes,
+      notesTotal: Math.min(of('NOTES')?.found ?? 0, MAX_NOTES),
+      people: ids('PEOPLE'),
+      topics: topicIds.map((id) => byId.get(id)).filter((t): t is Topic => !!t),
+      groups: ids('GROUPS'),
+      classrooms: ids('CLASSROOMS'),
+    }
   }
 }
 
