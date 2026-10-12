@@ -1,0 +1,37 @@
+# The activity of the viewer's groups and classes (ADR-0049): newest first, ids and places only.
+
+enum ActivityKind { GROUP_POST IDEA DOUBT CLASS_ANNOUNCEMENT SHARED_NOTE }
+
+type ActivityItem {
+  "Unique in the feed: a note shared to two places is two items. Deliberately not an id, so caches keep items apart"
+  key: String!
+  kind: ActivityKind!
+  at: DateTime!
+  "Who posted, asked or shared"
+  actor: User
+  group: Group
+  classroom: Classroom
+  "GROUP_POST and IDEA"
+  post: GroupPost
+  "CLASS_ANNOUNCEMENT"
+  announcement: ClassroomPost
+  "DOUBT"
+  doubt: Doubt
+  "SHARED_NOTE: null when the viewer can no longer read it"
+  note: Note
+}
+
+type ActivityEdge {
+  cursor: String!
+  node: ActivityItem!
+}
+
+type ActivityConnection {
+  edges: [ActivityEdge!]!
+  pageInfo: PageInfo!
+}
+
+extend type Query {
+  "What happened in the viewer's groups and classes, newest first; their own doing left out"
+  activityFeed(first: Int, after: String): ActivityConnection!
+}

@@ -26,4 +26,17 @@ export interface NoteAccess {
    * kind PROJECT, published, not held back, and shared to the workspace.
    */
   showcaseProblem(noteId: string, groupId: string): Promise<string | null>
+  /**
+   * Notes shared to these groups and classes that `viewerId` may read (ADR-0049: the activity feed), newest share
+   * first, before the (at, noteId) cursor; at most `take`.
+   */
+  placeShares(viewerId: string, places: { groupIds: string[]; classroomIds: string[] }, before: { at: Date; id: string } | null, take: number): Promise<PlaceShare[]>
+}
+
+export interface PlaceShare {
+  noteId: string
+  sharedBy: string
+  at: Date
+  groupId: string | null
+  classroomId: string | null
 }

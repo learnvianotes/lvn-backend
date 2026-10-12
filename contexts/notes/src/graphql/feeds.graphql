@@ -1,0 +1,4 @@
+extend type Query {
+  "The Following feed (ADR-0049): PUBLIC notes and publications of the people the viewer follows, newest first"
+  followingFeed(first: Int, after: String): NoteConnection!
+}

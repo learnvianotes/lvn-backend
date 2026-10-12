@@ -1,5 +1,36 @@
 // Generated from this folder's *.graphql by scripts/graphql-types.mjs (ADR-0033). Do not edit.
 
+export interface ActivityConnection {
+  edges: Array<ActivityEdge>
+  pageInfo: PageInfo
+}
+
+export interface ActivityEdge {
+  cursor: string
+  node: ActivityItem
+}
+
+export interface ActivityItem {
+  /** Unique in the feed: a note shared to two places is two items. Deliberately not an id, so caches keep items apart */
+  key: string
+  kind: ActivityKind
+  at: Date
+  /** Who posted, asked or shared */
+  actor: User | null
+  group: Group | null
+  classroom: Classroom | null
+  /** GROUP_POST and IDEA */
+  post: GroupPost | null
+  /** CLASS_ANNOUNCEMENT */
+  announcement: ClassroomPost | null
+  /** DOUBT */
+  doubt: Doubt | null
+  /** SHARED_NOTE: null when the viewer can no longer read it */
+  note: Note | null
+}
+
+export type ActivityKind = 'GROUP_POST' | 'IDEA' | 'DOUBT' | 'CLASS_ANNOUNCEMENT' | 'SHARED_NOTE'
+
 export interface AddCommentInput {
   target: CommentTargetInput
   /** A card of the note */
@@ -789,6 +820,11 @@ export type ProblemMark = 'SOLVED' | 'REVISIT'
 
 export interface QueryCoreProgressArgs {
   subjectId: string
+}
+
+export interface QueryActivityFeedArgs {
+  first?: number | null
+  after?: string | null
 }
 
 export interface QueryClassroomArgs {

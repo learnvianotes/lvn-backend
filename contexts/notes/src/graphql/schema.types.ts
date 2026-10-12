@@ -650,6 +650,11 @@ export interface QueryPdfConversionArgs {
   id: string
 }
 
+export interface QueryFollowingFeedArgs {
+  first?: number | null
+  after?: string | null
+}
+
 export interface QueryNoteArgs {
   id: string
 }

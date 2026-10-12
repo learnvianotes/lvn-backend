@@ -28,6 +28,58 @@ input AcceptTermsInput
   version: String!
 }
 
+type ActivityConnection
+  @join__type(graph: CORE)
+{
+  edges: [ActivityEdge!]!
+  pageInfo: PageInfo!
+}
+
+type ActivityEdge
+  @join__type(graph: CORE)
+{
+  cursor: String!
+  node: ActivityItem!
+}
+
+type ActivityItem
+  @join__type(graph: CORE)
+{
+  """
+  Unique in the feed: a note shared to two places is two items. Deliberately not an id, so caches keep items apart
+  """
+  key: String!
+  kind: ActivityKind!
+  at: DateTime!
+
+  """Who posted, asked or shared"""
+  actor: User
+  group: Group
+  classroom: Classroom
+
+  """GROUP_POST and IDEA"""
+  post: GroupPost
+
+  """CLASS_ANNOUNCEMENT"""
+  announcement: ClassroomPost
+
+  """DOUBT"""
+  doubt: Doubt
+
+  """SHARED_NOTE: null when the viewer can no longer read it"""
+  note: Note
+}
+
+enum ActivityKind
+  @join__type(graph: CORE)
+{
+  GROUP_POST @join__enumValue(graph: CORE)
+  IDEA @join__enumValue(graph: CORE)
+  DOUBT @join__enumValue(graph: CORE)
+  CLASS_ANNOUNCEMENT @join__enumValue(graph: CORE)
+  SHARED_NOTE @join__enumValue(graph: CORE)
+}
+
 input AddCommentInput
   @join__type(graph: CORE)
 {
@@ -2401,6 +2453,11 @@ type Query
   Signed-in users: their progress on a /core subject (web reads it on /core pages)
   """
   coreProgress(subjectId: String!): CoreSubjectProgress! @join__field(graph: CORE)
+
+  """
+  What happened in the viewer's groups and classes, newest first; their own doing left out
+  """
+  activityFeed(first: Int, after: String): ActivityConnection! @join__field(graph: CORE)
   classroom(id: UUID!): Classroom @join__field(graph: CORE)
 
   """The class a code names; at most 20 codes an hour"""
@@ -2438,6 +2495,11 @@ type Query
   """A conversion the viewer asked for"""
   pdfConversion(id: UUID!): PdfConversion @join__field(graph: NOTES)
   pdfPagesThisMonth: PdfPagesUsage! @join__field(graph: NOTES)
+
+  """
+  The Following feed (ADR-0049): PUBLIC notes and publications of the people the viewer follows, newest first
+  """
+  followingFeed(first: Int, after: String): NoteConnection! @join__field(graph: NOTES)
 
   """Your latest imports, newest first"""
   noteImports: [NoteImport!]! @join__field(graph: NOTES)

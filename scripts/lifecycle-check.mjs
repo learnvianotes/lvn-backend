@@ -258,6 +258,17 @@ if (opt('--vm')) {
   ok(await eventually(() => toldOf(C, 'ASKED')), 'D asks a doubt and the mentor is told')
   const answered = (await gql('mutation ($input: AnswerDoubtInput!) { answerDoubt(input: $input) { doubt { status answers { byMentor } } } }', { input: { doubtId: doubt.id, body: text('The smallest job runs first.').doc } }, C.token)).answerDoubt.doubt
   ok(answered.status === 'ANSWERED' && answered.answers[0].byMentor && (await eventually(() => toldOf(D, 'ANSWERED'))), 'the mentor answers and D is told')
+
+  // Feeds (ADR-0049): D follows teacher A, who publishes a blog; it is in D's Following feed. C's activity shows the
+  // doubt D asked in the workspace C mentors.
+  await gql('mutation ($input: PersonInput!) { followUser(input: $input) { userErrors { message } } }', { input: { userId: A.id } }, D.token)
+  const blogId = (await gql('mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } } }', { input: { title: `Why heaps ${WORD}`, kind: 'BLOG', cards: [{ id: newId(), type: 'text', position: 'a0', content: text('Priority queues everywhere.') }] } }, A.token)).createNote.note.id
+  await gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId: blogId } }, A.token)
+  await gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { id } } }', { input: { noteId: blogId, visibility: 'PUBLIC' } }, A.token)
+  const feed = (await gql('{ followingFeed(first: 20) { edges { node { id owner { id } visibility } } } }', {}, D.token)).followingFeed.edges.map((e) => e.node)
+  ok(feed[0]?.id === blogId && feed.every((n) => n.owner.id === A.id && n.visibility === 'PUBLIC'), 'D follows A; A\'s new public blog leads D\'s Following feed', `${feed.length} notes`)
+  const activity = (await gql('{ activityFeed(first: 20) { edges { node { kind doubt { id } note { id } } } } }', {}, C.token)).activityFeed.edges.map((e) => e.node)
+  ok(activity.some((i) => i.kind === 'DOUBT' && i.doubt?.id === doubt.id), 'C\'s activity feed shows the doubt D asked in the workspace C mentors')
 }
 
 // Media (ADR-0041): processed after the upload by the worker, scanned by the environment's ClamAV.
