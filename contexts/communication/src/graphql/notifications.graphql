@@ -16,6 +16,11 @@ type Note @key(fields: "id", resolvable: false) {
   id: UUID!
 }
 
+"A group, owned by the core subgraph: null when the viewer may no longer see it"
+type Group @key(fields: "id", resolvable: false) {
+  id: UUID!
+}
+
 type PageInfo @shareable {
   hasNextPage: Boolean!
   endCursor: String
@@ -61,7 +66,9 @@ type Notification {
   actor: User
   "The note it is about; null when there is none or the viewer can no longer read it"
   note: Note
-  "Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }"
+  "The group it is about (JOIN_REQUEST, JOIN_DECISION); null when there is none or the viewer may no longer see it"
+  group: Group
+  "Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED }"
   data: JSON
   readAt: DateTime
   createdAt: DateTime!

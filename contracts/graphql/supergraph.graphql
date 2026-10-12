@@ -281,6 +281,29 @@ input CreateFolderInput
   parentId: UUID
 }
 
+input CreateGroupInput
+  @join__type(graph: CORE)
+{
+  """3 to 80 characters"""
+  name: String!
+
+  """At most 2,000 characters"""
+  description: String
+  privacy: GroupPrivacy!
+
+  """
+  OPEN lets anyone join a public group at once; new groups approve members unless told otherwise
+  """
+  joinPolicy: GroupJoinPolicy
+}
+
+input CreateGroupPostInput
+  @join__type(graph: CORE)
+{
+  groupId: UUID!
+  body: JSON!
+}
+
 input CreateNoteInput
   @join__type(graph: NOTES)
 {
@@ -374,6 +397,13 @@ enum DomainReviewStatus
   REJECTED @join__enumValue(graph: USERS)
 }
 
+input EditGroupPostInput
+  @join__type(graph: CORE)
+{
+  postId: UUID!
+  body: JSON!
+}
+
 """Fixed error vocabulary (§6.2)"""
 enum ErrorCode
   @join__type(graph: COMMUNICATION)
@@ -441,6 +471,184 @@ enum GlobalRole
   STUDENT @join__enumValue(graph: USERS)
   TEACHER @join__enumValue(graph: USERS)
   PLATFORM_ADMIN @join__enumValue(graph: USERS)
+}
+
+"""
+A group, owned by the core subgraph: null when the viewer may no longer see it
+"""
+type Group
+  @join__type(graph: COMMUNICATION, key: "id", resolvable: false)
+  @join__type(graph: CORE, key: "id")
+  @join__type(graph: NOTES, key: "id")
+{
+  id: UUID!
+  name: String! @join__field(graph: CORE)
+  description: String @join__field(graph: CORE)
+  type: GroupType! @join__field(graph: CORE)
+  privacy: GroupPrivacy! @join__field(graph: CORE)
+
+  """A private group always approves members, whatever was chosen"""
+  joinPolicy: GroupJoinPolicy! @join__field(graph: CORE)
+  owner: User! @join__field(graph: CORE)
+  memberCount: Int! @join__field(graph: CORE)
+  viewerRole: GroupRole @join__field(graph: CORE)
+
+  """The viewer's request to join, while it waits"""
+  viewerRequestId: UUID @join__field(graph: CORE)
+  viewerCan: GroupActions! @join__field(graph: CORE)
+  createdAt: DateTime! @join__field(graph: CORE)
+
+  """Members only"""
+  members: [GroupMember!] @join__field(graph: CORE)
+
+  """Admins only: requests waiting for an answer, oldest first"""
+  joinRequests: [GroupJoinRequest!] @join__field(graph: CORE)
+
+  """Members only: pinned posts, then the newest"""
+  posts(first: Int, after: String): GroupPostConnection @join__field(graph: CORE)
+
+  """
+  Members only: notes shared to the group that the viewer may open, the most recently shared first
+  """
+  sharedNotes(first: Int, after: String): NoteConnection @join__field(graph: NOTES)
+}
+
+"""
+What the viewer may do in the group, from the same rules the API applies
+"""
+type GroupActions
+  @join__type(graph: CORE)
+{
+  join: Boolean!
+  requestJoin: Boolean!
+  post: Boolean!
+  moderate: Boolean!
+  manage: Boolean!
+  delete: Boolean!
+  reviewRequests: Boolean!
+  leave: Boolean!
+}
+
+input GroupIdInput
+  @join__type(graph: CORE)
+{
+  groupId: UUID!
+}
+
+enum GroupJoinPolicy
+  @join__type(graph: CORE)
+{
+  OPEN @join__enumValue(graph: CORE)
+  APPROVAL @join__enumValue(graph: CORE)
+}
+
+type GroupJoinRequest
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  user: User!
+  message: String
+  createdAt: DateTime!
+}
+
+type GroupMember
+  @join__type(graph: CORE)
+{
+  user: User!
+  role: GroupRole!
+  joinedAt: DateTime!
+
+  """Muted members cannot post until then"""
+  mutedUntil: DateTime
+}
+
+input GroupMemberInput
+  @join__type(graph: CORE)
+{
+  groupId: UUID!
+  userId: UUID!
+}
+
+type GroupPayload
+  @join__type(graph: CORE)
+{
+  group: Group
+  userErrors: [UserError!]!
+}
+
+type GroupPost
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  author: User!
+
+  """Rich text: a card's document"""
+  body: JSON!
+  pinned: Boolean!
+  createdAt: DateTime!
+  editedAt: DateTime
+  viewerCan: GroupPostActions!
+}
+
+type GroupPostActions
+  @join__type(graph: CORE)
+{
+  edit: Boolean!
+  delete: Boolean!
+  pin: Boolean!
+}
+
+type GroupPostConnection
+  @join__type(graph: CORE)
+{
+  """On the first page only"""
+  pinned: [GroupPost!]!
+  edges: [GroupPostEdge!]!
+  pageInfo: PageInfo!
+}
+
+type GroupPostEdge
+  @join__type(graph: CORE)
+{
+  cursor: String!
+  node: GroupPost!
+}
+
+input GroupPostIdInput
+  @join__type(graph: CORE)
+{
+  postId: UUID!
+}
+
+type GroupPostPayload
+  @join__type(graph: CORE)
+{
+  post: GroupPost
+  userErrors: [UserError!]!
+}
+
+enum GroupPrivacy
+  @join__type(graph: CORE)
+{
+  PUBLIC @join__enumValue(graph: CORE)
+  PRIVATE @join__enumValue(graph: CORE)
+}
+
+enum GroupRole
+  @join__type(graph: CORE)
+{
+  OWNER @join__enumValue(graph: CORE)
+  ADMIN @join__enumValue(graph: CORE)
+  MODERATOR @join__enumValue(graph: CORE)
+  MEMBER @join__enumValue(graph: CORE)
+  MENTOR @join__enumValue(graph: CORE)
+}
+
+enum GroupType
+  @join__type(graph: CORE)
+{
+  COMMUNITY @join__enumValue(graph: CORE)
+  PROJECT @join__enumValue(graph: CORE)
 }
 
 enum HighlightColor
@@ -527,8 +735,22 @@ enum join__Graph {
   USERS @join__graph(name: "users", url: "local://users")
 }
 
+enum JoinDecision
+  @join__type(graph: CORE)
+{
+  APPROVED @join__enumValue(graph: CORE)
+  REJECTED @join__enumValue(graph: CORE)
+}
+
+input JoinRequestIdInput
+  @join__type(graph: CORE)
+{
+  requestId: UUID!
+}
+
 scalar JSON
   @join__type(graph: COMMUNICATION)
+  @join__type(graph: CORE)
   @join__type(graph: NOTES)
 
 type LegacyCounts
@@ -761,6 +983,33 @@ type Mutation
 
   """The author's one appeal against hiding or removing their note"""
   appealModeration(input: AppealModerationInput!): OkPayload! @join__field(graph: CORE)
+  createGroup(input: CreateGroupInput!): GroupPayload! @join__field(graph: CORE)
+
+  """Admins: name, description, privacy, join policy"""
+  updateGroup(input: UpdateGroupInput!): GroupPayload! @join__field(graph: CORE)
+
+  """The owner; the group is gone for everyone"""
+  deleteGroup(input: GroupIdInput!): OkPayload! @join__field(graph: CORE)
+
+  """A public group with the OPEN policy"""
+  joinGroup(input: GroupIdInput!): GroupPayload! @join__field(graph: CORE)
+
+  """Every other group: the admins accept or reject"""
+  requestToJoinGroup(input: RequestToJoinGroupInput!): GroupPayload! @join__field(graph: CORE)
+  withdrawGroupJoinRequest(input: JoinRequestIdInput!): GroupPayload! @join__field(graph: CORE)
+  reviewGroupJoinRequest(input: ReviewGroupJoinRequestInput!): GroupPayload! @join__field(graph: CORE)
+
+  """The owner hands the group over first"""
+  leaveGroup(input: GroupIdInput!): GroupPayload! @join__field(graph: CORE)
+  removeGroupMember(input: GroupMemberInput!): GroupPayload! @join__field(graph: CORE)
+  setGroupRole(input: SetGroupRoleInput!): GroupPayload! @join__field(graph: CORE)
+  muteGroupMember(input: MuteGroupMemberInput!): GroupPayload! @join__field(graph: CORE)
+  createGroupPost(input: CreateGroupPostInput!): GroupPostPayload! @join__field(graph: CORE)
+  editGroupPost(input: EditGroupPostInput!): GroupPostPayload! @join__field(graph: CORE)
+
+  """Its author, or a moderator"""
+  deleteGroupPost(input: GroupPostIdInput!): GroupPayload! @join__field(graph: CORE)
+  pinGroupPost(input: PinGroupPostInput!): GroupPostPayload! @join__field(graph: CORE)
   createUploadIntent(input: CreateUploadIntentInput!): UploadIntentPayload! @join__field(graph: NOTES)
 
   """Checks the uploaded bytes (size, magic bytes) and makes the file READY"""
@@ -839,6 +1088,10 @@ type Mutation
   Teachers: share with all your connections, live, or stop (people shared with directly keep their access)
   """
   setNoteSharedWithConnections(input: SetNoteSharedWithConnectionsInput!): NotePayload! @join__field(graph: NOTES)
+
+  """Share your note with a group you are in; a PRIVATE note becomes SHARED"""
+  shareNoteToGroup(input: NoteGroupInput!): NotePayload! @join__field(graph: NOTES)
+  unshareNoteFromGroup(input: NoteGroupInput!): NotePayload! @join__field(graph: NOTES)
 
   """Apply a device's outbox in order (at most 100 operations)"""
   syncPush(ops: [SyncOpInput!]!): SyncPushPayload! @join__field(graph: NOTES)
@@ -926,6 +1179,16 @@ type Mutation
   setGlobalRole(input: SetGlobalRoleInput!): OkPayload! @join__field(graph: USERS)
 }
 
+input MuteGroupMemberInput
+  @join__type(graph: CORE)
+{
+  groupId: UUID!
+  userId: UUID!
+
+  """Null lifts the mute"""
+  until: DateTime
+}
+
 """
 A note, owned by the notes subgraph: null when the viewer can no longer read it
 """
@@ -1008,6 +1271,9 @@ type Note
   Owner only: every connection of the owner reads it, and new connections will too (teachers, ADR-0013)
   """
   sharedWithConnections: Boolean @join__field(graph: NOTES)
+
+  """Owner only: the groups the note is shared to"""
+  groups: [Group!] @join__field(graph: NOTES)
 }
 
 """
@@ -1049,6 +1315,13 @@ input NoteFilter
 
   """The trash instead of the live notes"""
   trashed: Boolean
+}
+
+input NoteGroupInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+  groupId: UUID!
 }
 
 input NoteIdInput
@@ -1246,7 +1519,12 @@ type Notification
   note: Note
 
   """
-  Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }
+  The group it is about (JOIN_REQUEST, JOIN_DECISION); null when there is none or the viewer may no longer see it
+  """
+  group: Group
+
+  """
+  Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED }
   """
   data: JSON
   readAt: DateTime
@@ -1476,6 +1754,13 @@ type PersonPayload
   userErrors: [UserError!]!
 }
 
+input PinGroupPostInput
+  @join__type(graph: CORE)
+{
+  postId: UUID!
+  pinned: Boolean!
+}
+
 enum ProblemMark
   @join__type(graph: CORE)
 {
@@ -1512,6 +1797,17 @@ type Query
   Signed-in users: their progress on a /core subject (web reads it on /core pages)
   """
   coreProgress(subjectId: String!): CoreSubjectProgress! @join__field(graph: CORE)
+
+  """
+  A group the viewer may know about: public ones, and private ones they are in or asked to join
+  """
+  group(id: UUID!): Group @join__field(graph: CORE)
+
+  """The viewer's groups, most recently active first"""
+  myGroups: [Group!]! @join__field(graph: CORE)
+
+  """Public groups to join, by name"""
+  discoverGroups(query: String, first: Int): [Group!]! @join__field(graph: CORE)
 
   """Open cases, oldest first (PLATFORM_ADMIN)"""
   moderationQueue(first: Int, after: String): ModerationCaseConnection! @join__field(graph: CORE)
@@ -1718,6 +2014,15 @@ input RequestTeacherVerificationInput
   message: String
 }
 
+input RequestToJoinGroupInput
+  @join__type(graph: CORE)
+{
+  groupId: UUID!
+
+  """At most 500 characters, for the admins"""
+  message: String
+}
+
 input ResetPasswordInput
   @join__type(graph: USERS)
 {
@@ -1737,6 +2042,13 @@ input RestoreNoteVersionInput
 {
   noteId: UUID!
   versionId: UUID!
+}
+
+input ReviewGroupJoinRequestInput
+  @join__type(graph: CORE)
+{
+  requestId: UUID!
+  decision: JoinDecision!
 }
 
 input ReviewVerificationRequestInput
@@ -1789,6 +2101,18 @@ input SetGlobalRoleInput
 {
   userId: UUID!
   role: GlobalRole!
+}
+
+input SetGroupRoleInput
+  @join__type(graph: CORE)
+{
+  groupId: UUID!
+  userId: UUID!
+
+  """
+  OWNER hands the group over (the owner only); otherwise a role below the viewer's own
+  """
+  role: GroupRole!
 }
 
 input SetInstitutionalEmailInput
@@ -2112,6 +2436,16 @@ input UpdateFolderInput
   id: UUID!
   name: String
   parentId: UUID
+}
+
+input UpdateGroupInput
+  @join__type(graph: CORE)
+{
+  groupId: UUID!
+  name: String
+  description: String
+  privacy: GroupPrivacy
+  joinPolicy: GroupJoinPolicy
 }
 
 """

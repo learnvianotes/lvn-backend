@@ -122,11 +122,15 @@ export const events = {
   // ADR-0041: ClamAV found something; the file is kept in quarantine and no longer served.
   FileQuarantined: eventEnvelope('FileQuarantined', 1, z.object({ fileId: uuid, ownerId: uuid, signature: z.string().max(200) })),
   // core
+  /** A group came to be or went (ADR-0045): notes keeps a read model of groups for notes shared to them. */
+  GroupCreated: eventEnvelope('GroupCreated', 1, z.object({ groupId: uuid, ownerId: uuid })),
+  GroupDeleted: eventEnvelope('GroupDeleted', 1, z.object({ groupId: uuid })),
   GroupMembershipChanged: eventEnvelope('GroupMembershipChanged', 1, membership.extend({ groupId: uuid })),
   ClassroomMembershipChanged: eventEnvelope('ClassroomMembershipChanged', 1, membership.extend({ classroomId: uuid })),
   // Membership is by approval (ADR-0009): reviewers are notified of requests, requesters of the decision.
   // An approval is followed by Group/ClassroomMembershipChanged (JOINED).
-  GroupJoinRequested: eventEnvelope('GroupJoinRequested', 1, z.object({ requestId: uuid, groupId: uuid, userId: uuid })),
+  /** reviewerIds: who answers it (owner and admins), so communication tells them; optional, additive in v1 (ADR-0045). */
+  GroupJoinRequested: eventEnvelope('GroupJoinRequested', 1, z.object({ requestId: uuid, groupId: uuid, userId: uuid, reviewerIds: z.array(uuid).max(100).optional() })),
   ClassroomJoinRequested: eventEnvelope('ClassroomJoinRequested', 1, z.object({ requestId: uuid, classroomId: uuid, userId: uuid })),
   JoinRequestReviewed: eventEnvelope('JoinRequestReviewed', 1, z.object({
     requestId: uuid,

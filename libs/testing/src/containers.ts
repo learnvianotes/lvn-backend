@@ -28,7 +28,8 @@ export interface TestInfra {
 
 /** Postgres with every migration applied by the real `prisma migrate deploy`. */
 export async function startPostgres(): Promise<{ url: string; container: StartedPostgreSqlContainer }> {
-  const container = await new PostgreSqlContainer(IMAGES.postgres).withDatabase('lvn').withUsername('lvn').withPassword('lvn').start()
+  // Test files run in parallel, each app with its own pool (and some with a second app, ADR-0042): room for all of them.
+  const container = await new PostgreSqlContainer(IMAGES.postgres).withDatabase('lvn').withUsername('lvn').withPassword('lvn').withCommand(['postgres', '-c', 'max_connections=500']).start()
   const url = container.getConnectionUri()
   execFileSync(path.join(REPO_ROOT, 'node_modules/.bin/prisma'), ['migrate', 'deploy'], {
     cwd: REPO_ROOT,

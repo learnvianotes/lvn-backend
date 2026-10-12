@@ -22,6 +22,8 @@ import { ImportResolver } from './graphql/import.resolver'
 import { CardResolver } from './graphql/media.resolver'
 import { NotesResolver, NoteVersionResolver } from './graphql/notes.resolver'
 import { UserNotesResolver } from './graphql/user-notes.resolver'
+import { GroupNotesResolver, NoteGroupsResolver } from './graphql/group-notes.resolver'
+import { GroupSharesService } from './application/group-shares.service'
 import { OrganiseResolver, SubjectResolver, TopicResolver } from './graphql/organise.resolver'
 import { ReaderResolver } from './graphql/reader.resolver'
 import { ConversionResolver, NoteConversionResolver } from './graphql/convert.resolver'
@@ -68,6 +70,9 @@ export class NotesModule {
         CardResolver,
         NotesResolver,
         UserNotesResolver,
+        GroupSharesService,
+        GroupNotesResolver,
+        NoteGroupsResolver,
         NoteVersionResolver,
         OrganiseResolver,
         SubjectResolver,

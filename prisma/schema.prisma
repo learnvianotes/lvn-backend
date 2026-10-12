@@ -746,6 +746,7 @@ model Note {
   forkingEnabled        Boolean         @default(true)
   /// Every connection of the owner reads it, live (ADR-0013, ADR-0044): materialised as CONNECTIONS share rows
   sharedWithConnections Boolean         @default(false)
+  groupShares           GroupShare[]
   /// ADR-0037: only OK notes are readable on the public path; HIDDEN and REMOVED notes by their owner only
   moderation            ModerationState @default(OK)
   /// Why the note is held, hidden or removed; shown to the owner
@@ -1223,6 +1224,8 @@ model Notification {
   actorId   String?              @db.Uuid
   /// Cross-context reference to notes.Note when it is about a note
   noteId    String?              @db.Uuid
+  /// Cross-context reference to core.Group when it is about a group (ADR-0045)
+  groupId   String?              @db.Uuid
   /// Category facts that are not user content (a decision, counts)
   data      Json?
   readAt    DateTime?            @db.Timestamptz(3)
@@ -1319,4 +1322,154 @@ model TeacherSkill {
 
   @@index([userId, position])
   @@schema("users")
+}
+
+// ── Groups (ADR-0045) ──────────────────────────────────────────────────────────────────────────────────────────────
+
+enum GroupType {
+  COMMUNITY
+  PROJECT
+
+  @@schema("core")
+}
+
+enum GroupPrivacy {
+  PUBLIC
+  PRIVATE
+
+  @@schema("core")
+}
+
+enum GroupJoinPolicy {
+  OPEN
+  APPROVAL
+
+  @@schema("core")
+}
+
+enum GroupRole {
+  OWNER
+  ADMIN
+  MODERATOR
+  MEMBER
+  MENTOR
+
+  @@schema("core")
+}
+
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+
+  @@schema("core")
+}
+
+/// A community of people (§4.1, ADR-0045). PUBLIC is discoverable; content is for members in every group.
+model Group {
+  id          String             @id @db.Uuid
+  name        String
+  description String?
+  type        GroupType          @default(COMMUNITY)
+  privacy     GroupPrivacy       @default(PUBLIC)
+  /// A PRIVATE group always uses APPROVAL, whatever is stored (ADR-0011)
+  joinPolicy  GroupJoinPolicy    @default(APPROVAL)
+  /// Cross-context reference to users.User
+  ownerId     String             @db.Uuid
+  createdAt   DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime           @updatedAt @db.Timestamptz(3)
+  deletedAt   DateTime?          @db.Timestamptz(3)
+  members     GroupMember[]
+  requests    GroupJoinRequest[]
+  posts       GroupPost[]
+
+  @@index([privacy, deletedAt, createdAt(sort: Desc)])
+  @@index([ownerId])
+  @@schema("core")
+}
+
+model GroupMember {
+  groupId    String    @db.Uuid
+  /// Cross-context reference to users.User
+  userId     String    @db.Uuid
+  role       GroupRole @default(MEMBER)
+  joinedAt   DateTime  @default(now()) @db.Timestamptz(3)
+  /// Moderators mute a member for a time: they cannot post until then
+  mutedUntil DateTime? @db.Timestamptz(3)
+  group      Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+  @@index([userId])
+  @@schema("core")
+}
+
+/// A request to join (ADR-0009): one pending per person and group.
+model GroupJoinRequest {
+  id         String            @id @db.Uuid
+  groupId    String            @db.Uuid
+  userId     String            @db.Uuid
+  status     JoinRequestStatus @default(PENDING)
+  message    String?
+  reviewedBy String?           @db.Uuid
+  reviewedAt DateTime?         @db.Timestamptz(3)
+  createdAt  DateTime          @default(now()) @db.Timestamptz(3)
+  group      Group             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, status, createdAt(sort: Desc)])
+  @@index([userId, status])
+  @@schema("core")
+}
+
+/// A post in a group: rich text (a card's document), for members only.
+model GroupPost {
+  id        String    @id @db.Uuid
+  groupId   String    @db.Uuid
+  /// Cross-context reference to users.User
+  authorId  String    @db.Uuid
+  body      Json
+  pinnedAt  DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  editedAt  DateTime? @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, deletedAt, createdAt(sort: Desc)])
+  @@schema("core")
+}
+
+/// notes' copy of the groups that exist (ADR-0045), fed by GroupCreated / GroupDeleted.
+model GroupRead {
+  id        String            @id @db.Uuid
+  deletedAt DateTime?         @db.Timestamptz(3)
+  members   GroupMemberRead[]
+  shares    GroupShare[]
+
+  @@schema("notes")
+}
+
+/// notes' copy of group membership (ADR-0045), fed by GroupMembershipChanged: the read predicate joins it.
+model GroupMemberRead {
+  groupId String    @db.Uuid
+  userId  String    @db.Uuid
+  group   GroupRead @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+  @@index([userId, groupId])
+  @@schema("notes")
+}
+
+/// A note shared to a group (§4.2): its members read the published version.
+model GroupShare {
+  noteId     String    @db.Uuid
+  groupId    String    @db.Uuid
+  /// Cross-context reference to users.User
+  sharedById String    @db.Uuid
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  note       Note      @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  group      GroupRead @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([noteId, groupId])
+  @@index([groupId, createdAt(sort: Desc)])
+  @@schema("notes")
 }

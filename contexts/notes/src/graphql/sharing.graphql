@@ -74,3 +74,26 @@ extend type Mutation {
   "Teachers: share with all your connections, live, or stop (people shared with directly keep their access)"
   setNoteSharedWithConnections(input: SetNoteSharedWithConnectionsInput!): NotePayload!
 }
+
+"A group, owned by the core subgraph; notes adds what is shared to it (ADR-0045)"
+type Group @key(fields: "id") {
+  id: UUID!
+  "Members only: notes shared to the group that the viewer may open, the most recently shared first"
+  sharedNotes(first: Int, after: String): NoteConnection
+}
+
+extend type Note {
+  "Owner only: the groups the note is shared to"
+  groups: [Group!]
+}
+
+input NoteGroupInput {
+  noteId: UUID!
+  groupId: UUID!
+}
+
+extend type Mutation {
+  "Share your note with a group you are in; a PRIVATE note becomes SHARED"
+  shareNoteToGroup(input: NoteGroupInput!): NotePayload!
+  unshareNoteFromGroup(input: NoteGroupInput!): NotePayload!
+}

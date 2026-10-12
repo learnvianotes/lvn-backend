@@ -19,13 +19,19 @@ export interface NoteAccessRow {
   forkedAsRole?: 'OWNER' | 'EDITOR' | 'READER' | null
 }
 
+/** How else the note reaches the actor: shared to a group they are in (ADR-0045). */
+export interface ReachFacts {
+  inSharedGroup?: boolean
+}
+
 /** The facts `can()` needs about one note for one actor; `shareRole` is the actor's NoteShare row, if any. */
-export function noteFacts(note: NoteAccessRow, shareRole: 'EDITOR' | 'VIEWER' | null): NoteFacts {
+export function noteFacts(note: NoteAccessRow, shareRole: 'EDITOR' | 'VIEWER' | null, reach: ReachFacts = {}): NoteFacts {
   return {
     ownerId: note.ownerId,
     visibility: note.visibility,
     forkingEnabled: note.forkingEnabled,
     ...(shareRole ? { shareRole } : {}),
+    ...(reach.inSharedGroup ? { sharedToActorsGroup: true } : {}),
     ...(note.forkedFromVisibility ? { fork: { originVisibilityAtFork: note.forkedFromVisibility, forkedAsOwnerOrEditor: note.forkedAsRole === 'OWNER' || note.forkedAsRole === 'EDITOR' } } : {}),
   }
 }
@@ -36,14 +42,14 @@ export function noteFacts(note: NoteAccessRow, shareRole: 'EDITOR' | 'VIEWER' | 
  * only, a reader needs a published version to have anything to read, and moderation (ADR-0037) closes the public path
  * to a held note and the note itself to everyone but its owner once hidden or removed.
  */
-export function noteAccess(actor: Actor | null, note: NoteAccessRow, shareRole: 'EDITOR' | 'VIEWER' | null): NoteAccess | null {
+export function noteAccess(actor: Actor | null, note: NoteAccessRow, shareRole: 'EDITOR' | 'VIEWER' | null, reach: ReachFacts = {}): NoteAccess | null {
   if (actor?.id === note.ownerId) return 'OWNER'
   if (note.deletedAt) return null
   const moderation = note.moderation ?? 'OK'
   if (moderation === 'HIDDEN' || moderation === 'REMOVED') return null
   // Held: only the people it is shared with still read it (shares grant nothing on PRIVATE notes; can() checks that).
-  if (moderation === 'PENDING_REVIEW' && !shareRole) return null
-  const facts = noteFacts(note, shareRole)
+  if (moderation === 'PENDING_REVIEW' && !shareRole && !reach.inSharedGroup) return null
+  const facts = noteFacts(note, shareRole, reach)
   if (!can(actor, Action.NOTE_READ, { kind: 'note', note: facts })) return null
   if (actor && can(actor, Action.NOTE_EDIT_DRAFT, { kind: 'note', note: facts })) return 'EDITOR'
   return note.publishedVersionId ? 'READER' : null
@@ -66,6 +72,8 @@ export function visibleNotesWhere(actorId: string | null): Prisma.NoteWhereInput
       { visibility: 'PUBLIC', ...open, ...published },
       { visibility: { in: ['SHARED', 'PUBLIC'] }, ...shared, shares: { some: { userId: actorId, role: 'EDITOR' } } },
       { visibility: { in: ['SHARED', 'PUBLIC'] }, ...shared, shares: { some: { userId: actorId, role: 'VIEWER' } }, ...published },
+      // Shared to a group the viewer is in (ADR-0045): notes' own copy of membership, fed by core's events.
+      { visibility: { in: ['SHARED', 'PUBLIC'] }, ...shared, ...published, groupShares: { some: { group: { deletedAt: null, members: { some: { userId: actorId } } } } } },
     ],
   }
 }
