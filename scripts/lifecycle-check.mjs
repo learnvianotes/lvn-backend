@@ -245,6 +245,19 @@ if (opt('--vm')) {
   const thread = (await gql('query ($target: CommentTargetInput!) { discussion(target: $target) { commentCount reactions { counts { kind count } } } }', { target: planTarget }, A.token)).discussion
   const unseen = (await gql('query ($target: CommentTargetInput!) { discussion(target: $target) { commentCount } }', { target: planTarget }, B.token)).discussion
   ok((await eventually(() => told(D, 'REPLY'))) && thread.commentCount === 2 && thread.reactions.counts.find((c) => c.kind === 'HELPFUL').count === 1 && unseen === null, 'A replies and D is told; A sees one Helpful; B sees no discussion')
+
+  // Project workspaces (ADR-0048): D starts one and asks teacher C to mentor; D asks a doubt, C hears of it and
+  // answers, and D hears back.
+  const ws = (await gql('mutation { createGroup(input: { name: "Lifecycle project", privacy: PRIVATE, type: PROJECT }) { group { id type } userErrors { message } } }', {}, D.token)).createGroup.group
+  await gql('mutation ($input: InviteMentorInput!) { inviteMentor(input: $input) { userErrors { message } } }', { input: { groupId: ws.id, person: C.handle } }, D.token)
+  const mentorInvite = (await gql('{ myMentorInvites { id group { id } } }', {}, C.token)).myMentorInvites.find((i) => i.group.id === ws.id)
+  await gql('mutation ($input: AnswerMentorInviteInput!) { answerMentorInvite(input: $input) { group { viewerRole } } }', { input: { inviteId: mentorInvite.id, accept: true } }, C.token)
+  ok(ws.type === 'PROJECT' && (await gql('query ($id: UUID!) { group(id: $id) { viewerRole } }', { id: ws.id }, C.token)).group.viewerRole === 'MENTOR', 'D starts a project workspace; teacher C accepts the invite to mentor it')
+  const doubt = (await gql('mutation ($input: AskDoubtInput!) { askDoubt(input: $input) { doubt { id } userErrors { message } } }', { input: { groupId: ws.id, title: 'Why a min-heap?', body: text('For the scheduler').doc } }, D.token)).askDoubt.doubt
+  const toldOf = async (who, kind) => (await gql('{ notifications(first: 5) { edges { node { category data path } } } }', {}, who.token)).notifications.edges.some((e) => e.node.category === 'DOUBT' && e.node.data?.kind === kind && e.node.path.endsWith(doubt.id))
+  ok(await eventually(() => toldOf(C, 'ASKED')), 'D asks a doubt and the mentor is told')
+  const answered = (await gql('mutation ($input: AnswerDoubtInput!) { answerDoubt(input: $input) { doubt { status answers { byMentor } } } }', { input: { doubtId: doubt.id, body: text('The smallest job runs first.').doc } }, C.token)).answerDoubt.doubt
+  ok(answered.status === 'ANSWERED' && answered.answers[0].byMentor && (await eventually(() => toldOf(D, 'ANSWERED'))), 'the mentor answers and D is told')
 }
 
 // Media (ADR-0041): processed after the upload by the worker, scanned by the environment's ClamAV.

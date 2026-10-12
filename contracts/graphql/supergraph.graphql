@@ -68,12 +68,37 @@ input AnswerClassroomInviteInput
   accept: Boolean!
 }
 
+input AnswerDoubtInput
+  @join__type(graph: CORE)
+{
+  doubtId: UUID!
+  body: JSON!
+}
+
+input AnswerMentorInviteInput
+  @join__type(graph: CORE)
+{
+  inviteId: UUID!
+  accept: Boolean!
+}
+
 input AppealModerationInput
   @join__type(graph: CORE)
 {
   entityType: ReportEntityType!
   entityId: UUID!
   message: String!
+}
+
+input AskDoubtInput
+  @join__type(graph: CORE)
+{
+  groupId: UUID!
+
+  """3 to 200 characters"""
+  title: String!
+  body: JSON!
+  repoRef: String
 }
 
 type AuthPayload
@@ -497,6 +522,13 @@ type ConnectionRequestItem
   createdAt: DateTime!
 }
 
+enum ContributorRole
+  @join__type(graph: NOTES)
+{
+  CONTRIBUTOR @join__enumValue(graph: NOTES)
+  MENTOR @join__enumValue(graph: NOTES)
+}
+
 input ConvertPdfInput
   @join__type(graph: NOTES)
 {
@@ -570,6 +602,9 @@ input CreateGroupInput
   OPEN lets anyone join a public group at once; new groups approve members unless told otherwise
   """
   joinPolicy: GroupJoinPolicy
+
+  """PROJECT starts a project workspace (ADR-0048); COMMUNITY when left out"""
+  type: GroupType
 }
 
 input CreateGroupPostInput
@@ -577,6 +612,9 @@ input CreateGroupPostInput
 {
   groupId: UUID!
   body: JSON!
+
+  """IDEA: on a project workspace's ideas board; POST when left out"""
+  kind: GroupPostKind
 }
 
 input CreateNoteInput
@@ -687,6 +725,82 @@ enum DomainReviewStatus
   NEEDS_REVIEW @join__enumValue(graph: USERS)
   APPROVED @join__enumValue(graph: USERS)
   REJECTED @join__enumValue(graph: USERS)
+}
+
+type Doubt
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  title: String!
+
+  """Rich text: a card's document"""
+  body: JSON!
+
+  """A path, line or commit in the repository"""
+  repoRef: String
+  status: DoubtStatus!
+  author: User!
+  createdAt: DateTime!
+  resolvedAt: DateTime
+  answerCount: Int!
+
+  """Oldest first"""
+  answers: [DoubtAnswer!]!
+  viewerCan: DoubtActions!
+}
+
+type DoubtActions
+  @join__type(graph: CORE)
+{
+  answer: Boolean!
+  resolve: Boolean!
+  reopen: Boolean!
+  delete: Boolean!
+}
+
+type DoubtAnswer
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  author: User!
+  body: JSON!
+  byMentor: Boolean!
+  createdAt: DateTime!
+}
+
+type DoubtConnection
+  @join__type(graph: CORE)
+{
+  edges: [DoubtEdge!]!
+  pageInfo: PageInfo!
+}
+
+type DoubtEdge
+  @join__type(graph: CORE)
+{
+  cursor: String!
+  node: Doubt!
+}
+
+input DoubtIdInput
+  @join__type(graph: CORE)
+{
+  doubtId: UUID!
+}
+
+type DoubtPayload
+  @join__type(graph: CORE)
+{
+  doubt: Doubt
+  userErrors: [UserError!]!
+}
+
+enum DoubtStatus
+  @join__type(graph: CORE)
+{
+  OPEN @join__enumValue(graph: CORE)
+  ANSWERED @join__enumValue(graph: CORE)
+  RESOLVED @join__enumValue(graph: CORE)
 }
 
 input EditCommentInput
@@ -806,6 +920,23 @@ type Group
   """Members only: pinned posts, then the newest"""
   posts(first: Int, after: String): GroupPostConnection @join__field(graph: CORE)
 
+  """The linked repository, for anyone who sees the workspace"""
+  repository: GroupRepository @join__field(graph: CORE)
+
+  """Members: the ideas board, most reactions first"""
+  ideas: [GroupPost!] @join__field(graph: CORE)
+
+  """Members and the mentor: doubts, newest first"""
+  doubts(status: DoubtStatus, first: Int, after: String): DoubtConnection @join__field(graph: CORE)
+
+  """The viewer's open invite to mentor this workspace"""
+  viewerMentorInviteId: UUID @join__field(graph: CORE)
+
+  """
+  The note that credits the team; null when there is none or the viewer cannot read it
+  """
+  showcase: Note @join__field(graph: CORE)
+
   """
   Members only: notes shared to the group that the viewer may open, the most recently shared first
   """
@@ -826,6 +957,15 @@ type GroupActions
   delete: Boolean!
   reviewRequests: Boolean!
   leave: Boolean!
+
+  """Project workspaces (ADR-0048): the team asks doubts"""
+  askDoubt: Boolean!
+
+  """Project workspaces: admins invite teachers to mentor"""
+  inviteMentor: Boolean!
+
+  """A teacher with an open invite to mentor"""
+  acceptMentorInvite: Boolean!
 }
 
 input GroupIdInput
@@ -883,6 +1023,7 @@ type GroupPost
 
   """Rich text: a card's document"""
   body: JSON!
+  kind: GroupPostKind!
   pinned: Boolean!
   createdAt: DateTime!
   editedAt: DateTime
@@ -922,6 +1063,13 @@ input GroupPostIdInput
   postId: UUID!
 }
 
+enum GroupPostKind
+  @join__type(graph: CORE)
+{
+  POST @join__enumValue(graph: CORE)
+  IDEA @join__enumValue(graph: CORE)
+}
+
 type GroupPostPayload
   @join__type(graph: CORE)
 {
@@ -934,6 +1082,23 @@ enum GroupPrivacy
 {
   PUBLIC @join__enumValue(graph: CORE)
   PRIVATE @join__enumValue(graph: CORE)
+}
+
+"""
+Public details come from the provider's API when it shows the repository; otherwise the card is the link
+"""
+type GroupRepository
+  @join__type(graph: CORE)
+{
+  provider: RepositoryProvider!
+  url: String!
+  available: Boolean!
+  name: String
+  description: String
+  language: String
+  stars: Int
+  pushedAt: DateTime
+  refreshedAt: DateTime
 }
 
 enum GroupRole
@@ -1026,6 +1191,15 @@ enum InstitutionalEmailStatus
   Confirmed, but the domain waits for platform-admin review before it verifies the account
   """
   PENDING_REVIEW @join__enumValue(graph: USERS)
+}
+
+input InviteMentorInput
+  @join__type(graph: CORE)
+{
+  groupId: UUID!
+
+  """A teacher's handle or email"""
+  person: String!
 }
 
 input InviteToClassroomInput
@@ -1187,6 +1361,15 @@ type MediaFile
 
   """The 720p H.264 transcode of a video, or the loudness-normalised audio"""
   playbackUrl: String
+}
+
+type MentorInviteItem
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  group: Group!
+  invitedBy: User!
+  expiresAt: DateTime!
 }
 
 input ModerateContentInput
@@ -1365,6 +1548,31 @@ type Mutation
   """Its author, or a moderator"""
   deleteGroupPost(input: GroupPostIdInput!): GroupPayload! @join__field(graph: CORE)
   pinGroupPost(input: PinGroupPostInput!): GroupPostPayload! @join__field(graph: CORE)
+
+  """Admins and the Owner"""
+  setGroupRepository(input: SetGroupRepositoryInput!): GroupPayload! @join__field(graph: CORE)
+
+  """Admins and the Owner invite a teacher; the invite lasts 14 days"""
+  inviteMentor(input: InviteMentorInput!): GroupPayload! @join__field(graph: CORE)
+  answerMentorInvite(input: AnswerMentorInviteInput!): GroupPayload! @join__field(graph: CORE)
+
+  """The team"""
+  askDoubt(input: AskDoubtInput!): DoubtPayload! @join__field(graph: CORE)
+
+  """The team and the mentor"""
+  answerDoubt(input: AnswerDoubtInput!): DoubtPayload! @join__field(graph: CORE)
+
+  """The mentor, admins, the Owner or the asker"""
+  resolveDoubt(input: DoubtIdInput!): DoubtPayload! @join__field(graph: CORE)
+
+  """The asker or the mentor"""
+  reopenDoubt(input: DoubtIdInput!): DoubtPayload! @join__field(graph: CORE)
+
+  """The asker or a moderator"""
+  deleteDoubt(input: DoubtIdInput!): GroupPayload! @join__field(graph: CORE)
+
+  """Admins and the Owner"""
+  setProjectShowcase(input: SetProjectShowcaseInput!): GroupPayload! @join__field(graph: CORE)
   createUploadIntent(input: CreateUploadIntentInput!): UploadIntentPayload! @join__field(graph: NOTES)
 
   """Checks the uploaded bytes (size, magic bytes) and makes the file READY"""
@@ -1616,6 +1824,11 @@ type Note
   deletedAt: DateTime @join__field(graph: NOTES)
 
   """
+  A workspace's showcase: its team and mentors, for anyone who reads the note
+  """
+  contributors: [NoteContributor!]! @join__field(graph: NOTES)
+
+  """
   The latest conversion filling this note, for the person who asked for it
   """
   pdfConversion: PdfConversion @join__field(graph: NOTES)
@@ -1669,6 +1882,14 @@ type NoteConnection
 {
   edges: [NoteEdge!]!
   pageInfo: PageInfo!
+}
+
+"""Someone a project workspace's showcase note credits (ADR-0048)"""
+type NoteContributor
+  @join__type(graph: NOTES)
+{
+  user: User!
+  role: ContributorRole!
 }
 
 type NoteEdge
@@ -1906,7 +2127,7 @@ type Notification
   classroom: Classroom
 
   """
-  Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED }, COMMENT { kind: COMMENT | REPLY }
+  Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED }, COMMENT { kind: COMMENT | REPLY }, DOUBT { kind: ASKED | ANSWERED | RESOLVED, byMentor }
   """
   data: JSON
   readAt: DateTime
@@ -2208,6 +2429,12 @@ type Query
   """Open cases, oldest first (PLATFORM_ADMIN)"""
   moderationQueue(first: Int, after: String): ModerationCaseConnection! @join__field(graph: CORE)
 
+  """A doubt the viewer's workspace holds"""
+  doubt(id: UUID!): Doubt @join__field(graph: CORE)
+
+  """Teachers: invites to mentor waiting for an answer"""
+  myMentorInvites: [MentorInviteItem!]! @join__field(graph: CORE)
+
   """A conversion the viewer asked for"""
   pdfConversion(id: UUID!): PdfConversion @join__field(graph: NOTES)
   pdfPagesThisMonth: PdfPagesUsage! @join__field(graph: NOTES)
@@ -2446,6 +2673,13 @@ enum ReportReason
   OTHER @join__enumValue(graph: CORE)
 }
 
+enum RepositoryProvider
+  @join__type(graph: CORE)
+{
+  GITHUB @join__enumValue(graph: CORE)
+  GITLAB @join__enumValue(graph: CORE)
+}
+
 """
 fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by platform admins only, deleted 30 days after the decision
 """
@@ -2584,6 +2818,17 @@ input SetGlobalRoleInput
   role: GlobalRole!
 }
 
+input SetGroupRepositoryInput
+  @join__type(graph: CORE)
+{
+  groupId: UUID!
+
+  """
+  https://github.com/<owner>/<repo> or https://gitlab.com/<namespace>/<project>; empty unlinks
+  """
+  url: String
+}
+
 input SetGroupRoleInput
   @join__type(graph: CORE)
 {
@@ -2614,6 +2859,15 @@ input SetNoteSharedWithConnectionsInput
 {
   noteId: UUID!
   shared: Boolean!
+}
+
+input SetProjectShowcaseInput
+  @join__type(graph: CORE)
+{
+  groupId: UUID!
+
+  """A PUBLIC project note shared to the workspace; null clears it"""
+  noteId: UUID
 }
 
 input ShareNoteInput

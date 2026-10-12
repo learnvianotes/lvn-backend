@@ -26,6 +26,8 @@ import { ClassroomNotesResolver, NoteClassroomsResolver } from './graphql/classr
 import { GroupNotesResolver, NoteGroupsResolver } from './graphql/group-notes.resolver'
 import { ClassroomSharesService } from './application/classroom-shares.service'
 import { NoteAccessFacade } from './application/note-access.facade'
+import { ContributorsService } from './application/contributors.service'
+import { NoteContributorsResolver } from './graphql/contributors.resolver'
 import { GroupSharesService } from './application/group-shares.service'
 import { OrganiseResolver, SubjectResolver, TopicResolver } from './graphql/organise.resolver'
 import { ReaderResolver } from './graphql/reader.resolver'
@@ -78,6 +80,8 @@ export class NotesModule {
         NoteGroupsResolver,
         ClassroomSharesService,
         NoteAccessFacade,
+        ContributorsService,
+        NoteContributorsResolver,
         ClassroomNotesResolver,
         NoteClassroomsResolver,
         NoteVersionResolver,

@@ -48,7 +48,7 @@ export interface Notification {
   group: Group | null
   /** The class it is about (JOIN_REQUEST, JOIN_DECISION, CLASSROOM_INVITE, CLASSROOM_POST); null when there is none or the viewer may no longer see it */
   classroom: Classroom | null
-  /** Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED }, COMMENT { kind: COMMENT | REPLY } */
+  /** Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED }, COMMENT { kind: COMMENT | REPLY }, DOUBT { kind: ASKED | ANSWERED | RESOLVED, byMentor } */
   data: unknown | null
   readAt: Date | null
   createdAt: Date

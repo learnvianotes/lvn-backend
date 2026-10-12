@@ -88,6 +88,8 @@ export interface ClassroomSharedNotesArgs {
   after?: string | null
 }
 
+export type ContributorRole = 'CONTRIBUTOR' | 'MENTOR'
+
 export interface ConvertPdfInput {
   noteId: string
   /** A PDF of the note the viewer can read */
@@ -378,6 +380,8 @@ export interface Note {
   updatedAt: Date
   /** Set while the note is in the trash (owner only) */
   deletedAt: Date | null
+  /** A workspace's showcase: its team and mentors, for anyone who reads the note */
+  contributors?: Array<NoteContributor>
   /** The latest conversion filling this note, for the person who asked for it */
   pdfConversion?: PdfConversion | null
   /** Owner only; null for everyone else */
@@ -425,6 +429,12 @@ export interface NoteClassroomInput {
 export interface NoteConnection {
   edges: Array<NoteEdge>
   pageInfo: PageInfo
+}
+
+/** Someone a project workspace's showcase note credits (ADR-0048) */
+export interface NoteContributor {
+  user: User
+  role: ContributorRole
 }
 
 export interface NoteEdge {

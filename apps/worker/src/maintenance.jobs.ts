@@ -1,5 +1,6 @@
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common'
 import { NotificationService } from '@lvn-backend/communication'
+import { WorkspacesService } from '@lvn-backend/core'
 import { NotesMaintenance } from '@lvn-backend/notes'
 import { Queues } from '@lvn-backend/queue'
 import { UsersMaintenance } from '@lvn-backend/users'
@@ -7,6 +8,7 @@ import { UsersMaintenance } from '@lvn-backend/users'
 export const USERS_MAINTENANCE_QUEUE = 'users.maintenance'
 export const NOTES_MAINTENANCE_QUEUE = 'notes.maintenance'
 export const COMMS_MAINTENANCE_QUEUE = 'comms.maintenance'
+export const CORE_MAINTENANCE_QUEUE = 'core.maintenance'
 
 /** Scheduled housekeeping (§9.1). Every schedule is UTC and idempotent, so restarts and several workers are safe. */
 @Injectable()
@@ -18,6 +20,7 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
     private readonly users: UsersMaintenance,
     private readonly notes: NotesMaintenance,
     private readonly notifications: NotificationService,
+    private readonly workspaces: WorkspacesService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -60,5 +63,15 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
       },
     })
     await this.queues.repeat(COMMS_MAINTENANCE_QUEUE, 'prune-notifications', '55 3 * * *')
+
+    this.queues.process(CORE_MAINTENANCE_QUEUE, {
+      // ADR-0048: project workspaces' repository details from the providers' public APIs, at most a day old.
+      'refresh-repositories': async () => {
+        const refreshed = await this.workspaces.refreshStale()
+        this.log.log(`refreshed ${refreshed} repositories`)
+        return { refreshed }
+      },
+    })
+    await this.queues.repeat(CORE_MAINTENANCE_QUEUE, 'refresh-repositories', '5 4 * * *')
   }
 }

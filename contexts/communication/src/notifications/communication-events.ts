@@ -84,6 +84,24 @@ export class CommunicationEvents implements OnModuleInit {
         await this.notifications.notify({ userId: r.userId, category: 'COMMENT', actorId: payload.authorId, data: { kind: r.kind }, ...where })
       }
     })
+    // Project workspaces (ADR-0048): the teacher asked to mentor; mentors hear of doubts, askers of answers.
+    this.events.subscribe('MentorInvited', async ({ payload }) => {
+      await this.notifications.notify({ userId: payload.teacherId, category: 'MENTOR_INVITE', path: `/groups/${payload.groupId}`, actorId: payload.invitedBy, groupId: payload.groupId })
+    })
+    const doubtPath = (groupId: string, doubtId: string) => `/groups/${groupId}/doubts/${doubtId}`
+    this.events.subscribe('DoubtAsked', async ({ payload }) => {
+      for (const mentor of payload.mentorIds ?? []) {
+        await this.notifications.notify({ userId: mentor, category: 'DOUBT', path: doubtPath(payload.groupId, payload.doubtId), actorId: payload.askedBy, groupId: payload.groupId, data: { kind: 'ASKED' } })
+      }
+    })
+    this.events.subscribe('DoubtAnswered', async ({ payload }) => {
+      if (!payload.askedBy) return
+      await this.notifications.notify({ userId: payload.askedBy, category: 'DOUBT', path: doubtPath(payload.groupId, payload.doubtId), actorId: payload.answeredBy, groupId: payload.groupId, data: { kind: 'ANSWERED', byMentor: payload.byMentor } })
+    })
+    this.events.subscribe('DoubtResolved', async ({ payload }) => {
+      if (!payload.askedBy) return
+      await this.notifications.notify({ userId: payload.askedBy, category: 'DOUBT', path: doubtPath(payload.groupId, payload.doubtId), actorId: payload.resolvedBy, groupId: payload.groupId, data: { kind: 'RESOLVED' } })
+    })
     // Sockets of a revoked session close on every instance.
     this.events.subscribe('SessionRevoked', async ({ payload }) => {
       await this.live.publish(payload.userId, { type: 'revoke', sessionId: payload.sessionId })

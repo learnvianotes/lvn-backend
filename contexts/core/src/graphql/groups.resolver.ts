@@ -111,7 +111,7 @@ export class GroupsResolver {
   // ── Mutations ──
 
   @Mutation('createGroup')
-  createGroup(@Args('input') input: { name: string; description?: string | null; privacy: 'PUBLIC' | 'PRIVATE'; joinPolicy?: 'OPEN' | 'APPROVAL' | null }, @CurrentViewer() viewer: Viewer) {
+  createGroup(@Args('input') input: { name: string; description?: string | null; privacy: 'PUBLIC' | 'PRIVATE'; joinPolicy?: 'OPEN' | 'APPROVAL' | null; type?: 'COMMUNITY' | 'PROJECT' | null }, @CurrentViewer() viewer: Viewer) {
     return this.payload(viewer.userId, () => this.groups.create(viewer.userId, input))
   }
 
@@ -180,8 +180,8 @@ export class GroupsResolver {
   }
 
   @Mutation('createGroupPost')
-  createGroupPost(@Args('input') input: { groupId: string; body: unknown }, @CurrentViewer() viewer: Viewer) {
-    return this.postPayload(viewer.userId, () => this.groups.post(viewer.userId, input.groupId, input.body))
+  createGroupPost(@Args('input') input: { groupId: string; body: unknown; kind?: 'POST' | 'IDEA' | null }, @CurrentViewer() viewer: Viewer) {
+    return this.postPayload(viewer.userId, () => this.groups.post(viewer.userId, input.groupId, input.body, input.kind ?? 'POST'))
   }
 
   @Mutation('editGroupPost')
@@ -201,9 +201,9 @@ export class GroupsResolver {
 }
 
 /** A post with what the viewer may do to it. */
-function post(p: PostRow, viewerId: string, moderate: boolean) {
+export function post(p: PostRow, viewerId: string, moderate: boolean) {
   const mine = p.authorId === viewerId
-  return { id: p.id, author: userRef(p.authorId), body: p.body, pinned: p.pinnedAt !== null, createdAt: p.createdAt, editedAt: p.editedAt, viewerCan: { edit: mine, delete: mine || moderate, pin: moderate } }
+  return { id: p.id, kind: p.kind, author: userRef(p.authorId), body: p.body, pinned: p.pinnedAt !== null, createdAt: p.createdAt, editedAt: p.editedAt, viewerCan: { edit: mine, delete: mine || moderate, pin: moderate } }
 }
 
 /** Groups referenced from other subgraphs (notes shared to a group): resolved for people who may see them. */

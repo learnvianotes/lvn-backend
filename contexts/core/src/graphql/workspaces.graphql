@@ -1,0 +1,153 @@
+# Project workspaces (ADR-0015, ADR-0048): a group of type PROJECT with a repository card, an ideas board, doubts for
+# the mentor, mentors by invitation, and a showcase note that credits the team.
+
+enum GroupPostKind { POST IDEA }
+enum DoubtStatus { OPEN ANSWERED RESOLVED }
+enum RepositoryProvider { GITHUB GITLAB }
+
+extend type Group {
+  "The linked repository, for anyone who sees the workspace"
+  repository: GroupRepository
+  "Members: the ideas board, most reactions first"
+  ideas: [GroupPost!]
+  "Members and the mentor: doubts, newest first"
+  doubts(status: DoubtStatus, first: Int, after: String): DoubtConnection
+  "The viewer's open invite to mentor this workspace"
+  viewerMentorInviteId: UUID
+  "The note that credits the team; null when there is none or the viewer cannot read it"
+  showcase: Note
+}
+
+"Public details come from the provider's API when it shows the repository; otherwise the card is the link"
+type GroupRepository {
+  provider: RepositoryProvider!
+  url: String!
+  available: Boolean!
+  name: String
+  description: String
+  language: String
+  stars: Int
+  pushedAt: DateTime
+  refreshedAt: DateTime
+}
+
+type DoubtActions {
+  answer: Boolean!
+  resolve: Boolean!
+  reopen: Boolean!
+  delete: Boolean!
+}
+
+type Doubt {
+  id: UUID!
+  title: String!
+  "Rich text: a card's document"
+  body: JSON!
+  "A path, line or commit in the repository"
+  repoRef: String
+  status: DoubtStatus!
+  author: User!
+  createdAt: DateTime!
+  resolvedAt: DateTime
+  answerCount: Int!
+  "Oldest first"
+  answers: [DoubtAnswer!]!
+  viewerCan: DoubtActions!
+}
+
+type DoubtAnswer {
+  id: UUID!
+  author: User!
+  body: JSON!
+  byMentor: Boolean!
+  createdAt: DateTime!
+}
+
+type DoubtEdge {
+  cursor: String!
+  node: Doubt!
+}
+
+type DoubtConnection {
+  edges: [DoubtEdge!]!
+  pageInfo: PageInfo!
+}
+
+type MentorInviteItem {
+  id: UUID!
+  group: Group!
+  invitedBy: User!
+  expiresAt: DateTime!
+}
+
+extend type Query {
+  "A doubt the viewer's workspace holds"
+  doubt(id: UUID!): Doubt
+  "Teachers: invites to mentor waiting for an answer"
+  myMentorInvites: [MentorInviteItem!]!
+}
+
+input SetGroupRepositoryInput {
+  groupId: UUID!
+  "https://github.com/<owner>/<repo> or https://gitlab.com/<namespace>/<project>; empty unlinks"
+  url: String
+}
+
+input InviteMentorInput {
+  groupId: UUID!
+  "A teacher's handle or email"
+  person: String!
+}
+
+input AnswerMentorInviteInput {
+  inviteId: UUID!
+  accept: Boolean!
+}
+
+input AskDoubtInput {
+  groupId: UUID!
+  "3 to 200 characters"
+  title: String!
+  body: JSON!
+  repoRef: String
+}
+
+input AnswerDoubtInput {
+  doubtId: UUID!
+  body: JSON!
+}
+
+input DoubtIdInput {
+  doubtId: UUID!
+}
+
+input SetProjectShowcaseInput {
+  groupId: UUID!
+  "A PUBLIC project note shared to the workspace; null clears it"
+  noteId: UUID
+}
+
+type DoubtPayload {
+  doubt: Doubt
+  userErrors: [UserError!]!
+}
+
+extend type Mutation {
+  "Admins and the Owner"
+  setGroupRepository(input: SetGroupRepositoryInput!): GroupPayload!
+  "Admins and the Owner invite a teacher; the invite lasts 14 days"
+  inviteMentor(input: InviteMentorInput!): GroupPayload!
+  answerMentorInvite(input: AnswerMentorInviteInput!): GroupPayload!
+  "The team"
+  askDoubt(input: AskDoubtInput!): DoubtPayload!
+  "The team and the mentor"
+  answerDoubt(input: AnswerDoubtInput!): DoubtPayload!
+  "The mentor, admins, the Owner or the asker"
+  resolveDoubt(input: DoubtIdInput!): DoubtPayload!
+  "The asker or the mentor"
+  reopenDoubt(input: DoubtIdInput!): DoubtPayload!
+  "The asker or a moderator"
+  deleteDoubt(input: DoubtIdInput!): GroupPayload!
+  "Admins and the Owner"
+  setProjectShowcase(input: SetProjectShowcaseInput!): GroupPayload!
+}
