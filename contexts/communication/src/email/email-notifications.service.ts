@@ -24,6 +24,7 @@ const DIGEST_LINE: Partial<Record<NotificationCategory, (n: number) => string>> 
   CLASSROOM_POST: (n) => `${n} class ${n === 1 ? 'announcement' : 'announcements'}`,
   MENTOR_INVITE: (n) => `${n} ${n === 1 ? 'invite' : 'invites'} to mentor`,
   DOUBT: (n) => `${n} ${n === 1 ? 'update' : 'updates'} on doubts`,
+  MENTION: (n) => `${n} ${n === 1 ? 'mention' : 'mentions'} of you`,
 }
 
 /**

@@ -6,6 +6,7 @@ import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { AUDIT, ENTITLEMENTS, PEOPLE, POLICY, type Audit, type Entitlements, type People, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
+import { MentionsService } from './mentions.service'
 
 /** The roles as stored (core.GroupRole) and as `can()` names them (`@lvn/contracts` GroupRole). */
 export type StoredRole = 'OWNER' | 'ADMIN' | 'MODERATOR' | 'MEMBER' | 'MENTOR'
@@ -39,6 +40,7 @@ export class GroupsService {
   constructor(
     private readonly db: PrismaService,
     private readonly limiter: RateLimiter,
+    private readonly mentions: MentionsService,
     @Inject(POLICY) private readonly policy: Policy,
     @Inject(ENTITLEMENTS) private readonly entitlements: Entitlements,
     @Inject(PEOPLE) private readonly people: People,
@@ -334,11 +336,26 @@ export class GroupsService {
     const rate = await this.limiter.hit(`core:group:post:${actorId}`, { max: GROUP_LIMITS.postsPerHour, windowSeconds: 3600 })
     if (!rate.allowed) throw Errors.rateLimited(rate.retryAfter, 'You have posted a lot in the last hour. Try again later.')
     const id = newId()
+    const doc = this.body(body)
     await this.db.$transaction([
-      this.db.groupPost.create({ data: { id, groupId, authorId: actorId, kind, body: this.body(body) as Prisma.InputJsonValue } }),
+      this.db.groupPost.create({ data: { id, groupId, authorId: actorId, kind, body: doc as Prisma.InputJsonValue } }),
       this.db.group.update({ where: { id: groupId }, data: { updatedAt: new Date() } }),
     ])
+    await this.mentionIn(id, groupId, actorId, docText(doc), null)
     return id
+  }
+
+  /** Members named with @handle in a post or an idea (ADR-0054): posts are the members'. */
+  private mentionIn(postId: string, groupId: string, authorId: string, text: string, before: string | null) {
+    return this.mentions.mention({
+      entityType: 'GROUP_POST',
+      entityId: postId,
+      authorId,
+      text,
+      before,
+      place: { kind: 'GROUP', groupId },
+      canSee: async (userId) => (await this.db.groupMember.count({ where: { groupId, userId } })) > 0,
+    })
   }
 
   private async ownPost(actorId: string, postId: string) {
@@ -350,7 +367,10 @@ export class GroupsService {
   async editPost(actorId: string, postId: string, body: unknown): Promise<string> {
     const { post, role } = await this.ownPost(actorId, postId)
     if (post.authorId !== actorId || !role) throw Errors.forbidden('Only its author edits a post.')
-    await this.db.groupPost.update({ where: { id: postId }, data: { body: this.body(body) as Prisma.InputJsonValue, editedAt: new Date() } })
+    const doc = this.body(body)
+    await this.db.groupPost.update({ where: { id: postId }, data: { body: doc as Prisma.InputJsonValue, editedAt: new Date() } })
+    // Only members named for the first time in this edit are told, and only while the post is up.
+    if (post.moderation === 'OK') await this.mentionIn(postId, post.groupId, actorId, docText(doc), docText(post.body as never))
     return postId
   }
 

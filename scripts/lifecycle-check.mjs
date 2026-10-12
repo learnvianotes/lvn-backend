@@ -247,6 +247,11 @@ if (opt('--vm')) {
   const unseen = (await gql('query ($target: CommentTargetInput!) { discussion(target: $target) { commentCount } }', { target: planTarget }, B.token)).discussion
   ok((await eventually(() => told(D, 'REPLY'))) && thread.commentCount === 2 && thread.reactions.counts.find((c) => c.kind === 'HELPFUL').count === 1 && unseen === null, 'A replies and D is told; A sees one Helpful; B sees no discussion')
 
+  // Mentions (ADR-0054): A names C (the class's TA, who reads the plan) and B (who cannot) in a comment; only C is told.
+  await gql('mutation ($input: AddCommentInput!) { addComment(input: $input) { comment { id } } }', { input: { target: planTarget, body: text(`@${C.handle} can you take this one? cc @${B.handle}`).doc } }, A.token)
+  const mentioned = async (who) => (await gql('{ notifications(first: 10) { edges { node { category actor { id } note { id } } } } }', {}, who.token)).notifications.edges.some((e) => e.node.category === 'MENTION' && e.node.actor?.id === A.id && e.node.note?.id === planId)
+  ok((await eventually(() => mentioned(C))) && !(await mentioned(B)), 'A mentions C and B in a comment on the plan: C, who reads it, is told; B, who cannot, is not')
+
   // Project workspaces (ADR-0048): D starts one and asks teacher C to mentor; D asks a doubt, C hears of it and
   // answers, and D hears back.
   const ws = (await gql('mutation { createGroup(input: { name: "Lifecycle project", privacy: PRIVATE, type: PROJECT }) { group { id type } userErrors { message } } }', {}, D.token)).createGroup.group

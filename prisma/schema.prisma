@@ -1228,6 +1228,8 @@ enum NotificationCategory {
   NOTES_IMPORT
   CLASSROOM_INVITE
   MODERATION
+  /// Someone named the person with @handle in a comment or a post they can read (ADR-0054)
+  MENTION
 
   @@schema("comms")
 }

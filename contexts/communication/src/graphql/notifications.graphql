@@ -58,6 +58,7 @@ enum NotificationCategory {
   NOTES_IMPORT
   CLASSROOM_INVITE
   MODERATION
+  MENTION
 }
 
 """
