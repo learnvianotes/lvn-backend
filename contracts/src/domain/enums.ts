@@ -204,3 +204,15 @@ export const ModerationActionType = { APPROVE: 'APPROVE', HIDE: 'HIDE', REMOVE: 
 export type ModerationActionType = (typeof ModerationActionType)[keyof typeof ModerationActionType]
 
 export const enumValues = values
+
+/** What a comment is on (ADR-0047): a note (optionally one of its cards), a group post or a class announcement. */
+export const CommentTargetType = { NOTE: 'NOTE', GROUP_POST: 'GROUP_POST', CLASSROOM_POST: 'CLASSROOM_POST' } as const
+export type CommentTargetType = (typeof CommentTargetType)[keyof typeof CommentTargetType]
+
+/** What a reaction is on (ADR-0047). */
+export const ReactionTargetType = { NOTE: 'NOTE', COMMENT: 'COMMENT', GROUP_POST: 'GROUP_POST', CLASSROOM_POST: 'CLASSROOM_POST' } as const
+export type ReactionTargetType = (typeof ReactionTargetType)[keyof typeof ReactionTargetType]
+
+/** One reaction per person per target (ADR-0047). */
+export const ReactionKind = { LIKE: 'LIKE', HELPFUL: 'HELPFUL', CELEBRATE: 'CELEBRATE' } as const
+export type ReactionKind = (typeof ReactionKind)[keyof typeof ReactionKind]

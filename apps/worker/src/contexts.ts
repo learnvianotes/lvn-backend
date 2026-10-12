@@ -3,8 +3,8 @@ import type { WorkerConfig } from '@lvn-backend/config'
 import { AiModule } from '@lvn-backend/ai'
 import { CommunicationModule, communicationConfigFrom, MailService } from '@lvn-backend/communication'
 import { CoreExport, CoreModule, coreConfigFrom, ModerationService } from '@lvn-backend/core'
-import { AUDIT, CORE_DATA_EXPORT, ENTITLEMENTS, FacadesModule, FILES, MAILER, MODERATION, NOTE_MODERATION, NOTES_DATA_EXPORT, PEOPLE, POLICY } from '@lvn-backend/facades'
-import { FilesService, NoteModerationService, NotesExport, NotesModule, notesConfigFrom } from '@lvn-backend/notes'
+import { AUDIT, CORE_DATA_EXPORT, ENTITLEMENTS, FacadesModule, FILES, MAILER, MODERATION, NOTE_ACCESS, NOTE_MODERATION, NOTES_DATA_EXPORT, PEOPLE, POLICY } from '@lvn-backend/facades'
+import { FilesService, NoteAccessFacade, NoteModerationService, NotesExport, NotesModule, notesConfigFrom } from '@lvn-backend/notes'
 import { AuditService, EntitlementService, PolicyService, UsersModule, usersConfigFrom, UsersService } from '@lvn-backend/users'
 
 /**
@@ -32,6 +32,7 @@ export const facades = () =>
     [AUDIT, AuditService],
     [MODERATION, ModerationService],
     [NOTE_MODERATION, NoteModerationService],
+    [NOTE_ACCESS, NoteAccessFacade],
     [NOTES_DATA_EXPORT, NotesExport],
     [CORE_DATA_EXPORT, CoreExport],
   ])

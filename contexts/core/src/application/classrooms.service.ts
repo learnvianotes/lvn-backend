@@ -335,6 +335,15 @@ export class ClassroomsService {
     return p.classroomId
   }
 
+  /** An announcement as comments need it (ADR-0047): null unless the viewer is a member; staff moderate. */
+  async postPlace(viewerId: string, postId: string): Promise<{ classroomId: string; authorId: string; staff: boolean } | null> {
+    const p = await this.db.classroomPost.findFirst({ where: { id: postId, deletedAt: null } })
+    if (!p) return null
+    const loaded = await this.load(viewerId, p.classroomId)
+    if (!loaded?.role) return null
+    return { classroomId: p.classroomId, authorId: p.authorId, staff: loaded.role === 'TEACHER' || loaded.role === 'TA' }
+  }
+
   async posts(viewerId: string, classroomId: string, size: number, after: [string, string] | null) {
     const { role } = await this.require(viewerId, classroomId)
     if (!role) throw Errors.forbidden()

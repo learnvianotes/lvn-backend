@@ -1614,3 +1614,82 @@ model ClassroomShare {
   @@index([classroomId, createdAt(sort: Desc)])
   @@schema("notes")
 }
+
+// ── Comments and reactions (ADR-0047) ───────────────────────────────────────────────────────────────────────────
+
+enum CommentTargetType {
+  NOTE
+  GROUP_POST
+  CLASSROOM_POST
+
+  @@schema("core")
+}
+
+enum CommentState {
+  VISIBLE
+  /// By someone the content's owner restricts: seen by its author and the owner until approved (ADR-0016)
+  PENDING_APPROVAL
+
+  @@schema("core")
+}
+
+/// A comment or a reply (one level) on a note, a group post or a class announcement (ADR-0047).
+model Comment {
+  id         String            @id @db.Uuid
+  targetType CommentTargetType
+  /// notes.Note, core.GroupPost or core.ClassroomPost
+  targetId   String            @db.Uuid
+  /// A card of the note the comment is about
+  cardId     String?           @db.Uuid
+  parentId   String?           @db.Uuid
+  /// Cross-context reference to users.User
+  authorId   String            @db.Uuid
+  /// Whose content it is: the note's owner or the post's author
+  ownerId    String            @db.Uuid
+  /// Class threads (ADR-0047): only this student and the class's staff see it; null for everyone who reads the target
+  visibleTo  String?           @db.Uuid
+  body       Json
+  state      CommentState      @default(VISIBLE)
+  createdAt  DateTime          @default(now()) @db.Timestamptz(3)
+  editedAt   DateTime?         @db.Timestamptz(3)
+  deletedAt  DateTime?         @db.Timestamptz(3)
+  parent     Comment?          @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies    Comment[]         @relation("CommentReplies")
+
+  @@index([targetType, targetId, parentId, createdAt])
+  @@index([parentId, createdAt])
+  @@index([authorId])
+  @@schema("core")
+}
+
+enum ReactionTargetType {
+  NOTE
+  COMMENT
+  GROUP_POST
+  CLASSROOM_POST
+
+  @@schema("core")
+}
+
+enum ReactionKind {
+  LIKE
+  HELPFUL
+  CELEBRATE
+
+  @@schema("core")
+}
+
+/// One reaction per person per target (ADR-0047).
+model Reaction {
+  targetType ReactionTargetType
+  targetId   String             @db.Uuid
+  /// Cross-context reference to users.User
+  userId     String             @db.Uuid
+  kind       ReactionKind
+  createdAt  DateTime           @default(now()) @db.Timestamptz(3)
+
+  @@id([targetType, targetId, userId])
+  @@index([targetType, targetId, kind])
+  @@index([userId])
+  @@schema("core")
+}

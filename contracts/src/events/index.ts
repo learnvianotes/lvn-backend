@@ -156,7 +156,23 @@ export const events = {
   DoubtAsked: eventEnvelope('DoubtAsked', 1, z.object({ doubtId: uuid, groupId: uuid, askedBy: uuid })),
   DoubtAnswered: eventEnvelope('DoubtAnswered', 1, z.object({ doubtId: uuid, groupId: uuid, answerId: uuid, answeredBy: uuid, byMentor: z.boolean() })),
   DoubtResolved: eventEnvelope('DoubtResolved', 1, z.object({ doubtId: uuid, groupId: uuid, resolvedBy: uuid })),
-  CommentAdded: eventEnvelope('CommentAdded', 1, z.object({ commentId: uuid, targetType: z.string(), targetId: uuid, authorId: uuid })),
+  /**
+   * A comment or reply (ADR-0047). recipients: who is told, worked out by core (the content's owner; for a reply also
+   * the parent comment's author; never the author, a restricted person's or across a block). place: where it opens.
+   * Both optional, additive in v1.
+   */
+  CommentAdded: eventEnvelope('CommentAdded', 1, z.object({
+    commentId: uuid,
+    targetType: z.string(),
+    targetId: uuid,
+    authorId: uuid,
+    recipients: z.array(z.object({ userId: uuid, kind: z.enum(['COMMENT', 'REPLY']) })).max(10).optional(),
+    place: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('NOTE'), noteId: uuid }),
+      z.object({ kind: z.literal('GROUP'), groupId: uuid }),
+      z.object({ kind: z.literal('CLASSROOM'), classroomId: uuid }),
+    ]).optional(),
+  })),
   QuizPublished: eventEnvelope('QuizPublished', 1, z.object({ quizId: uuid, classroomId: uuid.optional() })),
   ContentReported: eventEnvelope('ContentReported', 1, z.object({ reportId: uuid, entityType: z.string(), entityId: uuid })),
   LearningEventRecorded: eventEnvelope('LearningEventRecorded', 1, z.object({ userId: uuid, eventIds: z.array(uuid).min(1) })),
