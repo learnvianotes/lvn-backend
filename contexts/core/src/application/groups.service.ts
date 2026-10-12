@@ -264,6 +264,8 @@ export class GroupsService {
     const { role, resource, actor } = await this.require(actorId, groupId)
     if (!can(actor, Action.GROUP_MANAGE, resource)) throw Errors.forbidden('Only the group’s admins change roles.')
     const m = await this.target(groupId, userId, role)
+    // Mentors are teachers invited to guide a workspace (ADR-0048): they stay mentors until they leave or are removed.
+    if (m.role === 'MENTOR') throw Errors.validation('A mentor stays a mentor. Remove them to end it.')
     if (next === 'OWNER') {
       if (role !== 'OWNER') throw Errors.forbidden('Only the owner hands the group over.')
       await this.db.$transaction([
