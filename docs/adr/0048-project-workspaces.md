@@ -57,6 +57,9 @@ Left open:
      invite is open changes nothing.
    - The teacher accepts and joins with the MENTOR role. `GroupMembershipChanged` carries role `GROUP_MENTOR`.
    - Notification `MENTOR_INVITE` goes to the teacher. A mentor leaves like any member; Admins remove them.
+   - A mentor stays a mentor (amended 2026-10-13, P3k): `setGroupRole` on a mentor, the hand-over included, is a
+     VALIDATION user error ("A mentor stays a mentor. Remove them to end it."). A teacher from outside the team never
+     becomes its admin or owner by a role change.
 6. **Showcase.**
    - Admins and the Owner choose one note shared to the workspace that is PUBLIC and of kind PROJECT
      (`Group.showcaseNoteId`).

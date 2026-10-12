@@ -27,7 +27,7 @@ describe('project workspaces', () => {
   type Res<T> = { data?: T; errors?: { message: string; extensions: { code: string } }[] }
   /** A mutation's payload, and its refusal or invalid input as one message and code. */
   const act = async <T = Record<string, unknown>>(name: string, input: object, who: Person, selection = 'group { id } userErrors { message code }') => {
-    const type = `${name[0]!.toUpperCase()}${name.slice(1)}Input`.replace('ResolveDoubtInput', 'DoubtIdInput').replace('ReopenDoubtInput', 'DoubtIdInput').replace('DeleteDoubtInput', 'DoubtIdInput')
+    const type = `${name[0]!.toUpperCase()}${name.slice(1)}Input`.replace('ResolveDoubtInput', 'DoubtIdInput').replace('ReopenDoubtInput', 'DoubtIdInput').replace('DeleteDoubtInput', 'DoubtIdInput').replace('RemoveGroupMemberInput', 'GroupMemberInput')
     const res = (await t.gql(`mutation ($input: ${type}!) { ${name}(input: $input) { ${selection} } }`, { input }, who.token)) as Res<Record<string, T & { userErrors?: { message: string; code: string }[] }>>
     const payload = res.data?.[name]
     return { payload, error: res.errors?.[0]?.message ?? payload?.userErrors?.[0]?.message, code: res.errors?.[0]?.extensions.code ?? payload?.userErrors?.[0]?.code }
@@ -133,6 +133,12 @@ describe('project workspaces', () => {
     expect(await group(id, teacher, 'viewerMentorInviteId viewerCan { acceptMentorInvite }')).toEqual({ viewerMentorInviteId: invites.data!.myMentorInvites[0]!.id, viewerCan: { acceptMentorInvite: true } })
     await act('answerMentorInvite', { inviteId: invites.data!.myMentorInvites[0]!.id, accept: true }, teacher)
     expect(await group(id, teacher, 'viewerRole viewerCan { manage reviewRequests askDoubt moderate }')).toEqual({ viewerRole: 'MENTOR', viewerCan: { manage: false, reviewRequests: false, askDoubt: false, moderate: true } })
+    // A mentor stays a mentor: no other role, and the workspace is not handed to them; the owner can remove them.
+    expect((await act('setGroupRole', { groupId: id, userId: teacher.id, role: 'ADMIN' }, owner)).error).toBe('A mentor stays a mentor. Remove them to end it.')
+    expect((await act('setGroupRole', { groupId: id, userId: teacher.id, role: 'OWNER' }, owner)).error).toBe('A mentor stays a mentor. Remove them to end it.')
+    expect(await group(id, teacher, 'viewerRole')).toEqual({ viewerRole: 'MENTOR' })
+    expect((await act('removeGroupMember', { groupId: id, userId: teacher.id }, owner)).error).toBeUndefined()
+    expect(await group(id, teacher, 'viewerRole')).toEqual({ viewerRole: null })
   })
 
   it('doubts: the team asks, the mentor answers, the asker resolves; everyone concerned is told', async () => {

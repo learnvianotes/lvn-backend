@@ -52,6 +52,21 @@ their limits (§15.2): never followable, never named in lists, no public publish
 - **Open points from earlier ADRs:** may TAs admit students (ADR-0009, encoded: yes)? Does "a normal teacher needs a
   connection" mean more than "staff of that class" (ADR-0011)? Follower counts (above).
 
+## After the exit: the phone completed, and the gaps carried forward
+
+Asked by the owner on 2026-10-13 ("complete mobile and continue with other issues"). The phone catches up with the web
+on everything Phases 2 and 3 built, then the gaps the release notes carried forward are closed. Same way of working;
+slices that only touch the phone skip the backend steps.
+
+| Slice | What | Repos |
+| --- | --- | --- |
+| **P3k Phone: running places** | Start a group, a project workspace or (teachers) a class on the phone; group settings, privacy and deletion; roles below one's own, removing and muting members; class settings, a new code, deletion, roles, handing the class over, removing people; linking a workspace's repository, inviting a mentor, choosing the showcase and showing its credits; deleting a doubt; editing one's comment; the teacher's Skills tab; the platform queue for platform admins | mobile |
+| **P3l Phone: publishing** | Blogs, posts and projects started on the phone (the note's kind travels in the sync `CREATE_NOTE` operation); publish a version; who can see it; sharing with people and with all connections; copies allowed or not, making a copy; versions and restoring one; folders and tags | backend (sync contract), mobile |
+| **P3m Phone: media and cards** | Pictures, video and audio shown in notes; a photo or a file added from the phone; structured cards (tables, questions, quizzes, flashcards, diagrams) edited on the phone; a search page with notes and people | mobile (backend if a contract is missing) |
+| **P3n Phone: account** | Accepting the terms when they change; editing one's name and handle; resetting a password with the emailed code; an institutional email from the account screen; claiming or declining legacy data; importing notes | mobile |
+| **P3o Moderation gaps** | A warned person sees the warning; account suspension (ADR-0037's SUSPEND) with its own appeal; a removed group's owner is told why and can appeal | all three |
+| **P3p Mentions** | `@handle` in comments and posts, with a MENTION notification to people who can read the place | all three |
+
 ## Progress
 
 | Slice | State | Evidence |
