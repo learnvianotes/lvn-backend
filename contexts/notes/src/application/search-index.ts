@@ -215,17 +215,18 @@ export class SearchIndex implements OnModuleInit {
   private async writePostgres(docs: Map<string, NoteDocument | null>): Promise<void> {
     const gone = [...docs].filter(([, d]) => !d).map(([id]) => id)
     if (gone.length) await this.db.noteSearchDocument.deleteMany({ where: { noteId: { in: gone } } })
-    for (const d of docs.values()) {
-      if (!d) continue
-      const topics = d.topics.join(' · ')
-      await this.db.$executeRaw`
-        INSERT INTO "notes"."NoteSearchDocument" ("noteId", "versionId", "title", "topics", "body", "document", "updatedAt")
-        VALUES (${d.id}::uuid, ${d.versionId}::uuid, ${d.title}, ${topics}, ${d.body},
-          setweight(to_tsvector('english', ${d.title}), 'A') || setweight(to_tsvector('english', ${topics}), 'B') || setweight(to_tsvector('english', ${d.body}), 'C'),
-          now())
-        ON CONFLICT ("noteId") DO UPDATE SET "versionId" = EXCLUDED."versionId", "title" = EXCLUDED."title", "topics" = EXCLUDED."topics",
-          "body" = EXCLUDED."body", "document" = EXCLUDED."document", "updatedAt" = now()`
-    }
+    const present = [...docs.values()].filter((d): d is NoteDocument => d !== null)
+    if (!present.length) return
+    // One statement for the whole turn: Postgres builds every tsvector from the arrays.
+    await this.db.$executeRaw`
+      INSERT INTO "notes"."NoteSearchDocument" ("noteId", "versionId", "title", "topics", "body", "document", "updatedAt")
+      SELECT d.id, d.version, d.title, d.topics, d.body,
+        setweight(to_tsvector('english', d.title), 'A') || setweight(to_tsvector('english', d.topics), 'B') || setweight(to_tsvector('english', d.body), 'C'),
+        now()
+      FROM unnest(${present.map((d) => d.id)}::uuid[], ${present.map((d) => d.versionId)}::uuid[], ${present.map((d) => d.title)}::text[],
+        ${present.map((d) => d.topics.join(' · '))}::text[], ${present.map((d) => d.body)}::text[]) AS d(id, version, title, topics, body)
+      ON CONFLICT ("noteId") DO UPDATE SET "versionId" = EXCLUDED."versionId", "title" = EXCLUDED."title", "topics" = EXCLUDED."topics",
+        "body" = EXCLUDED."body", "document" = EXCLUDED."document", "updatedAt" = now()`
   }
 
   /** Typesense's documents for these entities, from their current state; one that must not be found is removed. */
