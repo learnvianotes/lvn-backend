@@ -420,6 +420,15 @@ type ClassroomPost
   createdAt: DateTime!
   viewerCanDelete: Boolean!
 
+  """Not OK only for its author (ADR-0051)"""
+  moderation: ModerationState!
+  moderationReason: String
+
+  """
+  Its author may still appeal: hidden or removed by a moderator, and not appealed yet
+  """
+  moderationCanAppeal: Boolean!
+
   """
   Members: comments and reactions. A student's thread is seen by them and the class's staff only
   """
@@ -491,6 +500,19 @@ type Comment
   In a class: seen by the student whose thread it is and the class's staff only
   """
   private: Boolean!
+
+  """
+  Not OK only for its author: held, hidden or removed by moderation (ADR-0051)
+  """
+  moderation: ModerationState!
+
+  """Why, for its author"""
+  moderationReason: String
+
+  """
+  Its author may still appeal: hidden or removed by a moderator, and not appealed yet
+  """
+  moderationCanAppeal: Boolean!
   createdAt: DateTime!
   editedAt: DateTime
 
@@ -824,6 +846,15 @@ type Doubt
   """Oldest first"""
   answers: [DoubtAnswer!]!
   viewerCan: DoubtActions!
+
+  """Not OK only for its author (ADR-0051)"""
+  moderation: ModerationState!
+  moderationReason: String
+
+  """
+  Its author may still appeal: hidden or removed by a moderator, and not appealed yet
+  """
+  moderationCanAppeal: Boolean!
 }
 
 type DoubtActions
@@ -1004,6 +1035,11 @@ type Group
   """Members only: pinned posts, then the newest"""
   posts(first: Int, after: String): GroupPostConnection @join__field(graph: CORE)
 
+  """
+  Its owner only: the platform moderators' warning about the group from the last 30 days, if any (ADR-0051)
+  """
+  moderationWarning: String @join__field(graph: CORE)
+
   """The linked repository, for anyone who sees the workspace"""
   repository: GroupRepository @join__field(graph: CORE)
 
@@ -1111,6 +1147,15 @@ type GroupPost
   pinned: Boolean!
   createdAt: DateTime!
   editedAt: DateTime
+
+  """Not OK only for its author (ADR-0051)"""
+  moderation: ModerationState!
+  moderationReason: String
+
+  """
+  Its author may still appeal: hidden or removed by a moderator, and not appealed yet
+  """
+  moderationCanAppeal: Boolean!
   viewerCan: GroupPostActions!
 
   """Members: comments and reactions on the post"""
@@ -1467,6 +1512,26 @@ input ModerateContentInput
   reason: String
 }
 
+"""
+A comment, post, announcement or doubt as its scope's moderators see it
+"""
+type ModeratedContent
+  @join__type(graph: CORE)
+{
+  entityType: ReportEntityType!
+  id: UUID!
+  author: User!
+
+  """The start of its text"""
+  excerpt: String!
+  moderation: ModerationState!
+  moderationReason: String
+  deleted: Boolean!
+
+  """Where it is, in the app"""
+  path: String!
+}
+
 """A note as moderators see it: the published version readers would see"""
 type ModeratedNote
   @join__type(graph: CORE)
@@ -1507,9 +1572,19 @@ type ModerationCase
 {
   entityType: ReportEntityType!
   entityId: UUID!
+  scope: ModerationScope!
+
+  """The group or class, for those scopes"""
+  scopeId: UUID
 
   """Set for NOTE cases"""
   note: ModeratedNote
+
+  """Set for COMMENT, GROUP_POST, CLASSROOM_POST and DOUBT cases"""
+  content: ModeratedContent
+
+  """Set for GROUP cases"""
+  group: Group
 
   """Set for USER cases"""
   user: User
@@ -1543,6 +1618,27 @@ type ModerationReport
   createdAt: DateTime!
 }
 
+"""Whose queue a case is in (ADR-0051)"""
+enum ModerationScope
+  @join__type(graph: CORE)
+{
+  PLATFORM @join__enumValue(graph: CORE)
+  GROUP @join__enumValue(graph: CORE)
+  CLASSROOM @join__enumValue(graph: CORE)
+}
+
+"""
+A group's or class's queue for its moderators; without it, platform admins see every case
+"""
+input ModerationScopeInput
+  @join__type(graph: CORE)
+{
+  scope: ModerationScope!
+
+  """The group or class"""
+  id: UUID
+}
+
 enum ModerationState
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
@@ -1574,14 +1670,18 @@ type Mutation
   unsubscribeEmail(input: UnsubscribeEmailInput!): UnsubscribePayload! @join__field(graph: COMMUNICATION)
 
   """
-  Report a note or a person you can see; reporting again updates your report
+  Report what you can see (a note, a person, a comment, a post, an announcement, a doubt or a group); reporting again updates your report
   """
   reportContent(input: ReportContentInput!): OkPayload! @join__field(graph: CORE)
 
-  """A moderator's decision on a case (PLATFORM_ADMIN)"""
+  """
+  A moderator's decision on a case: platform admins anywhere, group moderators and class staff in their scope
+  """
   moderateContent(input: ModerateContentInput!): OkPayload! @join__field(graph: CORE)
 
-  """The author's one appeal against hiding or removing their note"""
+  """
+  The author's one appeal against hiding or removing their note or content
+  """
   appealModeration(input: AppealModerationInput!): OkPayload! @join__field(graph: CORE)
 
   """Teachers"""
@@ -2223,7 +2323,7 @@ type Notification
   classroom: Classroom
 
   """
-  Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED }, COMMENT { kind: COMMENT | REPLY }, DOUBT { kind: ASKED | ANSWERED | RESOLVED, byMentor }
+  Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED }, COMMENT { kind: COMMENT | REPLY }, DOUBT { kind: ASKED | ANSWERED | RESOLVED, byMentor }, MODERATION { kind: HIDDEN | REMOVED | WARNED | RESTORED, entityType }
   """
   data: JSON
   readAt: DateTime
@@ -2250,6 +2350,7 @@ enum NotificationCategory
   DATA_EXPORT @join__enumValue(graph: COMMUNICATION)
   NOTES_IMPORT @join__enumValue(graph: COMMUNICATION)
   CLASSROOM_INVITE @join__enumValue(graph: COMMUNICATION)
+  MODERATION @join__enumValue(graph: COMMUNICATION)
 }
 
 type NotificationConnection
@@ -2556,8 +2657,10 @@ type Query
   """Public groups to join, by name"""
   discoverGroups(query: String, first: Int): [Group!]! @join__field(graph: CORE)
 
-  """Open cases, oldest first (PLATFORM_ADMIN)"""
-  moderationQueue(first: Int, after: String): ModerationCaseConnection! @join__field(graph: CORE)
+  """
+  Open cases, oldest first: a group's (its moderators and mentor) or a class's (its staff), or every case (PLATFORM_ADMIN)
+  """
+  moderationQueue(first: Int, after: String, scope: ModerationScopeInput): ModerationCaseConnection! @join__field(graph: CORE)
 
   """A doubt the viewer's workspace holds"""
   doubt(id: UUID!): Doubt @join__field(graph: CORE)
@@ -2802,6 +2905,11 @@ enum ReportEntityType
 {
   NOTE @join__enumValue(graph: CORE)
   USER @join__enumValue(graph: CORE)
+  COMMENT @join__enumValue(graph: CORE)
+  GROUP_POST @join__enumValue(graph: CORE)
+  CLASSROOM_POST @join__enumValue(graph: CORE)
+  DOUBT @join__enumValue(graph: CORE)
+  GROUP @join__enumValue(graph: CORE)
 }
 
 enum ReportReason

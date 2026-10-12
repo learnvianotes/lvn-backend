@@ -6,6 +6,7 @@ import { ActivityService } from '../application/activity.service'
 import { ClassroomsService } from '../application/classrooms.service'
 import { GroupsService } from '../application/groups.service'
 import { WorkspacesService } from '../application/workspaces.service'
+import { moderationFor } from '../application/moderation.service'
 import { post } from './groups.resolver'
 
 const userRef = (id: string) => ({ __typename: 'User', id })
@@ -39,7 +40,7 @@ export class ActivityResolver {
           group: gv ? { ...gv.group, view: gv } : null,
           classroom: cv ? { ...cv.classroom, view: cv } : null,
           post: i.post ? post(i.post, viewer.userId, !!gv?.can.moderate) : null,
-          announcement: i.announcement ? { id: i.announcement.id, author: userRef(i.announcement.authorId), body: i.announcement.body, createdAt: i.announcement.createdAt, viewerCanDelete: !!cv?.can.post } : null,
+          announcement: i.announcement ? { id: i.announcement.id, author: userRef(i.announcement.authorId), body: i.announcement.body, createdAt: i.announcement.createdAt, viewerCanDelete: !!cv?.can.post, ...moderationFor(i.announcement, viewer.userId) } : null,
           doubt: doubt ? { row: doubt.doubt, can: doubt.can } : null,
           note: i.noteId ? { __typename: 'Note', id: i.noteId } : null,
         }

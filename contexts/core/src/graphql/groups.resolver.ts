@@ -5,6 +5,7 @@ import { withUserErrors } from '@lvn-backend/errors'
 import { connection, decodeCursor, pageSize } from '@lvn-backend/graphql'
 import type { Prisma } from '@lvn-backend/prisma-base'
 import { GroupsService, effectivePolicy, type GroupRow, type GroupView } from '../application/groups.service'
+import { moderationFor } from '../application/moderation.service'
 import type { GroupPayload, GroupPostPayload, OkPayload } from './schema.types'
 
 const userRef = (id: string) => ({ __typename: 'User', id })
@@ -203,7 +204,7 @@ export class GroupsResolver {
 /** A post with what the viewer may do to it. */
 export function post(p: PostRow, viewerId: string, moderate: boolean) {
   const mine = p.authorId === viewerId
-  return { id: p.id, kind: p.kind, author: userRef(p.authorId), body: p.body, pinned: p.pinnedAt !== null, createdAt: p.createdAt, editedAt: p.editedAt, viewerCan: { edit: mine, delete: mine || moderate, pin: moderate } }
+  return { id: p.id, kind: p.kind, ...moderationFor(p, viewerId), author: userRef(p.authorId), body: p.body, pinned: p.pinnedAt !== null, createdAt: p.createdAt, editedAt: p.editedAt, viewerCan: { edit: mine, delete: mine || moderate, pin: moderate } }
 }
 
 /** Groups referenced from other subgraphs (notes shared to a group): resolved for people who may see them. */

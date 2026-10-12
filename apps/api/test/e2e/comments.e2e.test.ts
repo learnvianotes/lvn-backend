@@ -179,11 +179,17 @@ describe('comments and reactions', () => {
     await personAct('unblockUser', asha, rude)
   })
 
-  it('the scorer refuses a flagged comment with its reason', async () => {
+  it('the scorer holds a flagged comment for review: its author sees it and why, nobody else does (ADR-0051)', async () => {
     const { target } = await note(owner)
-    expect((await say(asha, target, 'Buy followers here, cheap.')).error).toBe("This comment can't be posted: it contains words linked to spam.")
-    expect((await say(asha, target, '   ')).error).toBe('Write something first.')
+    const held = (await say(asha, target, 'Buy followers here, cheap.')).comment!
+    expect(held).toMatchObject({ author: { id: asha.id } })
+    const mine = await t.gql<{ discussion: { comments: { edges: { node: { moderation: string; moderationReason: string } }[] } } }>('query ($target: CommentTargetInput!) { discussion(target: $target) { comments { edges { node { moderation moderationReason } } } } }', { target }, asha.token)
+    expect(mine.data!.discussion.comments.edges[0]!.node).toEqual({ moderation: 'PENDING_REVIEW', moderationReason: 'A moderator will look at this before others see it: it contains words linked to spam.' })
     expect(await comments(target, owner)).toEqual([])
+    // A system report puts it in the platform's queue (a comment on a note).
+    expect(await db.report.count({ where: { entityType: 'COMMENT', entityId: held.id, reporterId: null, status: 'OPEN', scope: 'PLATFORM' } })).toBe(1)
+    expect(await notifications(owner)).not.toContainEqual(expect.objectContaining({ actor: { id: asha.id }, path: `/notes/${target.id}` }))
+    expect((await say(asha, target, '   ')).error).toBe('Write something first.')
   })
 
   it('reactions: one per person, changed or taken back; exact for the owner, milestones for others on a public note', async () => {

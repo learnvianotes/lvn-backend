@@ -373,7 +373,8 @@ export class GroupsService {
     const { role } = await this.require(viewerId, groupId)
     if (!role) throw Errors.forbidden('Join the group to read its posts.')
     const hidden = await this.people.blockedIds(viewerId)
-    const base: Prisma.GroupPostWhereInput = { groupId, kind: 'POST', deletedAt: null, ...(hidden.length ? { authorId: { notIn: hidden } } : {}) }
+    // Held, hidden or removed posts are their author's alone (ADR-0051); AND keeps this apart from the cursor's OR.
+    const base: Prisma.GroupPostWhereInput = { groupId, kind: 'POST', deletedAt: null, AND: [{ OR: [{ moderation: 'OK' }, { authorId: viewerId }] }], ...(hidden.length ? { authorId: { notIn: hidden } } : {}) }
     const pinned = after ? [] : await this.db.groupPost.findMany({ where: { ...base, pinnedAt: { not: null } }, orderBy: { pinnedAt: 'desc' }, take: 5 })
     const rows = await this.db.groupPost.findMany({
       where: { ...base, pinnedAt: null, ...(after ? { OR: [{ createdAt: { lt: new Date(after[0]) } }, { createdAt: new Date(after[0]), id: { lt: after[1] } }] } : {}) },
@@ -388,7 +389,7 @@ export class GroupsService {
    * may post and are not muted) and moderate (moderators and above).
    */
   async postPlace(viewerId: string, postId: string): Promise<{ groupId: string; authorId: string; canComment: boolean; canModerate: boolean } | null> {
-    const p = await this.db.groupPost.findFirst({ where: { id: postId, deletedAt: null } })
+    const p = await this.db.groupPost.findFirst({ where: { id: postId, deletedAt: null, OR: [{ moderation: 'OK' }, { authorId: viewerId }] } })
     if (!p) return null
     const loaded = await this.load(viewerId, p.groupId)
     if (!loaded?.role) return null
@@ -399,7 +400,7 @@ export class GroupsService {
   }
 
   async getPost(viewerId: string, postId: string) {
-    const p = await this.db.groupPost.findFirst({ where: { id: postId, deletedAt: null } })
+    const p = await this.db.groupPost.findFirst({ where: { id: postId, deletedAt: null, OR: [{ moderation: 'OK' }, { authorId: viewerId }] } })
     if (!p) return null
     const loaded = await this.load(viewerId, p.groupId)
     return loaded?.role ? p : null

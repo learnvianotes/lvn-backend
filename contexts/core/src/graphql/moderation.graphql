@@ -27,7 +27,9 @@ type OkPayload @shareable {
 }
 
 enum ModerationState { OK PENDING_REVIEW HIDDEN REMOVED }
-enum ReportEntityType { NOTE USER }
+enum ReportEntityType { NOTE USER COMMENT GROUP_POST CLASSROOM_POST DOUBT GROUP }
+"Whose queue a case is in (ADR-0051)"
+enum ModerationScope { PLATFORM GROUP CLASSROOM }
 enum ReportReason { HARASSMENT SEXUAL SELF_HARM HATE SPAM COPYRIGHT OTHER }
 "APPROVE frees a held note; HIDE and REMOVE take it off for everyone but its author; DISMISS closes reports; WARN tells the author. SUSPEND is not available yet."
 enum ModerationActionType { APPROVE HIDE REMOVE WARN SUSPEND DISMISS }
@@ -46,6 +48,13 @@ input ModerateContentInput {
   action: ModerationActionType!
   "Required for HIDE, REMOVE and WARN: the author is told"
   reason: String
+}
+
+"A group's or class's queue for its moderators; without it, platform admins see every case"
+input ModerationScopeInput {
+  scope: ModerationScope!
+  "The group or class"
+  id: UUID
 }
 
 input AppealModerationInput {
@@ -79,11 +88,32 @@ type ModeratedNote {
   deleted: Boolean!
 }
 
+"A comment, post, announcement or doubt as its scope's moderators see it"
+type ModeratedContent {
+  entityType: ReportEntityType!
+  id: UUID!
+  author: User!
+  "The start of its text"
+  excerpt: String!
+  moderation: ModerationState!
+  moderationReason: String
+  deleted: Boolean!
+  "Where it is, in the app"
+  path: String!
+}
+
 type ModerationCase {
   entityType: ReportEntityType!
   entityId: UUID!
+  scope: ModerationScope!
+  "The group or class, for those scopes"
+  scopeId: UUID
   "Set for NOTE cases"
   note: ModeratedNote
+  "Set for COMMENT, GROUP_POST, CLASSROOM_POST and DOUBT cases"
+  content: ModeratedContent
+  "Set for GROUP cases"
+  group: Group
   "Set for USER cases"
   user: User
   reports: [ModerationReport!]!
@@ -102,15 +132,20 @@ type ModerationCaseConnection {
 }
 
 extend type Query {
-  "Open cases, oldest first (PLATFORM_ADMIN)"
-  moderationQueue(first: Int, after: String): ModerationCaseConnection!
+  "Open cases, oldest first: a group's (its moderators and mentor) or a class's (its staff), or every case (PLATFORM_ADMIN)"
+  moderationQueue(first: Int, after: String, scope: ModerationScopeInput): ModerationCaseConnection!
+}
+
+extend type Group {
+  "Its owner only: the platform moderators' warning about the group from the last 30 days, if any (ADR-0051)"
+  moderationWarning: String
 }
 
 type Mutation {
-  "Report a note or a person you can see; reporting again updates your report"
+  "Report what you can see (a note, a person, a comment, a post, an announcement, a doubt or a group); reporting again updates your report"
   reportContent(input: ReportContentInput!): OkPayload!
-  "A moderator's decision on a case (PLATFORM_ADMIN)"
+  "A moderator's decision on a case: platform admins anywhere, group moderators and class staff in their scope"
   moderateContent(input: ModerateContentInput!): OkPayload!
-  "The author's one appeal against hiding or removing their note"
+  "The author's one appeal against hiding or removing their note or content"
   appealModeration(input: AppealModerationInput!): OkPayload!
 }

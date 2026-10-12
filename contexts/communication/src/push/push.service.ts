@@ -43,6 +43,8 @@ export function pushBody(category: NotificationCategory, data: Record<string, un
       return 'Your data export is ready'
     case 'NOTES_IMPORT':
       return 'Your import is done'
+    case 'MODERATION':
+      return data.kind === 'RESTORED' ? 'A moderator brought back something of yours' : 'A moderator reviewed something of yours'
     default:
       return 'You have something new'
   }

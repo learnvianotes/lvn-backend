@@ -4,6 +4,7 @@ import { CurrentViewer, SignedInGuard, type RequestContext, type Viewer } from '
 import { withUserErrors } from '@lvn-backend/errors'
 import { connection, decodeCursor, pageSize } from '@lvn-backend/graphql'
 import { ClassroomsService, type ClassroomRow, type ClassroomView } from '../application/classrooms.service'
+import { moderationFor } from '../application/moderation.service'
 import type { ClassroomPayload, OkPayload } from './schema.types'
 
 const userRef = (id: string) => ({ __typename: 'User', id })
@@ -114,7 +115,7 @@ export class ClassroomsResolver {
     if (!view.role) return null
     const size = pageSize(first)
     const rows = await this.classes.posts(viewer.userId, c.id, size, decodeCursor(after, 2) as [string, string] | null)
-    return connection(rows, size, (p) => [p.createdAt.toISOString(), p.id], (p) => ({ id: p.id, author: userRef(p.authorId), body: p.body, createdAt: p.createdAt, viewerCanDelete: view.can.post }))
+    return connection(rows, size, (p) => [p.createdAt.toISOString(), p.id], (p) => ({ id: p.id, author: userRef(p.authorId), body: p.body, createdAt: p.createdAt, viewerCanDelete: view.can.post, ...moderationFor(p, viewer.userId) }))
   }
 
   @Mutation('createClassroom')

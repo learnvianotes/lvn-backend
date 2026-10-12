@@ -1097,6 +1097,11 @@ model CoreProblemMark {
 enum ReportEntityType {
   NOTE
   USER
+  COMMENT
+  GROUP_POST
+  CLASSROOM_POST
+  DOUBT
+  GROUP
 
   @@schema("core")
 }
@@ -1152,9 +1157,13 @@ model Report {
   createdAt    DateTime         @default(now()) @db.Timestamptz(3)
   resolvedAt   DateTime?        @db.Timestamptz(3)
   resolvedById String?          @db.Uuid
+  /// Whose queue it is in (ADR-0051): the group's or class's when set, else the platform's
+  scope        ModerationScope  @default(PLATFORM)
+  scopeId      String?          @db.Uuid
 
   @@unique([entityType, entityId, reporterId])
   @@index([status, createdAt])
+  @@index([scope, scopeId, status])
   @@index([entityType, entityId])
   @@schema("core")
 }
@@ -1168,6 +1177,8 @@ model ModerationAction {
   reason     String?
   actorId    String?              @db.Uuid
   createdAt  DateTime             @default(now()) @db.Timestamptz(3)
+  scope      ModerationScope      @default(PLATFORM)
+  scopeId    String?              @db.Uuid
 
   @@index([entityType, entityId, createdAt])
   @@schema("core")
@@ -1183,6 +1194,8 @@ model ModerationAppeal {
   status     AppealStatus     @default(OPEN)
   createdAt  DateTime         @default(now()) @db.Timestamptz(3)
   decidedAt  DateTime?        @db.Timestamptz(3)
+  scope      ModerationScope  @default(PLATFORM)
+  scopeId    String?          @db.Uuid
 
   @@unique([entityType, entityId, userId])
   @@index([status, createdAt])
@@ -1210,6 +1223,7 @@ enum NotificationCategory {
   DATA_EXPORT
   NOTES_IMPORT
   CLASSROOM_INVITE
+  MODERATION
 
   @@schema("comms")
 }
@@ -1433,18 +1447,21 @@ model GroupJoinRequest {
 
 /// A post in a group: rich text (a card's document), for members only.
 model GroupPost {
-  id        String        @id @db.Uuid
-  groupId   String        @db.Uuid
+  id               String            @id @db.Uuid
+  groupId          String            @db.Uuid
   /// Cross-context reference to users.User
-  authorId  String        @db.Uuid
+  authorId         String            @db.Uuid
   /// IDEA: on a project workspace's ideas board (ADR-0048)
-  kind      GroupPostKind @default(POST)
-  body      Json
-  pinnedAt  DateTime?     @db.Timestamptz(3)
-  createdAt DateTime      @default(now()) @db.Timestamptz(3)
-  editedAt  DateTime?     @db.Timestamptz(3)
-  deletedAt DateTime?     @db.Timestamptz(3)
-  group     Group         @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  kind             GroupPostKind     @default(POST)
+  body             Json
+  /// ADR-0051: anything but OK is seen by its author and its scope's moderators only
+  moderation       ContentModeration @default(OK)
+  moderationReason String?
+  pinnedAt         DateTime?         @db.Timestamptz(3)
+  createdAt        DateTime          @default(now()) @db.Timestamptz(3)
+  editedAt         DateTime?         @db.Timestamptz(3)
+  deletedAt        DateTime?         @db.Timestamptz(3)
+  group            Group             @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@index([groupId, deletedAt, createdAt(sort: Desc)])
   @@schema("core")
@@ -1574,13 +1591,16 @@ model ClassroomInvite {
 
 /// An announcement by the class's staff (ADR-0046): rich text, read by every member.
 model ClassroomPost {
-  id          String    @id @db.Uuid
-  classroomId String    @db.Uuid
-  authorId    String    @db.Uuid
-  body        Json
-  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
-  deletedAt   DateTime? @db.Timestamptz(3)
-  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  id               String            @id @db.Uuid
+  classroomId      String            @db.Uuid
+  authorId         String            @db.Uuid
+  body             Json
+  /// ADR-0051: anything but OK is seen by its author and its scope's moderators only
+  moderation       ContentModeration @default(OK)
+  moderationReason String?
+  createdAt        DateTime          @default(now()) @db.Timestamptz(3)
+  deletedAt        DateTime?         @db.Timestamptz(3)
+  classroom        Classroom         @relation(fields: [classroomId], references: [id], onDelete: Cascade)
 
   @@index([classroomId, deletedAt, createdAt(sort: Desc)])
   @@schema("core")
@@ -1643,26 +1663,29 @@ enum CommentState {
 
 /// A comment or a reply (one level) on a note, a group post or a class announcement (ADR-0047).
 model Comment {
-  id         String            @id @db.Uuid
-  targetType CommentTargetType
+  id               String            @id @db.Uuid
+  targetType       CommentTargetType
   /// notes.Note, core.GroupPost or core.ClassroomPost
-  targetId   String            @db.Uuid
+  targetId         String            @db.Uuid
   /// A card of the note the comment is about
-  cardId     String?           @db.Uuid
-  parentId   String?           @db.Uuid
+  cardId           String?           @db.Uuid
+  parentId         String?           @db.Uuid
   /// Cross-context reference to users.User
-  authorId   String            @db.Uuid
+  authorId         String            @db.Uuid
   /// Whose content it is: the note's owner or the post's author
-  ownerId    String            @db.Uuid
+  ownerId          String            @db.Uuid
   /// Class threads (ADR-0047): only this student and the class's staff see it; null for everyone who reads the target
-  visibleTo  String?           @db.Uuid
-  body       Json
-  state      CommentState      @default(VISIBLE)
-  createdAt  DateTime          @default(now()) @db.Timestamptz(3)
-  editedAt   DateTime?         @db.Timestamptz(3)
-  deletedAt  DateTime?         @db.Timestamptz(3)
-  parent     Comment?          @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
-  replies    Comment[]         @relation("CommentReplies")
+  visibleTo        String?           @db.Uuid
+  body             Json
+  state            CommentState      @default(VISIBLE)
+  /// ADR-0051: anything but OK is seen by its author and its scope's moderators only
+  moderation       ContentModeration @default(OK)
+  moderationReason String?
+  createdAt        DateTime          @default(now()) @db.Timestamptz(3)
+  editedAt         DateTime?         @db.Timestamptz(3)
+  deletedAt        DateTime?         @db.Timestamptz(3)
+  parent           Comment?          @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies          Comment[]         @relation("CommentReplies")
 
   @@index([targetType, targetId, parentId, createdAt])
   @@index([parentId, createdAt])
@@ -1746,22 +1769,25 @@ enum DoubtStatus {
 
 /// A question to the workspace's mentor and team (ADR-0015, ADR-0048).
 model Doubt {
-  id           String        @id @db.Uuid
-  groupId      String        @db.Uuid
+  id               String            @id @db.Uuid
+  groupId          String            @db.Uuid
   /// Cross-context reference to users.User
-  authorId     String        @db.Uuid
-  title        String
-  body         Json
+  authorId         String            @db.Uuid
+  title            String
+  body             Json
   /// A path, line or commit in the repository
-  repoRef      String?
-  status       DoubtStatus   @default(OPEN)
-  resolvedById String?       @db.Uuid
-  resolvedAt   DateTime?     @db.Timestamptz(3)
-  createdAt    DateTime      @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime      @updatedAt @db.Timestamptz(3)
-  deletedAt    DateTime?     @db.Timestamptz(3)
-  group        Group         @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  answers      DoubtAnswer[]
+  repoRef          String?
+  status           DoubtStatus       @default(OPEN)
+  /// ADR-0051: anything but OK is seen by its author and its scope's moderators only
+  moderation       ContentModeration @default(OK)
+  moderationReason String?
+  resolvedById     String?           @db.Uuid
+  resolvedAt       DateTime?         @db.Timestamptz(3)
+  createdAt        DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime          @updatedAt @db.Timestamptz(3)
+  deletedAt        DateTime?         @db.Timestamptz(3)
+  group            Group             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  answers          DoubtAnswer[]
 
   @@index([groupId, deletedAt, status, createdAt(sort: Desc)])
   @@schema("core")
@@ -1861,4 +1887,24 @@ model NotificationSettings {
   lastDigestAt DateTime? @db.Timestamptz(3)
 
   @@schema("comms")
+}
+
+// ── Scoped moderation (ADR-0051) ────────────────────────────────────────────────────────────────────────────────
+
+enum ModerationScope {
+  PLATFORM
+  GROUP
+  CLASSROOM
+
+  @@schema("core")
+}
+
+/// Moderation of comments, posts, announcements and doubts (core's own content; notes have ModerationState).
+enum ContentModeration {
+  OK
+  PENDING_REVIEW
+  HIDDEN
+  REMOVED
+
+  @@schema("core")
 }

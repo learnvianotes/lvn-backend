@@ -81,13 +81,13 @@ export interface Notification {
   group: Group | null
   /** The class it is about (JOIN_REQUEST, JOIN_DECISION, CLASSROOM_INVITE, CLASSROOM_POST); null when there is none or the viewer may no longer see it */
   classroom: Classroom | null
-  /** Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED }, COMMENT { kind: COMMENT | REPLY }, DOUBT { kind: ASKED | ANSWERED | RESOLVED, byMentor } */
+  /** Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED }, COMMENT { kind: COMMENT | REPLY }, DOUBT { kind: ASKED | ANSWERED | RESOLVED, byMentor }, MODERATION { kind: HIDDEN | REMOVED | WARNED | RESTORED, entityType } */
   data: unknown | null
   readAt: Date | null
   createdAt: Date
 }
 
-export type NotificationCategory = 'COMMENT' | 'SHARE' | 'CLASSROOM_POST' | 'QUIZ_PUBLISHED' | 'REVISION_REMINDER' | 'STREAK_AT_RISK' | 'JOIN_REQUEST' | 'JOIN_DECISION' | 'FOLLOW' | 'CONNECTION' | 'MENTOR_INVITE' | 'DOUBT' | 'FORK_PUBLISHED' | 'VERIFICATION' | 'DATA_EXPORT' | 'NOTES_IMPORT' | 'CLASSROOM_INVITE'
+export type NotificationCategory = 'COMMENT' | 'SHARE' | 'CLASSROOM_POST' | 'QUIZ_PUBLISHED' | 'REVISION_REMINDER' | 'STREAK_AT_RISK' | 'JOIN_REQUEST' | 'JOIN_DECISION' | 'FOLLOW' | 'CONNECTION' | 'MENTOR_INVITE' | 'DOUBT' | 'FORK_PUBLISHED' | 'VERIFICATION' | 'DATA_EXPORT' | 'NOTES_IMPORT' | 'CLASSROOM_INVITE' | 'MODERATION'
 
 export interface NotificationConnection {
   edges: Array<NotificationEdge>

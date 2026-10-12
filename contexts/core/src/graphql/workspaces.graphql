@@ -53,6 +53,11 @@ type Doubt {
   "Oldest first"
   answers: [DoubtAnswer!]!
   viewerCan: DoubtActions!
+  "Not OK only for its author (ADR-0051)"
+  moderation: ModerationState!
+  moderationReason: String
+  "Its author may still appeal: hidden or removed by a moderator, and not appealed yet"
+  moderationCanAppeal: Boolean!
 }
 
 type DoubtAnswer {
