@@ -14,6 +14,7 @@ export type AppEnv = z.infer<typeof AppEnv>
 const port = z.coerce.number().int().min(1).max(65535)
 /** An http(s) URL — `host:port` alone would parse as a URL with the host as its scheme. */
 const httpUrl = z.url().refine((u) => /^https?:\/\//.test(u), 'must be an http(s) URL')
+const wsUrl = z.url().refine((u) => /^wss?:\/\//.test(u), 'must be a ws(s) URL')
 
 /** Variables every backend process reads. */
 const backendBase = z.object({
@@ -173,6 +174,11 @@ export const webConfigSchema = z.object({
   NEXT_PUBLIC_SITE_URL: z.url(),
   /** The API's GraphQL gateway. */
   NEXT_PUBLIC_API_URL: z.url(),
+  /**
+   * Live updates (ADR-0042): the API's graphql-ws endpoint, e.g. wss://api.learnvianotes.in/graphql/live. Derived
+   * from NEXT_PUBLIC_API_URL in development when unset; elsewhere unset means no live updates.
+   */
+  NEXT_PUBLIC_LIVE_URL: wsUrl.optional(),
   /** /core feedback reports; empty disables sending. */
   NEXT_PUBLIC_FEEDBACK_URL: z.union([z.url(), z.literal('')]).optional(),
   /** Google sign-in through Firebase Authentication (ADR-0007). Public identifiers, not secrets. */
@@ -196,6 +202,8 @@ export const mobileConfigSchema = z.object({
   EXPO_PUBLIC_WEB_URL: z.url(),
   /** The API's GraphQL gateway. */
   EXPO_PUBLIC_API_URL: z.url(),
+  /** Live updates while the app is open (ADR-0042); as NEXT_PUBLIC_LIVE_URL. */
+  EXPO_PUBLIC_LIVE_URL: wsUrl.optional(),
   /** GitHub sign-in (§7.1); LinkedIn does not redirect to app schemes and has no app variable. */
   EXPO_PUBLIC_GITHUB_CLIENT_ID: publicId,
   EXPO_PUBLIC_GITHUB_AUTHORIZE_URL: z.url().optional(),

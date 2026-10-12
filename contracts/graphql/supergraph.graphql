@@ -315,6 +315,7 @@ enum DataExportStatus
 }
 
 scalar DateTime
+  @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
@@ -348,17 +349,18 @@ enum DomainReviewStatus
 
 """Fixed error vocabulary (§6.2)"""
 enum ErrorCode
+  @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
-  UNAUTHENTICATED @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  FORBIDDEN @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  NOT_FOUND @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  VALIDATION @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  CONFLICT @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  RATE_LIMITED @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  INTERNAL @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  UNAUTHENTICATED @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  FORBIDDEN @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  NOT_FOUND @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  VALIDATION @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  CONFLICT @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  RATE_LIMITED @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  INTERNAL @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
 }
 
 """
@@ -492,12 +494,14 @@ enum InstitutionalEmailStatus
 scalar join__FieldSet
 
 enum join__Graph {
+  COMMUNICATION @join__graph(name: "communication", url: "local://communication")
   CORE @join__graph(name: "core", url: "local://core")
   NOTES @join__graph(name: "notes", url: "local://notes")
   USERS @join__graph(name: "users", url: "local://users")
 }
 
 scalar JSON
+  @join__type(graph: COMMUNICATION)
   @join__type(graph: NOTES)
 
 type LegacyCounts
@@ -566,6 +570,22 @@ enum link__Purpose {
   `EXECUTION` features provide metadata necessary for operation execution.
   """
   EXECUTION
+}
+
+input MarkNotificationsReadInput
+  @join__type(graph: COMMUNICATION)
+{
+  """These notifications; ignored when all is true"""
+  ids: [UUID!]
+  all: Boolean
+}
+
+type MarkNotificationsReadPayload
+  @join__type(graph: COMMUNICATION)
+{
+  """What stays unread"""
+  unreadCount: Int!
+  userErrors: [UserError!]!
 }
 
 """
@@ -697,10 +717,13 @@ enum ModerationState
 }
 
 type Mutation
+  @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
+  markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload! @join__field(graph: COMMUNICATION)
+
   """
   Report a note or a person you can see; reporting again updates your report
   """
@@ -844,82 +867,82 @@ type Mutation
 }
 
 """
-A note (§4.1). Load it in two steps (§6.3): these fields and the outline first, then `cards` page by page. Editors get
-the draft; readers get the published version. Notes the viewer cannot read are null, exactly as if they did not exist.
+A note, owned by the notes subgraph: null when the viewer can no longer read it
 """
 type Note
+  @join__type(graph: COMMUNICATION, key: "id", resolvable: false)
   @join__type(graph: NOTES, key: "id")
 {
   id: UUID!
-  kind: NoteKind!
+  kind: NoteKind! @join__field(graph: NOTES)
 
   """Empty when untitled"""
-  title: String!
+  title: String! @join__field(graph: NOTES)
 
   """URL part of the title, set when published"""
-  slug: String!
-  visibility: Visibility!
-  owner: User!
-  viewerAccess: NoteAccess!
-  viewerCan: NotePermissions!
+  slug: String! @join__field(graph: NOTES)
+  visibility: Visibility! @join__field(graph: NOTES)
+  owner: User! @join__field(graph: NOTES)
+  viewerAccess: NoteAccess! @join__field(graph: NOTES)
+  viewerCan: NotePermissions! @join__field(graph: NOTES)
 
   """The owner's folder; null for anyone else"""
-  folder: Folder
+  folder: Folder @join__field(graph: NOTES)
 
   """The owner's tags; empty for anyone else"""
-  tags: [Tag!]!
-  topics: [Topic!]!
+  tags: [Tag!]! @join__field(graph: NOTES)
+  topics: [Topic!]! @join__field(graph: NOTES)
 
   """Editors only: bumped by every change to the draft"""
-  draftRevision: Int
+  draftRevision: Int @join__field(graph: NOTES)
 
   """Editors only"""
-  draftUpdatedAt: DateTime
-  publishedVersion: NoteVersion
-  publishedAt: DateTime
-  forkingEnabled: Boolean!
-  cardCount: Int!
+  draftUpdatedAt: DateTime @join__field(graph: NOTES)
+  publishedVersion: NoteVersion @join__field(graph: NOTES)
+  publishedAt: DateTime @join__field(graph: NOTES)
+  forkingEnabled: Boolean! @join__field(graph: NOTES)
+  cardCount: Int! @join__field(graph: NOTES)
 
   """
   The first words of the note (at most 180 characters), for lists and previews
   """
-  excerpt: String!
+  excerpt: String! @join__field(graph: NOTES)
 
   """The headings, for navigation"""
-  outline: [OutlineItem!]!
+  outline: [OutlineItem!]! @join__field(graph: NOTES)
 
   """In order; at most 100 per page"""
-  cards(first: Int, after: String): CardConnection!
+  cards(first: Int, after: String): CardConnection! @join__field(graph: NOTES)
 
   """Editors only: newest first"""
-  versions(first: Int, after: String): NoteVersionConnection
+  versions(first: Int, after: String): NoteVersionConnection @join__field(graph: NOTES)
 
   """Editors only: one version of this note, to preview or restore"""
-  version(id: UUID!): NoteVersion
-  createdAt: DateTime!
-  updatedAt: DateTime!
+  version(id: UUID!): NoteVersion @join__field(graph: NOTES)
+  createdAt: DateTime! @join__field(graph: NOTES)
+  updatedAt: DateTime! @join__field(graph: NOTES)
 
   """Set while the note is in the trash (owner only)"""
-  deletedAt: DateTime
+  deletedAt: DateTime @join__field(graph: NOTES)
 
   """
   The latest conversion filling this note, for the person who asked for it
   """
-  pdfConversion: PdfConversion
+  pdfConversion: PdfConversion @join__field(graph: NOTES)
 
   """Owner only; null for everyone else"""
-  moderation: NoteModeration
+  moderation: NoteModeration @join__field(graph: NOTES)
 
   """
   The owner's and editors' highlights, in page order (empty for readers); only those on one PDF with `fileId`
   """
-  highlights(fileId: UUID): [PdfHighlight!]!
+  highlights(fileId: UUID): [PdfHighlight!]! @join__field(graph: NOTES)
 
   """Owner only: the people the note is shared with; null for anyone else"""
-  shares: [NoteShare!]
+  shares: [NoteShare!] @join__field(graph: NOTES)
 
   """Set on a copy of another note; it cannot be removed"""
-  forkedFrom: ForkCredit
+  forkedFrom: ForkCredit @join__field(graph: NOTES)
 }
 
 """
@@ -1126,6 +1149,70 @@ enum NoteVersionKind
 }
 
 """
+Something that happened for the viewer. Ids only: the client writes the sentence from the category, the actor and the
+note, which resolve through their own subgraphs with their own permission checks.
+"""
+type Notification
+  @join__type(graph: COMMUNICATION)
+{
+  id: UUID!
+  category: NotificationCategory!
+
+  """In-app path to open, the same on web and phone, e.g. /notes/<id>"""
+  path: String!
+
+  """Who did it; null for the system, platform admins and deleted accounts"""
+  actor: User
+
+  """
+  The note it is about; null when there is none or the viewer can no longer read it
+  """
+  note: Note
+
+  """
+  Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }
+  """
+  data: JSON
+  readAt: DateTime
+  createdAt: DateTime!
+}
+
+enum NotificationCategory
+  @join__type(graph: COMMUNICATION)
+{
+  COMMENT @join__enumValue(graph: COMMUNICATION)
+  SHARE @join__enumValue(graph: COMMUNICATION)
+  CLASSROOM_POST @join__enumValue(graph: COMMUNICATION)
+  QUIZ_PUBLISHED @join__enumValue(graph: COMMUNICATION)
+  REVISION_REMINDER @join__enumValue(graph: COMMUNICATION)
+  STREAK_AT_RISK @join__enumValue(graph: COMMUNICATION)
+  JOIN_REQUEST @join__enumValue(graph: COMMUNICATION)
+  JOIN_DECISION @join__enumValue(graph: COMMUNICATION)
+  FOLLOW @join__enumValue(graph: COMMUNICATION)
+  CONNECTION @join__enumValue(graph: COMMUNICATION)
+  MENTOR_INVITE @join__enumValue(graph: COMMUNICATION)
+  DOUBT @join__enumValue(graph: COMMUNICATION)
+  FORK_PUBLISHED @join__enumValue(graph: COMMUNICATION)
+  VERIFICATION @join__enumValue(graph: COMMUNICATION)
+  DATA_EXPORT @join__enumValue(graph: COMMUNICATION)
+  NOTES_IMPORT @join__enumValue(graph: COMMUNICATION)
+}
+
+type NotificationConnection
+  @join__type(graph: COMMUNICATION)
+{
+  edges: [NotificationEdge!]!
+  pageInfo: PageInfo!
+}
+
+type NotificationEdge
+  @join__type(graph: COMMUNICATION)
+{
+  cursor: String!
+  node: Notification!
+}
+
+"""
 Authorization Code + PKCE: the code from the provider's redirect and the verifier the client generated
 """
 input OAuthExchangeInput
@@ -1165,6 +1252,7 @@ type OutlineItem
 }
 
 type PageInfo
+  @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
 {
@@ -1296,10 +1384,15 @@ input ProposeTopicInput
 }
 
 type Query
+  @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
+  """The viewer's notifications, newest first"""
+  notifications(first: Int, after: String): NotificationConnection! @join__field(graph: COMMUNICATION)
+  unreadNotificationCount: Int! @join__field(graph: COMMUNICATION)
+
   """
   Signed-in users: their progress on a /core subject (web reads it on /core pages)
   """
@@ -1861,6 +1954,7 @@ type UploadIntentPayload
 
 """A person, owned by the users subgraph"""
 type User
+  @join__type(graph: COMMUNICATION, key: "id", resolvable: false)
   @join__type(graph: CORE, key: "id", resolvable: false)
   @join__type(graph: NOTES, key: "id", resolvable: false)
   @join__type(graph: USERS, key: "id")
@@ -1919,6 +2013,7 @@ type User
 An expected failure of a mutation; `field` is the dotted input path, e.g. ["input", "email"]
 """
 type UserError
+  @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
@@ -1929,6 +2024,7 @@ type UserError
 }
 
 scalar UUID
+  @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * The note lifecycle on a deployed environment (spec §18, Phase 2 exit), through its single entrance, as TAP like
- * smoke.mjs: two people, A and B. A writes a note, publishes it, shares it with B, makes it public; anonymous visitors
+ * smoke.mjs: two people, A and B. A writes a note, publishes it, shares it with B (every live socket of B's hears of it,
+ * on either API instance, ADR-0042), makes it public; anonymous visitors
  * read its page, the sitemap lists it and search finds it; B copies it; A publishes a second version and the page
  * follows; A makes it private again and it leaves the page, the sitemap and search; a device of A's syncs it and sends
  * an edit made offline; A moves it to the trash and back; a picture on it gets its sizes and an infected file is
@@ -103,11 +104,19 @@ ok(saved.updateNoteDraft.results[0]?.status === 'APPLIED', 'autosave applies a c
 const v1 = await gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { publishedVersion { number } } userErrors { message } } }', { input: { noteId: id } }, A.token)
 ok(v1.publishNote.note?.publishedVersion?.number === 1, 'A publishes version 1', v1.publishNote.userErrors[0]?.message)
 
-// Sharing.
+// Sharing, announced live to every socket of B's, whichever API instance holds it (ADR-0042): the entrance hands
+// consecutive connections to the instances in turn, so four sockets cover both.
+const sockets = await Promise.all([0, 1, 2, 3].map(() => openLive(B.token)))
 const shared = await gql('mutation ($input: ShareNoteInput!) { shareNote(input: $input) { note { visibility } userErrors { message } } }', { input: { noteId: id, person: B.handle, role: 'VIEWER' } }, A.token)
 ok(shared.shareNote.note?.visibility === 'SHARED', 'A shares it with B to read', shared.shareNote.userErrors[0]?.message)
 const seenByB = await gql('query ($id: UUID!) { note(id: $id) { viewerAccess viewerCan { edit } } }', { id }, B.token)
 ok(seenByB.note?.viewerAccess === 'READER' && seenByB.note.viewerCan.edit === false, 'B reads it and cannot edit it')
+const heard = await Promise.all(sockets.map((s) => s.next(10_000).catch(() => null)))
+ok(heard.every((e) => e?.kind === 'NOTIFICATION'), 'every live socket of B hears of the share, on either API instance', `${heard.filter(Boolean).length}/4`)
+sockets.forEach((s) => s.close())
+const inbox = await gql('{ unreadNotificationCount notifications(first: 1) { edges { node { id category path actor { id } note { id } } } } }', {}, B.token)
+const latest = inbox.notifications.edges[0]?.node
+ok(latest?.category === 'SHARE' && latest.note?.id === id && latest.actor?.id === A.id && latest.id === heard[0]?.id, 'B is notified: who shared which note', `${inbox.unreadNotificationCount} unread`)
 
 // Public.
 const vis = await gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { visibility slug moderation { state } } userErrors { message } } }', { input: { noteId: id, visibility: 'PUBLIC' } }, A.token)
@@ -216,4 +225,37 @@ function webpWidth(b) {
   if (kind === 'VP8L') return 1 + (((b[22] & 0x3f) << 8) | b[21])
   if (kind === 'VP8X') return 1 + b.readUIntLE(24, 3)
   return null
+}
+
+/**
+ * A graphql-ws client (the graphql-transport-ws protocol) on Node's WebSocket, subscribed to `live` (ADR-0042). The URL
+ * comes from LVN_LIVE_URL, else from the entrance's (http → ws, /graphql/live).
+ */
+async function openLive(token) {
+  const url = process.env.LVN_LIVE_URL ?? `${base.replace(/^http/, 'ws')}/graphql/live`
+  const socket = new WebSocket(url, 'graphql-transport-ws')
+  const events = []
+  const waiters = []
+  socket.addEventListener('message', (m) => {
+    const msg = JSON.parse(String(m.data))
+    if (msg.type === 'connection_ack') socket.send(JSON.stringify({ id: '1', type: 'subscribe', payload: { query: 'subscription { live { kind id at } }' } }))
+    if (msg.type === 'ping') socket.send(JSON.stringify({ type: 'pong' }))
+    if (msg.type === 'next') {
+      events.push(msg.payload.data.live)
+      waiters.splice(0).forEach((w) => w())
+    }
+  })
+  await new Promise((resolve, reject) => {
+    socket.addEventListener('open', () => resolve(socket.send(JSON.stringify({ type: 'connection_init', payload: { authorization: `Bearer ${token}` } }))))
+    socket.addEventListener('error', () => reject(new Error(`cannot open ${url}`)))
+  })
+  return {
+    next: (ms) =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('no live event')), ms)
+        const check = () => (events.length ? (clearTimeout(timer), resolve(events[0])) : waiters.push(check))
+        check()
+      }),
+    close: () => socket.close(),
+  }
 }

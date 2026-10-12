@@ -1,10 +1,12 @@
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common'
+import { NotificationService } from '@lvn-backend/communication'
 import { NotesMaintenance } from '@lvn-backend/notes'
 import { Queues } from '@lvn-backend/queue'
 import { UsersMaintenance } from '@lvn-backend/users'
 
 export const USERS_MAINTENANCE_QUEUE = 'users.maintenance'
 export const NOTES_MAINTENANCE_QUEUE = 'notes.maintenance'
+export const COMMS_MAINTENANCE_QUEUE = 'comms.maintenance'
 
 /** Scheduled housekeeping (§9.1). Every schedule is UTC and idempotent, so restarts and several workers are safe. */
 @Injectable()
@@ -15,6 +17,7 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
     private readonly queues: Queues,
     private readonly users: UsersMaintenance,
     private readonly notes: NotesMaintenance,
+    private readonly notifications: NotificationService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -47,5 +50,15 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
     await this.queues.repeat(NOTES_MAINTENANCE_QUEUE, 'prune-versions', '30 3 * * *')
     await this.queues.repeat(NOTES_MAINTENANCE_QUEUE, 'empty-trash', '45 3 * * *')
     await this.queues.repeat(NOTES_MAINTENANCE_QUEUE, 'prune-sync-log', '50 3 * * *')
+
+    this.queues.process(COMMS_MAINTENANCE_QUEUE, {
+      // ADR-0042: read notifications are kept 90 days, unread ones a year.
+      'prune-notifications': async () => {
+        const pruned = await this.notifications.prune()
+        this.log.log(`pruned ${pruned} notifications`)
+        return { pruned }
+      },
+    })
+    await this.queues.repeat(COMMS_MAINTENANCE_QUEUE, 'prune-notifications', '55 3 * * *')
   }
 }

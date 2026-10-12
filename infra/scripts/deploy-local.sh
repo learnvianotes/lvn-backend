@@ -48,6 +48,7 @@ docker image inspect "$web_image" >/dev/null 2>&1 || docker build -t "$web_image
   --build-arg NEXT_PUBLIC_APP_ENV=sandbox \
   --build-arg NEXT_PUBLIC_SITE_URL="$public_url" \
   --build-arg NEXT_PUBLIC_API_URL="$public_url/graphql" \
+  --build-arg NEXT_PUBLIC_LIVE_URL="${public_url/#http/ws}/graphql/live" \
   --build-arg NEXT_PUBLIC_FIREBASE_API_KEY="${NEXT_PUBLIC_FIREBASE_API_KEY:-}" \
   --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}" \
   --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID="${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}" \

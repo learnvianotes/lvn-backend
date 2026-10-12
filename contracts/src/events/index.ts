@@ -109,7 +109,8 @@ export const events = {
   })),
   NoteUnpublished: eventEnvelope('NoteUnpublished', 1, z.object({ noteId: uuid, ownerId: uuid })),
   NoteForked: eventEnvelope('NoteForked', 1, z.object({ noteId: uuid, forkedFromNoteId: uuid, forkedFromVersionId: uuid, ownerId: uuid })),
-  NoteShared: eventEnvelope('NoteShared', 1, z.object({ noteId: uuid, target: z.discriminatedUnion('kind', [
+  /** sharedBy (the owner, who alone shares) is optional: additive in v1 (ADR-0042). */
+  NoteShared: eventEnvelope('NoteShared', 1, z.object({ noteId: uuid, sharedBy: uuid.optional(), target: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('USER'), userId: uuid }),
     z.object({ kind: z.literal('GROUP'), groupId: uuid }),
     z.object({ kind: z.literal('CLASSROOM'), classroomId: uuid }),

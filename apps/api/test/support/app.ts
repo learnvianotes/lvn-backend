@@ -87,9 +87,10 @@ export const fakeGoogle: GoogleIdTokens = {
  * A fresh database and a fully composed API (all subgraphs + gateway), as main.ts builds it. Only the edges are
  * replaced: DNS (MX) and Google token verification, which would otherwise reach the internet.
  */
-export async function createTestApp(overrides: Record<string, string> = {}): Promise<TestApp> {
+export async function createTestApp(overrides: Record<string, string> = {}, options: { resetDatabase?: boolean } = {}): Promise<TestApp> {
   const config = await testConfig(overrides)
-  await resetDatabase(config.DATABASE_URL)
+  // A second instance of the API (ADR-0042) shares the first one's database: it must not wipe it.
+  if (options.resetDatabase !== false) await resetDatabase(config.DATABASE_URL)
   const moduleRef = await Test.createTestingModule({ imports: [AppModule.forRoot(config)] })
     .overrideProvider(MX_LOOKUP)
     .useValue(fakeMx)

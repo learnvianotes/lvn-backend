@@ -1128,3 +1128,51 @@ model ModerationAppeal {
   @@index([status, createdAt])
   @@schema("core")
 }
+
+// ── comms ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// What a notification is about (`@lvn/contracts/notifications` NotificationCategory, §9.3).
+enum NotificationCategory {
+  COMMENT
+  SHARE
+  CLASSROOM_POST
+  QUIZ_PUBLISHED
+  REVISION_REMINDER
+  STREAK_AT_RISK
+  JOIN_REQUEST
+  JOIN_DECISION
+  FOLLOW
+  CONNECTION
+  MENTOR_INVITE
+  DOUBT
+  FORK_PUBLISHED
+  VERIFICATION
+  DATA_EXPORT
+  NOTES_IMPORT
+
+  @@schema("comms")
+}
+
+/// Something that happened for a person, shown in-app first (§9.3, ADR-0042). Ids only: never note, comment or
+/// message text. Read ones go after 90 days, unread ones after a year.
+model Notification {
+  id        String               @id @db.Uuid
+  /// Cross-context reference to users.User: who it is for
+  userId    String               @db.Uuid
+  category  NotificationCategory
+  /// In-app path to open ("/notes/<id>"), the same on web and phone
+  path      String
+  /// Cross-context reference to users.User: who did it; null for the system or a deleted account
+  actorId   String?              @db.Uuid
+  /// Cross-context reference to notes.Note when it is about a note
+  noteId    String?              @db.Uuid
+  /// Category facts that are not user content (a decision, counts)
+  data      Json?
+  readAt    DateTime?            @db.Timestamptz(3)
+  createdAt DateTime             @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([userId, readAt])
+  @@index([actorId])
+  @@schema("comms")
+}
