@@ -84,7 +84,7 @@ export class SharingService {
     })
     await this.audit.record({ actorId: ownerId, action: existing ? 'note.share.role' : 'note.share', targetType: 'NOTE', targetId: noteId, metadata: { userId: person.id, role } })
     if (note.visibility === 'PRIVATE') await this.audit.record({ actorId: ownerId, action: 'note.visibility', targetType: 'NOTE', targetId: noteId, metadata: { from: 'PRIVATE', to: 'SHARED' } })
-    if (!existing) await this.events.publish('NoteShared', { noteId, target: { kind: 'USER', userId: person.id } })
+    if (!existing) await this.events.publish('NoteShared', { noteId, sharedBy: ownerId, target: { kind: 'USER', userId: person.id } })
     return (await this.notes.open(ownerId, noteId, actor))!
   }
 

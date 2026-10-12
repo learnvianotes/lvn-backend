@@ -5,29 +5,42 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit",
+    "build": "node ../../scripts/graphql-types.mjs communication && tsc -p tsconfig.build.json && cp src/graphql/*.graphql dist/graphql/",
+    "typecheck": "node ../../scripts/graphql-types.mjs communication --check && tsc --noEmit",
     "lint": "eslint src test",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1147.0",
+    "@lvn-backend/auth-guard": "workspace:*",
+    "@lvn-backend/errors": "workspace:*",
+    "@lvn-backend/event-bus": "workspace:*",
     "@lvn-backend/facades": "workspace:*",
+    "@lvn-backend/graphql": "workspace:*",
+    "@lvn-backend/prisma-base": "workspace:*",
+    "@lvn-backend/redis": "workspace:*",
     "@lvn/contracts": "workspace:@learnvianotes/contracts@*",
     "@nestjs/common": "^11.2.7",
+    "@nestjs/core": "^11.2.7",
+    "@nestjs/graphql": "13.4.5",
     "@react-email/components": "^1.0.12",
     "@react-email/render": "^2.1.0",
+    "graphql": "16.14.2",
+    "graphql-ws": "6.3.0",
+    "ioredis": "^6.0.0",
     "nodemailer": "^10.0.16",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "reflect-metadata": "^0.2.2",
     "resend": "^6.32.1",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "ws": "8.22.0"
   },
   "devDependencies": {
     "@lvn-backend/testing": "workspace:*",
     "@types/nodemailer": "^8.0.2",
     "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0"
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "8.18.2"
   }
 }

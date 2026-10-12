@@ -7,8 +7,13 @@
 
 :80 {
 	@api path /graphql /graphql/* /health/*
+	# Every API instance, in turn (ADR-0042); WebSockets for /graphql/live pass through as they are.
 	handle @api {
-		reverse_proxy ${api}
+		reverse_proxy ${api} {
+			lb_policy round_robin
+			health_uri /health/ready
+			health_interval 5s
+		}
 	}
 	handle {
 		reverse_proxy ${web}

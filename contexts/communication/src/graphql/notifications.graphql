@@ -1,0 +1,100 @@
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.6", import: ["@key", "@shareable"])
+
+# In-app notifications (spec §9.3, ADR-0042). Live updates are served beside /graphql, at /graphql/live (graphql-ws).
+
+scalar UUID
+scalar DateTime
+scalar JSON
+
+"A person, owned by the users subgraph"
+type User @key(fields: "id", resolvable: false) {
+  id: UUID!
+}
+
+"A note, owned by the notes subgraph: null when the viewer can no longer read it"
+type Note @key(fields: "id", resolvable: false) {
+  id: UUID!
+}
+
+type PageInfo @shareable {
+  hasNextPage: Boolean!
+  endCursor: String
+}
+
+enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL }
+
+type UserError @shareable {
+  field: [String!]
+  message: String!
+  code: ErrorCode!
+}
+
+enum NotificationCategory {
+  COMMENT
+  SHARE
+  CLASSROOM_POST
+  QUIZ_PUBLISHED
+  REVISION_REMINDER
+  STREAK_AT_RISK
+  JOIN_REQUEST
+  JOIN_DECISION
+  FOLLOW
+  CONNECTION
+  MENTOR_INVITE
+  DOUBT
+  FORK_PUBLISHED
+  VERIFICATION
+  DATA_EXPORT
+  NOTES_IMPORT
+}
+
+"""
+Something that happened for the viewer. Ids only: the client writes the sentence from the category, the actor and the
+note, which resolve through their own subgraphs with their own permission checks.
+"""
+type Notification {
+  id: UUID!
+  category: NotificationCategory!
+  "In-app path to open, the same on web and phone, e.g. /notes/<id>"
+  path: String!
+  "Who did it; null for the system, platform admins and deleted accounts"
+  actor: User
+  "The note it is about; null when there is none or the viewer can no longer read it"
+  note: Note
+  "Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }"
+  data: JSON
+  readAt: DateTime
+  createdAt: DateTime!
+}
+
+type NotificationEdge {
+  cursor: String!
+  node: Notification!
+}
+
+type NotificationConnection {
+  edges: [NotificationEdge!]!
+  pageInfo: PageInfo!
+}
+
+type Query {
+  "The viewer's notifications, newest first"
+  notifications(first: Int, after: String): NotificationConnection!
+  unreadNotificationCount: Int!
+}
+
+input MarkNotificationsReadInput {
+  "These notifications; ignored when all is true"
+  ids: [UUID!]
+  all: Boolean
+}
+
+type MarkNotificationsReadPayload {
+  "What stays unread"
+  unreadCount: Int!
+  userErrors: [UserError!]!
+}
+
+type Mutation {
+  markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload!
+}

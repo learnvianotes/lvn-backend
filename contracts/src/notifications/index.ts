@@ -44,3 +44,19 @@ export const pushMessage = z
   })
   .strict()
 export type PushMessage = z.infer<typeof pushMessage>
+
+/**
+ * Live updates (§9.2, ADR-0042): what the `live` subscription delivers. A kind and an id, nothing else — the client
+ * refetches through the API, where the permission checks run.
+ */
+export const LiveEventKind = { NOTIFICATION: 'NOTIFICATION' } as const
+export type LiveEventKind = (typeof LiveEventKind)[keyof typeof LiveEventKind]
+
+export const liveEvent = z
+  .object({
+    kind: z.enum(enumValues(LiveEventKind)),
+    id: z.uuid(),
+    at: z.iso.datetime(),
+  })
+  .strict()
+export type LiveEvent = z.infer<typeof liveEvent>

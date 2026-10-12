@@ -271,16 +271,17 @@ resource "terraform_data" "migrate" {
 }
 
 resource "docker_container" "api" {
-  count        = local.apps
-  name         = "${var.name}-api"
+  count        = local.apps * var.api_instances
+  name         = count.index == 0 ? "${var.name}-api" : "${var.name}-api-${count.index + 1}"
   image        = var.api_image
   restart      = "unless-stopped"
   log_opts     = local.log_opts
   env          = local.env_list
   stop_timeout = 30
   networks_advanced {
-    name    = docker_network.this.id
-    aliases = ["api"]
+    name = docker_network.this.id
+    # "api" is any instance (the web's server-side calls); "api-N" is this one (the entrance balances over them).
+    aliases = ["api", "api-${count.index + 1}"]
   }
   healthcheck {
     test         = ["CMD", "node", "-e", format(local.node_check, 4000, "/health/ready")]
@@ -352,6 +353,7 @@ resource "docker_container" "web" {
     "NEXT_PUBLIC_APP_ENV=${var.environment}",
     "NEXT_PUBLIC_SITE_URL=${var.public_url}",
     "NEXT_PUBLIC_API_URL=${var.public_url}/graphql",
+    "NEXT_PUBLIC_LIVE_URL=${replace(var.public_url, "/^http/", "ws")}/graphql/live",
     # Server-side rendering (public note pages) reaches the API inside the network, not through the entrance.
     "API_INTERNAL_URL=http://api:4000/graphql",
     "REVALIDATE_SECRET=${random_password.revalidate.result}",
@@ -385,6 +387,6 @@ resource "docker_container" "proxy" {
   }
   upload {
     file    = "/etc/caddy/Caddyfile"
-    content = templatefile("${path.module}/Caddyfile.tftpl", { api = "api:4000", web = "web:3000" })
+    content = templatefile("${path.module}/Caddyfile.tftpl", { api = join(" ", [for i in range(var.api_instances) : "api-${i + 1}:4000"]), web = "web:3000" })
   }
 }

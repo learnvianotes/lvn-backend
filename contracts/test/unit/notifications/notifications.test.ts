@@ -1,4 +1,4 @@
-import { pushMessage } from '../../../src/notifications'
+import { liveEvent, pushMessage } from '../../../src/notifications'
 
 const ok = {
   title: 'Priya commented on your note',
@@ -18,5 +18,19 @@ describe('pushMessage', () => {
     }
     expect(() => pushMessage.parse({ ...ok, body: 'x'.repeat(121) })).toThrow()
     expect(() => pushMessage.parse({ ...ok, extra: true })).toThrow()
+  })
+})
+
+describe('liveEvent (ADR-0042)', () => {
+  const event = { kind: 'NOTIFICATION', id: '0199c0de-0000-7000-8000-000000000001', at: '2026-10-12T09:00:00.000Z' }
+
+  it('carries a kind, an id and a time', () => {
+    expect(liveEvent.parse(event)).toEqual(event)
+  })
+
+  it('carries nothing else: no text, no unknown kinds', () => {
+    expect(() => liveEvent.parse({ ...event, title: 'Priya shared Heaps' })).toThrow()
+    expect(() => liveEvent.parse({ ...event, kind: 'MESSAGE' })).toThrow()
+    expect(() => liveEvent.parse({ ...event, id: 'note-1' })).toThrow()
   })
 })

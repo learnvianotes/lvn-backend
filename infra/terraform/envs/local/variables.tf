@@ -38,6 +38,12 @@ variable "pdf_engine_image" {
   default     = ""
 }
 
+variable "api_instances" {
+  description = "API containers behind the entrance; two show that live updates fan out across instances (ADR-0042)"
+  type        = number
+  default     = 2
+}
+
 variable "pdf_engine_memory_mb" {
   description = "Memory the PDF engine may use; Docling on CPU needs about 2 GB for a large page"
   type        = number
