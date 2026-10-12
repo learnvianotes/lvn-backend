@@ -206,6 +206,33 @@ if (opt('--vm')) {
   ok(await eventually(() => readsPlan(C)), 'a note shared to the group is read by its members')
   const outside = await gql('query ($id: UUID!) { group(id: $id) { name posts { edges { node { id } } } sharedNotes { edges { node { id } } } } }', { id: groupId }, B.token)
   ok(!(await readsPlan(B)) && outside.group.posts === null && outside.group.sharedNotes === null, 'and not by B, who is not in it: B sees the name only')
+
+  // Classrooms (ADR-0046): teacher A starts a class; student D asks with its code and A lets them in; A's
+  // announcement reaches D; a note shared to the class is read by D and not by B; A and C, who are no longer connected,
+  // share again once C is the class's TA.
+  const D = await signUp('d')
+  sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'INSTITUTIONAL_EMAIL' WHERE id = '${D.id}'`)
+  const klass = (await gql('mutation { createClassroom(input: { name: "Lifecycle class" }) { classroom { id joinCode } userErrors { message } } }', {}, A.token)).createClassroom.classroom
+  const classroomId = klass.id
+  ok(/^[A-HJKMNP-Z2-9]{8}$/.test(klass.joinCode), 'teacher A starts a class with an eight-character code', klass.joinCode)
+  const preview = (await gql('query ($code: String!) { classroomByCode(code: $code) { id name } }', { code: klass.joinCode.toLowerCase() }, D.token)).classroomByCode
+  await gql('mutation ($input: RequestToJoinClassroomInput!) { requestToJoinClassroom(input: $input) { classroom { id } } }', { input: { code: klass.joinCode } }, D.token)
+  ok(preview?.id === classroomId && (await eventually(async () => (await gql('{ notifications(first: 1) { edges { node { category classroom { id } } } } }', {}, A.token)).notifications.edges[0]?.node.classroom?.id === classroomId)), 'D finds the class by its code and asks; A is told')
+  const asking = (await gql('query ($id: UUID!) { classroom(id: $id) { joinRequests { id } } }', { id: classroomId }, A.token)).classroom.joinRequests
+  await gql('mutation ($input: ReviewClassroomJoinRequestInput!) { reviewClassroomJoinRequest(input: $input) { classroom { id } } }', { input: { requestId: asking[0].id, decision: 'APPROVED' } }, A.token)
+  ok((await gql('query ($id: UUID!) { classroom(id: $id) { viewerRole members { role } } }', { id: classroomId }, D.token)).classroom.viewerRole === 'STUDENT', 'A lets D in; D is a student')
+  await gql('mutation ($input: CreateClassroomPostInput!) { createClassroomPost(input: $input) { classroom { id } } }', { input: { classroomId, body: text('Test on Friday').doc } }, A.token)
+  ok(await eventually(async () => (await gql('{ notifications(first: 1) { edges { node { category } } } }', {}, D.token)).notifications.edges[0]?.node.category === 'CLASSROOM_POST'), 'A posts an announcement and D is told')
+  await gql('mutation ($input: NoteClassroomInput!) { shareNoteToClassroom(input: $input) { note { id } } }', { input: { noteId: planId, classroomId } }, A.token)
+  const closed = await gql('query ($id: UUID!) { classroom(id: $id) { name } }', { id: classroomId }, B.token)
+  ok((await eventually(() => readsPlan(D))) && !(await readsPlan(B)) && closed.classroom === null, 'a note shared to the class is read by D, and B sees nothing of the class')
+  C.handle = (await gql('{ viewer { handle } }', {}, C.token)).viewer.handle
+  await gql('mutation ($input: InviteToClassroomInput!) { inviteToClassroom(input: $input) { classroom { id } } }', { input: { classroomId, person: C.handle, role: 'TA' } }, A.token)
+  const invite = (await gql('{ myClassroomInvites { id role } }', {}, C.token)).myClassroomInvites[0]
+  await gql('mutation ($input: AnswerClassroomInviteInput!) { answerClassroomInvite(input: $input) { classroom { id } } }', { input: { inviteId: invite.id, accept: true } }, C.token)
+  const coShare = async () => (await gql('mutation ($input: ShareNoteInput!) { shareNote(input: $input) { note { id } userErrors { message } } }', { input: { noteId: id, person: C.handle, role: 'VIEWER' } }, A.token).catch((e) => ({ error: e.message })))
+  const shareResult = await eventually(async () => !!(await coShare()).shareNote?.note)
+  ok(invite?.role === 'TA' && shareResult, 'C accepts A\'s TA invite; A shares with C again, as co-teachers')
 }
 
 // Media (ADR-0041): processed after the upload by the worker, scanned by the environment's ClamAV.
