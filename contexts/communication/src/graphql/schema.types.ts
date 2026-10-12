@@ -1,9 +1,26 @@
 // Generated from this folder's *.graphql by scripts/graphql-types.mjs (ADR-0033). Do not edit.
 
+export interface CategoryPreference {
+  category: NotificationCategory
+  push: boolean
+  /** Null when this category sends no email */
+  email: boolean | null
+}
+
+export interface CategoryPreferenceInput {
+  category: NotificationCategory
+  push?: boolean | null
+  email?: boolean | null
+}
+
 /** A class, owned by the core subgraph: null when the viewer may no longer see it */
 export interface Classroom {
   id: string
 }
+
+export type DevicePlatform = 'ANDROID' | 'IOS'
+
+export type EmailKind = 'CLASSROOM_POST' | 'DIGEST'
 
 export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL'
 
@@ -26,6 +43,22 @@ export interface MarkNotificationsReadPayload {
 
 export interface MutationMarkNotificationsReadArgs {
   input: MarkNotificationsReadInput
+}
+
+export interface MutationUpdateNotificationSettingsArgs {
+  input: UpdateNotificationSettingsInput
+}
+
+export interface MutationRegisterDeviceArgs {
+  input: RegisterDeviceInput
+}
+
+export interface MutationUnregisterDeviceArgs {
+  input: UnregisterDeviceInput
+}
+
+export interface MutationUnsubscribeEmailArgs {
+  input: UnsubscribeEmailInput
 }
 
 /** A note, owned by the notes subgraph: null when the viewer can no longer read it */
@@ -66,6 +99,30 @@ export interface NotificationEdge {
   node: Notification
 }
 
+export interface NotificationSettings {
+  categories: Array<CategoryPreference>
+  /** Pushes wait out these hours (HH:MM, in timeZone) */
+  quietStart: string
+  quietEnd: string
+  /** An IANA time zone, e.g. Asia/Kolkata */
+  timeZone: string
+  weeklyDigest: boolean
+  /** The server can send push (it has FCM settings) */
+  pushAvailable: boolean
+  /** Phones registered for push */
+  devices: number
+}
+
+export interface NotificationSettingsPayload {
+  settings: NotificationSettings | null
+  userErrors: Array<UserError>
+}
+
+export interface OkPayload {
+  ok: boolean
+  userErrors: Array<UserError>
+}
+
 export interface PageInfo {
   hasNextPage: boolean
   endCursor: string | null
@@ -74,6 +131,35 @@ export interface PageInfo {
 export interface QueryNotificationsArgs {
   first?: number | null
   after?: string | null
+}
+
+export interface RegisterDeviceInput {
+  /** The native FCM (or APNs) token */
+  token: string
+  platform: DevicePlatform
+}
+
+export interface UnregisterDeviceInput {
+  token: string
+}
+
+export interface UnsubscribeEmailInput {
+  /** From the link in the email */
+  token: string
+}
+
+export interface UnsubscribePayload {
+  /** What was turned off */
+  kind: EmailKind | null
+  userErrors: Array<UserError>
+}
+
+export interface UpdateNotificationSettingsInput {
+  categories?: Array<CategoryPreferenceInput> | null
+  quietStart?: string | null
+  quietEnd?: string | null
+  timeZone?: string | null
+  weeklyDigest?: boolean | null
 }
 
 /** A person, owned by the users subgraph */

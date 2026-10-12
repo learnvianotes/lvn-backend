@@ -23,4 +23,16 @@ describe('MailService over SMTP', () => {
     expect(mail.html).toContain('http://localhost:3000/reset?token=xyz')
     expect(mail.text).toContain('Choose a new password')
   })
+
+  it('marks emails people can leave with one-click unsubscribe headers (RFC 8058, ADR-0050)', async () => {
+    const unsubscribe = 'http://localhost:3000/unsubscribe?t=abc.def'
+    await mailer.send('ravi@college.edu', 'classroomPost', { displayName: 'Ravi', teacherName: 'Ms Rao', classroomName: 'Physics 9A', text: 'Test on Friday', link: 'http://localhost:3000/classes/c1', unsubscribeLink: unsubscribe }, { unsubscribeUrl: unsubscribe })
+    const mail = await mailbox.latestTo('ravi@college.edu')
+    expect(mail.subject).toBe('Ms Rao posted in Physics 9A')
+    expect(mail.text).toContain('Test on Friday')
+    expect(mail.html).toContain(unsubscribe)
+    const headers = await mailbox.headers(mail.id)
+    expect(headers['List-Unsubscribe']).toEqual([`<${unsubscribe}>`])
+    expect(headers['List-Unsubscribe-Post']).toEqual(['List-Unsubscribe=One-Click'])
+  })
 })

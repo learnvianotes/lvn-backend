@@ -57,3 +57,45 @@ export function InstitutionalCode({ displayName, code, expiresInMinutes }: MailT
     </Layout>
   )
 }
+
+export function ClassroomPost({ displayName, teacherName, classroomName, text, link, unsubscribeLink }: MailTemplates['classroomPost']) {
+  return (
+    <Layout preview={`${teacherName} posted in ${classroomName}`}>
+      <Heading as="h1" style={heading}>
+        New in {classroomName}
+      </Heading>
+      <Text style={paragraph}>
+        Hi {displayName}, {teacherName} posted an announcement:
+      </Text>
+      <Text style={{ ...paragraph, whiteSpace: 'pre-line', borderLeft: '3px solid #4F46E5', paddingLeft: 12 }}>{text}</Text>
+      <Button href={link} style={button}>
+        Open the class
+      </Button>
+      <Text style={muted}>
+        You get these because you are in {classroomName}. <a href={unsubscribeLink}>Stop emails about class announcements</a>.
+      </Text>
+    </Layout>
+  )
+}
+
+export function WeeklyDigest({ displayName, lines, link, unsubscribeLink }: MailTemplates['weeklyDigest']) {
+  return (
+    <Layout preview="Your week on LearnViaNotes">
+      <Heading as="h1" style={heading}>
+        Your week on LearnViaNotes
+      </Heading>
+      <Text style={paragraph}>Hi {displayName}, here is what is waiting for you:</Text>
+      {lines.map((line) => (
+        <Text key={line} style={{ ...paragraph, margin: '0 0 6px' }}>
+          • {line}
+        </Text>
+      ))}
+      <Button href={link} style={button}>
+        See your notifications
+      </Button>
+      <Text style={muted}>
+        <a href={unsubscribeLink}>Stop the weekly email</a>.
+      </Text>
+    </Layout>
+  )
+}

@@ -32,6 +32,11 @@ export class Mailbox {
     }
   }
 
+  /** A message's headers, each name with its values (Mailpit's own view). */
+  async headers(id: string): Promise<Record<string, string[]>> {
+    return (await (await fetch(`${this.apiUrl}/api/v1/message/${id}/headers`)).json()) as Record<string, string[]>
+  }
+
   async countTo(address: string): Promise<number> {
     const res = await fetch(`${this.apiUrl}/api/v1/search?query=${encodeURIComponent(`to:"${address}"`)}`)
     return ((await res.json()) as { messages_count: number }).messages_count

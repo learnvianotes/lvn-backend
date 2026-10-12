@@ -2,6 +2,11 @@ import { Module, type DynamicModule } from '@nestjs/common'
 import { JsonScalar } from '@lvn-backend/graphql'
 import { COMMUNICATION_CONFIG, type CommunicationConfig } from './communication.config'
 import { NotificationsResolver } from './graphql/notifications.resolver'
+import { SettingsResolver } from './graphql/settings.resolver'
+import { EmailNotificationsService } from './email/email-notifications.service'
+import { PreferencesService } from './preferences/preferences.service'
+import { DevicesService } from './push/devices.service'
+import { PushService } from './push/push.service'
 import { LiveHub } from './live/live-hub'
 import { LiveServer } from './live/live-server'
 import { MailService } from './mail/mail.service'
@@ -35,10 +40,15 @@ export class CommunicationModule {
         NotificationService,
         CommunicationEvents,
         NotificationsResolver,
+        PreferencesService,
+        DevicesService,
+        PushService,
+        EmailNotificationsService,
+        SettingsResolver,
         JsonScalar,
         ...(options.serveLive ? [LiveServer] : []),
       ],
-      exports: [MailService, NotificationService, LiveHub],
+      exports: [MailService, NotificationService, LiveHub, PushService, DevicesService, EmailNotificationsService],
     }
   }
 }

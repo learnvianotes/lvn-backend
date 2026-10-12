@@ -29,6 +29,10 @@ export interface People {
   connectionIds(userId: string): Promise<string[]>
   /** The two are connected. */
   connected(a: string, b: string): Promise<boolean>
+  /** Display names by id, for push text and emails (ADR-0050); deleted accounts are left out. */
+  namesOf(ids: string[]): Promise<Record<string, string>>
+  /** Where `communication` writes to a person (ADR-0050): their sign-in email and name; null for deleted accounts. */
+  contactOf(userId: string): Promise<{ email: string; displayName: string; restrictedMinor: boolean } | null>
   /** Who `userId` follows, most recent first, at most 2,000 (ADR-0049: the Following feed). */
   followingIds(userId: string): Promise<string[]>
   /** `restricterId` restricts `restrictedId` (ADR-0016): their comments wait for approval and cause no notification. */

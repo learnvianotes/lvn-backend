@@ -6,6 +6,8 @@ export { CoreModule }
 export { coreConfigFrom, type CoreConfig } from './core.config'
 /** Implementation of the MODERATION facade (ADR-0037), bound by the composition roots. */
 export { ModerationService } from './application/moderation.service'
+/** Implementation of the PLACES facade (ADR-0050), bound by the composition roots. */
+export { ClassroomsService } from './application/classrooms.service'
 /** Project workspaces (ADR-0048): apps/worker refreshes repository details each night. */
 export { WorkspacesService, parseRepository } from './application/workspaces.service'
 /** The core part of a data export (ADR-0018), bound to CORE_DATA_EXPORT by the composition roots. */

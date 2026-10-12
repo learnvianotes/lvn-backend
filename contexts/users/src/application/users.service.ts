@@ -71,6 +71,20 @@ export class UsersService implements People {
     return (await this.db.connection.count({ where: a < b ? { userLowId: a, userHighId: b } : { userLowId: b, userHighId: a } })) > 0
   }
 
+  /** People facade (ADR-0050): display names for push text and emails. */
+  async namesOf(ids: string[]): Promise<Record<string, string>> {
+    if (!ids.length) return {}
+    const rows = await this.db.user.findMany({ where: { id: { in: [...new Set(ids)] }, deletedAt: null }, select: { id: true, displayName: true } })
+    return Object.fromEntries(rows.map((r) => [r.id, r.displayName]))
+  }
+
+  /** People facade (ADR-0050): where communication writes to a person. */
+  async contactOf(userId: string): Promise<{ email: string; displayName: string; restrictedMinor: boolean } | null> {
+    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { email: true, displayName: true, dateOfBirth: true, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } } })
+    if (!u) return null
+    return { email: u.email, displayName: u.displayName, restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.config.digitalConsentAge, u.consents.length > 0) }
+  }
+
   /** People facade (ADR-0049): who the person follows, most recent first. */
   async followingIds(userId: string): Promise<string[]> {
     return (await this.db.follow.findMany({ where: { followerId: userId }, orderBy: { createdAt: 'desc' }, select: { followeeId: true }, take: 2000 })).map((f) => f.followeeId)

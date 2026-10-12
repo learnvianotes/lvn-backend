@@ -1817,3 +1817,48 @@ model ProjectContributor {
   @@index([userId])
   @@schema("notes")
 }
+
+// ── Push, email and preferences (ADR-0050) ──────────────────────────────────────────────────────────────────────
+
+enum DevicePlatform {
+  ANDROID
+  IOS
+
+  @@schema("comms")
+}
+
+/// A phone's native FCM/APNs token (ADR-0021): one person's at a time; pruned when FCM says it is gone.
+model DeviceToken {
+  token      String         @id
+  /// Cross-context reference to users.User
+  userId     String         @db.Uuid
+  platform   DevicePlatform
+  createdAt  DateTime       @default(now()) @db.Timestamptz(3)
+  lastSeenAt DateTime       @default(now()) @db.Timestamptz(3)
+
+  @@index([userId])
+  @@schema("comms")
+}
+
+/// Only the choices that differ from the defaults (ADR-0050): null keeps the default.
+model NotificationPreference {
+  userId   String               @db.Uuid
+  category NotificationCategory
+  push     Boolean?
+  email    Boolean?
+
+  @@id([userId, category])
+  @@schema("comms")
+}
+
+/// Quiet hours, time zone and the weekly digest; no row means the defaults.
+model NotificationSettings {
+  userId       String    @id @db.Uuid
+  quietStart   String    @default("22:00")
+  quietEnd     String    @default("07:00")
+  timeZone     String    @default("Asia/Kolkata")
+  weeklyDigest Boolean   @default(true)
+  lastDigestAt DateTime? @db.Timestamptz(3)
+
+  @@schema("comms")
+}

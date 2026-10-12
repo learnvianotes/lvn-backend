@@ -8,6 +8,8 @@ export interface OutgoingMail {
   subject: string
   html: string
   text: string
+  /** Extra headers, e.g. List-Unsubscribe (ADR-0050) */
+  headers?: Record<string, string>
 }
 
 export interface MailTransport {
@@ -21,7 +23,7 @@ export class SmtpTransport implements MailTransport {
     this.transporter = nodemailer.createTransport(url)
   }
   async send(mail: OutgoingMail): Promise<void> {
-    await this.transporter.sendMail(mail)
+    await this.transporter.sendMail({ from: mail.from, to: mail.to, subject: mail.subject, html: mail.html, text: mail.text, headers: mail.headers })
   }
 }
 
@@ -41,7 +43,7 @@ export class SesTransport implements MailTransport {
       new SendEmailCommand({
         FromEmailAddress: mail.from,
         Destination: { ToAddresses: [mail.to] },
-        Content: { Simple: { Subject: utf8(mail.subject), Body: { Html: utf8(mail.html), Text: utf8(mail.text) } } },
+        Content: { Simple: { Subject: utf8(mail.subject), Body: { Html: utf8(mail.html), Text: utf8(mail.text) }, ...(mail.headers ? { Headers: Object.entries(mail.headers).map(([Name, Value]) => ({ Name, Value })) } : {}) } },
       }),
     )
   }
@@ -54,7 +56,7 @@ export class ResendTransport implements MailTransport {
     this.client = new Resend(apiKey)
   }
   async send(mail: OutgoingMail): Promise<void> {
-    const { error } = await this.client.emails.send(mail)
+    const { error } = await this.client.emails.send({ from: mail.from, to: mail.to, subject: mail.subject, html: mail.html, text: mail.text, headers: mail.headers })
     if (error) throw new Error(`Resend refused the email: ${error.name}`)
   }
 }
