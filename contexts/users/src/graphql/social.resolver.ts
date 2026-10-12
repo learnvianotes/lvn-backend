@@ -103,6 +103,46 @@ export class SocialResolver {
   unrestrictUser(@Args() { input }: PersonArgs, @CurrentViewer() viewer: Viewer) {
     return this.act(() => this.social.unrestrict(viewer.userId, input.userId), input.userId)
   }
+
+  // ── Connections (ADR-0013, ADR-0044) ──
+
+  @Query('myConnections')
+  async myConnections(@CurrentViewer() viewer: Viewer) {
+    return (await this.people(await this.social.connections(viewer.userId))).map((p) => ({ cursor: encodeCursor([p.row.id]), node: p.user, since: p.row.since }))
+  }
+
+  @Query('myConnectionRequests')
+  async myConnectionRequests(@CurrentViewer() viewer: Viewer) {
+    const requests = await this.social.connectionRequests(viewer.userId)
+    const byId = new Map((await this.users.publicProfiles(requests.map((r) => r.personId))).map((u) => [u.id, u]))
+    return requests.filter((r) => byId.has(r.personId)).map((r) => ({ id: r.id, direction: r.direction, person: byId.get(r.personId)!, createdAt: r.createdAt }))
+  }
+
+  @Mutation('requestConnection')
+  requestConnection(@Args() { input }: PersonArgs, @CurrentViewer() viewer: Viewer) {
+    return this.act(() => this.social.requestConnection(viewer.userId, input.userId), input.userId)
+  }
+
+  @Mutation('respondToConnectionRequest')
+  respondToConnectionRequest(@Args() { input }: { input: { requestId: string; accept: boolean } }, @CurrentViewer() viewer: Viewer): Promise<PersonPayload> {
+    return withUserErrors<PersonPayload>(
+      async () => ({ user: await this.users.publicProfile(await this.social.respondToConnection(viewer.userId, input.requestId, input.accept)) }),
+      { user: null },
+    )
+  }
+
+  @Mutation('withdrawConnectionRequest')
+  withdrawConnectionRequest(@Args() { input }: { input: { requestId: string } }, @CurrentViewer() viewer: Viewer): Promise<PersonPayload> {
+    return withUserErrors<PersonPayload>(
+      async () => ({ user: await this.users.publicProfile(await this.social.withdrawConnectionRequest(viewer.userId, input.requestId)) }),
+      { user: null },
+    )
+  }
+
+  @Mutation('removeConnection')
+  removeConnection(@Args() { input }: PersonArgs, @CurrentViewer() viewer: Viewer) {
+    return this.act(() => this.social.removeConnection(viewer.userId, input.userId), input.userId)
+  }
 }
 
 /** Public profiles and the people fields of User, for anyone (anonymous visitors included). */
@@ -140,6 +180,6 @@ export class PeopleResolver {
   async relation(@Parent() u: { id: string }, @Context() ctx: RequestContext): Promise<Relation | null> {
     const r = await this.social.relation(ctx.viewer?.userId ?? null, u.id)
     if (!r) return null
-    return { following: r.following, followedBy: r.followedBy, blocked: r.blocked, restricted: r.restricted, viewerCan: r.can }
+    return { following: r.following, followedBy: r.followedBy, blocked: r.blocked, restricted: r.restricted, connected: r.connected, pendingConnection: r.pendingConnection, viewerCan: r.can }
   }
 }

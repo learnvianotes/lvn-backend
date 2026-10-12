@@ -95,8 +95,8 @@ export class NotesService {
   async create(ownerId: string, input: { id?: string | null; title?: string | null; folderId?: string | null; kind?: NoteRow['kind'] | null; cards?: CardInput[] | null; tagNames?: string[] | null; topicIds?: string[] | null }): Promise<OpenedNote> {
     const actor = await this.actor(ownerId)
     const kind = input.kind ?? 'NOTE'
-    if (kind !== 'NOTE') throw Errors.validation('Only notes can be created for now.', ['input', 'kind'])
-    if (!can(actor, Action.NOTE_CREATE, { kind: 'newNote', noteKind: kind })) throw Errors.forbidden()
+    // Notes and projects for anyone, blogs and posts for teachers (ADR-0014, ADR-0015, ADR-0044).
+    if (!can(actor, Action.NOTE_CREATE, { kind: 'newNote', noteKind: kind })) throw Errors.forbidden('Blogs and posts are for teachers.')
     const limit = await this.limiter.hit(`notes:create:${ownerId}`, { max: 300, windowSeconds: 3600 })
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'You have created a lot of notes in the last hour. Try again later.')
 
@@ -114,7 +114,9 @@ export class NotesService {
     const id = input.id ?? newId()
     if (input.id && (await this.db.note.count({ where: { id: input.id } }))) throw Errors.conflict('A note with this id already exists.', ['input', 'id'])
     await this.db.$transaction(async (tx) => {
-      await tx.note.create({ data: { id, ownerId, kind, title: title.data, folderId: input.folderId ?? null, draftRevision: cards.length ? 1 : 0 } })
+      // Posts and projects start with copies off (ADR-0014); their owner can allow them.
+      const forkingEnabled = kind !== 'POST' && kind !== 'PROJECT'
+      await tx.note.create({ data: { id, ownerId, kind, title: title.data, folderId: input.folderId ?? null, draftRevision: cards.length ? 1 : 0, forkingEnabled } })
       if (cards.length) await tx.card.createMany({ data: cards.map((c, i) => ({ id: c.id, noteId: id, type: c.type, position: c.position, content: contents[i] as Prisma.InputJsonValue })) })
       if (input.tagNames?.length) await this.organise.setTags(tx, ownerId, id, input.tagNames, ['input', 'tagNames'])
       if (topicIds.length) await tx.noteTopic.createMany({ data: topicIds.map((topicId) => ({ noteId: id, topicId })) })

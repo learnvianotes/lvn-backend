@@ -14,6 +14,22 @@ type RelationActions {
   unblock: Boolean!
   restrict: Boolean!
   unrestrict: Boolean!
+  "Teachers connect with teachers (ADR-0013)"
+  requestConnection: Boolean!
+  respondToConnection: Boolean!
+  removeConnection: Boolean!
+}
+
+enum ConnectionDirection {
+  "They asked the viewer"
+  INCOMING
+  "The viewer asked them"
+  OUTGOING
+}
+
+type PendingConnection {
+  direction: ConnectionDirection!
+  requestId: UUID!
 }
 
 "How the viewer stands with a person"
@@ -23,6 +39,9 @@ type Relation {
   "The viewer blocked them; being blocked by them is never shown"
   blocked: Boolean!
   restricted: Boolean!
+  "Teachers who connected (ADR-0013)"
+  connected: Boolean!
+  pendingConnection: PendingConnection
   viewerCan: RelationActions!
 }
 
@@ -56,6 +75,27 @@ extend type Query {
   myFollowing(first: Int, after: String): PersonConnection!
   myBlocked: [PersonEdge!]!
   myRestricted: [PersonEdge!]!
+  "The teachers the viewer is connected with (ADR-0013)"
+  myConnections: [PersonEdge!]!
+  "Pending connection requests to and from the viewer, newest first"
+  myConnectionRequests: [ConnectionRequestItem!]!
+}
+
+type ConnectionRequestItem {
+  id: UUID!
+  direction: ConnectionDirection!
+  "Who asked (INCOMING) or was asked (OUTGOING)"
+  person: User!
+  createdAt: DateTime!
+}
+
+input ConnectionRequestInput {
+  requestId: UUID!
+}
+
+input RespondToConnectionRequestInput {
+  requestId: UUID!
+  accept: Boolean!
 }
 
 input PersonInput {
@@ -79,4 +119,11 @@ extend type Mutation {
   "Their comments wait for your approval and they cause you no notifications; they are not told"
   restrictUser(input: PersonInput!): PersonPayload!
   unrestrictUser(input: PersonInput!): PersonPayload!
+  "Teacher to teacher; the other accepts or declines (ADR-0013)"
+  requestConnection(input: PersonInput!): PersonPayload!
+  "Returns the person who asked"
+  respondToConnectionRequest(input: RespondToConnectionRequestInput!): PersonPayload!
+  "Returns the person who was asked"
+  withdrawConnectionRequest(input: ConnectionRequestInput!): PersonPayload!
+  removeConnection(input: PersonInput!): PersonPayload!
 }

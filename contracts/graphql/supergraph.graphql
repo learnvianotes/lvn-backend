@@ -209,6 +209,33 @@ input CompleteRegistrationInput
   acceptedTermsVersion: String!
 }
 
+enum ConnectionDirection
+  @join__type(graph: USERS)
+{
+  """They asked the viewer"""
+  INCOMING @join__enumValue(graph: USERS)
+
+  """The viewer asked them"""
+  OUTGOING @join__enumValue(graph: USERS)
+}
+
+input ConnectionRequestInput
+  @join__type(graph: USERS)
+{
+  requestId: UUID!
+}
+
+type ConnectionRequestItem
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  direction: ConnectionDirection!
+
+  """Who asked (INCOMING) or was asked (OUTGOING)"""
+  person: User!
+  createdAt: DateTime!
+}
+
 input ConvertPdfInput
   @join__type(graph: NOTES)
 {
@@ -808,6 +835,11 @@ type Mutation
   """Allow or stop copies of your note"""
   setNoteForking(input: SetNoteForkingInput!): NotePayload! @join__field(graph: NOTES)
 
+  """
+  Teachers: share with all your connections, live, or stop (people shared with directly keep their access)
+  """
+  setNoteSharedWithConnections(input: SetNoteSharedWithConnectionsInput!): NotePayload! @join__field(graph: NOTES)
+
   """Apply a device's outbox in order (at most 100 operations)"""
   syncPush(ops: [SyncOpInput!]!): SyncPushPayload! @join__field(graph: NOTES)
   signUp(input: SignUpInput!): AuthPayload! @join__field(graph: USERS)
@@ -862,6 +894,17 @@ type Mutation
   """
   restrictUser(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
   unrestrictUser(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
+
+  """Teacher to teacher; the other accepts or declines (ADR-0013)"""
+  requestConnection(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
+
+  """Returns the person who asked"""
+  respondToConnectionRequest(input: RespondToConnectionRequestInput!): PersonPayload! @join__field(graph: USERS)
+
+  """Returns the person who was asked"""
+  withdrawConnectionRequest(input: ConnectionRequestInput!): PersonPayload! @join__field(graph: USERS)
+  removeConnection(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
+  updateTeacherProfile(input: UpdateTeacherProfileInput!): TeacherProfilePayload! @join__field(graph: USERS)
 
   """Accept the current Terms, Privacy Policy and content licence"""
   acceptTerms(input: AcceptTermsInput!): OkPayload! @join__field(graph: USERS)
@@ -960,6 +1003,11 @@ type Note
 
   """Set on a copy of another note; it cannot be removed"""
   forkedFrom: ForkCredit @join__field(graph: NOTES)
+
+  """
+  Owner only: every connection of the owner reads it, and new connections will too (teachers, ADR-0013)
+  """
+  sharedWithConnections: Boolean @join__field(graph: NOTES)
 }
 
 """
@@ -1117,6 +1165,7 @@ type NoteShare
 {
   user: User!
   role: NoteShareRole!
+  source: NoteShareSource!
   createdAt: DateTime!
 }
 
@@ -1125,6 +1174,16 @@ enum NoteShareRole
 {
   EDITOR @join__enumValue(graph: NOTES)
   VIEWER @join__enumValue(graph: NOTES)
+}
+
+"""
+DIRECT: shared with this person; CONNECTIONS: a connection of the owner, who shares with all of them (ADR-0044)
+"""
+enum NoteShareSource
+  @join__type(graph: NOTES)
+{
+  DIRECT @join__enumValue(graph: NOTES)
+  CONNECTIONS @join__enumValue(graph: NOTES)
 }
 
 """An immutable snapshot of a note's cards (§4.3)"""
@@ -1379,6 +1438,13 @@ type PdfPagesUsage
   limit: Int
 }
 
+type PendingConnection
+  @join__type(graph: USERS)
+{
+  direction: ConnectionDirection!
+  requestId: UUID!
+}
+
 type PersonConnection
   @join__type(graph: USERS)
 {
@@ -1519,6 +1585,12 @@ type Query
   myFollowing(first: Int, after: String): PersonConnection! @join__field(graph: USERS)
   myBlocked: [PersonEdge!]! @join__field(graph: USERS)
   myRestricted: [PersonEdge!]! @join__field(graph: USERS)
+
+  """The teachers the viewer is connected with (ADR-0013)"""
+  myConnections: [PersonEdge!]! @join__field(graph: USERS)
+
+  """Pending connection requests to and from the viewer, newest first"""
+  myConnectionRequests: [ConnectionRequestItem!]! @join__field(graph: USERS)
   myVerificationRequests: [VerificationRequest!]! @join__field(graph: USERS)
 
   """
@@ -1559,6 +1631,10 @@ type Relation
   """The viewer blocked them; being blocked by them is never shown"""
   blocked: Boolean!
   restricted: Boolean!
+
+  """Teachers who connected (ADR-0013)"""
+  connected: Boolean!
+  pendingConnection: PendingConnection
   viewerCan: RelationActions!
 }
 
@@ -1575,6 +1651,11 @@ type RelationActions
   unblock: Boolean!
   restrict: Boolean!
   unrestrict: Boolean!
+
+  """Teachers connect with teachers (ADR-0013)"""
+  requestConnection: Boolean!
+  respondToConnection: Boolean!
+  removeConnection: Boolean!
 }
 
 input RenameTagInput
@@ -1642,6 +1723,13 @@ input ResetPasswordInput
 {
   token: String!
   password: String!
+}
+
+input RespondToConnectionRequestInput
+  @join__type(graph: USERS)
+{
+  requestId: UUID!
+  accept: Boolean!
 }
 
 input RestoreNoteVersionInput
@@ -1714,6 +1802,13 @@ input SetNoteForkingInput
 {
   noteId: UUID!
   enabled: Boolean!
+}
+
+input SetNoteSharedWithConnectionsInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+  shared: Boolean!
 }
 
 input ShareNoteInput
@@ -1918,6 +2013,60 @@ type TagPayload
   userErrors: [UserError!]!
 }
 
+type TeacherProfile
+  @join__type(graph: USERS)
+{
+  headline: String
+  bio: String
+
+  """In the teacher's order"""
+  skills: [TeacherSkill!]!
+  updatedAt: DateTime
+}
+
+type TeacherProfilePayload
+  @join__type(graph: USERS)
+{
+  profile: TeacherProfile
+  userErrors: [UserError!]!
+}
+
+type TeacherSkill
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  kind: TeacherSkillKind!
+  name: String!
+  detail: String
+  source: TeacherSkillSource!
+}
+
+input TeacherSkillInput
+  @join__type(graph: USERS)
+{
+  kind: TeacherSkillKind!
+
+  """At most 120 characters"""
+  name: String!
+
+  """At most 500 characters"""
+  detail: String
+}
+
+enum TeacherSkillKind
+  @join__type(graph: USERS)
+{
+  SKILL @join__enumValue(graph: USERS)
+  QUALIFICATION @join__enumValue(graph: USERS)
+  EXPERIENCE @join__enumValue(graph: USERS)
+}
+
+enum TeacherSkillSource
+  @join__type(graph: USERS)
+{
+  MANUAL @join__enumValue(graph: USERS)
+}
+
 """
 A topic within a subject; curated by LVN or proposed by a user (usable by its proposer until curated)
 """
@@ -2016,6 +2165,17 @@ input UpdateProfileInput
   showOnProfile: Boolean
 }
 
+"""
+Replaces the whole tab: headline (120 characters), bio (2,000) and at most 60 items in this order
+"""
+input UpdateTeacherProfileInput
+  @join__type(graph: USERS)
+{
+  headline: String
+  bio: String
+  skills: [TeacherSkillInput!]!
+}
+
 type UploadHeader
   @join__type(graph: NOTES)
 {
@@ -2111,6 +2271,9 @@ type User
   The viewer's relation to this person; null for anonymous viewers and on one's own profile
   """
   relation: Relation @join__field(graph: USERS)
+
+  """The Skills tab, for anyone; null for people who are not teachers"""
+  teacherProfile: TeacherProfile @join__field(graph: USERS)
 
   """
   The viewer's own: whether they accepted the current version (Query.termsVersion); false means ask again. null for others.

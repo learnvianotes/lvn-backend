@@ -60,6 +60,17 @@ export class UsersService implements People {
     return (await this.db.block.count({ where: { OR: [{ blockerId: a, blockedId: b }, { blockerId: b, blockedId: a }] } })) > 0
   }
 
+  /** People facade (ADR-0044): the teachers `userId` is connected with. */
+  async connectionIds(userId: string): Promise<string[]> {
+    const rows = await this.db.connection.findMany({ where: { OR: [{ userLowId: userId }, { userHighId: userId }] }, select: { userLowId: true, userHighId: true } })
+    return rows.map((r) => (r.userLowId === userId ? r.userHighId : r.userLowId))
+  }
+
+  /** People facade (ADR-0044). */
+  async connected(a: string, b: string): Promise<boolean> {
+    return (await this.db.connection.count({ where: a < b ? { userLowId: a, userHighId: b } : { userLowId: b, userHighId: a } })) > 0
+  }
+
   /** Anyone's view of a user: no email, institutional address, verification details or age signal. */
   async publicProfile(userId: string): Promise<User | null> {
     const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null } })

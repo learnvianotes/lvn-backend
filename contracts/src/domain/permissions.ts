@@ -90,6 +90,8 @@ export const Action = {
   ACCOUNT_REQUEST_VERIFICATION: 'account.requestVerification',
   ACCOUNT_REVIEW_VERIFICATION: 'account.reviewVerification',
   PERSONAL_STUDY_CREATE: 'study.create',
+  /** A teacher edits their own Skills tab (ADR-0012, ADR-0044). */
+  TEACHER_EDIT_PROFILE: 'teacher.editProfile',
   CONTENT_REPORT: 'content.report',
   /** The platform moderation queue (§15.1): PLATFORM_ADMIN until the admin app exists (ADR-0037). */
   CONTENT_MODERATE: 'content.moderate',
@@ -454,6 +456,7 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
         case Action.ACCOUNT_CLAIM_LEGACY_DATA:
           return true
         case Action.CLASSROOM_CREATE:
+        case Action.TEACHER_EDIT_PROFILE:
           return actor.globalRole === GlobalRole.TEACHER
         case Action.CONTENT_MODERATE:
           return actor.globalRole === GlobalRole.PLATFORM_ADMIN

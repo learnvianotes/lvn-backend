@@ -1,0 +1,56 @@
+# The teacher Skills tab, filled by hand (ADR-0012, ADR-0044); imports from public sources arrive in Phase 7.
+
+enum TeacherSkillKind {
+  SKILL
+  QUALIFICATION
+  EXPERIENCE
+}
+
+enum TeacherSkillSource {
+  MANUAL
+}
+
+type TeacherSkill {
+  id: UUID!
+  kind: TeacherSkillKind!
+  name: String!
+  detail: String
+  source: TeacherSkillSource!
+}
+
+type TeacherProfile {
+  headline: String
+  bio: String
+  "In the teacher's order"
+  skills: [TeacherSkill!]!
+  updatedAt: DateTime
+}
+
+extend type User {
+  "The Skills tab, for anyone; null for people who are not teachers"
+  teacherProfile: TeacherProfile
+}
+
+input TeacherSkillInput {
+  kind: TeacherSkillKind!
+  "At most 120 characters"
+  name: String!
+  "At most 500 characters"
+  detail: String
+}
+
+"Replaces the whole tab: headline (120 characters), bio (2,000) and at most 60 items in this order"
+input UpdateTeacherProfileInput {
+  headline: String
+  bio: String
+  skills: [TeacherSkillInput!]!
+}
+
+type TeacherProfilePayload {
+  profile: TeacherProfile
+  userErrors: [UserError!]!
+}
+
+extend type Mutation {
+  updateTeacherProfile(input: UpdateTeacherProfileInput!): TeacherProfilePayload!
+}

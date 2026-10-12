@@ -72,6 +72,8 @@ const page = async (path) => {
 // The EICAR test string as a PDF stream, which ClamAV unpacks and flags (apps/api/test/support/fake-clamd.ts).
 const EICAR = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
 const EICAR_PDF = Buffer.from(`%PDF-1.7\n1 0 obj\n<< /Length ${EICAR.length} >>\nstream\n${EICAR}\nendstream\nendobj\ntrailer << >>\n%%EOF\n`, 'latin1')
+/** SQL on the local environment's database, through the VM (--vm only). */
+const sql = (statement) => execFileSync(opt('--vm'), ['ssh', `docker exec lvn-local-postgres psql -U lvn -d lvn -c "${statement}"`], { stdio: 'pipe' })
 const stamp = Date.now()
 const WORD = `lifecycle${stamp}`
 
@@ -89,7 +91,7 @@ if (opt('--token-a')) {
   A.id = (await gql('{ viewer { id } }', {}, A.token)).viewer.id
 } else {
   A = await signUp('a')
-  execFileSync(opt('--vm'), ['ssh', `docker exec lvn-local-postgres psql -U lvn -d lvn -c "UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'TEACHER' WHERE id = '${A.id}'"`], { stdio: 'pipe' })
+  sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'TEACHER' WHERE id = '${A.id}'`)
 }
 const B = await signUp('b')
 B.handle = (await gql('{ viewer { handle } }', {}, B.token)).viewer.handle
@@ -172,6 +174,25 @@ const afterBlock = await gql('query ($h: String!) { userByHandle(handle: $h) { r
 ok(afterBlock.userByHandle.relation.following === false && afterBlock.userByHandle.relation.blocked === false && afterBlock.userByHandle.relation.viewerCan.follow === false, 'B blocks A: the follow ends, A cannot follow again and is not shown the block')
 const blockedShare = await gql('mutation ($input: ShareNoteInput!) { shareNote(input: $input) { userErrors { message } } }', { input: { noteId: id, person: B.handle, role: 'EDITOR' } }, A.token).catch((e) => e.message)
 ok(String(blockedShare).includes("can't be shared"), 'and A can no longer share with B', String(blockedShare))
+
+// Teachers (ADR-0044), on the local environment where roles can be set: A and a new teacher C connect; A shares a note
+// with all connections and C reads it, until the connection ends.
+if (opt('--vm')) {
+  const C = await signUp('c')
+  sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'TEACHER', \\"globalRole\\" = 'TEACHER' WHERE id IN ('${A.id}', '${C.id}')`)
+  await gql('mutation ($input: PersonInput!) { requestConnection(input: $input) { userErrors { message } } }', { input: { userId: C.id } }, A.token)
+  const asked = (await gql('{ myConnectionRequests { id direction person { id } } }', {}, C.token)).myConnectionRequests.find((r) => r.person.id === A.id && r.direction === 'INCOMING')
+  await gql('mutation ($input: RespondToConnectionRequestInput!) { respondToConnectionRequest(input: $input) { userErrors { message } } }', { input: { requestId: asked.id, accept: true } }, C.token)
+  ok((await gql('{ myConnections { node { id } } }', {}, A.token)).myConnections.some((e) => e.node.id === C.id), 'two teachers connect: one asks, the other accepts')
+  const plan = await gql('mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } } }', { input: { title: `Lesson plan ${WORD}`, cards: [{ id: newId(), type: 'text', position: 'a0', content: text('Graphs before trees.') }] } }, A.token)
+  const planId = plan.createNote.note.id
+  await gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId: planId } }, A.token)
+  await gql('mutation ($input: SetNoteSharedWithConnectionsInput!) { setNoteSharedWithConnections(input: $input) { note { id } } }', { input: { noteId: planId, shared: true } }, A.token)
+  const cReads = async () => (await gql('query ($id: UUID!) { note(id: $id) { id } }', { id: planId }, C.token)).note?.id === planId
+  ok(await cReads(), 'A shares a note with all connections, and C reads it')
+  await gql('mutation ($input: PersonInput!) { removeConnection(input: $input) { userErrors { message } } }', { input: { userId: C.id } }, A.token)
+  ok(await eventually(async () => !(await cReads())), 'the connection ends, and C no longer reads it')
+}
 
 // Media (ADR-0041): processed after the upload by the worker, scanned by the environment's ClamAV.
 let uploads = 0

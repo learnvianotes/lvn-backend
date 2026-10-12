@@ -2,10 +2,14 @@
 
 enum NoteShareRole { EDITOR VIEWER }
 
+"DIRECT: shared with this person; CONNECTIONS: a connection of the owner, who shares with all of them (ADR-0044)"
+enum NoteShareSource { DIRECT CONNECTIONS }
+
 "A person a note is shared with; EDITORs work on the draft, VIEWERs read the published version"
 type NoteShare {
   user: User!
   role: NoteShareRole!
+  source: NoteShareSource!
   createdAt: DateTime!
 }
 
@@ -21,6 +25,13 @@ extend type Note {
   shares: [NoteShare!]
   "Set on a copy of another note; it cannot be removed"
   forkedFrom: ForkCredit
+  "Owner only: every connection of the owner reads it, and new connections will too (teachers, ADR-0013)"
+  sharedWithConnections: Boolean
+}
+
+input SetNoteSharedWithConnectionsInput {
+  noteId: UUID!
+  shared: Boolean!
 }
 
 input ChangeNoteVisibilityInput {
@@ -60,4 +71,6 @@ extend type Mutation {
   forkNote(input: NoteIdInput!): NotePayload!
   "Allow or stop copies of your note"
   setNoteForking(input: SetNoteForkingInput!): NotePayload!
+  "Teachers: share with all your connections, live, or stop (people shared with directly keep their access)"
+  setNoteSharedWithConnections(input: SetNoteSharedWithConnectionsInput!): NotePayload!
 }

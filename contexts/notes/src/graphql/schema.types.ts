@@ -290,6 +290,10 @@ export interface MutationSetNoteForkingArgs {
   input: SetNoteForkingInput
 }
 
+export interface MutationSetNoteSharedWithConnectionsArgs {
+  input: SetNoteSharedWithConnectionsInput
+}
+
 export interface MutationSyncPushArgs {
   ops: Array<SyncOpInput>
 }
@@ -344,6 +348,8 @@ export interface Note {
   shares?: Array<NoteShare> | null
   /** Set on a copy of another note; it cannot be removed */
   forkedFrom?: ForkCredit | null
+  /** Owner only: every connection of the owner reads it, and new connections will too (teachers, ADR-0013) */
+  sharedWithConnections?: boolean | null
 }
 
 export interface NoteCardsArgs {
@@ -454,10 +460,14 @@ export interface NoteSearchHit {
 export interface NoteShare {
   user: User
   role: NoteShareRole
+  source: NoteShareSource
   createdAt: Date
 }
 
 export type NoteShareRole = 'EDITOR' | 'VIEWER'
+
+/** DIRECT: shared with this person; CONNECTIONS: a connection of the owner, who shares with all of them (ADR-0044) */
+export type NoteShareSource = 'DIRECT' | 'CONNECTIONS'
 
 /** An immutable snapshot of a note's cards (§4.3) */
 export interface NoteVersion {
@@ -645,6 +655,11 @@ export type SearchScope = 'NOTES' | 'PEOPLE' | 'TOPICS'
 export interface SetNoteForkingInput {
   noteId: string
   enabled: boolean
+}
+
+export interface SetNoteSharedWithConnectionsInput {
+  noteId: string
+  shared: boolean
 }
 
 export interface ShareNoteInput {

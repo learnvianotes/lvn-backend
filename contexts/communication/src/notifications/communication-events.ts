@@ -41,6 +41,15 @@ export class CommunicationEvents implements OnModuleInit {
       if (payload.quiet) return
       await this.notifications.notify({ userId: payload.followeeId, category: 'FOLLOW', path: `/u/${payload.followerId}`, actorId: payload.followerId })
     })
+    // Teacher connections (ADR-0044): the person asked, then the one who asked once accepted; a decline is silent.
+    this.events.subscribe('ConnectionRequested', async ({ payload }) => {
+      await this.notifications.notify({ userId: payload.toUserId, category: 'CONNECTION', path: `/u/${payload.fromUserId}`, actorId: payload.fromUserId, data: { kind: 'REQUESTED' } })
+    })
+    this.events.subscribe('ConnectionChanged', async ({ payload }) => {
+      if (payload.change !== 'CONNECTED' || !payload.by) return
+      const other = payload.userIds.find((id) => id !== payload.by)
+      if (other) await this.notifications.notify({ userId: other, category: 'CONNECTION', path: `/u/${payload.by}`, actorId: payload.by, data: { kind: 'ACCEPTED' } })
+    })
     // Sockets of a revoked session close on every instance.
     this.events.subscribe('SessionRevoked', async ({ payload }) => {
       await this.live.publish(payload.userId, { type: 'revoke', sessionId: payload.sessionId })

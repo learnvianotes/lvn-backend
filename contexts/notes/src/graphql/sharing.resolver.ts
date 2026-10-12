@@ -45,7 +45,18 @@ export class SharingResolver {
   @ResolveField('shares')
   async shares(@Parent() n: NoteParent) {
     if (n.opened.access !== 'OWNER') return null
-    return (await this.sharing.shares(n.id)).map((s) => ({ user: userRef(s.userId), role: s.role, createdAt: s.createdAt }))
+    return (await this.sharing.shares(n.id)).map((s) => ({ user: userRef(s.userId), role: s.role, source: s.source, createdAt: s.createdAt }))
+  }
+
+  @ResolveField('sharedWithConnections')
+  sharedWithConnections(@Parent() n: NoteParent) {
+    return n.opened.access === 'OWNER' ? n.sharedWithConnections : null
+  }
+
+  @Mutation('setNoteSharedWithConnections')
+  @UseGuards(SignedInGuard)
+  setNoteSharedWithConnections(@Args() { input }: { input: { noteId: string; shared: boolean } }, @CurrentViewer() viewer: Viewer): Promise<NotePayload> {
+    return withUserErrors<NotePayload>(async () => ({ note: toNote(await this.sharing.setSharedWithConnections(viewer.userId, input.noteId, input.shared)) }), { note: null })
   }
 
   @ResolveField('forkedFrom')
