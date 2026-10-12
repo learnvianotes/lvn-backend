@@ -12,6 +12,8 @@ export { NoteModerationService } from './application/moderation.service'
 export { NoteAccessFacade } from './application/note-access.facade'
 /** The search indexes, their outbox drainer and queue (§11, ADR-0055), run by apps/worker. */
 export { NOTES_SEARCH_QUEUE, SearchIndex } from './application/search-index'
+/** Hybrid ranking's semantic side (ADR-0057), bound by Phase 5. */
+export { SEMANTIC_SEARCH, type SemanticSearch } from './application/search-ranking'
 /** The notes part of a data export (ADR-0018), bound to NOTES_DATA_EXPORT by the composition roots. */
 export { NotesExport } from './application/notes-export'
 /** Imports of notes (ADR-0018), run by apps/worker from the notes.import queue. */

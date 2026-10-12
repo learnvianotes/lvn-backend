@@ -16,6 +16,8 @@ export interface NotesConfig {
     provider: 'postgres' | 'typesense'
     typesense: { url: string; apiKey: string; prefix: string } | null
     timeoutMs: number
+    /** ADR-0057: fuse keyword and semantic ranks, once a semantic source is bound */
+    hybrid: boolean
   }
 }
 
@@ -31,5 +33,6 @@ export const notesConfigFrom = (c: ApiConfig): NotesConfig => ({
     provider: c.SEARCH_PROVIDER,
     typesense: c.TYPESENSE_URL && c.TYPESENSE_API_KEY ? { url: c.TYPESENSE_URL, apiKey: c.TYPESENSE_API_KEY, prefix: c.TYPESENSE_COLLECTION_PREFIX } : null,
     timeoutMs: c.SEARCH_TIMEOUT_MS,
+    hybrid: c.SEARCH_HYBRID,
   },
 })

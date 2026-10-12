@@ -157,6 +157,8 @@ const search = z.object({
   TYPESENSE_COLLECTION_PREFIX: z.string().regex(/^[a-z0-9_]{0,20}$/, 'lowercase letters, digits and _').default('lvn_'),
   /** A Typesense answer slower than this is dropped and Postgres answers instead */
   SEARCH_TIMEOUT_MS: z.coerce.number().int().min(50).max(10_000).default(800),
+  /** Hybrid ranking (§11, ADR-0057): keyword and semantic ranks fused; changes nothing until a semantic source exists */
+  SEARCH_HYBRID: flag.default(false),
 })
 
 const searchConfigured = <T extends { SEARCH_PROVIDER: 'postgres' | 'typesense'; TYPESENSE_URL?: string; TYPESENSE_API_KEY?: string }>(c: T, ctx: z.RefinementCtx) => {

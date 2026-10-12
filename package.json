@@ -24,7 +24,8 @@
     "graphql:check": "node scripts/export-supergraph.mjs --check",
     "env:check": "node scripts/env-check.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "lifecycle": "node scripts/lifecycle-check.mjs"
+    "lifecycle": "node scripts/lifecycle-check.mjs",
+    "search:bench": "node scripts/search-bench.mjs"
   },
   "dependencies": {
     "prisma": "7.10.0",

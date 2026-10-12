@@ -87,16 +87,18 @@ export const fakeGoogle: GoogleIdTokens = {
  * A fresh database and a fully composed API (all subgraphs + gateway), as main.ts builds it. Only the edges are
  * replaced: DNS (MX) and Google token verification, which would otherwise reach the internet.
  */
-export async function createTestApp(overrides: Record<string, string> = {}, options: { resetDatabase?: boolean } = {}): Promise<TestApp> {
+export async function createTestApp(overrides: Record<string, string> = {}, options: { resetDatabase?: boolean; providers?: [token: symbol, value: unknown][] } = {}): Promise<TestApp> {
   const config = await testConfig(overrides)
   // A second instance of the API (ADR-0042) shares the first one's database: it must not wipe it.
   if (options.resetDatabase !== false) await resetDatabase(config.DATABASE_URL)
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule.forRoot(config)] })
+  let builder = Test.createTestingModule({ imports: [AppModule.forRoot(config)] })
     .overrideProvider(MX_LOOKUP)
     .useValue(fakeMx)
     .overrideProvider(GOOGLE_ID_TOKENS)
     .useValue(fakeGoogle)
-    .compile()
+  // A test's own stand-ins, e.g. a semantic search for hybrid ranking (ADR-0057).
+  for (const [token, value] of options.providers ?? []) builder = builder.overrideProvider(token).useValue(value)
+  const moduleRef = await builder.compile()
   // Logs go to memory for assertions, and to stdout too with LVN_TEST_LOGS=1.
   const lines: string[] = []
   const logger = createLogger({

@@ -100,6 +100,8 @@ describe('apiConfigSchema (Phase 1)', () => {
     expect(cfg.SEARCH_PROVIDER).toBe('postgres')
     expect(cfg.TYPESENSE_COLLECTION_PREFIX).toBe('lvn_')
     expect(cfg.SEARCH_TIMEOUT_MS).toBe(800)
+    expect(cfg.SEARCH_HYBRID).toBe(false)
+    expect(loadConfig(apiConfigSchema, { ...valid, SEARCH_HYBRID: 'true' }).SEARCH_HYBRID).toBe(true)
     expect(() => loadConfig(apiConfigSchema, { ...valid, SEARCH_PROVIDER: 'typesense' })).toThrow(/TYPESENSE_URL/)
     expect(() => loadConfig(apiConfigSchema, { ...valid, TYPESENSE_URL: 'http://typesense:8108' })).toThrow(/TYPESENSE_API_KEY/)
     expect(() => loadConfig(apiConfigSchema, { ...valid, TYPESENSE_URL: 'typesense:8108', TYPESENSE_API_KEY: 'k'.repeat(32) })).toThrow(/TYPESENSE_URL/)

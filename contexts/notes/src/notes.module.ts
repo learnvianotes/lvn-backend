@@ -15,6 +15,7 @@ import { PdfReaderService } from './application/pdf-reader.service'
 import { PublicPages } from './application/public-pages'
 import { SearchIndex, TYPESENSE } from './application/search-index'
 import { PostgresSearchProvider, TypesenseSearchProvider } from './application/search-providers'
+import { SEMANTIC_SEARCH } from './application/search-ranking'
 import { SearchService } from './application/search.service'
 import { Typesense } from './infrastructure/typesense'
 import { SyncService } from './application/sync.service'
@@ -76,6 +77,8 @@ export class NotesModule {
           inject: [NOTES_CONFIG],
         },
         SearchIndex,
+        // Phase 5 binds pgvector here (ADR-0057); until then hybrid ranking has nothing to fuse.
+        { provide: SEMANTIC_SEARCH, useValue: null },
         PostgresSearchProvider,
         TypesenseSearchProvider,
         SearchService,

@@ -61,10 +61,10 @@ export interface SearchProvider {
 }
 
 const LEAD_WORDS = 24
-const lead = (body: string) => body.split(/\s+/).filter(Boolean).slice(0, LEAD_WORDS).join(' ')
+export const lead = (body: string) => body.split(/\s+/).filter(Boolean).slice(0, LEAD_WORDS).join(' ')
 
 /** The filters (ADR-0056) as Prisma conditions on notes, with the viewer's places for SHARED; null when nothing is left. */
-function noteFiltersWhere(f: NoteFilters, q: SearchQuery): Prisma.NoteWhereInput[] | null {
+export function noteFiltersWhere(f: NoteFilters, q: Pick<SearchQuery, 'viewerId' | 'groupIds' | 'classroomIds'>): Prisma.NoteWhereInput[] | null {
   const and: Prisma.NoteWhereInput[] = []
   if (f.kinds?.length) and.push({ kind: { in: f.kinds as Prisma.EnumNoteKindFilter['in'] } })
   if (f.subjectId) and.push({ topics: { some: { topic: { subjectId: f.subjectId } } } })
