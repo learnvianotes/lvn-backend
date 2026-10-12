@@ -3,7 +3,7 @@ import { LIVE_SDL, NotificationService } from '@lvn-backend/communication'
 import { InProcessEventBus } from '@lvn-backend/event-bus'
 import { PdfConversionService, SearchIndex } from '@lvn-backend/notes'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
-import { createTestApp, type TestApp } from '../support/app'
+import { createTestApp, infra, type TestApp } from '../support/app'
 import { SAMPLES, upload } from '../support/flows'
 import { liveUrl, openLive } from '../support/live'
 import { seedActors, type Actors } from './support/actors'
@@ -13,19 +13,37 @@ import { publicSchema } from './support/fuzz'
  * §17.1: B cannot read A's private data through any channel: account data (Phase 1); notes, their files, PDF
  * highlights and conversions, public pages, copies, search and exports (Phase 2); notifications and live updates
  * (Phase 3); groups and classrooms (Phase 3). Comments, recommendations and RAG arrive later; their assertions are todos
- * until then.
+ * until then. Search is asked of both providers on the same data (Phase 4, ADR-0055): Postgres and Typesense must give
+ * the same answer.
  */
 describe('security: privacy', () => {
   let t: TestApp
   let actors: Actors
   let schema: GraphQLSchema
 
+  /** The same database, searched on Typesense (ADR-0055). */
+  let ts: TestApp
+  /** Note ids `query` finds for `token`, from both providers, which must agree (the outbox drained first). */
+  const searched = async (query: string, token?: string) => {
+    await ts.app.get(SearchIndex).drainAll()
+    const run = async (app: TestApp) => (await app.gql<{ search: { notes: { note: { id: string } }[] } }>('query ($q: String!) { search(query: $q) { notes { note { id } } } }', { q: query }, token)).data!.search.notes.map((n) => n.note.id)
+    const [postgres, typesense] = await Promise.all([run(t), run(ts)])
+    expect(typesense).toEqual(postgres)
+    return postgres
+  }
+
   beforeAll(async () => {
     t = await createTestApp()
+    const { url, apiKey } = infra().typesense
+    ts = await createTestApp({ SEARCH_PROVIDER: 'typesense', TYPESENSE_URL: url, TYPESENSE_API_KEY: apiKey, TYPESENSE_COLLECTION_PREFIX: `p${Date.now().toString(36)}_` }, { resetDatabase: false })
+    await ts.app.get(SearchIndex).ensureCollections()
     actors = await seedActors(t)
     schema = await publicSchema(t)
   })
-  afterAll(() => t.close())
+  afterAll(async () => {
+    await ts?.close()
+    await t.close()
+  })
 
   it('returns null for every viewer-only field of someone else (found through the schema’s own descriptions)', async () => {
     const user = schema.getType('User')
@@ -97,13 +115,14 @@ describe('security: privacy', () => {
       await t.gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId: id } }, actors.a.token)
       await t.gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { id } } }', { input: { noteId: id, visibility: 'PUBLIC' } }, actors.a.token)
       await t.gql('mutation ($input: UpdateNoteDraftInput!) { updateNoteDraft(input: $input) { note { id } } }', { input: { noteId: id, title: 'Not ready: rename before Friday' } }, actors.a.token)
-      await t.app.get(SearchIndex).drainAll()
+      await ts.app.get(SearchIndex).drainAll()
       const title = async (token?: string) => (await t.gql<{ note: { title: string } }>('query ($id: UUID!) { note(id: $id) { title } }', { id }, token)).data!.note.title
       expect(await title(actors.a.token)).toBe('Not ready: rename before Friday')
       expect(await title(actors.b.token)).toBe(`Published ${word}`)
       expect(await title()).toBe(`Published ${word}`)
       const found = await t.gql<{ search: { notes: { note: { title: string } }[] } }>('query ($q: String!) { search(query: $q, scopes: [NOTES]) { notes { note { title } } } }', { q: word }, actors.b.token)
       expect(found.data!.search.notes.map((h) => h.note.title)).toEqual([`Published ${word}`])
+      expect(await searched(word, actors.b.token)).toEqual([id])
     })
 
     describe('A’s private note with a PDF, a highlight and a published version', () => {
@@ -121,7 +140,7 @@ describe('security: privacy', () => {
         await t.gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId } }, actors.a.token)
         const added = await t.gql<{ addPdfHighlight: { highlight: { id: string } } }>('mutation ($input: AddPdfHighlightInput!) { addPdfHighlight(input: $input) { highlight { id } } }', { input: { noteId, fileId: pdf, page: 1, kind: 'TEXT', rects: [[0, 0, 0.5, 0.1]], quote: 'secret' } }, actors.a.token)
         highlight = added.data!.addPdfHighlight.highlight.id
-        await t.app.get(SearchIndex).indexNote(noteId)
+        await ts.app.get(SearchIndex).indexNote(noteId)
       })
 
       it('B cannot read it through the public-note pages, sitemaps or a file URL (P2c, P2d)', async () => {
@@ -155,10 +174,9 @@ describe('security: privacy', () => {
       })
 
       it('B gets no search results that draw on it, and A does', async () => {
-        const find = async (token?: string) => (await t.gql<{ search: { notes: { note: { id: string } }[] } }>('query ($q: String!) { search(query: $q) { notes { note { id } } } }', { q: WORD }, token)).data!.search.notes.map((n) => n.note.id)
-        expect(await find(actors.a.token)).toContain(noteId)
-        expect(await find(actors.b.token)).toEqual([])
-        expect(await find()).toEqual([])
+        expect(await searched(WORD, actors.a.token)).toContain(noteId)
+        expect(await searched(WORD, actors.b.token)).toEqual([])
+        expect(await searched(WORD)).toEqual([])
       })
 
       it('B never sees A’s PDF conversions or data exports', async () => {
@@ -180,12 +198,12 @@ describe('security: privacy', () => {
       const id = created.data!.createNote.note.id
       await t.gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId: id } }, actors.a.token)
       await t.gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { id } } }', { input: { noteId: id, visibility: 'PUBLIC' } }, actors.a.token)
-      await t.app.get(SearchIndex).indexNote(id)
-      const find = async () => (await t.gql<{ search: { notes: { note: { id: string } }[] } }>('query ($q: String!) { search(query: $q) { notes { note { id } } } }', { q: word }, actors.b.token)).data!.search.notes.map((n) => n.note.id)
-      expect(await find()).toEqual([id])
+      expect(await searched(word, actors.b.token)).toEqual([id])
       await t.gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { id } } }', { input: { noteId: id, visibility: 'PRIVATE' } }, actors.a.token)
-      // No reindex needed: search filters by who may read, at query time.
-      expect(await find()).toEqual([])
+      // Before the index has heard of it: Postgres filters at query time, and every Typesense hit is opened as B.
+      const stale = await ts.gql<{ search: { notes: unknown[] } }>('query ($q: String!) { search(query: $q) { notes { note { id } } } }', { q: word }, actors.b.token)
+      expect(stale.data!.search.notes).toEqual([])
+      expect(await searched(word, actors.b.token)).toEqual([])
     })
 
     it('B cannot read, comment on or react to A’s private note’s discussion, even after it was public (ADR-0047)', async () => {
@@ -260,14 +278,14 @@ describe('security: privacy', () => {
       await t.app.get(InProcessEventBus).drain()
       await t.gql('mutation ($input: NoteGroupInput!) { shareNoteToGroup(input: $input) { note { id } } }', { input: { noteId, groupId } }, t1.token)
       await t.gql('mutation ($input: CreateGroupPostInput!) { createGroupPost(input: $input) { post { id } } }', { input: { groupId, body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'members only' }] }] } } }, t1.token)
-      await t.app.get(SearchIndex).indexNote(noteId)
+      await ts.app.get(SearchIndex).indexNote(noteId)
 
       const b = actors.b.token
       const seen = await t.gql<{ group: Record<string, unknown> | null }>('query ($id: UUID!) { group(id: $id) { name members { role } posts { edges { node { id } } } joinRequests { id } sharedNotes { edges { node { id } } } } }', { id: groupId }, b)
       expect(seen.data!.group).toEqual({ name: 'Group G', members: null, posts: null, joinRequests: null, sharedNotes: null })
       expect((await t.gql<{ note: unknown }>('query ($id: UUID!) { note(id: $id) { id } }', { id: noteId }, b)).data!.note).toBeNull()
       expect((await t.gql<{ sharedWithMe: { edges: unknown[] } }>('{ sharedWithMe { edges { node { id } } } }', {}, b)).data!.sharedWithMe.edges).toEqual([])
-      expect((await t.gql<{ search: { notes: unknown[] } }>('query ($q: String!) { search(query: $q) { notes { note { id } } } }', { q: word }, b)).data!.search.notes).toEqual([])
+      expect(await searched(word, b)).toEqual([])
       expect((await t.gql<{ syncPull: { notes: { note: { id: string } }[] } }>('{ syncPull(first: 100) { notes { note { id } } } }', {}, b)).data!.syncPull.notes.map((n) => n.note.id)).not.toContain(noteId)
       // Anonymous visitors see nothing at all.
       expect((await t.gql<{ group: unknown }>('query ($id: UUID!) { group(id: $id) { name } }', { id: groupId })).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
@@ -295,7 +313,7 @@ describe('security: privacy', () => {
       await t.gql('mutation ($input: NoteClassroomInput!) { shareNoteToClassroom(input: $input) { note { id } } }', { input: { noteId, classroomId } }, t1.token)
       await t.gql('mutation ($input: CreateClassroomPostInput!) { createClassroomPost(input: $input) { classroom { id } } }', { input: { classroomId, body: doc('members only') } }, t1.token)
       await bus.drain()
-      await t.app.get(SearchIndex).indexNote(noteId)
+      await ts.app.get(SearchIndex).indexNote(noteId)
 
       const inside = 'name members { role } joinRequests { id } posts { edges { node { id } } } sharedNotes { edges { node { id } } } joinCode'
       // B, a member, reads it all but the staff's parts; the check below is not vacuous.
@@ -310,7 +328,7 @@ describe('security: privacy', () => {
       expect((await t.gql<{ classroomByCode: unknown }>('query ($code: String!) { classroomByCode(code: $code) { id name teacher { id } } }', { code: joinCode }, a)).data!.classroomByCode).toEqual({ id: classroomId, name: 'Classroom C', teacher: { id: t1.id } })
       expect((await t.gql<{ note: unknown }>('query ($id: UUID!) { note(id: $id) { id } }', { id: noteId }, a)).data!.note).toBeNull()
       expect((await t.gql<{ sharedWithMe: { edges: unknown[] } }>('{ sharedWithMe { edges { node { id } } } }', {}, a)).data!.sharedWithMe.edges).toEqual([])
-      expect((await t.gql<{ search: { notes: unknown[] } }>('query ($q: String!) { search(query: $q) { notes { note { id } } } }', { q: word }, a)).data!.search.notes).toEqual([])
+      expect(await searched(word, a)).toEqual([])
       expect((await t.gql<{ syncPull: { notes: { note: { id: string } }[] } }>('{ syncPull(first: 100) { notes { note { id } } } }', {}, a)).data!.syncPull.notes.map((n) => n.note.id)).not.toContain(noteId)
       const told = await t.gql<{ notifications: { edges: { node: { category: string } }[] } }>('{ notifications { edges { node { category } } } }', {}, a)
       expect(told.data!.notifications.edges.map((e) => e.node.category)).not.toContain('CLASSROOM_POST')
