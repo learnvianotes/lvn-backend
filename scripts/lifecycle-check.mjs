@@ -156,6 +156,12 @@ const pulled = await gql('query { syncPull(first: 50) { notes { note { id } card
 ok(pulled.syncPull.notes.some((x) => x.note.id === id), "A's phone pulls the note")
 const pushed = await gql('mutation ($ops: [SyncOpInput!]!) { syncPush(ops: $ops) { results { clientOpId status message } } }', { ops: [{ clientOpId: newId(), kind: 'UPDATE_NOTE', noteId: id, ops: [{ kind: 'UPSERT', id: newId(), type: 'text', position: 'a2', content: text('Written on the train') }] }] }, A.token)
 ok(pushed.syncPush.results[0]?.status === 'APPLIED', 'an edit made offline on the phone is applied', pushed.syncPush.results[0]?.message)
+// Kinds from the phone (ADR-0052): a project starts offline and the pull brings its kind back; a blog needs a teacher.
+const project = newId()
+const blog = newId()
+const kinds = await gql('mutation ($ops: [SyncOpInput!]!) { syncPush(ops: $ops) { results { status code } } }', { ops: [{ clientOpId: newId(), kind: 'CREATE_NOTE', noteId: project, title: 'Rover', noteKind: 'PROJECT' }, { clientOpId: newId(), kind: 'CREATE_NOTE', noteId: blog, title: 'My blog', noteKind: 'BLOG' }] }, A.token)
+const kindPull = await gql('query { syncPull(first: 50) { notes { note { id kind folder { id } tags { name } } } } }', {}, A.token)
+ok(kinds.syncPush.results.map((r) => r.status).join() === 'APPLIED,REJECTED' && kindPull.syncPull.notes.find((x) => x.note.id === project)?.note.kind === 'PROJECT', "A's phone starts a project offline and pulls its kind back; a blog is refused until A teaches", JSON.stringify(kinds.syncPush.results))
 
 // Trash and back.
 await gql('mutation ($input: NoteIdInput!) { deleteNote(input: $input) { note { id } } }', { input: { noteId: id } }, A.token)
