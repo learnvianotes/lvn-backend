@@ -1,5 +1,5 @@
 import { AiTaskType, ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, VerificationMethod, Visibility } from '../../../src/domain/enums'
-import { Action, aiTaskAction, can, NEEDS_VERIFIED_ACCOUNT, type Actor, type NoteFacts, type Resource } from '../../../src/domain/permissions'
+import { Action, aiTaskAction, BLOCKED_WHILE_SUSPENDED, can, NEEDS_VERIFIED_ACCOUNT, type Actor, type NoteFacts, type Resource } from '../../../src/domain/permissions'
 
 /**
  * One assertion per cell of the §5 table that has a defined value. If this file and the spec disagree,
@@ -535,5 +535,47 @@ describe('actions without a resource', () => {
 
   it('resource-bound actions need their resource', () => {
     expect(can(owner, Action.NOTE_READ)).toBe(false)
+  })
+})
+
+describe('a suspended account (ADR-0053)', () => {
+  const suspended = student('owner', { suspended: true })
+  const teacher = student('owner', { globalRole: GlobalRole.TEACHER, suspended: true })
+  const admin = student('a', { globalRole: GlobalRole.PLATFORM_ADMIN, suspended: true })
+  const mine = (visibility: Visibility, targetVisibility?: Visibility): Resource => ({ kind: 'note', note: note(visibility), ...(targetVisibility ? { targetVisibility } : {}) })
+
+  it('reaches nobody: no publishing, sharing, commenting, posting, joining, following or connecting', () => {
+    expect(can(suspended, Action.NOTE_PUBLISH, mine(Visibility.SHARED))).toBe(false)
+    expect(can(suspended, Action.NOTE_CHANGE_VISIBILITY, mine(Visibility.PRIVATE, Visibility.PUBLIC))).toBe(false)
+    expect(can(suspended, Action.NOTE_SHARE, { kind: 'note', note: note(Visibility.SHARED), shareTarget: { kind: 'GROUP' } })).toBe(false)
+    expect(can(suspended, Action.NOTE_COMMENT, { kind: 'note', note: note(Visibility.PUBLIC, { ownerId: 'x' }) })).toBe(false)
+    expect(can(suspended, Action.GROUP_CREATE)).toBe(false)
+    expect(can(suspended, Action.GROUP_POST, { kind: 'group', role: GroupRole.MEMBER })).toBe(false)
+    expect(can(suspended, Action.GROUP_JOIN, { kind: 'group', privacy: GroupPrivacy.PUBLIC, joinPolicy: GroupJoinPolicy.OPEN })).toBe(false)
+    expect(can(suspended, Action.CLASSROOM_REQUEST_JOIN, { kind: 'classroom' })).toBe(false)
+    expect(can(suspended, Action.USER_FOLLOW, { kind: 'user', targetId: 't2', targetGlobalRole: GlobalRole.TEACHER })).toBe(false)
+    expect(can(teacher, Action.TEACHER_EDIT_PROFILE)).toBe(false)
+  })
+
+  it('runs and moderates nothing for others while it lasts', () => {
+    expect(can(suspended, Action.GROUP_MANAGE, { kind: 'group', role: GroupRole.OWNER })).toBe(false)
+    expect(can(suspended, Action.GROUP_MODERATE_POSTS, { kind: 'group', role: GroupRole.OWNER })).toBe(false)
+    expect(can(suspended, Action.CLASSROOM_REVIEW_JOIN_REQUESTS, { kind: 'classroom', role: ClassroomRole.TEACHER })).toBe(false)
+    expect(can(admin, Action.CONTENT_MODERATE)).toBe(false)
+  })
+
+  it('keeps its own notes, takes them back to private, copies, blocks, reports and exports', () => {
+    expect(can(suspended, Action.NOTE_CREATE, { kind: 'newNote', noteKind: NoteKind.NOTE })).toBe(true)
+    expect(can(suspended, Action.NOTE_EDIT_DRAFT, mine(Visibility.PUBLIC))).toBe(true)
+    expect(can(suspended, Action.NOTE_DELETE, mine(Visibility.PUBLIC))).toBe(true)
+    expect(can(suspended, Action.NOTE_CHANGE_VISIBILITY, mine(Visibility.PUBLIC, Visibility.PRIVATE))).toBe(true)
+    expect(can(suspended, Action.NOTE_FORK, { kind: 'note', note: note(Visibility.PUBLIC, { ownerId: 'x' }) })).toBe(true)
+    expect(can(suspended, Action.USER_BLOCK, { kind: 'user', targetId: 't2', targetGlobalRole: GlobalRole.STUDENT })).toBe(true)
+    expect(can(suspended, Action.CONTENT_REPORT)).toBe(true)
+    expect(can(suspended, Action.ACCOUNT_EXPORT_DATA)).toBe(true)
+  })
+
+  it('every action that needs a verified account is blocked while suspended', () => {
+    for (const a of NEEDS_VERIFIED_ACCOUNT) expect(BLOCKED_WHILE_SUSPENDED.has(a)).toBe(true)
   })
 })

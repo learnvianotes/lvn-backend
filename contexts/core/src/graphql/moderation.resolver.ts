@@ -52,9 +52,30 @@ export class ModerationResolver {
     }, { ok: false })
   }
 
+  @Query('myStanding')
+  myStanding(@CurrentViewer() viewer: Viewer) {
+    return this.moderation.standing(viewer.userId)
+  }
+
+  @Query('removedGroup')
+  removedGroup(@Args('id') id: string, @CurrentViewer() viewer: Viewer) {
+    return this.moderation.removedGroup(viewer.userId, id)
+  }
+
   @ResolveField('user')
   user(@Parent() c: ModerationCase) {
     return c.entityType === 'USER' ? userRef(c.entityId) : null
+  }
+
+  @ResolveField('suspendedUntil')
+  async suspendedUntil(@Parent() c: ModerationCase) {
+    return c.entityType === 'USER' ? ((await this.moderation.suspensionOf(c.entityId))?.until ?? null) : null
+  }
+
+  @ResolveField('removedGroup')
+  removedGroupOfCase(@Parent() c: ModerationCase) {
+    // Only moderators read the queue, so the owner check of removedGroup() does not apply here.
+    return c.entityType === 'GROUP' ? this.moderation.removedGroupForModerators(c.entityId) : null
   }
 
   @ResolveField('group')

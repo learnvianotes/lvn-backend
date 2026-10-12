@@ -1,5 +1,22 @@
 // Generated from this folder's *.graphql by scripts/graphql-types.mjs (ADR-0033). Do not edit.
 
+/** An account's standing, for its owner alone (ADR-0053) */
+export interface AccountStanding {
+  /** Set while the account is suspended: nothing it does reaches other people until then */
+  suspendedUntil: Date | null
+  suspensionReason: string | null
+  /** The suspension can still be appealed (once) */
+  canAppeal: boolean
+  /** Warnings from the last 90 days, newest first */
+  warnings: Array<AccountWarning>
+}
+
+/** A warning platform moderators gave an account (ADR-0053) */
+export interface AccountWarning {
+  reason: string
+  at: Date
+}
+
 export interface ActivityConnection {
   edges: Array<ActivityEdge>
   pageInfo: PageInfo
@@ -574,8 +591,10 @@ export interface ModerateContentInput {
   entityType: ReportEntityType
   entityId: string
   action: ModerationActionType
-  /** Required for HIDE, REMOVE and WARN: the author is told */
+  /** Required for HIDE, REMOVE, WARN and SUSPEND: the author is told */
   reason?: string | null
+  /** SUSPEND: for how many days, 1 to 365 */
+  suspendDays?: number | null
 }
 
 /** A comment, post, announcement or doubt as its scope's moderators see it */
@@ -604,7 +623,7 @@ export interface ModeratedNote {
   deleted: boolean
 }
 
-/** APPROVE frees a held note; HIDE and REMOVE take it off for everyone but its author; DISMISS closes reports; WARN tells the author. SUSPEND is not available yet. */
+/** APPROVE frees a held note, puts back hidden or removed content and removed groups, and lifts a suspension; HIDE and REMOVE take it off for everyone but its author; DISMISS closes reports; WARN tells the author; SUSPEND (accounts only, platform admins, ADR-0053) stops an account reaching others for suspendDays */
 export type ModerationActionType = 'APPROVE' | 'HIDE' | 'REMOVE' | 'WARN' | 'SUSPEND' | 'DISMISS'
 
 export interface ModerationAppeal {
@@ -626,6 +645,10 @@ export interface ModerationCase {
   group: Group | null
   /** Set for USER cases */
   user: User | null
+  /** USER cases: until when the account is suspended, if it is */
+  suspendedUntil: Date | null
+  /** GROUP cases of a group platform moderators removed (ADR-0053) */
+  removedGroup: RemovedGroup | null
   reports: Array<ModerationReport>
   appeal: ModerationAppeal | null
   openedAt: Date
@@ -908,6 +931,10 @@ export interface QueryModerationQueueArgs {
   scope?: ModerationScopeInput | null
 }
 
+export interface QueryRemovedGroupArgs {
+  id: string
+}
+
 export interface QueryDoubtArgs {
   id: string
 }
@@ -942,6 +969,15 @@ export type ReactionTargetType = 'NOTE' | 'COMMENT' | 'GROUP_POST' | 'CLASSROOM_
 export interface ReactPayload {
   reactions: Reactions | null
   userErrors: Array<UserError>
+}
+
+/** A group platform moderators removed (ADR-0053): its owner reads why and may appeal once */
+export interface RemovedGroup {
+  id: string
+  name: string
+  reason: string
+  removedAt: Date
+  canAppeal: boolean
 }
 
 export interface ReportContentInput {

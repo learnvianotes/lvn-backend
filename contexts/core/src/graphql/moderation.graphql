@@ -31,7 +31,7 @@ enum ReportEntityType { NOTE USER COMMENT GROUP_POST CLASSROOM_POST DOUBT GROUP 
 "Whose queue a case is in (ADR-0051)"
 enum ModerationScope { PLATFORM GROUP CLASSROOM }
 enum ReportReason { HARASSMENT SEXUAL SELF_HARM HATE SPAM COPYRIGHT OTHER }
-"APPROVE frees a held note; HIDE and REMOVE take it off for everyone but its author; DISMISS closes reports; WARN tells the author. SUSPEND is not available yet."
+"APPROVE frees a held note, puts back hidden or removed content and removed groups, and lifts a suspension; HIDE and REMOVE take it off for everyone but its author; DISMISS closes reports; WARN tells the author; SUSPEND (accounts only, platform admins, ADR-0053) stops an account reaching others for suspendDays"
 enum ModerationActionType { APPROVE HIDE REMOVE WARN SUSPEND DISMISS }
 
 input ReportContentInput {
@@ -46,8 +46,10 @@ input ModerateContentInput {
   entityType: ReportEntityType!
   entityId: UUID!
   action: ModerationActionType!
-  "Required for HIDE, REMOVE and WARN: the author is told"
+  "Required for HIDE, REMOVE, WARN and SUSPEND: the author is told"
   reason: String
+  "SUSPEND: for how many days, 1 to 365"
+  suspendDays: Int
 }
 
 "A group's or class's queue for its moderators; without it, platform admins see every case"
@@ -116,6 +118,10 @@ type ModerationCase {
   group: Group
   "Set for USER cases"
   user: User
+  "USER cases: until when the account is suspended, if it is"
+  suspendedUntil: DateTime
+  "GROUP cases of a group platform moderators removed (ADR-0053)"
+  removedGroup: RemovedGroup
   reports: [ModerationReport!]!
   appeal: ModerationAppeal
   openedAt: DateTime!
@@ -131,9 +137,39 @@ type ModerationCaseConnection {
   pageInfo: PageInfo!
 }
 
+"A warning platform moderators gave an account (ADR-0053)"
+type AccountWarning {
+  reason: String!
+  at: DateTime!
+}
+
+"An account's standing, for its owner alone (ADR-0053)"
+type AccountStanding {
+  "Set while the account is suspended: nothing it does reaches other people until then"
+  suspendedUntil: DateTime
+  suspensionReason: String
+  "The suspension can still be appealed (once)"
+  canAppeal: Boolean!
+  "Warnings from the last 90 days, newest first"
+  warnings: [AccountWarning!]!
+}
+
+"A group platform moderators removed (ADR-0053): its owner reads why and may appeal once"
+type RemovedGroup {
+  id: UUID!
+  name: String!
+  reason: String!
+  removedAt: DateTime!
+  canAppeal: Boolean!
+}
+
 extend type Query {
   "Open cases, oldest first: a group's (its moderators and mentor) or a class's (its staff), or every case (PLATFORM_ADMIN)"
   moderationQueue(first: Int, after: String, scope: ModerationScopeInput): ModerationCaseConnection!
+  "The viewer's account standing: a suspension and recent warnings (ADR-0053)"
+  myStanding: AccountStanding!
+  "Its owner only: a group platform moderators removed, with why; null for anything else"
+  removedGroup(id: UUID!): RemovedGroup
 }
 
 extend type Group {
@@ -146,6 +182,6 @@ type Mutation {
   reportContent(input: ReportContentInput!): OkPayload!
   "A moderator's decision on a case: platform admins anywhere, group moderators and class staff in their scope"
   moderateContent(input: ModerateContentInput!): OkPayload!
-  "The author's one appeal against hiding or removing their note or content"
+  "The author's one appeal against hiding or removing their note or content, a group's owner's against its removal, or a suspended person's against the suspension"
   appealModeration(input: AppealModerationInput!): OkPayload!
 }

@@ -16,6 +16,10 @@ import { CONTRACT_ROLE, type StoredRole } from './groups.service'
 export const REPORTS_TO_HOLD = 3
 const MAX_DETAILS = 1_000
 const MAX_APPEAL = 2_000
+/** The longest suspension one decision gives (ADR-0053); a longer one is a new decision when it ends. */
+export const MAX_SUSPEND_DAYS = 365
+/** Warnings to an account stay on its standing this long (ADR-0053). */
+const WARNINGS_SHOWN_DAYS = 90
 
 /** What each decision does to a note's moderation state; undefined leaves it, `release` frees a held note. */
 const NOTE_STATE: Record<ModerationActionType, ModerationStateKind | 'release' | undefined> = {
@@ -198,7 +202,8 @@ export class ModerationService implements Moderation {
         return note ? { ...platform, authorId: note.ownerId, path: `/notes/${note.id}`, noteId: note.id } : null
       }
       case 'USER':
-        return { ...platform, authorId: entityId, path: `/u/${entityId}` }
+        // What the account's owner is told about opens their own account page (ADR-0053).
+        return { ...platform, authorId: entityId, path: '/profile' }
       case 'GROUP': {
         const g = await this.db.group.findUnique({ where: { id: entityId }, select: { ownerId: true } })
         return g ? { ...platform, authorId: g.ownerId, path: `/groups/${entityId}`, groupId: entityId } : null
@@ -253,6 +258,49 @@ export class ModerationService implements Moderation {
             ? await this.db.classroomPost.updateMany({ where, data })
             : await this.db.doubt.updateMany({ where, data })
     return result.count > 0
+  }
+
+  /**
+   * An account's standing, for its owner alone (ADR-0053): a suspension while it lasts, with its reason and whether it
+   * can still be appealed, and the warnings moderators gave the account in the last 90 days.
+   */
+  async standing(userId: string) {
+    const since = new Date(Date.now() - WARNINGS_SHOWN_DAYS * 86_400_000)
+    const [suspension, warnings, appealed] = await Promise.all([
+      this.policy.suspension(userId),
+      this.db.moderationAction.findMany({ where: { entityType: 'USER', entityId: userId, action: 'WARN', createdAt: { gte: since } }, orderBy: { createdAt: 'desc' }, take: 20, select: { reason: true, createdAt: true } }),
+      this.db.moderationAppeal.count({ where: { entityType: 'USER', entityId: userId, userId } }),
+    ])
+    return {
+      suspendedUntil: suspension?.until ?? null,
+      suspensionReason: suspension?.reason ?? null,
+      canAppeal: !!suspension && !appealed,
+      warnings: warnings.map((w) => ({ reason: w.reason ?? '', at: w.createdAt })),
+    }
+  }
+
+  /** A group platform moderators removed, as its owner sees it (ADR-0053): why, and whether it can be appealed. Null otherwise. */
+  async removedGroup(userId: string, groupId: string) {
+    const g = await this.removed(groupId)
+    if (!g || g.ownerId !== userId) return null
+    const appealed = await this.db.moderationAppeal.count({ where: { entityType: 'GROUP', entityId: groupId, userId } })
+    return { id: g.id, name: g.name, reason: g.removedReason!, removedAt: g.deletedAt!, canAppeal: !appealed }
+  }
+
+  /** The same, for a case in the platform queue: moderators see which removed group an appeal is about. */
+  async removedGroupForModerators(groupId: string) {
+    const g = await this.removed(groupId)
+    return g ? { id: g.id, name: g.name, reason: g.removedReason!, removedAt: g.deletedAt!, canAppeal: false } : null
+  }
+
+  private async removed(groupId: string) {
+    const g = await this.db.group.findUnique({ where: { id: groupId }, select: { id: true, name: true, ownerId: true, deletedAt: true, removedReason: true } })
+    return g?.deletedAt && g.removedReason !== null ? g : null
+  }
+
+  /** An account's suspension while it lasts (for the queue). */
+  suspensionOf(userId: string) {
+    return this.policy.suspension(userId)
   }
 
   /** The latest warning to a group's owner from the last 30 days (ADR-0051): a group has no state of its own to keep it. */
@@ -335,7 +383,7 @@ export class ModerationService implements Moderation {
   }
 
   /** A moderator's decision on a case: the entity's new state, the reports and appeal closed, the action recorded. */
-  async decide(userId: string, input: { entityType: ReportEntityType; entityId: string; action: ModerationActionType; reason?: string | null }): Promise<void> {
+  async decide(userId: string, input: { entityType: ReportEntityType; entityId: string; action: ModerationActionType; reason?: string | null; suspendDays?: number | null }): Promise<void> {
     const subject = await this.subject(input.entityType, input.entityId)
     if (!subject) throw Errors.notFound('That is not there any more.')
     if (!(await this.canModerate(userId, subject))) throw Errors.forbidden()
@@ -343,15 +391,31 @@ export class ModerationService implements Moderation {
     // Nobody in a group or class decides on their own content; a platform admin does.
     if (!platform && subject.authorId === userId) throw Errors.forbidden('Another moderator decides about your own content.')
     const reason = input.reason?.trim().slice(0, MAX_DETAILS) || null
-    if (input.action === 'SUSPEND') throw Errors.validation('Suspending accounts is not available yet.', ['input', 'action'])
-    if ((input.action === 'HIDE' || input.action === 'REMOVE' || input.action === 'WARN') && !reason) {
+    if ((input.action === 'HIDE' || input.action === 'REMOVE' || input.action === 'WARN' || input.action === 'SUSPEND') && !reason) {
       throw Errors.validation('Say why: the author is told.', ['input', 'reason'])
     }
-    if (input.entityType === 'USER' && input.action !== 'DISMISS' && input.action !== 'WARN') {
-      throw Errors.validation('Accounts can be warned or their reports dismissed.', ['input', 'action'])
+    // Accounts (ADR-0053): warned, suspended for a number of days, a suspension lifted (APPROVE), or reports dismissed.
+    let suspension: { until: Date; reason: string | null } | null = null
+    if (input.entityType === 'USER') {
+      if (!['DISMISS', 'WARN', 'SUSPEND', 'APPROVE'].includes(input.action)) throw Errors.validation('Accounts can be warned, suspended, or their reports dismissed.', ['input', 'action'])
+      suspension = await this.policy.suspension(input.entityId)
+      if (input.action === 'APPROVE' && !suspension) throw Errors.validation('This account is not suspended.', ['input', 'action'])
+      if (input.action === 'SUSPEND') {
+        const days = input.suspendDays ?? 0
+        if (!Number.isInteger(days) || days < 1 || days > MAX_SUSPEND_DAYS) throw Errors.validation(`Suspend for 1 to ${MAX_SUSPEND_DAYS} days.`, ['input', 'suspendDays'])
+        if (input.entityId === userId) throw Errors.validation('You cannot suspend your own account.', ['input', 'entityId'])
+      }
+    } else if (input.action === 'SUSPEND') {
+      throw Errors.validation('Only accounts are suspended.', ['input', 'action'])
     }
-    if (input.entityType === 'GROUP' && !['WARN', 'DISMISS', 'REMOVE'].includes(input.action)) {
-      throw Errors.validation('A group can be warned, removed, or its reports dismissed.', ['input', 'action'])
+    // A group (ADR-0051, ADR-0053): warned, removed, put back after a removal (APPROVE), or its reports dismissed.
+    let removedGroup = false
+    if (input.entityType === 'GROUP') {
+      if (!['WARN', 'DISMISS', 'REMOVE', 'APPROVE'].includes(input.action)) throw Errors.validation('A group can be warned, removed, or its reports dismissed.', ['input', 'action'])
+      const g = await this.db.group.findUnique({ where: { id: input.entityId }, select: { deletedAt: true, removedReason: true } })
+      removedGroup = !!g?.deletedAt && g.removedReason !== null
+      if (input.action === 'APPROVE' && !removedGroup) throw Errors.validation('Only a group moderators removed can be put back.', ['input', 'action'])
+      if (input.action !== 'APPROVE' && input.action !== 'DISMISS' && g?.deletedAt) throw Errors.notFound('That group is not there any more.')
     }
     let note: ModeratedNote | undefined
     if (input.entityType === 'NOTE') {
@@ -375,7 +439,7 @@ export class ModerationService implements Moderation {
         await this.notes.setState(note.id, next, reason)
       }
     }
-    let told: 'HIDDEN' | 'REMOVED' | 'WARNED' | 'RESTORED' | null = null
+    let told: 'HIDDEN' | 'REMOVED' | 'WARNED' | 'RESTORED' | 'SUSPENDED' | null = null
     if (isContent(input.entityType)) {
       const next = NOTE_STATE[input.action]
       if (input.action === 'WARN') {
@@ -391,10 +455,24 @@ export class ModerationService implements Moderation {
     }
     if (input.entityType === 'GROUP') {
       if (input.action === 'REMOVE') {
-        await this.db.group.update({ where: { id: input.entityId }, data: { deletedAt: now } })
+        // Removed, not deleted (ADR-0053): its owner reads why and may appeal; members and everyone else lose it.
+        await this.db.group.update({ where: { id: input.entityId }, data: { deletedAt: now, removedReason: reason } })
         await this.events.publish('GroupDeleted', { groupId: input.entityId })
+      } else if (input.action === 'APPROVE') {
+        await this.db.group.update({ where: { id: input.entityId }, data: { deletedAt: null, removedReason: null } })
+        await this.events.publish('GroupRestored', { groupId: input.entityId })
       }
-      told = input.action === 'WARN' ? 'WARNED' : input.action === 'REMOVE' ? 'REMOVED' : null
+      told = input.action === 'WARN' ? 'WARNED' : input.action === 'REMOVE' ? 'REMOVED' : input.action === 'APPROVE' ? 'RESTORED' : null
+    }
+    if (input.entityType === 'USER') {
+      if (input.action === 'SUSPEND') {
+        await this.policy.suspend(input.entityId, new Date(now.getTime() + input.suspendDays! * 86_400_000), reason!)
+        // Each suspension can be appealed once: an earlier suspension's decided appeal does not count against this one.
+        await this.db.moderationAppeal.deleteMany({ where: { entityType: 'USER', entityId: input.entityId, userId: input.entityId, status: 'DECIDED' } })
+      } else if (input.action === 'APPROVE') {
+        await this.policy.lift(input.entityId)
+      }
+      told = input.action === 'WARN' ? 'WARNED' : input.action === 'SUSPEND' ? 'SUSPENDED' : input.action === 'APPROVE' ? 'RESTORED' : null
     }
     await this.audit.record({ actorId: userId, action: `moderation.${input.action.toLowerCase()}`, targetType: input.entityType, targetId: input.entityId, metadata: { ...(reason ? { reason } : {}), scope: subject.scope, ...(subject.scopeId ? { scopeId: subject.scopeId } : {}) } })
     if (told && subject.authorId) {
@@ -429,6 +507,17 @@ export class ModerationService implements Moderation {
       if (!message) throw Errors.validation('Tell the moderators why it should come back.', ['input', 'message'])
       const subject = await this.subject(input.entityType, input.entityId)
       if (subject) scope = { scope: subject.scope, scopeId: subject.scopeId }
+    } else if (input.entityType === 'USER') {
+      // A suspension, by the suspended person (ADR-0053).
+      if (input.entityId !== userId) throw Errors.notFound('That is not there any more.')
+      if (!(await this.policy.suspension(userId))) throw Errors.validation('Your account is not suspended.', ['input', 'entityId'])
+      if (!message) throw Errors.validation('Tell the moderators why the suspension should end.', ['input', 'message'])
+    } else if (input.entityType === 'GROUP') {
+      // A group platform moderators removed, by its owner (ADR-0053).
+      const g = await this.db.group.findUnique({ where: { id: input.entityId }, select: { ownerId: true, deletedAt: true, removedReason: true } })
+      if (!g || g.ownerId !== userId) throw Errors.notFound('That is not there any more.')
+      if (!g.deletedAt || g.removedReason === null) throw Errors.validation('Only a group moderators removed can be appealed.', ['input', 'entityId'])
+      if (!message) throw Errors.validation('Tell the moderators why the group should come back.', ['input', 'message'])
     } else {
       throw Errors.validation('This cannot be appealed.', ['input', 'entityType'])
     }

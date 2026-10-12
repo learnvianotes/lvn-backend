@@ -109,6 +109,8 @@ export interface Actor {
   institutionVerified: boolean
   /** Minor without verified consent (§15.2): no PUBLIC publishing. */
   restrictedMinor?: boolean
+  /** Suspended by platform moderators (ADR-0053): nothing that reaches other people until it ends. */
+  suspended?: boolean
 }
 
 /** What the backend knows about one note relative to the actor. */
@@ -293,13 +295,39 @@ export const NEEDS_VERIFIED_ACCOUNT: ReadonlySet<Action> = new Set<Action>([
   Action.ACCOUNT_REVIEW_VERIFICATION,
 ])
 
+/**
+ * What a suspended account cannot do (ADR-0053): everything that reaches other people, and moderating or running
+ * places for them. It still reads, keeps and writes its own notes, makes private copies, takes a note back to
+ * PRIVATE, leaves places, unfollows, blocks, restricts, reports, exports its data and appeals.
+ */
+export const BLOCKED_WHILE_SUSPENDED: ReadonlySet<Action> = new Set<Action>([
+  ...NEEDS_VERIFIED_ACCOUNT,
+  Action.GROUP_REVIEW_JOIN_REQUESTS,
+  Action.GROUP_INVITE_MENTOR,
+  Action.GROUP_RESOLVE_DOUBT,
+  Action.GROUP_MODERATE_POSTS,
+  Action.GROUP_MANAGE,
+  Action.GROUP_MODERATE_REPORTS,
+  Action.CLASSROOM_REVIEW_JOIN_REQUESTS,
+  Action.CLASSROOM_PUBLISH_QUIZ,
+  Action.CLASSROOM_MODERATE_REPORTS,
+  Action.TEACHER_EDIT_PROFILE,
+  Action.CONTENT_MODERATE,
+])
+
 function readable(actor: Actor | null, note: NoteFacts): boolean {
   const relations = noteRelations(actor, note)
   return NOTE_READERS[note.visibility].some((r) => relations.has(r))
 }
 
+/** Taking one's own note back to PRIVATE reaches nobody: a suspended account may still do it. */
+function backToPrivate(action: Action, resource: Resource): boolean {
+  return action === Action.NOTE_CHANGE_VISIBILITY && resource.kind === 'note' && resource.targetVisibility === Visibility.PRIVATE
+}
+
 export function can(actor: Actor | null, action: Action, resource: Resource = { kind: 'none' }): boolean {
   if (actor && !actor.institutionVerified && NEEDS_VERIFIED_ACCOUNT.has(action)) return false
+  if (actor?.suspended && BLOCKED_WHILE_SUSPENDED.has(action) && !backToPrivate(action, resource)) return false
   switch (resource.kind) {
     case 'note': {
       const { note } = resource
