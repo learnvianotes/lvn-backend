@@ -111,6 +111,19 @@ describe('apiConfigSchema (Phase 1)', () => {
   })
 })
 
+describe('AI settings (ADR-0058)', () => {
+  it('leaves AI off by default (daily quotas are the plan’s, ADR-0024)', () => {
+    const cfg = loadConfig(apiConfigSchema, valid)
+    expect(cfg).toMatchObject({ AI_PROVIDER: 'none', AI_TIMEOUT_MS: 120_000 })
+    expect(cfg.AI_MONTHLY_BUDGET_MICRO_USD).toBeUndefined()
+  })
+  it('needs the address and the models of a local model', () => {
+    expect(() => loadConfig(apiConfigSchema, { ...valid, AI_PROVIDER: 'ollama' })).toThrow(/OLLAMA_URL[\s\S]*AI_CHAT_MODEL[\s\S]*AI_EMBED_MODEL/)
+    const cfg = loadConfig(workerConfigSchema, { ...valid, AI_PROVIDER: 'ollama', OLLAMA_URL: 'http://10.0.2.2:11434', AI_CHAT_MODEL: 'gemma4', AI_EMBED_MODEL: 'embeddinggemma', AI_MONTHLY_BUDGET_MICRO_USD: '50000000' })
+    expect(cfg).toMatchObject({ AI_PROVIDER: 'ollama', AI_CHAT_MODEL: 'gemma4', AI_MONTHLY_BUDGET_MICRO_USD: 50_000_000 })
+  })
+})
+
 describe('workerConfigSchema', () => {
   it('reads the API variables plus its own', () => {
     const cfg = loadConfig(workerConfigSchema, { ...valid, LEGACY_FIREBASE_PROJECT_ID: 'learnvianotes-old' })

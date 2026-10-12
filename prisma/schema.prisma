@@ -1953,3 +1953,45 @@ enum ContentModeration {
 
   @@schema("core")
 }
+
+/// Who answers AI calls (ADR-0058). Ollama is self-hosted: private notes may go to it (§10.1's data-processing flag).
+enum AiProvider {
+  OLLAMA
+
+  @@schema("ai")
+}
+
+/// What answers each AI task (§10.1, ADR-0058). A row overrides the environment's default model, so a model can be
+/// swapped without a deploy. Prices are per million tokens in millionths of a dollar: 0 for a self-hosted model.
+model AiModelRoute {
+  task                  String     @id
+  provider              AiProvider
+  model                 String
+  inputMicroUsdPerMTok  Int        @default(0)
+  outputMicroUsdPerMTok Int        @default(0)
+  updatedAt             DateTime   @updatedAt @db.Timestamptz(3)
+
+  @@schema("ai")
+}
+
+/// One provider call (§10.1): for whom (null for the platform's own jobs), what, which model and prompt, its tokens,
+/// cost and time. Daily quotas and the monthly budget are read from here. No content is kept.
+model AiUsage {
+  id               String     @id @db.Uuid
+  userId           String?    @db.Uuid
+  task             String
+  provider         AiProvider
+  model            String
+  promptId         String?
+  promptVersion    Int?
+  promptTokens     Int
+  completionTokens Int
+  costMicroUsd     Int        @default(0)
+  latencyMs        Int
+  ok               Boolean
+  createdAt        DateTime   @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@schema("ai")
+}

@@ -86,3 +86,24 @@ variable "extra_backend_environment" {
   type        = map(string)
   default     = {}
 }
+
+# AI (ADR-0058): the host's Ollama, which the VM reaches at QEMU's host address. `none` switches AI off.
+variable "ai_provider" {
+  type    = string
+  default = "ollama"
+}
+
+variable "ollama_url" {
+  type    = string
+  default = "http://10.0.2.2:11434"
+}
+
+variable "ai_chat_model" {
+  type    = string
+  default = "gemma4"
+}
+
+variable "ai_embed_model" {
+  type    = string
+  default = "embeddinggemma"
+}

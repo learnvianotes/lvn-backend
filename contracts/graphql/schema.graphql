@@ -98,6 +98,33 @@ input AddPdfHighlightInput {
   rects: [[Float!]!]!
 }
 
+"""
+The viewer's AI tokens today (UTC) against their plan's daily limit (§10.1, ADR-0024)
+"""
+type AiAllowance {
+  """null: the plan sets no limit"""
+  limitToday: Int
+  resetsAt: DateTime!
+  usedToday: Int!
+}
+
+type AiStatus {
+  available: Boolean!
+  reason: AiUnavailableReason
+}
+
+"""Why AI is not answering"""
+enum AiUnavailableReason {
+  """This month's AI budget is used up; it resumes next month"""
+  BUDGET
+
+  """Not switched on in this environment"""
+  NOT_CONFIGURED
+
+  """The model failed several times in a row; it is tried again shortly"""
+  PROVIDER_DOWN
+}
+
 input AnswerClassroomInviteInput {
   accept: Boolean!
   inviteId: UUID!
@@ -2193,6 +2220,9 @@ type Query {
   What happened in the viewer's groups and classes, newest first; their own doing left out
   """
   activityFeed(after: String, first: Int): ActivityConnection!
+
+  """Whether AI answers now; works signed out"""
+  aiStatus: AiStatus!
   classroom(id: UUID!): Classroom
 
   """The class a code names; at most 20 codes an hour"""
@@ -2236,6 +2266,9 @@ type Query {
   Open cases, oldest first: a group's (its moderators and mentor) or a class's (its staff), or every case (PLATFORM_ADMIN)
   """
   moderationQueue(after: String, first: Int, scope: ModerationScopeInput): ModerationCaseConnection!
+
+  """Signed in only"""
+  myAiAllowance: AiAllowance!
   myBlocked: [PersonEdge!]!
 
   """Invites waiting for the viewer's answer"""

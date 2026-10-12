@@ -66,6 +66,11 @@ locals {
       SEARCH_PROVIDER   = "typesense"
       TYPESENSE_URL     = "http://typesense:8108"
       TYPESENSE_API_KEY = random_password.typesense.result
+      # AI on the dev machine's GPU (ADR-0058): its Ollama, through QEMU's user network.
+      AI_PROVIDER    = var.ai_provider
+      OLLAMA_URL     = var.ollama_url
+      AI_CHAT_MODEL  = var.ai_chat_model
+      AI_EMBED_MODEL = var.ai_embed_model
     },
     { for k, v in local.optional : k => v if v != "" },
     var.extra_backend_environment,
