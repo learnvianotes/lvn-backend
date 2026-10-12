@@ -186,6 +186,20 @@ export const events = {
   })),
   QuizPublished: eventEnvelope('QuizPublished', 1, z.object({ quizId: uuid, classroomId: uuid.optional() })),
   ContentReported: eventEnvelope('ContentReported', 1, z.object({ reportId: uuid, entityType: z.string(), entityId: uuid })),
+  /**
+   * A moderator's decision about someone's comment, post, announcement or doubt (ADR-0051), so its author is told:
+   * where it was (path, and the group, class or note) and what happened; never the content or the reason.
+   */
+  ContentModerated: eventEnvelope('ContentModerated', 1, z.object({
+    entityType: z.string(),
+    entityId: uuid,
+    authorId: uuid,
+    kind: z.enum(['HIDDEN', 'REMOVED', 'WARNED', 'RESTORED']),
+    path: z.string().max(512),
+    groupId: uuid.optional(),
+    classroomId: uuid.optional(),
+    noteId: uuid.optional(),
+  })),
   LearningEventRecorded: eventEnvelope('LearningEventRecorded', 1, z.object({ userId: uuid, eventIds: z.array(uuid).min(1) })),
   // ai
   NoteArtifactReady: eventEnvelope('NoteArtifactReady', 1, z.object({ artifactId: uuid, noteId: uuid, versionId: uuid, artifactType: z.string() })),

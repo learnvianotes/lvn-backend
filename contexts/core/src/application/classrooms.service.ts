@@ -352,7 +352,7 @@ export class ClassroomsService {
 
   /** An announcement as comments need it (ADR-0047): null unless the viewer is a member; staff moderate. */
   async postPlace(viewerId: string, postId: string): Promise<{ classroomId: string; authorId: string; staff: boolean } | null> {
-    const p = await this.db.classroomPost.findFirst({ where: { id: postId, deletedAt: null } })
+    const p = await this.db.classroomPost.findFirst({ where: { id: postId, deletedAt: null, OR: [{ moderation: 'OK' }, { authorId: viewerId }] } })
     if (!p) return null
     const loaded = await this.load(viewerId, p.classroomId)
     if (!loaded?.role) return null
@@ -363,7 +363,7 @@ export class ClassroomsService {
     const { role } = await this.require(viewerId, classroomId)
     if (!role) throw Errors.forbidden()
     return this.db.classroomPost.findMany({
-      where: { classroomId, deletedAt: null, ...(after ? { OR: [{ createdAt: { lt: new Date(after[0]) } }, { createdAt: new Date(after[0]), id: { lt: after[1] } }] } : {}) },
+      where: { classroomId, deletedAt: null, AND: [{ OR: [{ moderation: 'OK' }, { authorId: viewerId }] }, ...(after ? [{ OR: [{ createdAt: { lt: new Date(after[0]) } }, { createdAt: new Date(after[0]), id: { lt: after[1] } }] }] : [])] },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: size + 1,
     })

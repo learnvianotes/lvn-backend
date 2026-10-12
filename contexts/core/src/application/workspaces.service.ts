@@ -168,7 +168,7 @@ export class WorkspacesService implements OnModuleInit {
     const { role } = await this.workspace(viewerId, groupId)
     if (!role) throw Errors.forbidden('Join the workspace to see its ideas.')
     const hidden = await this.people.blockedIds(viewerId)
-    const rows = await this.db.groupPost.findMany({ where: { groupId, kind: 'IDEA', deletedAt: null, ...(hidden.length ? { authorId: { notIn: hidden } } : {}) }, orderBy: { createdAt: 'desc' }, take: WORKSPACE_LIMITS.ideas })
+    const rows = await this.db.groupPost.findMany({ where: { groupId, kind: 'IDEA', deletedAt: null, OR: [{ moderation: 'OK' }, { authorId: viewerId }], ...(hidden.length ? { authorId: { notIn: hidden } } : {}) }, orderBy: { createdAt: 'desc' }, take: WORKSPACE_LIMITS.ideas })
     if (!rows.length) return []
     const counts = await this.db.reaction.groupBy({ by: ['targetId'], where: { targetType: 'GROUP_POST', targetId: { in: rows.map((r) => r.id) } }, _count: { _all: true } })
     const score = new Map(counts.map((c) => [c.targetId, c._count._all]))
@@ -244,7 +244,7 @@ export class WorkspacesService implements OnModuleInit {
 
   /** The doubt with the viewer's place in its workspace; null when they may not see it. */
   async getDoubt(viewerId: string, doubtId: string) {
-    const doubt = await this.db.doubt.findFirst({ where: { id: doubtId, deletedAt: null } })
+    const doubt = await this.db.doubt.findFirst({ where: { id: doubtId, deletedAt: null, OR: [{ moderation: 'OK' }, { authorId: viewerId }] } })
     if (!doubt) return null
     const loaded = await this.groups.load(viewerId, doubt.groupId)
     if (!loaded?.role) return null
@@ -326,7 +326,7 @@ export class WorkspacesService implements OnModuleInit {
         deletedAt: null,
         ...(status ? { status } : {}),
         ...(hidden.length ? { authorId: { notIn: hidden } } : {}),
-        ...(after ? { OR: [{ createdAt: { lt: new Date(after[0]) } }, { createdAt: new Date(after[0]), id: { lt: after[1] } }] } : {}),
+        AND: [{ OR: [{ moderation: 'OK' }, { authorId: viewerId }] }, ...(after ? [{ OR: [{ createdAt: { lt: new Date(after[0]) } }, { createdAt: new Date(after[0]), id: { lt: after[1] } }] }] : [])],
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: size + 1,

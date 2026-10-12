@@ -54,9 +54,9 @@ export class ActivityService {
     const authors = { notIn: [viewerId, ...blocked] }
 
     const [posts, doubts, announcements, shares] = await Promise.all([
-      groupIds.length ? this.db.groupPost.findMany({ where: { groupId: { in: groupIds }, deletedAt: null, authorId: authors, ...page }, orderBy: order, take }) : [],
-      groupIds.length ? this.db.doubt.findMany({ where: { groupId: { in: groupIds }, deletedAt: null, authorId: authors, ...page }, orderBy: order, take }) : [],
-      classroomIds.length ? this.db.classroomPost.findMany({ where: { classroomId: { in: classroomIds }, deletedAt: null, authorId: authors, ...page }, orderBy: order, take }) : [],
+      groupIds.length ? this.db.groupPost.findMany({ where: { groupId: { in: groupIds }, deletedAt: null, moderation: 'OK', authorId: authors, ...page }, orderBy: order, take }) : [],
+      groupIds.length ? this.db.doubt.findMany({ where: { groupId: { in: groupIds }, deletedAt: null, moderation: 'OK', authorId: authors, ...page }, orderBy: order, take }) : [],
+      classroomIds.length ? this.db.classroomPost.findMany({ where: { classroomId: { in: classroomIds }, deletedAt: null, moderation: 'OK', authorId: authors, ...page }, orderBy: order, take }) : [],
       this.notes.placeShares(viewerId, { groupIds, classroomIds }, before, take),
     ])
     const items: ActivityItem[] = [

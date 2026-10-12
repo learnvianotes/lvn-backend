@@ -5,6 +5,7 @@ import { withUserErrors, type UserError } from '@lvn-backend/errors'
 import { connection, decodeCursor, pageSize } from '@lvn-backend/graphql'
 import { GroupsService, type GroupView } from '../application/groups.service'
 import { WorkspacesService, type DoubtRow, type RepositoryDetails } from '../application/workspaces.service'
+import { ModerationService, moderationFor } from '../application/moderation.service'
 import type { GroupParent } from './groups.resolver'
 import { post } from './groups.resolver'
 import type { GroupPayload } from './schema.types'
@@ -115,7 +116,10 @@ export class WorkspaceGroupResolver {
 @Resolver('Doubt')
 @UseGuards(SignedInGuard)
 export class DoubtResolver {
-  constructor(private readonly workspaces: WorkspacesService) {}
+  constructor(
+    private readonly workspaces: WorkspacesService,
+    private readonly moderationService: ModerationService,
+  ) {}
 
   @Query('doubt')
   async doubt(@Args('id') id: string, @CurrentViewer() viewer: Viewer): Promise<DoubtParent | null> {
@@ -176,6 +180,21 @@ export class DoubtResolver {
   @ResolveField('viewerCan')
   viewerCan(@Parent() d: DoubtParent) {
     return d.can
+  }
+
+  @ResolveField('moderation')
+  moderation(@Parent() d: DoubtParent) {
+    return d.row.moderation
+  }
+
+  @ResolveField('moderationReason')
+  moderationReason(@Parent() d: DoubtParent, @CurrentViewer() viewer: Viewer) {
+    return moderationFor(d.row, viewer.userId).moderationReason
+  }
+
+  @ResolveField('moderationCanAppeal')
+  moderationCanAppeal(@Parent() d: DoubtParent, @CurrentViewer() viewer: Viewer) {
+    return this.moderationService.canAppeal(viewer.userId, 'DOUBT', d.row)
   }
 
   private payload(viewerId: string, run: () => Promise<string>): Promise<DoubtPayload> {

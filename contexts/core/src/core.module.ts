@@ -6,6 +6,7 @@ import { ClassroomsService } from './application/classrooms.service'
 import { CommentsService } from './application/comments.service'
 import { WorkspacesService } from './application/workspaces.service'
 import { ActivityService } from './application/activity.service'
+import { ScopedReportsService } from './application/scoped-reports.service'
 import { ActivityResolver } from './graphql/activity.resolver'
 import { GroupsService } from './application/groups.service'
 import { ModerationService } from './application/moderation.service'
@@ -15,7 +16,7 @@ import { ClassroomReferenceResolver, ClassroomsResolver } from './graphql/classr
 import { DoubtResolver, WorkspaceGroupResolver } from './graphql/workspaces.resolver'
 import { ClassroomPostDiscussionResolver, CommentResolver, DiscussionResolver, GroupPostDiscussionResolver, NoteDiscussionResolver } from './graphql/comments.resolver'
 import { GroupReferenceResolver, GroupsResolver } from './graphql/groups.resolver'
-import { ModeratedNoteResolver, ModerationReportResolver, ModerationResolver } from './graphql/moderation.resolver'
+import { GroupModerationResolver, ModeratedContentResolver, ModeratedNoteResolver, ModerationReportResolver, ModerationResolver } from './graphql/moderation.resolver'
 
 /**
  * The `core` bounded context (spec §6.1) — Postgres schema `core`.
@@ -29,7 +30,7 @@ export class CoreModule {
   static forRoot(config: CoreConfig): DynamicModule {
     return {
       module: CoreModule,
-      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver, GroupsService, GroupsResolver, GroupReferenceResolver, ClassroomsService, ClassroomsResolver, ClassroomReferenceResolver, CommentsService, NoteDiscussionResolver, GroupPostDiscussionResolver, ClassroomPostDiscussionResolver, DiscussionResolver, CommentResolver, WorkspacesService, WorkspaceGroupResolver, DoubtResolver, ActivityService, ActivityResolver, JsonScalar],
+      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver, ModeratedContentResolver, GroupModerationResolver, ScopedReportsService, GroupsService, GroupsResolver, GroupReferenceResolver, ClassroomsService, ClassroomsResolver, ClassroomReferenceResolver, CommentsService, NoteDiscussionResolver, GroupPostDiscussionResolver, ClassroomPostDiscussionResolver, DiscussionResolver, CommentResolver, WorkspacesService, WorkspaceGroupResolver, DoubtResolver, ActivityService, ActivityResolver, JsonScalar],
       exports: [CoreProgressService, ModerationService, GroupsService, ClassroomsService, WorkspacesService],
     }
   }

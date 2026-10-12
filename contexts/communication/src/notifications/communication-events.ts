@@ -102,6 +102,18 @@ export class CommunicationEvents implements OnModuleInit {
       if (!payload.askedBy) return
       await this.notifications.notify({ userId: payload.askedBy, category: 'DOUBT', path: doubtPath(payload.groupId, payload.doubtId), actorId: payload.resolvedBy, groupId: payload.groupId, data: { kind: 'RESOLVED' } })
     })
+    // Moderation (ADR-0051): the author hears what a moderator decided; the reason is shown with the content, not here.
+    this.events.subscribe('ContentModerated', async ({ payload }) => {
+      await this.notifications.notify({
+        userId: payload.authorId,
+        category: 'MODERATION',
+        path: payload.path,
+        noteId: payload.noteId ?? null,
+        groupId: payload.groupId ?? null,
+        classroomId: payload.classroomId ?? null,
+        data: { kind: payload.kind, entityType: payload.entityType },
+      })
+    })
     // Sockets of a revoked session close on every instance.
     this.events.subscribe('SessionRevoked', async ({ payload }) => {
       await this.live.publish(payload.userId, { type: 'revoke', sessionId: payload.sessionId })

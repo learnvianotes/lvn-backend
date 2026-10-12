@@ -4,6 +4,7 @@ import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-gua
 import { withUserErrors, type UserError } from '@lvn-backend/errors'
 import { connection, decodeCursor, pageSize } from '@lvn-backend/graphql'
 import { CommentsService, type CommentRow, type CommentTargetKind, type Place, type ReactionKindName, type ReactionSummary, type ReactionTargetKind } from '../application/comments.service'
+import { ModerationService, moderationFor, type ContentState } from '../application/moderation.service'
 
 const userRef = (id: string) => ({ __typename: 'User', id })
 
@@ -43,7 +44,15 @@ export class NoteDiscussionResolver {
 
 @Resolver('GroupPost')
 export class GroupPostDiscussionResolver {
-  constructor(private readonly comments: CommentsService) {}
+  constructor(
+    private readonly comments: CommentsService,
+    private readonly moderationService: ModerationService,
+  ) {}
+
+  @ResolveField('moderationCanAppeal')
+  moderationCanAppeal(@Parent() post: { id: string; author: { id: string }; moderation: ContentState }, @CurrentViewer() viewer: Viewer | null) {
+    return this.moderationService.canAppeal(viewer?.userId, 'GROUP_POST', { id: post.id, authorId: post.author.id, moderation: post.moderation })
+  }
 
   @ResolveField('discussion')
   discussion(@Parent() post: { id: string }, @CurrentViewer() viewer: Viewer | null) {
@@ -53,7 +62,15 @@ export class GroupPostDiscussionResolver {
 
 @Resolver('ClassroomPost')
 export class ClassroomPostDiscussionResolver {
-  constructor(private readonly comments: CommentsService) {}
+  constructor(
+    private readonly comments: CommentsService,
+    private readonly moderationService: ModerationService,
+  ) {}
+
+  @ResolveField('moderationCanAppeal')
+  moderationCanAppeal(@Parent() post: { id: string; author: { id: string }; moderation: ContentState }, @CurrentViewer() viewer: Viewer | null) {
+    return this.moderationService.canAppeal(viewer?.userId, 'CLASSROOM_POST', { id: post.id, authorId: post.author.id, moderation: post.moderation })
+  }
 
   @ResolveField('discussion')
   discussion(@Parent() post: { id: string }, @CurrentViewer() viewer: Viewer | null) {
@@ -102,7 +119,10 @@ export class DiscussionResolver {
 @Resolver('Comment')
 @UseGuards(SignedInGuard)
 export class CommentResolver {
-  constructor(private readonly comments: CommentsService) {}
+  constructor(
+    private readonly comments: CommentsService,
+    private readonly moderationService: ModerationService,
+  ) {}
 
   @ResolveField('id')
   id(@Parent() c: CommentParent) {
@@ -137,6 +157,21 @@ export class CommentResolver {
   @ResolveField('private')
   private_(@Parent() c: CommentParent) {
     return c.row.visibleTo !== null
+  }
+
+  @ResolveField('moderation')
+  moderation(@Parent() c: CommentParent) {
+    return c.row.moderation
+  }
+
+  @ResolveField('moderationReason')
+  moderationReason(@Parent() c: CommentParent, @CurrentViewer() viewer: Viewer | null) {
+    return moderationFor(c.row, viewer?.userId ?? '').moderationReason
+  }
+
+  @ResolveField('moderationCanAppeal')
+  moderationCanAppeal(@Parent() c: CommentParent, @CurrentViewer() viewer: Viewer | null) {
+    return this.moderationService.canAppeal(viewer?.userId, 'COMMENT', c.row)
   }
 
   @ResolveField('createdAt')

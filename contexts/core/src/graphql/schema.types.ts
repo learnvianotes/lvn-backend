@@ -147,6 +147,11 @@ export interface ClassroomPost {
   body: unknown
   createdAt: Date
   viewerCanDelete: boolean
+  /** Not OK only for its author (ADR-0051) */
+  moderation: ModerationState
+  moderationReason: string | null
+  /** Its author may still appeal: hidden or removed by a moderator, and not appealed yet */
+  moderationCanAppeal: boolean
   /** Members: comments and reactions. A student's thread is seen by them and the class's staff only */
   discussion?: Discussion
 }
@@ -189,6 +194,12 @@ export interface Comment {
   pendingApproval: boolean
   /** In a class: seen by the student whose thread it is and the class's staff only */
   private: boolean
+  /** Not OK only for its author: held, hidden or removed by moderation (ADR-0051) */
+  moderation: ModerationState
+  /** Why, for its author */
+  moderationReason: string | null
+  /** Its author may still appeal: hidden or removed by a moderator, and not appealed yet */
+  moderationCanAppeal: boolean
   createdAt: Date
   editedAt: Date | null
   /** Replies, oldest first (one level) */
@@ -313,6 +324,11 @@ export interface Doubt {
   /** Oldest first */
   answers: Array<DoubtAnswer>
   viewerCan: DoubtActions
+  /** Not OK only for its author (ADR-0051) */
+  moderation: ModerationState
+  moderationReason: string | null
+  /** Its author may still appeal: hidden or removed by a moderator, and not appealed yet */
+  moderationCanAppeal: boolean
 }
 
 export interface DoubtActions {
@@ -384,6 +400,8 @@ export interface Group {
   joinRequests: Array<GroupJoinRequest> | null
   /** Members only: pinned posts, then the newest */
   posts: GroupPostConnection | null
+  /** Its owner only: the platform moderators' warning about the group from the last 30 days, if any (ADR-0051) */
+  moderationWarning?: string | null
   /** The linked repository, for anyone who sees the workspace */
   repository?: GroupRepository | null
   /** Members: the ideas board, most reactions first */
@@ -465,6 +483,11 @@ export interface GroupPost {
   pinned: boolean
   createdAt: Date
   editedAt: Date | null
+  /** Not OK only for its author (ADR-0051) */
+  moderation: ModerationState
+  moderationReason: string | null
+  /** Its author may still appeal: hidden or removed by a moderator, and not appealed yet */
+  moderationCanAppeal: boolean
   viewerCan: GroupPostActions
   /** Members: comments and reactions on the post */
   discussion?: Discussion
@@ -555,6 +578,20 @@ export interface ModerateContentInput {
   reason?: string | null
 }
 
+/** A comment, post, announcement or doubt as its scope's moderators see it */
+export interface ModeratedContent {
+  entityType: ReportEntityType
+  id: string
+  author: User
+  /** The start of its text */
+  excerpt: string
+  moderation: ModerationState
+  moderationReason: string | null
+  deleted: boolean
+  /** Where it is, in the app */
+  path: string
+}
+
 /** A note as moderators see it: the published version readers would see */
 export interface ModeratedNote {
   id: string
@@ -578,8 +615,15 @@ export interface ModerationAppeal {
 export interface ModerationCase {
   entityType: ReportEntityType
   entityId: string
+  scope: ModerationScope
+  /** The group or class, for those scopes */
+  scopeId: string | null
   /** Set for NOTE cases */
   note: ModeratedNote | null
+  /** Set for COMMENT, GROUP_POST, CLASSROOM_POST and DOUBT cases */
+  content: ModeratedContent | null
+  /** Set for GROUP cases */
+  group: Group | null
   /** Set for USER cases */
   user: User | null
   reports: Array<ModerationReport>
@@ -603,6 +647,16 @@ export interface ModerationReport {
   /** null when the scorer held the content on its way to the public */
   reporter: User | null
   createdAt: Date
+}
+
+/** Whose queue a case is in (ADR-0051) */
+export type ModerationScope = 'PLATFORM' | 'GROUP' | 'CLASSROOM'
+
+/** A group's or class's queue for its moderators; without it, platform admins see every case */
+export interface ModerationScopeInput {
+  scope: ModerationScope
+  /** The group or class */
+  id?: string | null
 }
 
 export type ModerationState = 'OK' | 'PENDING_REVIEW' | 'HIDDEN' | 'REMOVED'
@@ -851,6 +905,7 @@ export interface QueryDiscoverGroupsArgs {
 export interface QueryModerationQueueArgs {
   first?: number | null
   after?: string | null
+  scope?: ModerationScopeInput | null
 }
 
 export interface QueryDoubtArgs {
@@ -897,7 +952,7 @@ export interface ReportContentInput {
   details?: string | null
 }
 
-export type ReportEntityType = 'NOTE' | 'USER'
+export type ReportEntityType = 'NOTE' | 'USER' | 'COMMENT' | 'GROUP_POST' | 'CLASSROOM_POST' | 'DOUBT' | 'GROUP'
 
 export type ReportReason = 'HARASSMENT' | 'SEXUAL' | 'SELF_HARM' | 'HATE' | 'SPAM' | 'COPYRIGHT' | 'OTHER'
 

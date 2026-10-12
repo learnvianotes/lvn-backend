@@ -54,6 +54,12 @@ type Comment {
   pendingApproval: Boolean!
   "In a class: seen by the student whose thread it is and the class's staff only"
   private: Boolean!
+  "Not OK only for its author: held, hidden or removed by moderation (ADR-0051)"
+  moderation: ModerationState!
+  "Why, for its author"
+  moderationReason: String
+  "Its author may still appeal: hidden or removed by a moderator, and not appealed yet"
+  moderationCanAppeal: Boolean!
   createdAt: DateTime!
   editedAt: DateTime
   "Replies, oldest first (one level)"

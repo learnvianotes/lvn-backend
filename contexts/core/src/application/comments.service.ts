@@ -104,28 +104,34 @@ export class CommentsService {
   /** What of a discussion the viewer sees: no blocked people, approvals waiting only for their two people, class threads. */
   private async visible(viewerId: string, place: Place): Promise<Prisma.CommentWhereInput> {
     const hidden = await this.people.blockedIds(viewerId)
-    const and: Prisma.CommentWhereInput[] = [{ OR: [{ state: 'VISIBLE' }, { authorId: viewerId }, { ownerId: viewerId }] }]
+    const and: Prisma.CommentWhereInput[] = [
+      { OR: [{ state: 'VISIBLE' }, { authorId: viewerId }, { ownerId: viewerId }] },
+      // Held, hidden or removed by moderation (ADR-0051): its author's alone.
+      { OR: [{ moderation: 'OK' }, { authorId: viewerId }] },
+    ]
     if (hidden.length) and.push({ authorId: { notIn: hidden } })
     if (place.classThreads && !place.staff) and.push({ OR: [{ visibleTo: null }, { visibleTo: viewerId }] })
     return { targetType: place.target.type, targetId: place.target.id, AND: and }
   }
 
+  /** The document, and the scorer's verdict when it flags it: the comment is then held for review (ADR-0051). */
   private body(raw: unknown) {
     const doc = docSchema.safeParse(raw)
     if (!doc.success) throw Errors.validation('This comment could not be read.', ['input', 'body'])
     const text = docText(doc.data).trim()
     if (!text) throw Errors.validation('Write something first.', ['input', 'body'])
     if (text.length > COMMENT_LIMITS.chars) throw Errors.validation(`Keep comments to ${COMMENT_LIMITS.chars} characters.`, ['input', 'body'])
-    // The scorer screens every comment; a flagged one is refused until comments can be held for review (P3i).
-    const verdict = this.moderation.check(text)
-    if (verdict.flagged) throw Errors.validation(`This comment can't be posted: ${verdict.message}`, ['input', 'body'])
-    return doc.data as Prisma.InputJsonValue
+    return { doc: doc.data as Prisma.InputJsonValue, held: this.moderation.verdictOf(text) }
+  }
+
+  private heldReason(message: string) {
+    return `A moderator will look at this before others see it: ${message}`
   }
 
   async add(viewerId: string, input: { target: CommentTarget; cardId?: string | null; parentId?: string | null; body: unknown }): Promise<string> {
     const place = await this.require(viewerId, input.target)
     if (!place.canComment) throw Errors.forbidden(place.whyNot ?? undefined)
-    const body = this.body(input.body)
+    const { doc: body, held } = this.body(input.body)
     if (input.cardId && (input.target.type !== 'NOTE' || !(await this.notes.hasCard(input.target.id, input.cardId)))) throw Errors.validation('That card is not in this note.', ['input', 'cardId'])
     let parent: CommentRow | null = null
     if (input.parentId) {
@@ -140,11 +146,12 @@ export class CommentsService {
     const pending = place.ownerId !== viewerId && (await this.people.restricts(place.ownerId, viewerId))
     const id = newId()
     await this.db.comment.create({
-      data: { id, targetType: input.target.type, targetId: input.target.id, cardId: parent ? parent.cardId : (input.cardId ?? null), parentId: parent?.id ?? null, authorId: viewerId, ownerId: place.ownerId, visibleTo, body, state: pending ? 'PENDING_APPROVAL' : 'VISIBLE' },
+      data: { id, targetType: input.target.type, targetId: input.target.id, cardId: parent ? parent.cardId : (input.cardId ?? null), parentId: parent?.id ?? null, authorId: viewerId, ownerId: place.ownerId, visibleTo, body, state: pending ? 'PENDING_APPROVAL' : 'VISIBLE', ...(held ? { moderation: 'PENDING_REVIEW' as const, moderationReason: this.heldReason(held.message) } : {}) },
     })
-    // Who is told: nobody for a comment waiting for approval, never the author, never someone who restricts them.
+    if (held) await this.moderation.fileSystemReport('COMMENT', id, held.reason, `Held when posted: ${held.message}`)
+    // Who is told: nobody for a comment waiting for approval or review, never the author, never someone who restricts them.
     const recipients: { userId: string; kind: 'COMMENT' | 'REPLY' }[] = []
-    if (!pending) {
+    if (!pending && !held) {
       if (parent && parent.authorId !== viewerId && !(await this.people.restricts(parent.authorId, viewerId))) recipients.push({ userId: parent.authorId, kind: 'REPLY' })
       if (place.ownerId !== viewerId && !recipients.some((r) => r.userId === place.ownerId)) recipients.push({ userId: place.ownerId, kind: 'COMMENT' })
     }
@@ -171,7 +178,10 @@ export class CommentsService {
   async edit(viewerId: string, commentId: string, body: unknown): Promise<string> {
     const { comment } = await this.mustGet(viewerId, commentId)
     if (comment.authorId !== viewerId) throw Errors.forbidden('Only its author edits a comment.')
-    await this.db.comment.update({ where: { id: commentId }, data: { body: this.body(body), editedAt: new Date() } })
+    if (comment.moderation === 'HIDDEN' || comment.moderation === 'REMOVED') throw Errors.validation('A moderator took this comment down; appeal instead of editing it.')
+    const { doc, held } = this.body(body)
+    await this.db.comment.update({ where: { id: commentId }, data: { body: doc, editedAt: new Date(), ...(held ? { moderation: 'PENDING_REVIEW' as const, moderationReason: this.heldReason(held.message) } : {}) } })
+    if (held) await this.moderation.fileSystemReport('COMMENT', commentId, held.reason, `Held when edited: ${held.message}`)
     return commentId
   }
 

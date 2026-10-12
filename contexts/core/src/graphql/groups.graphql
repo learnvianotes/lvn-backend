@@ -80,6 +80,11 @@ type GroupPost {
   pinned: Boolean!
   createdAt: DateTime!
   editedAt: DateTime
+  "Not OK only for its author (ADR-0051)"
+  moderation: ModerationState!
+  moderationReason: String
+  "Its author may still appeal: hidden or removed by a moderator, and not appealed yet"
+  moderationCanAppeal: Boolean!
   viewerCan: GroupPostActions!
 }
 
