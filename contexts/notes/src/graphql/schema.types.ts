@@ -769,6 +769,8 @@ export interface SyncOpInput {
   cards?: Array<CardInput> | null
   /** UPDATE_NOTE: card changes, as in updateNoteDraft */
   ops?: Array<CardOpInput> | null
+  /** CREATE_NOTE: what the note is (NOTE when left out). Blogs and posts are for teachers, as in createNote (ADR-0052) */
+  noteKind?: NoteKind | null
 }
 
 export type SyncOpKind = 'CREATE_NOTE' | 'UPDATE_NOTE' | 'TRASH_NOTE' | 'RESTORE_NOTE'
