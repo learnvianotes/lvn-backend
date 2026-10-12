@@ -56,18 +56,24 @@ class invites and announcements, comments and replies, mentor invites, doubts an
 
 | Check | lvn-backend | lvn-web | lvn-mobile |
 | --- | --- | --- | --- |
-| Lint, typecheck | clean (61 tasks) | clean | clean |
+| Lint, typecheck | clean (61 tasks) | clean | clean; `expo-doctor` 21/21 |
 | Unit / integration / e2e | 634 passing + 3 todo across 17 packages: API 299 (security 46 + 3 todo), contracts 167, users 41, notes 21, storage 19, communication 15, and the libraries | 91 unit (Vitest) | 151 (Jest: unit and components) |
 | Browser / device E2E | — | Playwright 249 on desktop and phone (mocked API) | Maestro 11/11 on `lvn_pixel_7` against the VM |
+| Builds | server image | `next build` | JS bundles for Android and iOS (`export:check`); the development APK (x86_64) |
+| Lighthouse | — | public note 95 / 100 / 100 / 100 on phones and 100 on desktop; home 93–100 | — |
+| `pnpm audit --prod --audit-level high` | clean (one advisory ignored with its reason) | clean | clean |
 | Contract | `graphql:check` and `env:check` (51 variables; it had failed since P3f, fixed in P3j) | codegen and typecheck against the current schema; contracts copies checked | same |
 | Migrations | applied to an empty database, no drift | — | — |
 
 ### On the local environment (2026-10-13)
 
 Deployed with `infra/scripts/deploy-local.sh` to `http://100.70.234.41:8080`:
-- `lvn-backend:1131bcd4d2b4` (api ×2, worker), the P3i code; later commits change tests, documents and `.env.example`;
-- `lvn-web:4cf737e0ff42`, the P3i code; later commits add tests;
+- `lvn-backend:52efcc492ed1` (api ×2, worker);
+- `lvn-web:06274b3ce21c`;
 - `lvn-pdf-engine:ba7b4eb92070`.
+
+The phone flows ran on the APK built before the `@grpc/grpc-js` pin, which only affects Node and does not enter the
+app's bundle.
 
 | Check | Result |
 | --- | --- |
@@ -86,6 +92,12 @@ Bugs the new suites found and fixed in this phase:
   registrations (P3h).
 - **Android menus:** a profile menu of four actions lost one, since the native alert holds three buttons (P3i).
 - **Settings:** five settings from P3f and P3h were missing from `.env.example` (P3j).
+- **Dependency audits** failed in all three repos on advisories published during the phase (P3j):
+  - `@grpc/grpc-js` under Firebase's Firestore (web and phone; Firestore is never used);
+  - GraphQL Tools, `mysql2` and `sharp` in the backend.
+
+  They are now patched. `deepmerge-ts` inside Prisma's config loader is ignored with its reason until Prisma moves to
+  version 8.
 
 ## Exit criteria (§18)
 
@@ -127,6 +139,14 @@ Bugs the new suites found and fixed in this phase:
 **Phone:**
 - Group settings, roles and member removal are changed on the web.
 - Blogs, posts and projects are started on the web.
+
+**Pipelines:**
+- The GitHub workflows of the three repos have never run, since nothing is pushed yet. Each step was run locally for
+  this release.
+- Maestro is not in CI: it needs a reachable API, which the sandbox will give. Until then it runs locally on the
+  emulator against the VM (`pnpm test:e2e development --vm …`).
+- The phone's CI builds a sandbox APK for an API that does not exist until AWS is set up. Store signing and upload
+  are the owner's.
 
 **Not built yet:**
 - Mentions in comments.
