@@ -304,5 +304,49 @@ describe('security: privacy', () => {
       expect(postAsA.data!.createClassroomPost).toEqual({ classroom: null, userErrors: [{ code: 'NOT_FOUND' }] })
       expect((await t.gql<{ classroom: unknown }>('query ($id: UUID!) { classroom(id: $id) { name } }', { id: classroomId })).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
     })
+
+    it('a post moderators hid reaches no other member through any channel, and its author never learns who reported it (ADR-0051)', async () => {
+      const db = t.app.get(PrismaService)
+      const bus = t.app.get(InProcessEventBus)
+      const doc = (s: string) => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: s }] }] })
+      const t1 = actors.teacher
+      const groupId = (await t.gql<{ createGroup: { group: { id: string } } }>('mutation { createGroup(input: { name: "Group H", privacy: PRIVATE }) { group { id } } }', {}, t1.token)).data!.createGroup.group.id
+      // A writes in H; B reports it. Both are verified for this, and go back to unverified afterwards.
+      await db.user.updateMany({ where: { id: { in: [actors.a.id, actors.b.id] } }, data: { verifiedAt: new Date(), verificationMethod: 'INSTITUTIONAL_EMAIL' } })
+      let postId = ''
+      try {
+        for (const who of [actors.a, actors.b]) await db.groupMember.create({ data: { groupId, userId: who.id, role: 'MEMBER' } })
+        postId = (await t.gql<{ createGroupPost: { post: { id: string } } }>('mutation ($input: CreateGroupPostInput!) { createGroupPost(input: $input) { post { id } } }', { input: { groupId, body: doc('A’s rant') } }, actors.a.token)).data!.createGroupPost.post.id
+        await t.gql('mutation ($input: AddCommentInput!) { addComment(input: $input) { comment { id } } }', { input: { target: { type: 'GROUP_POST', id: postId }, body: doc('A replies to themself') } }, actors.a.token)
+        await t.gql('mutation ($input: ReportContentInput!) { reportContent(input: $input) { ok } }', { input: { entityType: 'GROUP_POST', entityId: postId, reason: 'HARASSMENT', details: 'B wrote this' } }, actors.b.token)
+      } finally {
+        await db.user.updateMany({ where: { id: { in: [actors.a.id, actors.b.id] } }, data: { verifiedAt: null, verificationMethod: null } })
+      }
+      await t.gql('mutation ($input: ModerateContentInput!) { moderateContent(input: $input) { ok } }', { input: { entityType: 'GROUP_POST', entityId: postId, action: 'HIDE', reason: 'Be kind.' } }, t1.token)
+      await bus.drain()
+
+      // B: not in the posts, the activity feed, the post's discussion or a report on it.
+      const b = actors.b.token
+      const posts = await t.gql<{ group: { posts: { edges: { node: { id: string } }[] } } }>('query ($id: UUID!) { group(id: $id) { posts { edges { node { id } } } } }', { id: groupId }, b)
+      expect(posts.data!.group.posts.edges).toEqual([])
+      const feed = await t.gql<{ activityFeed: { edges: { node: { post: { id: string } | null } }[] } }>('{ activityFeed { edges { node { post { id } } } } }', {}, b)
+      expect(feed.data!.activityFeed.edges.map((e) => e.node.post?.id)).not.toContain(postId)
+      expect((await t.gql<{ discussion: unknown }>('query ($target: CommentTargetInput!) { discussion(target: $target) { commentCount } }', { target: { type: 'GROUP_POST', id: postId } }, b)).data!.discussion).toBeNull()
+      const again = await t.gql<{ reportContent: { userErrors: { code: string }[] } }>('mutation ($input: ReportContentInput!) { reportContent(input: $input) { userErrors { code } } }', { input: { entityType: 'GROUP_POST', entityId: postId, reason: 'SPAM' } }, b)
+      expect(again.data!.reportContent.userErrors).toEqual([{ code: 'NOT_FOUND' }])
+
+      // A, the author, sees the post, the decision and the reason; never the report, its words or who sent it.
+      const a = actors.a.token
+      const mine = await t.gql<{ group: { posts: { edges: { node: { id: string; moderation: string; moderationReason: string } }[] } } }>('query ($id: UUID!) { group(id: $id) { posts { edges { node { id moderation moderationReason } } } } }', { id: groupId }, a)
+      expect(mine.data!.group.posts.edges.map((e) => e.node)).toEqual([{ id: postId, moderation: 'HIDDEN', moderationReason: 'Be kind.' }])
+      expect((await t.gql('query ($scope: ModerationScopeInput) { moderationQueue(scope: $scope) { edges { cursor } } }', { scope: { scope: 'GROUP', id: groupId } }, a)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+      const told = await t.gql<{ notifications: { edges: { node: { category: string; actor: { id: string } | null; data: unknown } }[] } }>('{ notifications { edges { node { category actor { id } data } } } }', {}, a)
+      const moderation = told.data!.notifications.edges.map((e) => e.node).filter((n) => n.category === 'MODERATION')
+      expect(moderation).toEqual([{ category: 'MODERATION', actor: null, data: { kind: 'HIDDEN', entityType: 'GROUP_POST' } }])
+      expect(JSON.stringify(told.data)).not.toMatch(/B wrote this|Be kind/)
+      // No type a member can reach carries a reporter, except the moderators' ModerationReport.
+      const reporters = Object.values(schema.getTypeMap()).filter((type) => isObjectType(type) && !type.name.startsWith('__') && Object.keys(type.getFields()).some((f) => /reporter/i.test(f))).map((type) => type.name)
+      expect(reporters).toEqual(['ModerationReport'])
+    })
   })
 })
