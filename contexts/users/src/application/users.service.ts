@@ -71,6 +71,11 @@ export class UsersService implements People {
     return (await this.db.connection.count({ where: a < b ? { userLowId: a, userHighId: b } : { userLowId: b, userHighId: a } })) > 0
   }
 
+  /** People facade (ADR-0049): who the person follows, most recent first. */
+  async followingIds(userId: string): Promise<string[]> {
+    return (await this.db.follow.findMany({ where: { followerId: userId }, orderBy: { createdAt: 'desc' }, select: { followeeId: true }, take: 2000 })).map((f) => f.followeeId)
+  }
+
   /** People facade (ADR-0016, ADR-0047): the first restricts the second. */
   async restricts(restricterId: string, restrictedId: string): Promise<boolean> {
     return (await this.db.restriction.count({ where: { restricterId, restrictedId } })) > 0

@@ -258,6 +258,14 @@ if (opt('--vm')) {
   ok(await eventually(() => toldOf(C, 'ASKED')), 'D asks a doubt and the mentor is told')
   const answered = (await gql('mutation ($input: AnswerDoubtInput!) { answerDoubt(input: $input) { doubt { status answers { byMentor } } } }', { input: { doubtId: doubt.id, body: text('The smallest job runs first.').doc } }, C.token)).answerDoubt.doubt
   ok(answered.status === 'ANSWERED' && answered.answers[0].byMentor && (await eventually(() => toldOf(D, 'ANSWERED'))), 'the mentor answers and D is told')
+
+  // Feeds (ADR-0049): D follows teacher A and sees A's public notes; C's activity shows D's doubt and the class's
+  // shared lesson plan.
+  await gql('mutation ($input: PersonInput!) { followUser(input: $input) { userErrors { message } } }', { input: { userId: A.id } }, D.token)
+  const feed = (await gql('{ followingFeed(first: 20) { edges { node { id owner { id } visibility } } } }', {}, D.token)).followingFeed.edges.map((e) => e.node)
+  ok(feed.length > 0 && feed.every((n) => n.owner.id === A.id && n.visibility === 'PUBLIC'), 'D follows A and the Following feed shows A\'s public notes', `${feed.length} notes`)
+  const activity = (await gql('{ activityFeed(first: 20) { edges { node { kind doubt { id } note { id } } } } }', {}, C.token)).activityFeed.edges.map((e) => e.node)
+  ok(activity.some((i) => i.kind === 'DOUBT' && i.doubt?.id === doubt.id), 'C\'s activity feed shows the doubt D asked in the workspace C mentors')
 }
 
 // Media (ADR-0041): processed after the upload by the worker, scanned by the environment's ClamAV.

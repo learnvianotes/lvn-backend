@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common'
 import { Action, can } from '@lvn/contracts/domain'
-import type { NoteAccess, NoteReach } from '@lvn-backend/facades'
+import type { NoteAccess, NoteReach, PlaceShare } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
-import { noteFacts, type NoteAccessRow } from '../domain/note-access'
+import { noteFacts, visibleNotesWhere, type NoteAccessRow } from '../domain/note-access'
 import { NotesService } from './notes.service'
 
 /** The NOTE_ACCESS facade (libs/facades, ADR-0047): the read rule and `note.comment`, for comments kept in `core`. */
@@ -33,6 +33,22 @@ export class NoteAccessFacade implements NoteAccess {
     if (note.kind !== 'PROJECT') return 'The showcase is a project note.'
     if (note.visibility !== 'PUBLIC' || !note.publishedVersionId || note.moderation !== 'OK') return 'The showcase is a published public note.'
     return null
+  }
+
+  async placeShares(viewerId: string, places: { groupIds: string[]; classroomIds: string[] }, before: { at: Date; id: string } | null, take: number): Promise<PlaceShare[]> {
+    const page = before ? { OR: [{ createdAt: { lt: before.at } }, { createdAt: before.at, noteId: { lt: before.id } }] } : {}
+    const readable = visibleNotesWhere(viewerId)
+    const order = [{ createdAt: 'desc' as const }, { noteId: 'desc' as const }]
+    const [groups, classes] = await Promise.all([
+      places.groupIds.length ? this.db.groupShare.findMany({ where: { groupId: { in: places.groupIds }, note: readable, ...page }, orderBy: order, take }) : [],
+      places.classroomIds.length ? this.db.classroomShare.findMany({ where: { classroomId: { in: places.classroomIds }, note: readable, ...page }, orderBy: order, take }) : [],
+    ])
+    return [
+      ...groups.map((s) => ({ noteId: s.noteId, sharedBy: s.sharedById, at: s.createdAt, groupId: s.groupId, classroomId: null })),
+      ...classes.map((s) => ({ noteId: s.noteId, sharedBy: s.sharedById, at: s.createdAt, groupId: null, classroomId: s.classroomId })),
+    ]
+      .sort((a, b) => b.at.getTime() - a.at.getTime() || (a.noteId < b.noteId ? 1 : -1))
+      .slice(0, take)
   }
 
   async hasCard(noteId: string, cardId: string): Promise<boolean> {

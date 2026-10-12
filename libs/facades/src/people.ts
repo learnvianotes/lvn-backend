@@ -29,6 +29,8 @@ export interface People {
   connectionIds(userId: string): Promise<string[]>
   /** The two are connected. */
   connected(a: string, b: string): Promise<boolean>
+  /** Who `userId` follows, most recent first, at most 2,000 (ADR-0049: the Following feed). */
+  followingIds(userId: string): Promise<string[]>
   /** `restricterId` restricts `restrictedId` (ADR-0016): their comments wait for approval and cause no notification. */
   restricts(restricterId: string, restrictedId: string): Promise<boolean>
 }
