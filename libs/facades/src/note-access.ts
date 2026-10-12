@@ -21,4 +21,9 @@ export interface NoteAccess {
   reach(viewerId: string, noteId: string): Promise<NoteReach | null>
   /** The card is in the note: its draft, or the published version readers see. */
   hasCard(noteId: string, cardId: string): Promise<boolean>
+  /**
+   * Why the note cannot be a project workspace's showcase (ADR-0048), in words, or null when it can: a PUBLIC note of
+   * kind PROJECT, published, not held back, and shared to the workspace.
+   */
+  showcaseProblem(noteId: string, groupId: string): Promise<string | null>
 }

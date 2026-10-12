@@ -1,0 +1,12 @@
+enum ContributorRole { CONTRIBUTOR MENTOR }
+
+"Someone a project workspace's showcase note credits (ADR-0048)"
+type NoteContributor {
+  user: User!
+  role: ContributorRole!
+}
+
+extend type Note {
+  "A workspace's showcase: its team and mentors, for anyone who reads the note"
+  contributors: [NoteContributor!]!
+}

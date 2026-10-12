@@ -79,6 +79,8 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | api | no (secret) | — (GitHub off) | OAuth app for `oauthExchange` |
 | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | api | no (secret) | — (LinkedIn off) | OAuth app for `oauthExchange` |
 | `GITHUB_OAUTH_URL`, `GITHUB_API_URL` | api | with GitHub | — | `https://github.com`, `https://api.github.com` |
+| `GITLAB_API_URL` | api, worker | no | — (GitLab repositories show the link only) | `https://gitlab.com/api/v4`: public details of a project workspace's GitLab repository (ADR-0048). `GITHUB_API_URL` serves GitHub repositories the same way |
+| `GITHUB_TOKEN` | api, worker | no (secret) | — | A token with no scopes, for GitHub's higher rate limit on public repository details (ADR-0048) |
 | `LINKEDIN_OAUTH_URL`, `LINKEDIN_API_URL` | api | with LinkedIn | — | `https://www.linkedin.com/oauth/v2`, `https://api.linkedin.com/v2` |
 | `OAUTH_REDIRECT_URIS` | api | with GitHub or LinkedIn | — | Comma-separated redirect URIs registered with the providers; `oauthExchange` refuses any other. Web: `<SITE_URL>/oauth/callback`; app (GitHub only): `<scheme>://oauth/callback` of each variant |
 

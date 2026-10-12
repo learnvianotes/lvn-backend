@@ -216,3 +216,7 @@ export type ReactionTargetType = (typeof ReactionTargetType)[keyof typeof Reacti
 /** One reaction per person per target (ADR-0047). */
 export const ReactionKind = { LIKE: 'LIKE', HELPFUL: 'HELPFUL', CELEBRATE: 'CELEBRATE' } as const
 export type ReactionKind = (typeof ReactionKind)[keyof typeof ReactionKind]
+
+/** Where a workspace's repository lives (ADR-0048). LVN never hosts git. */
+export const RepositoryProvider = { GITHUB: 'GITHUB', GITLAB: 'GITLAB' } as const
+export type RepositoryProvider = (typeof RepositoryProvider)[keyof typeof RepositoryProvider]

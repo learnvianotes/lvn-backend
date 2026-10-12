@@ -24,8 +24,10 @@ export interface GroupView {
   group: GroupRow
   role: StoredRole | null
   pendingRequestId: string | null
+  /** A project workspace's open mentor invite to the viewer (ADR-0048) */
+  mentorInviteId: string | null
   memberCount: number
-  can: Record<'join' | 'requestJoin' | 'post' | 'moderate' | 'manage' | 'delete' | 'reviewRequests' | 'leave', boolean>
+  can: Record<'join' | 'requestJoin' | 'post' | 'moderate' | 'manage' | 'delete' | 'reviewRequests' | 'leave' | 'askDoubt' | 'inviteMentor' | 'acceptMentorInvite', boolean>
 }
 
 /**
@@ -51,12 +53,13 @@ export class GroupsService {
   }
 
   /** The group, the viewer's place in it and what `can()` needs; null when there is none. */
-  private async load(viewerId: string, groupId: string): Promise<{ group: GroupRow; role: StoredRole | null; pending: { id: string } | null; resource: GroupResource } | null> {
+  async load(viewerId: string, groupId: string): Promise<{ group: GroupRow; role: StoredRole | null; pending: { id: string } | null; mentorInvite: { id: string } | null; resource: GroupResource } | null> {
     const group = await this.db.group.findFirst({ where: { id: groupId, deletedAt: null } })
     if (!group) return null
-    const [member, pending] = await Promise.all([
+    const [member, pending, mentorInvite] = await Promise.all([
       this.db.groupMember.findUnique({ where: { groupId_userId: { groupId, userId: viewerId } } }),
       this.db.groupJoinRequest.findFirst({ where: { groupId, userId: viewerId, status: 'PENDING' }, select: { id: true } }),
+      group.type === 'PROJECT' ? this.db.mentorInvite.findFirst({ where: { groupId, teacherId: viewerId, acceptedAt: null, declinedAt: null, expiresAt: { gt: new Date() } }, select: { id: true } }) : null,
     ])
     const role = (member?.role as StoredRole | undefined) ?? null
     // A private group is never listed, but its link shows its name so people can ask to join (ADR-0045).
@@ -67,12 +70,13 @@ export class GroupsService {
       privacy: group.privacy === 'PRIVATE' ? GroupPrivacy.PRIVATE : GroupPrivacy.PUBLIC,
       joinPolicy: effectivePolicy(group) === 'OPEN' ? GroupJoinPolicy.OPEN : GroupJoinPolicy.APPROVAL,
       pendingJoinRequest: !!pending,
+      mentorInvitePending: !!mentorInvite,
     }
-    return { group, role, pending, resource }
+    return { group, role, pending, mentorInvite, resource }
   }
 
   /** As `load`, for actions: a group the viewer cannot see is NOT_FOUND. */
-  private async require(actorId: string, groupId: string) {
+  async require(actorId: string, groupId: string) {
     const loaded = await this.load(actorId, groupId)
     if (!loaded) throw Errors.notFound('Group not found.')
     return { ...loaded, actor: await this.actor(actorId) }
@@ -87,6 +91,7 @@ export class GroupsService {
       group: loaded.group,
       role: loaded.role,
       pendingRequestId: loaded.pending?.id ?? null,
+      mentorInviteId: loaded.mentorInvite?.id ?? null,
       memberCount: await this.db.groupMember.count({ where: { groupId } }),
       can: {
         join: may(Action.GROUP_JOIN),
@@ -97,6 +102,9 @@ export class GroupsService {
         delete: may(Action.GROUP_DELETE),
         reviewRequests: may(Action.GROUP_REVIEW_JOIN_REQUESTS),
         leave: !!loaded.role && loaded.role !== 'OWNER',
+        askDoubt: may(Action.GROUP_ASK_DOUBT),
+        inviteMentor: loaded.group.type === 'PROJECT' && may(Action.GROUP_MANAGE),
+        acceptMentorInvite: may(Action.GROUP_ACCEPT_MENTOR_INVITE),
       },
     }
   }
@@ -110,21 +118,25 @@ export class GroupsService {
     return { name: n, description: d }
   }
 
-  async create(actorId: string, input: { name: string; description?: string | null; privacy: 'PUBLIC' | 'PRIVATE'; joinPolicy?: 'OPEN' | 'APPROVAL' | null }): Promise<string> {
+  async create(actorId: string, input: { name: string; description?: string | null; privacy: 'PUBLIC' | 'PRIVATE'; joinPolicy?: 'OPEN' | 'APPROVAL' | null; type?: 'COMMUNITY' | 'PROJECT' | null }): Promise<string> {
     const actor = await this.actor(actorId)
     if (!can(actor, Action.GROUP_CREATE)) throw Errors.forbidden(actor.institutionVerified ? undefined : 'Verify your account to create groups.')
     const { name, description } = this.clean(input.name, input.description)
-    const limit = await this.entitlements.limit(actorId, 'GROUPS_OWNED')
-    if (limit !== null && BigInt(await this.db.group.count({ where: { ownerId: actorId, deletedAt: null } })) >= limit) throw Errors.validation(`Your plan allows ${limit} groups. Delete one to start another.`)
+    // Project workspaces have their own limit (ADR-0048).
+    const type = input.type ?? 'COMMUNITY'
+    const limit = await this.entitlements.limit(actorId, type === 'PROJECT' ? 'PROJECT_WORKSPACES' : 'GROUPS_OWNED')
+    if (limit !== null && BigInt(await this.db.group.count({ where: { ownerId: actorId, deletedAt: null, type } })) >= limit) {
+      throw Errors.validation(type === 'PROJECT' ? `Your plan allows ${limit} project workspaces. Delete one to start another.` : `Your plan allows ${limit} groups. Delete one to start another.`)
+    }
     const rate = await this.limiter.hit(`core:group:create:${actorId}`, { max: GROUP_LIMITS.groupsPerDay, windowSeconds: 86_400 })
     if (!rate.allowed) throw Errors.rateLimited(rate.retryAfter, 'You have started a lot of groups today. Try again tomorrow.')
     const id = newId()
     const joinPolicy = input.privacy === 'PRIVATE' ? 'APPROVAL' : (input.joinPolicy ?? 'APPROVAL')
     await this.db.$transaction(async (tx) => {
-      await tx.group.create({ data: { id, name, description, privacy: input.privacy, joinPolicy, ownerId: actorId } })
+      await tx.group.create({ data: { id, name, description, type, privacy: input.privacy, joinPolicy, ownerId: actorId } })
       await tx.groupMember.create({ data: { groupId: id, userId: actorId, role: 'OWNER' } })
     })
-    await this.audit.record({ actorId, action: 'group.create', targetType: 'GROUP', targetId: id, metadata: { privacy: input.privacy, joinPolicy } })
+    await this.audit.record({ actorId, action: 'group.create', targetType: 'GROUP', targetId: id, metadata: { type, privacy: input.privacy, joinPolicy } })
     await this.events.publish('GroupCreated', { groupId: id, ownerId: actorId })
     await this.events.publish('GroupMembershipChanged', { groupId: id, userId: actorId, change: 'JOINED', role: Role.OWNER })
     return id
@@ -311,16 +323,17 @@ export class GroupsService {
     return doc.data
   }
 
-  async post(actorId: string, groupId: string, body: unknown): Promise<string> {
-    const { resource, actor } = await this.require(actorId, groupId)
+  async post(actorId: string, groupId: string, body: unknown, kind: 'POST' | 'IDEA' = 'POST'): Promise<string> {
+    const { group, resource, actor } = await this.require(actorId, groupId)
     if (!can(actor, Action.GROUP_POST, resource)) throw Errors.forbidden(actor.institutionVerified ? 'Join the group to post in it.' : 'Verify your account to post.')
+    if (kind === 'IDEA' && group.type !== 'PROJECT') throw Errors.validation('Ideas are for project workspaces.', ['input', 'kind'])
     const member = await this.db.groupMember.findUnique({ where: { groupId_userId: { groupId, userId: actorId } } })
     if (member?.mutedUntil && member.mutedUntil > new Date()) throw Errors.forbidden('You are muted in this group for now.')
     const rate = await this.limiter.hit(`core:group:post:${actorId}`, { max: GROUP_LIMITS.postsPerHour, windowSeconds: 3600 })
     if (!rate.allowed) throw Errors.rateLimited(rate.retryAfter, 'You have posted a lot in the last hour. Try again later.')
     const id = newId()
     await this.db.$transaction([
-      this.db.groupPost.create({ data: { id, groupId, authorId: actorId, body: this.body(body) as Prisma.InputJsonValue } }),
+      this.db.groupPost.create({ data: { id, groupId, authorId: actorId, kind, body: this.body(body) as Prisma.InputJsonValue } }),
       this.db.group.update({ where: { id: groupId }, data: { updatedAt: new Date() } }),
     ])
     return id
@@ -360,7 +373,7 @@ export class GroupsService {
     const { role } = await this.require(viewerId, groupId)
     if (!role) throw Errors.forbidden('Join the group to read its posts.')
     const hidden = await this.people.blockedIds(viewerId)
-    const base: Prisma.GroupPostWhereInput = { groupId, deletedAt: null, ...(hidden.length ? { authorId: { notIn: hidden } } : {}) }
+    const base: Prisma.GroupPostWhereInput = { groupId, kind: 'POST', deletedAt: null, ...(hidden.length ? { authorId: { notIn: hidden } } : {}) }
     const pinned = after ? [] : await this.db.groupPost.findMany({ where: { ...base, pinnedAt: { not: null } }, orderBy: { pinnedAt: 'desc' }, take: 5 })
     const rows = await this.db.groupPost.findMany({
       where: { ...base, pinnedAt: null, ...(after ? { OR: [{ createdAt: { lt: new Date(after[0]) } }, { createdAt: new Date(after[0]), id: { lt: after[1] } }] } : {}) },

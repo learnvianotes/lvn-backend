@@ -100,6 +100,10 @@ const auth = z.object({
   /** GitHub's OAuth origin (https://github.com) and REST API (https://api.github.com); from env like every URL. */
   GITHUB_OAUTH_URL: z.url().optional(),
   GITHUB_API_URL: z.url().optional(),
+  /** Project workspaces (ADR-0048): GitLab's REST API (https://gitlab.com/api/v4) for public repository details. */
+  GITLAB_API_URL: z.url().optional(),
+  /** Optional: a token with no scopes, for GitHub's higher rate limit on public repository details (ADR-0048). */
+  GITHUB_TOKEN: z.string().min(1).optional(),
   LINKEDIN_CLIENT_ID: z.string().min(1).optional(),
   LINKEDIN_CLIENT_SECRET: z.string().min(1).optional(),
   /** LinkedIn's OAuth base (https://www.linkedin.com/oauth/v2) and OpenID userinfo API (https://api.linkedin.com/v2). */

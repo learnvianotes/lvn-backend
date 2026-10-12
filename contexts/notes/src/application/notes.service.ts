@@ -162,7 +162,9 @@ export class NotesService {
   async publicList(first: number | null | undefined, after: string | null | undefined, only: { ownerId?: string; kind?: NoteKind | null } = {}) {
     const size = pageSize(first, 100)
     const cursor = decodeCursor(after, 2) as [string, string] | null
-    const where = { AND: [visibleNotesWhere(null), ...(only.ownerId ? [{ ownerId: only.ownerId }] : []), ...(only.kind ? [{ kind: only.kind }] : [])] }
+    // A person's projects include the workspace showcases that credit them (ADR-0048).
+    const mine: Prisma.NoteWhereInput[] = only.ownerId ? [{ OR: [{ ownerId: only.ownerId }, { contributors: { some: { userId: only.ownerId } } }] }] : []
+    const where = { AND: [visibleNotesWhere(null), ...mine, ...(only.kind ? [{ kind: only.kind }] : [])] }
     const rows = await this.db.note.findMany({
       where: cursor ? { AND: [where, { OR: [{ publishedAt: { lt: new Date(cursor[0]) } }, { publishedAt: new Date(cursor[0]), id: { lt: cursor[1] } }] }] } : where,
       orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],

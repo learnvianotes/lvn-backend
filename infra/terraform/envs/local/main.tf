@@ -58,6 +58,9 @@ locals {
       REVALIDATE_SECRET  = random_password.revalidate.result
       # Upload scans (ADR-0041).
       CLAMAV_URL = "tcp://clamav:3310"
+      # Project workspaces' repository cards (ADR-0048): the providers' public APIs, no token.
+      GITHUB_API_URL = "https://api.github.com"
+      GITLAB_API_URL = "https://gitlab.com/api/v4"
     },
     { for k, v in local.optional : k => v if v != "" },
     var.extra_backend_environment,

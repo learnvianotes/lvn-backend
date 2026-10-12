@@ -4,11 +4,13 @@ import { CoreExport } from './application/core-export'
 import { CoreProgressService } from './application/core-progress.service'
 import { ClassroomsService } from './application/classrooms.service'
 import { CommentsService } from './application/comments.service'
+import { WorkspacesService } from './application/workspaces.service'
 import { GroupsService } from './application/groups.service'
 import { ModerationService } from './application/moderation.service'
 import { CORE_CONFIG, type CoreConfig } from './core.config'
 import { CoreProgressResolver } from './graphql/core-progress.resolver'
 import { ClassroomReferenceResolver, ClassroomsResolver } from './graphql/classrooms.resolver'
+import { DoubtResolver, WorkspaceGroupResolver } from './graphql/workspaces.resolver'
 import { ClassroomPostDiscussionResolver, CommentResolver, DiscussionResolver, GroupPostDiscussionResolver, NoteDiscussionResolver } from './graphql/comments.resolver'
 import { GroupReferenceResolver, GroupsResolver } from './graphql/groups.resolver'
 import { ModeratedNoteResolver, ModerationReportResolver, ModerationResolver } from './graphql/moderation.resolver'
@@ -25,8 +27,8 @@ export class CoreModule {
   static forRoot(config: CoreConfig): DynamicModule {
     return {
       module: CoreModule,
-      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver, GroupsService, GroupsResolver, GroupReferenceResolver, ClassroomsService, ClassroomsResolver, ClassroomReferenceResolver, CommentsService, NoteDiscussionResolver, GroupPostDiscussionResolver, ClassroomPostDiscussionResolver, DiscussionResolver, CommentResolver, JsonScalar],
-      exports: [CoreProgressService, ModerationService, GroupsService, ClassroomsService],
+      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver, GroupsService, GroupsResolver, GroupReferenceResolver, ClassroomsService, ClassroomsResolver, ClassroomReferenceResolver, CommentsService, NoteDiscussionResolver, GroupPostDiscussionResolver, ClassroomPostDiscussionResolver, DiscussionResolver, CommentResolver, WorkspacesService, WorkspaceGroupResolver, DoubtResolver, JsonScalar],
+      exports: [CoreProgressService, ModerationService, GroupsService, ClassroomsService, WorkspacesService],
     }
   }
 }

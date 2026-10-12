@@ -6,8 +6,14 @@ export interface CoreConfig {
   legacy: { bucket: string; env: string }
   /** ADR-0037: extra word list for the moderation scorer */
   moderation: { wordsFile: string | null }
+  /** ADR-0048: providers' public APIs for workspace repositories; null leaves the card a link */
+  repositories: { githubApiUrl: string | null; gitlabApiUrl: string | null; githubToken: string | null }
 }
 
 export const CORE_CONFIG = Symbol('CORE_CONFIG')
 
-export const coreConfigFrom = (c: ApiConfig): CoreConfig => ({ legacy: { bucket: c.S3_RESTRICTED_BUCKET, env: c.APP_ENV }, moderation: { wordsFile: c.MODERATION_WORDS_FILE ?? null } })
+export const coreConfigFrom = (c: ApiConfig): CoreConfig => ({
+  legacy: { bucket: c.S3_RESTRICTED_BUCKET, env: c.APP_ENV },
+  moderation: { wordsFile: c.MODERATION_WORDS_FILE ?? null },
+  repositories: { githubApiUrl: c.GITHUB_API_URL ?? null, gitlabApiUrl: c.GITLAB_API_URL ?? null, githubToken: c.GITHUB_TOKEN ?? null },
+})

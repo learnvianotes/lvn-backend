@@ -14,10 +14,28 @@ export interface AnswerClassroomInviteInput {
   accept: boolean
 }
 
+export interface AnswerDoubtInput {
+  doubtId: string
+  body: unknown
+}
+
+export interface AnswerMentorInviteInput {
+  inviteId: string
+  accept: boolean
+}
+
 export interface AppealModerationInput {
   entityType: ReportEntityType
   entityId: string
   message: string
+}
+
+export interface AskDoubtInput {
+  groupId: string
+  /** 3 to 200 characters */
+  title: string
+  body: unknown
+  repoRef?: string | null
 }
 
 export interface Classroom {
@@ -221,11 +239,15 @@ export interface CreateGroupInput {
   privacy: GroupPrivacy
   /** OPEN lets anyone join a public group at once; new groups approve members unless told otherwise */
   joinPolicy?: GroupJoinPolicy | null
+  /** PROJECT starts a project workspace (ADR-0048); COMMUNITY when left out */
+  type?: GroupType | null
 }
 
 export interface CreateGroupPostInput {
   groupId: string
   body: unknown
+  /** IDEA: on a project workspace's ideas board; POST when left out */
+  kind?: GroupPostKind | null
 }
 
 export interface Discussion {
@@ -244,6 +266,59 @@ export interface DiscussionCommentsArgs {
   after?: string | null
   cardId?: string | null
 }
+
+export interface Doubt {
+  id: string
+  title: string
+  /** Rich text: a card's document */
+  body: unknown
+  /** A path, line or commit in the repository */
+  repoRef: string | null
+  status: DoubtStatus
+  author: User
+  createdAt: Date
+  resolvedAt: Date | null
+  answerCount: number
+  /** Oldest first */
+  answers: Array<DoubtAnswer>
+  viewerCan: DoubtActions
+}
+
+export interface DoubtActions {
+  answer: boolean
+  resolve: boolean
+  reopen: boolean
+  delete: boolean
+}
+
+export interface DoubtAnswer {
+  id: string
+  author: User
+  body: unknown
+  byMentor: boolean
+  createdAt: Date
+}
+
+export interface DoubtConnection {
+  edges: Array<DoubtEdge>
+  pageInfo: PageInfo
+}
+
+export interface DoubtEdge {
+  cursor: string
+  node: Doubt
+}
+
+export interface DoubtIdInput {
+  doubtId: string
+}
+
+export interface DoubtPayload {
+  doubt: Doubt | null
+  userErrors: Array<UserError>
+}
+
+export type DoubtStatus = 'OPEN' | 'ANSWERED' | 'RESOLVED'
 
 export interface EditCommentInput {
   commentId: string
@@ -278,9 +353,25 @@ export interface Group {
   joinRequests: Array<GroupJoinRequest> | null
   /** Members only: pinned posts, then the newest */
   posts: GroupPostConnection | null
+  /** The linked repository, for anyone who sees the workspace */
+  repository?: GroupRepository | null
+  /** Members: the ideas board, most reactions first */
+  ideas?: Array<GroupPost> | null
+  /** Members and the mentor: doubts, newest first */
+  doubts?: DoubtConnection | null
+  /** The viewer's open invite to mentor this workspace */
+  viewerMentorInviteId?: string | null
+  /** The note that credits the team; null when there is none or the viewer cannot read it */
+  showcase?: Note | null
 }
 
 export interface GroupPostsArgs {
+  first?: number | null
+  after?: string | null
+}
+
+export interface GroupDoubtsArgs {
+  status?: DoubtStatus | null
   first?: number | null
   after?: string | null
 }
@@ -295,6 +386,12 @@ export interface GroupActions {
   delete: boolean
   reviewRequests: boolean
   leave: boolean
+  /** Project workspaces (ADR-0048): the team asks doubts */
+  askDoubt: boolean
+  /** Project workspaces: admins invite teachers to mentor */
+  inviteMentor: boolean
+  /** A teacher with an open invite to mentor */
+  acceptMentorInvite: boolean
 }
 
 export interface GroupIdInput {
@@ -333,6 +430,7 @@ export interface GroupPost {
   author: User
   /** Rich text: a card's document */
   body: unknown
+  kind: GroupPostKind
   pinned: boolean
   createdAt: Date
   editedAt: Date | null
@@ -363,6 +461,8 @@ export interface GroupPostIdInput {
   postId: string
 }
 
+export type GroupPostKind = 'POST' | 'IDEA'
+
 export interface GroupPostPayload {
   post: GroupPost | null
   userErrors: Array<UserError>
@@ -370,9 +470,28 @@ export interface GroupPostPayload {
 
 export type GroupPrivacy = 'PUBLIC' | 'PRIVATE'
 
+/** Public details come from the provider's API when it shows the repository; otherwise the card is the link */
+export interface GroupRepository {
+  provider: RepositoryProvider
+  url: string
+  available: boolean
+  name: string | null
+  description: string | null
+  language: string | null
+  stars: number | null
+  pushedAt: Date | null
+  refreshedAt: Date | null
+}
+
 export type GroupRole = 'OWNER' | 'ADMIN' | 'MODERATOR' | 'MEMBER' | 'MENTOR'
 
 export type GroupType = 'COMMUNITY' | 'PROJECT'
+
+export interface InviteMentorInput {
+  groupId: string
+  /** A teacher's handle or email */
+  person: string
+}
 
 export interface InviteToClassroomInput {
   classroomId: string
@@ -389,6 +508,13 @@ export interface JoinRequestIdInput {
 }
 
 export type JoinVia = 'CODE' | 'LINK'
+
+export interface MentorInviteItem {
+  id: string
+  group: Group
+  invitedBy: User
+  expiresAt: Date
+}
 
 export interface ModerateContentInput {
   entityType: ReportEntityType
@@ -594,6 +720,42 @@ export interface MutationPinGroupPostArgs {
   input: PinGroupPostInput
 }
 
+export interface MutationSetGroupRepositoryArgs {
+  input: SetGroupRepositoryInput
+}
+
+export interface MutationInviteMentorArgs {
+  input: InviteMentorInput
+}
+
+export interface MutationAnswerMentorInviteArgs {
+  input: AnswerMentorInviteInput
+}
+
+export interface MutationAskDoubtArgs {
+  input: AskDoubtInput
+}
+
+export interface MutationAnswerDoubtArgs {
+  input: AnswerDoubtInput
+}
+
+export interface MutationResolveDoubtArgs {
+  input: DoubtIdInput
+}
+
+export interface MutationReopenDoubtArgs {
+  input: DoubtIdInput
+}
+
+export interface MutationDeleteDoubtArgs {
+  input: DoubtIdInput
+}
+
+export interface MutationSetProjectShowcaseArgs {
+  input: SetProjectShowcaseInput
+}
+
 export interface MuteGroupMemberInput {
   groupId: string
   userId: string
@@ -655,6 +817,10 @@ export interface QueryModerationQueueArgs {
   after?: string | null
 }
 
+export interface QueryDoubtArgs {
+  id: string
+}
+
 export interface ReactInput {
   target: ReactionTargetInput
   /** Null takes the viewer's reaction away */
@@ -699,6 +865,8 @@ export type ReportEntityType = 'NOTE' | 'USER'
 
 export type ReportReason = 'HARASSMENT' | 'SEXUAL' | 'SELF_HARM' | 'HATE' | 'SPAM' | 'COPYRIGHT' | 'OTHER'
 
+export type RepositoryProvider = 'GITHUB' | 'GITLAB'
+
 export interface RequestToJoinClassroomInput {
   code: string
   via?: JoinVia | null
@@ -727,11 +895,23 @@ export interface SetClassroomRoleInput {
   role: ClassroomRole
 }
 
+export interface SetGroupRepositoryInput {
+  groupId: string
+  /** https://github.com/<owner>/<repo> or https://gitlab.com/<namespace>/<project>; empty unlinks */
+  url?: string | null
+}
+
 export interface SetGroupRoleInput {
   groupId: string
   userId: string
   /** OWNER hands the group over (the owner only); otherwise a role below the viewer's own */
   role: GroupRole
+}
+
+export interface SetProjectShowcaseInput {
+  groupId: string
+  /** A PUBLIC project note shared to the workspace; null clears it */
+  noteId?: string | null
 }
 
 export interface UpdateClassroomInput {

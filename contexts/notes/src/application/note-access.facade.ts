@@ -26,6 +26,15 @@ export class NoteAccessFacade implements NoteAccess {
     }
   }
 
+  async showcaseProblem(noteId: string, groupId: string): Promise<string | null> {
+    const note = await this.db.note.findUnique({ where: { id: noteId }, select: { kind: true, visibility: true, publishedVersionId: true, moderation: true, deletedAt: true } })
+    if (!note || note.deletedAt) return 'That note is not there any more.'
+    if (!(await this.db.groupShare.count({ where: { noteId, groupId } }))) return 'Share the note with the workspace first.'
+    if (note.kind !== 'PROJECT') return 'The showcase is a project note.'
+    if (note.visibility !== 'PUBLIC' || !note.publishedVersionId || note.moderation !== 'OK') return 'The showcase is a published public note.'
+    return null
+  }
+
   async hasCard(noteId: string, cardId: string): Promise<boolean> {
     if (await this.db.card.count({ where: { id: cardId, noteId, deletedAt: null } })) return true
     const note = await this.db.note.findUnique({ where: { id: noteId }, select: { publishedVersion: { select: { cards: true } } } })

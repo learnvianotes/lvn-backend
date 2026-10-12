@@ -153,9 +153,20 @@ export const events = {
   })),
   // Project workspaces (ADR-0015).
   MentorInvited: eventEnvelope('MentorInvited', 1, z.object({ groupId: uuid, teacherId: uuid, invitedBy: uuid })),
-  DoubtAsked: eventEnvelope('DoubtAsked', 1, z.object({ doubtId: uuid, groupId: uuid, askedBy: uuid })),
-  DoubtAnswered: eventEnvelope('DoubtAnswered', 1, z.object({ doubtId: uuid, groupId: uuid, answerId: uuid, answeredBy: uuid, byMentor: z.boolean() })),
-  DoubtResolved: eventEnvelope('DoubtResolved', 1, z.object({ doubtId: uuid, groupId: uuid, resolvedBy: uuid })),
+  /** mentorIds: who is told (ADR-0048); optional, additive in v1. */
+  DoubtAsked: eventEnvelope('DoubtAsked', 1, z.object({ doubtId: uuid, groupId: uuid, askedBy: uuid, mentorIds: z.array(uuid).max(50).optional() })),
+  /** askedBy: who is told (ADR-0048); optional, additive in v1. */
+  DoubtAnswered: eventEnvelope('DoubtAnswered', 1, z.object({ doubtId: uuid, groupId: uuid, answerId: uuid, answeredBy: uuid, byMentor: z.boolean(), askedBy: uuid.optional() })),
+  DoubtResolved: eventEnvelope('DoubtResolved', 1, z.object({ doubtId: uuid, groupId: uuid, resolvedBy: uuid, askedBy: uuid.optional() })),
+  /**
+   * The people credited on a workspace's showcase note (ADR-0048), whole each time: notes replaces what it had for
+   * this note and group. Empty when the showcase is cleared.
+   */
+  ProjectContributorsChanged: eventEnvelope('ProjectContributorsChanged', 1, z.object({
+    noteId: uuid,
+    groupId: uuid,
+    contributors: z.array(z.object({ userId: uuid, role: z.enum(['CONTRIBUTOR', 'MENTOR']) })).max(2000),
+  })),
   /**
    * A comment or reply (ADR-0047). recipients: who is told, worked out by core (the content's owner; for a reply also
    * the parent comment's author; never the author, a restricted person's or across a block). place: where it opens.

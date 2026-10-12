@@ -19,6 +19,12 @@ type GroupActions {
   delete: Boolean!
   reviewRequests: Boolean!
   leave: Boolean!
+  "Project workspaces (ADR-0048): the team asks doubts"
+  askDoubt: Boolean!
+  "Project workspaces: admins invite teachers to mentor"
+  inviteMentor: Boolean!
+  "A teacher with an open invite to mentor"
+  acceptMentorInvite: Boolean!
 }
 
 type Group @key(fields: "id") {
@@ -70,6 +76,7 @@ type GroupPost {
   author: User!
   "Rich text: a card's document"
   body: JSON!
+  kind: GroupPostKind!
   pinned: Boolean!
   createdAt: DateTime!
   editedAt: DateTime
@@ -105,6 +112,8 @@ input CreateGroupInput {
   privacy: GroupPrivacy!
   "OPEN lets anyone join a public group at once; new groups approve members unless told otherwise"
   joinPolicy: GroupJoinPolicy
+  "PROJECT starts a project workspace (ADR-0048); COMMUNITY when left out"
+  type: GroupType
 }
 
 input UpdateGroupInput {
@@ -156,6 +165,8 @@ input MuteGroupMemberInput {
 input CreateGroupPostInput {
   groupId: UUID!
   body: JSON!
+  "IDEA: on a project workspace's ideas board; POST when left out"
+  kind: GroupPostKind
 }
 
 input EditGroupPostInput {
