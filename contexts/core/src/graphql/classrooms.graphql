@@ -1,0 +1,180 @@
+# Classrooms (§4.1, §5, ADR-0009, ADR-0011, ADR-0046): joined by request with the class code, or by a staff invite;
+# staff post announcements and share notes. Everything inside is for members; the member list is for staff.
+
+enum ClassroomRole { TEACHER TA STUDENT }
+enum JoinVia { CODE LINK }
+
+type ClassroomActions {
+  requestJoin: Boolean!
+  acceptInvite: Boolean!
+  "Teacher and TAs: answer requests, invite, post"
+  review: Boolean!
+  post: Boolean!
+  "The teacher: settings, roles, removing people"
+  manage: Boolean!
+  leave: Boolean!
+}
+
+type Classroom @key(fields: "id") {
+  id: UUID!
+  name: String!
+  description: String
+  teacher: User!
+  memberCount: Int!
+  "Staff only: the code students ask to join with"
+  joinCode: String
+  viewerRole: ClassroomRole
+  viewerRequestId: UUID
+  viewerInviteId: UUID
+  viewerCan: ClassroomActions!
+  createdAt: DateTime!
+  "Staff only"
+  members: [ClassroomMember!]
+  "Staff only: waiting requests, oldest first"
+  joinRequests: [ClassroomJoinRequest!]
+  "Members only: announcements, newest first"
+  posts(first: Int, after: String): ClassroomPostConnection
+}
+
+type ClassroomMember {
+  user: User!
+  role: ClassroomRole!
+  joinedAt: DateTime!
+}
+
+type ClassroomJoinRequest {
+  id: UUID!
+  user: User!
+  via: JoinVia!
+  createdAt: DateTime!
+}
+
+type ClassroomPost {
+  id: UUID!
+  author: User!
+  body: JSON!
+  createdAt: DateTime!
+  viewerCanDelete: Boolean!
+}
+
+type ClassroomPostEdge {
+  cursor: String!
+  node: ClassroomPost!
+}
+
+type ClassroomPostConnection {
+  edges: [ClassroomPostEdge!]!
+  pageInfo: PageInfo!
+}
+
+"What a class code shows before joining: its name and teacher, nothing inside"
+type ClassroomPreview {
+  id: UUID!
+  name: String!
+  teacher: User!
+  viewerRole: ClassroomRole
+  viewerRequestId: UUID
+}
+
+type ClassroomInviteItem {
+  id: UUID!
+  classroom: ClassroomPreview!
+  role: ClassroomRole!
+  invitedBy: User!
+  expiresAt: DateTime!
+}
+
+extend type Query {
+  classroom(id: UUID!): Classroom
+  "The class a code names; at most 20 codes an hour"
+  classroomByCode(code: String!): ClassroomPreview
+  myClassrooms: [Classroom!]!
+  "Invites waiting for the viewer's answer"
+  myClassroomInvites: [ClassroomInviteItem!]!
+}
+
+input CreateClassroomInput {
+  name: String!
+  description: String
+}
+
+input UpdateClassroomInput {
+  classroomId: UUID!
+  name: String
+  description: String
+  "A new code; the old one stops working"
+  newCode: Boolean
+}
+
+input ClassroomIdInput {
+  classroomId: UUID!
+}
+
+input RequestToJoinClassroomInput {
+  code: String!
+  via: JoinVia
+}
+
+input ReviewClassroomJoinRequestInput {
+  requestId: UUID!
+  decision: JoinDecision!
+}
+
+input InviteToClassroomInput {
+  classroomId: UUID!
+  "A handle or an email address"
+  person: String!
+  "TA only by the teacher"
+  role: ClassroomRole
+}
+
+input AnswerClassroomInviteInput {
+  inviteId: UUID!
+  accept: Boolean!
+}
+
+input ClassroomMemberInput {
+  classroomId: UUID!
+  userId: UUID!
+}
+
+input SetClassroomRoleInput {
+  classroomId: UUID!
+  userId: UUID!
+  "TEACHER hands the class to another teacher, who must hold the teacher role"
+  role: ClassroomRole!
+}
+
+input CreateClassroomPostInput {
+  classroomId: UUID!
+  body: JSON!
+}
+
+input ClassroomPostIdInput {
+  postId: UUID!
+}
+
+type ClassroomPayload {
+  classroom: Classroom
+  userErrors: [UserError!]!
+}
+
+extend type Mutation {
+  "Teachers"
+  createClassroom(input: CreateClassroomInput!): ClassroomPayload!
+  updateClassroom(input: UpdateClassroomInput!): ClassroomPayload!
+  deleteClassroom(input: ClassroomIdInput!): OkPayload!
+  "A request staff answer; the code identifies the class, it admits nobody"
+  requestToJoinClassroom(input: RequestToJoinClassroomInput!): ClassroomPayload!
+  withdrawClassroomJoinRequest(input: JoinRequestIdInput!): ClassroomPayload!
+  reviewClassroomJoinRequest(input: ReviewClassroomJoinRequestInput!): ClassroomPayload!
+  "Staff; the invited person accepts within 14 days"
+  inviteToClassroom(input: InviteToClassroomInput!): ClassroomPayload!
+  answerClassroomInvite(input: AnswerClassroomInviteInput!): ClassroomPayload!
+  leaveClassroom(input: ClassroomIdInput!): ClassroomPayload!
+  removeClassroomMember(input: ClassroomMemberInput!): ClassroomPayload!
+  setClassroomRole(input: SetClassroomRoleInput!): ClassroomPayload!
+  "Staff: an announcement every member reads"
+  createClassroomPost(input: CreateClassroomPostInput!): ClassroomPayload!
+  deleteClassroomPost(input: ClassroomPostIdInput!): ClassroomPayload!
+}

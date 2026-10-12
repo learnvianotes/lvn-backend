@@ -97,7 +97,7 @@ describe('teachers', () => {
     it('teachers share directly with each other only once connected', async () => {
       const { note } = await publishedNote(ravi, 'For a colleague')
       const share = async (from: Person, noteId: string, to: Person) => problem((await t.gql('mutation ($input: ShareNoteInput!) { shareNote(input: $input) { note { id } userErrors { message code } } }', { input: { noteId, person: to.handle, role: 'VIEWER' } }, from.token)) as Result, 'shareNote')
-      expect(await share(ravi, note!.id, asha)).toBe('Teachers share with other teachers once they are connected.')
+      expect(await share(ravi, note!.id, asha)).toBe('Teachers share with other teachers once they are connected or teach a class together.')
       expect(await share(ravi, note!.id, student)).toBeNull()
       await connect(ravi, meera)
       expect(await share(ravi, note!.id, meera)).toBeNull()

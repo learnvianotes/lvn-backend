@@ -97,3 +97,26 @@ extend type Mutation {
   shareNoteToGroup(input: NoteGroupInput!): NotePayload!
   unshareNoteFromGroup(input: NoteGroupInput!): NotePayload!
 }
+
+"A class, owned by the core subgraph; notes adds what its staff shared to it (ADR-0046)"
+type Classroom @key(fields: "id") {
+  id: UUID!
+  "Members only: notes shared to the class that the viewer may open, the most recently shared first"
+  sharedNotes(first: Int, after: String): NoteConnection
+}
+
+extend type Note {
+  "Owner only: the classes the note is shared to"
+  classrooms: [Classroom!]
+}
+
+input NoteClassroomInput {
+  noteId: UUID!
+  classroomId: UUID!
+}
+
+extend type Mutation {
+  "Class staff: share your note with the class; a PRIVATE note becomes SHARED"
+  shareNoteToClassroom(input: NoteClassroomInput!): NotePayload!
+  unshareNoteFromClassroom(input: NoteClassroomInput!): NotePayload!
+}

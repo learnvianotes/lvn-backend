@@ -48,6 +48,13 @@ input AddPdfHighlightInput
   cardId: UUID
 }
 
+input AnswerClassroomInviteInput
+  @join__type(graph: CORE)
+{
+  inviteId: UUID!
+  accept: Boolean!
+}
+
 input AppealModerationInput
   @join__type(graph: CORE)
 {
@@ -198,6 +205,156 @@ input ChangeNoteVisibilityInput
 }
 
 """
+A class, owned by the core subgraph: null when the viewer may no longer see it
+"""
+type Classroom
+  @join__type(graph: COMMUNICATION, key: "id", resolvable: false)
+  @join__type(graph: CORE, key: "id")
+  @join__type(graph: NOTES, key: "id")
+{
+  id: UUID!
+  name: String! @join__field(graph: CORE)
+  description: String @join__field(graph: CORE)
+  teacher: User! @join__field(graph: CORE)
+  memberCount: Int! @join__field(graph: CORE)
+
+  """Staff only: the code students ask to join with"""
+  joinCode: String @join__field(graph: CORE)
+  viewerRole: ClassroomRole @join__field(graph: CORE)
+  viewerRequestId: UUID @join__field(graph: CORE)
+  viewerInviteId: UUID @join__field(graph: CORE)
+  viewerCan: ClassroomActions! @join__field(graph: CORE)
+  createdAt: DateTime! @join__field(graph: CORE)
+
+  """Staff only"""
+  members: [ClassroomMember!] @join__field(graph: CORE)
+
+  """Staff only: waiting requests, oldest first"""
+  joinRequests: [ClassroomJoinRequest!] @join__field(graph: CORE)
+
+  """Members only: announcements, newest first"""
+  posts(first: Int, after: String): ClassroomPostConnection @join__field(graph: CORE)
+
+  """
+  Members only: notes shared to the class that the viewer may open, the most recently shared first
+  """
+  sharedNotes(first: Int, after: String): NoteConnection @join__field(graph: NOTES)
+}
+
+type ClassroomActions
+  @join__type(graph: CORE)
+{
+  requestJoin: Boolean!
+  acceptInvite: Boolean!
+
+  """Teacher and TAs: answer requests, invite, post"""
+  review: Boolean!
+  post: Boolean!
+
+  """The teacher: settings, roles, removing people"""
+  manage: Boolean!
+  leave: Boolean!
+}
+
+input ClassroomIdInput
+  @join__type(graph: CORE)
+{
+  classroomId: UUID!
+}
+
+type ClassroomInviteItem
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  classroom: ClassroomPreview!
+  role: ClassroomRole!
+  invitedBy: User!
+  expiresAt: DateTime!
+}
+
+type ClassroomJoinRequest
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  user: User!
+  via: JoinVia!
+  createdAt: DateTime!
+}
+
+type ClassroomMember
+  @join__type(graph: CORE)
+{
+  user: User!
+  role: ClassroomRole!
+  joinedAt: DateTime!
+}
+
+input ClassroomMemberInput
+  @join__type(graph: CORE)
+{
+  classroomId: UUID!
+  userId: UUID!
+}
+
+type ClassroomPayload
+  @join__type(graph: CORE)
+{
+  classroom: Classroom
+  userErrors: [UserError!]!
+}
+
+type ClassroomPost
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  author: User!
+  body: JSON!
+  createdAt: DateTime!
+  viewerCanDelete: Boolean!
+}
+
+type ClassroomPostConnection
+  @join__type(graph: CORE)
+{
+  edges: [ClassroomPostEdge!]!
+  pageInfo: PageInfo!
+}
+
+type ClassroomPostEdge
+  @join__type(graph: CORE)
+{
+  cursor: String!
+  node: ClassroomPost!
+}
+
+input ClassroomPostIdInput
+  @join__type(graph: CORE)
+{
+  postId: UUID!
+}
+
+"""
+What a class code shows before joining: its name and teacher, nothing inside
+"""
+type ClassroomPreview
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  name: String!
+  teacher: User!
+  viewerRole: ClassroomRole
+  viewerRequestId: UUID
+}
+
+enum ClassroomRole
+  @join__type(graph: CORE)
+{
+  TEACHER @join__enumValue(graph: CORE)
+  TA @join__enumValue(graph: CORE)
+  STUDENT @join__enumValue(graph: CORE)
+}
+
+"""
 After a provider sign-in (no signUp call): the same details, collected once
 """
 input CompleteRegistrationInput
@@ -272,6 +429,20 @@ type CoreTopicProgress
   revisit: Boolean!
   secondsStudied: Int!
   lastStudiedAt: DateTime
+}
+
+input CreateClassroomInput
+  @join__type(graph: CORE)
+{
+  name: String!
+  description: String
+}
+
+input CreateClassroomPostInput
+  @join__type(graph: CORE)
+{
+  classroomId: UUID!
+  body: JSON!
 }
 
 input CreateFolderInput
@@ -726,6 +897,18 @@ enum InstitutionalEmailStatus
   PENDING_REVIEW @join__enumValue(graph: USERS)
 }
 
+input InviteToClassroomInput
+  @join__type(graph: CORE)
+{
+  classroomId: UUID!
+
+  """A handle or an email address"""
+  person: String!
+
+  """TA only by the teacher"""
+  role: ClassroomRole
+}
+
 scalar join__FieldSet
 
 enum join__Graph {
@@ -746,6 +929,13 @@ input JoinRequestIdInput
   @join__type(graph: CORE)
 {
   requestId: UUID!
+}
+
+enum JoinVia
+  @join__type(graph: CORE)
+{
+  CODE @join__enumValue(graph: CORE)
+  LINK @join__enumValue(graph: CORE)
 }
 
 scalar JSON
@@ -983,6 +1173,29 @@ type Mutation
 
   """The author's one appeal against hiding or removing their note"""
   appealModeration(input: AppealModerationInput!): OkPayload! @join__field(graph: CORE)
+
+  """Teachers"""
+  createClassroom(input: CreateClassroomInput!): ClassroomPayload! @join__field(graph: CORE)
+  updateClassroom(input: UpdateClassroomInput!): ClassroomPayload! @join__field(graph: CORE)
+  deleteClassroom(input: ClassroomIdInput!): OkPayload! @join__field(graph: CORE)
+
+  """
+  A request staff answer; the code identifies the class, it admits nobody
+  """
+  requestToJoinClassroom(input: RequestToJoinClassroomInput!): ClassroomPayload! @join__field(graph: CORE)
+  withdrawClassroomJoinRequest(input: JoinRequestIdInput!): ClassroomPayload! @join__field(graph: CORE)
+  reviewClassroomJoinRequest(input: ReviewClassroomJoinRequestInput!): ClassroomPayload! @join__field(graph: CORE)
+
+  """Staff; the invited person accepts within 14 days"""
+  inviteToClassroom(input: InviteToClassroomInput!): ClassroomPayload! @join__field(graph: CORE)
+  answerClassroomInvite(input: AnswerClassroomInviteInput!): ClassroomPayload! @join__field(graph: CORE)
+  leaveClassroom(input: ClassroomIdInput!): ClassroomPayload! @join__field(graph: CORE)
+  removeClassroomMember(input: ClassroomMemberInput!): ClassroomPayload! @join__field(graph: CORE)
+  setClassroomRole(input: SetClassroomRoleInput!): ClassroomPayload! @join__field(graph: CORE)
+
+  """Staff: an announcement every member reads"""
+  createClassroomPost(input: CreateClassroomPostInput!): ClassroomPayload! @join__field(graph: CORE)
+  deleteClassroomPost(input: ClassroomPostIdInput!): ClassroomPayload! @join__field(graph: CORE)
   createGroup(input: CreateGroupInput!): GroupPayload! @join__field(graph: CORE)
 
   """Admins: name, description, privacy, join policy"""
@@ -1092,6 +1305,12 @@ type Mutation
   """Share your note with a group you are in; a PRIVATE note becomes SHARED"""
   shareNoteToGroup(input: NoteGroupInput!): NotePayload! @join__field(graph: NOTES)
   unshareNoteFromGroup(input: NoteGroupInput!): NotePayload! @join__field(graph: NOTES)
+
+  """
+  Class staff: share your note with the class; a PRIVATE note becomes SHARED
+  """
+  shareNoteToClassroom(input: NoteClassroomInput!): NotePayload! @join__field(graph: NOTES)
+  unshareNoteFromClassroom(input: NoteClassroomInput!): NotePayload! @join__field(graph: NOTES)
 
   """Apply a device's outbox in order (at most 100 operations)"""
   syncPush(ops: [SyncOpInput!]!): SyncPushPayload! @join__field(graph: NOTES)
@@ -1274,6 +1493,9 @@ type Note
 
   """Owner only: the groups the note is shared to"""
   groups: [Group!] @join__field(graph: NOTES)
+
+  """Owner only: the classes the note is shared to"""
+  classrooms: [Classroom!] @join__field(graph: NOTES)
 }
 
 """
@@ -1285,6 +1507,13 @@ enum NoteAccess
   OWNER @join__enumValue(graph: NOTES)
   EDITOR @join__enumValue(graph: NOTES)
   READER @join__enumValue(graph: NOTES)
+}
+
+input NoteClassroomInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+  classroomId: UUID!
 }
 
 type NoteConnection
@@ -1524,6 +1753,11 @@ type Notification
   group: Group
 
   """
+  The class it is about (JOIN_REQUEST, JOIN_DECISION, CLASSROOM_INVITE, CLASSROOM_POST); null when there is none or the viewer may no longer see it
+  """
+  classroom: Classroom
+
+  """
   Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED }
   """
   data: JSON
@@ -1550,6 +1784,7 @@ enum NotificationCategory
   VERIFICATION @join__enumValue(graph: COMMUNICATION)
   DATA_EXPORT @join__enumValue(graph: COMMUNICATION)
   NOTES_IMPORT @join__enumValue(graph: COMMUNICATION)
+  CLASSROOM_INVITE @join__enumValue(graph: COMMUNICATION)
 }
 
 type NotificationConnection
@@ -1797,6 +2032,14 @@ type Query
   Signed-in users: their progress on a /core subject (web reads it on /core pages)
   """
   coreProgress(subjectId: String!): CoreSubjectProgress! @join__field(graph: CORE)
+  classroom(id: UUID!): Classroom @join__field(graph: CORE)
+
+  """The class a code names; at most 20 codes an hour"""
+  classroomByCode(code: String!): ClassroomPreview @join__field(graph: CORE)
+  myClassrooms: [Classroom!]! @join__field(graph: CORE)
+
+  """Invites waiting for the viewer's answer"""
+  myClassroomInvites: [ClassroomInviteItem!]! @join__field(graph: CORE)
 
   """
   A group the viewer may know about: public ones, and private ones they are in or asked to join
@@ -2014,6 +2257,13 @@ input RequestTeacherVerificationInput
   message: String
 }
 
+input RequestToJoinClassroomInput
+  @join__type(graph: CORE)
+{
+  code: String!
+  via: JoinVia
+}
+
 input RequestToJoinGroupInput
   @join__type(graph: CORE)
 {
@@ -2042,6 +2292,13 @@ input RestoreNoteVersionInput
 {
   noteId: UUID!
   versionId: UUID!
+}
+
+input ReviewClassroomJoinRequestInput
+  @join__type(graph: CORE)
+{
+  requestId: UUID!
+  decision: JoinDecision!
 }
 
 input ReviewGroupJoinRequestInput
@@ -2094,6 +2351,18 @@ type Session
   """
   refreshToken: String
   user: User!
+}
+
+input SetClassroomRoleInput
+  @join__type(graph: CORE)
+{
+  classroomId: UUID!
+  userId: UUID!
+
+  """
+  TEACHER hands the class to another teacher, who must hold the teacher role
+  """
+  role: ClassroomRole!
 }
 
 input SetGlobalRoleInput
@@ -2425,6 +2694,17 @@ input UnshareNoteInput
 {
   noteId: UUID!
   userId: UUID!
+}
+
+input UpdateClassroomInput
+  @join__type(graph: CORE)
+{
+  classroomId: UUID!
+  name: String
+  description: String
+
+  """A new code; the old one stops working"""
+  newCode: Boolean
 }
 
 """

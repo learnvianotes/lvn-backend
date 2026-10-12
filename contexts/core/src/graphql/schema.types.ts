@@ -1,10 +1,120 @@
 // Generated from this folder's *.graphql by scripts/graphql-types.mjs (ADR-0033). Do not edit.
 
+export interface AnswerClassroomInviteInput {
+  inviteId: string
+  accept: boolean
+}
+
 export interface AppealModerationInput {
   entityType: ReportEntityType
   entityId: string
   message: string
 }
+
+export interface Classroom {
+  id: string
+  name: string
+  description: string | null
+  teacher: User
+  memberCount: number
+  /** Staff only: the code students ask to join with */
+  joinCode: string | null
+  viewerRole: ClassroomRole | null
+  viewerRequestId: string | null
+  viewerInviteId: string | null
+  viewerCan: ClassroomActions
+  createdAt: Date
+  /** Staff only */
+  members: Array<ClassroomMember> | null
+  /** Staff only: waiting requests, oldest first */
+  joinRequests: Array<ClassroomJoinRequest> | null
+  /** Members only: announcements, newest first */
+  posts: ClassroomPostConnection | null
+}
+
+export interface ClassroomPostsArgs {
+  first?: number | null
+  after?: string | null
+}
+
+export interface ClassroomActions {
+  requestJoin: boolean
+  acceptInvite: boolean
+  /** Teacher and TAs: answer requests, invite, post */
+  review: boolean
+  post: boolean
+  /** The teacher: settings, roles, removing people */
+  manage: boolean
+  leave: boolean
+}
+
+export interface ClassroomIdInput {
+  classroomId: string
+}
+
+export interface ClassroomInviteItem {
+  id: string
+  classroom: ClassroomPreview
+  role: ClassroomRole
+  invitedBy: User
+  expiresAt: Date
+}
+
+export interface ClassroomJoinRequest {
+  id: string
+  user: User
+  via: JoinVia
+  createdAt: Date
+}
+
+export interface ClassroomMember {
+  user: User
+  role: ClassroomRole
+  joinedAt: Date
+}
+
+export interface ClassroomMemberInput {
+  classroomId: string
+  userId: string
+}
+
+export interface ClassroomPayload {
+  classroom: Classroom | null
+  userErrors: Array<UserError>
+}
+
+export interface ClassroomPost {
+  id: string
+  author: User
+  body: unknown
+  createdAt: Date
+  viewerCanDelete: boolean
+}
+
+export interface ClassroomPostConnection {
+  edges: Array<ClassroomPostEdge>
+  pageInfo: PageInfo
+}
+
+export interface ClassroomPostEdge {
+  cursor: string
+  node: ClassroomPost
+}
+
+export interface ClassroomPostIdInput {
+  postId: string
+}
+
+/** What a class code shows before joining: its name and teacher, nothing inside */
+export interface ClassroomPreview {
+  id: string
+  name: string
+  teacher: User
+  viewerRole: ClassroomRole | null
+  viewerRequestId: string | null
+}
+
+export type ClassroomRole = 'TEACHER' | 'TA' | 'STUDENT'
 
 export interface CoreProblemMark {
   problemId: string
@@ -25,6 +135,16 @@ export interface CoreTopicProgress {
   revisit: boolean
   secondsStudied: number
   lastStudiedAt: Date | null
+}
+
+export interface CreateClassroomInput {
+  name: string
+  description?: string | null
+}
+
+export interface CreateClassroomPostInput {
+  classroomId: string
+  body: unknown
 }
 
 export interface CreateGroupInput {
@@ -164,11 +284,21 @@ export type GroupRole = 'OWNER' | 'ADMIN' | 'MODERATOR' | 'MEMBER' | 'MENTOR'
 
 export type GroupType = 'COMMUNITY' | 'PROJECT'
 
+export interface InviteToClassroomInput {
+  classroomId: string
+  /** A handle or an email address */
+  person: string
+  /** TA only by the teacher */
+  role?: ClassroomRole | null
+}
+
 export type JoinDecision = 'APPROVED' | 'REJECTED'
 
 export interface JoinRequestIdInput {
   requestId: string
 }
+
+export type JoinVia = 'CODE' | 'LINK'
 
 export interface ModerateContentInput {
   entityType: ReportEntityType
@@ -240,6 +370,58 @@ export interface MutationModerateContentArgs {
 
 export interface MutationAppealModerationArgs {
   input: AppealModerationInput
+}
+
+export interface MutationCreateClassroomArgs {
+  input: CreateClassroomInput
+}
+
+export interface MutationUpdateClassroomArgs {
+  input: UpdateClassroomInput
+}
+
+export interface MutationDeleteClassroomArgs {
+  input: ClassroomIdInput
+}
+
+export interface MutationRequestToJoinClassroomArgs {
+  input: RequestToJoinClassroomInput
+}
+
+export interface MutationWithdrawClassroomJoinRequestArgs {
+  input: JoinRequestIdInput
+}
+
+export interface MutationReviewClassroomJoinRequestArgs {
+  input: ReviewClassroomJoinRequestInput
+}
+
+export interface MutationInviteToClassroomArgs {
+  input: InviteToClassroomInput
+}
+
+export interface MutationAnswerClassroomInviteArgs {
+  input: AnswerClassroomInviteInput
+}
+
+export interface MutationLeaveClassroomArgs {
+  input: ClassroomIdInput
+}
+
+export interface MutationRemoveClassroomMemberArgs {
+  input: ClassroomMemberInput
+}
+
+export interface MutationSetClassroomRoleArgs {
+  input: SetClassroomRoleInput
+}
+
+export interface MutationCreateClassroomPostArgs {
+  input: CreateClassroomPostInput
+}
+
+export interface MutationDeleteClassroomPostArgs {
+  input: ClassroomPostIdInput
 }
 
 export interface MutationCreateGroupArgs {
@@ -330,6 +512,14 @@ export interface QueryCoreProgressArgs {
   subjectId: string
 }
 
+export interface QueryClassroomArgs {
+  id: string
+}
+
+export interface QueryClassroomByCodeArgs {
+  code: string
+}
+
 export interface QueryGroupArgs {
   id: string
 }
@@ -356,10 +546,20 @@ export type ReportEntityType = 'NOTE' | 'USER'
 
 export type ReportReason = 'HARASSMENT' | 'SEXUAL' | 'SELF_HARM' | 'HATE' | 'SPAM' | 'COPYRIGHT' | 'OTHER'
 
+export interface RequestToJoinClassroomInput {
+  code: string
+  via?: JoinVia | null
+}
+
 export interface RequestToJoinGroupInput {
   groupId: string
   /** At most 500 characters, for the admins */
   message?: string | null
+}
+
+export interface ReviewClassroomJoinRequestInput {
+  requestId: string
+  decision: JoinDecision
 }
 
 export interface ReviewGroupJoinRequestInput {
@@ -367,11 +567,26 @@ export interface ReviewGroupJoinRequestInput {
   decision: JoinDecision
 }
 
+export interface SetClassroomRoleInput {
+  classroomId: string
+  userId: string
+  /** TEACHER hands the class to another teacher, who must hold the teacher role */
+  role: ClassroomRole
+}
+
 export interface SetGroupRoleInput {
   groupId: string
   userId: string
   /** OWNER hands the group over (the owner only); otherwise a role below the viewer's own */
   role: GroupRole
+}
+
+export interface UpdateClassroomInput {
+  classroomId: string
+  name?: string | null
+  description?: string | null
+  /** A new code; the old one stops working */
+  newCode?: boolean | null
 }
 
 export interface UpdateGroupInput {

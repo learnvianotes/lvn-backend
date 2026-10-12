@@ -126,12 +126,21 @@ export const events = {
   GroupCreated: eventEnvelope('GroupCreated', 1, z.object({ groupId: uuid, ownerId: uuid })),
   GroupDeleted: eventEnvelope('GroupDeleted', 1, z.object({ groupId: uuid })),
   GroupMembershipChanged: eventEnvelope('GroupMembershipChanged', 1, membership.extend({ groupId: uuid })),
+  /** A classroom came to be or went (ADR-0046): notes keeps a read model for notes shared to classes. */
+  ClassroomCreated: eventEnvelope('ClassroomCreated', 1, z.object({ classroomId: uuid, ownerId: uuid })),
+  ClassroomDeleted: eventEnvelope('ClassroomDeleted', 1, z.object({ classroomId: uuid })),
+  /** role: TEACHER, TA or STUDENT (ADR-0046). */
   ClassroomMembershipChanged: eventEnvelope('ClassroomMembershipChanged', 1, membership.extend({ classroomId: uuid })),
+  /** Staff invited someone (ADR-0046): the invite is the acceptance given in advance. */
+  ClassroomInvited: eventEnvelope('ClassroomInvited', 1, z.object({ inviteId: uuid, classroomId: uuid, userId: uuid, invitedBy: uuid })),
+  /** Staff posted an announcement; memberIds are told (at most 1,000 per event). */
+  ClassroomPosted: eventEnvelope('ClassroomPosted', 1, z.object({ postId: uuid, classroomId: uuid, authorId: uuid, memberIds: z.array(uuid).max(1000) })),
   // Membership is by approval (ADR-0009): reviewers are notified of requests, requesters of the decision.
   // An approval is followed by Group/ClassroomMembershipChanged (JOINED).
   /** reviewerIds: who answers it (owner and admins), so communication tells them; optional, additive in v1 (ADR-0045). */
   GroupJoinRequested: eventEnvelope('GroupJoinRequested', 1, z.object({ requestId: uuid, groupId: uuid, userId: uuid, reviewerIds: z.array(uuid).max(100).optional() })),
-  ClassroomJoinRequested: eventEnvelope('ClassroomJoinRequested', 1, z.object({ requestId: uuid, classroomId: uuid, userId: uuid })),
+  /** reviewerIds: the class's staff, so communication tells them; optional, additive in v1 (ADR-0046). */
+  ClassroomJoinRequested: eventEnvelope('ClassroomJoinRequested', 1, z.object({ requestId: uuid, classroomId: uuid, userId: uuid, reviewerIds: z.array(uuid).max(100).optional() })),
   JoinRequestReviewed: eventEnvelope('JoinRequestReviewed', 1, z.object({
     requestId: uuid,
     scope: z.discriminatedUnion('kind', [

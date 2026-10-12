@@ -2,10 +2,12 @@ import { Module, type DynamicModule } from '@nestjs/common'
 import { JsonScalar } from '@lvn-backend/graphql'
 import { CoreExport } from './application/core-export'
 import { CoreProgressService } from './application/core-progress.service'
+import { ClassroomsService } from './application/classrooms.service'
 import { GroupsService } from './application/groups.service'
 import { ModerationService } from './application/moderation.service'
 import { CORE_CONFIG, type CoreConfig } from './core.config'
 import { CoreProgressResolver } from './graphql/core-progress.resolver'
+import { ClassroomReferenceResolver, ClassroomsResolver } from './graphql/classrooms.resolver'
 import { GroupReferenceResolver, GroupsResolver } from './graphql/groups.resolver'
 import { ModeratedNoteResolver, ModerationReportResolver, ModerationResolver } from './graphql/moderation.resolver'
 
@@ -21,8 +23,8 @@ export class CoreModule {
   static forRoot(config: CoreConfig): DynamicModule {
     return {
       module: CoreModule,
-      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver, GroupsService, GroupsResolver, GroupReferenceResolver, JsonScalar],
-      exports: [CoreProgressService, ModerationService, GroupsService],
+      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver, GroupsService, GroupsResolver, GroupReferenceResolver, ClassroomsService, ClassroomsResolver, ClassroomReferenceResolver, JsonScalar],
+      exports: [CoreProgressService, ModerationService, GroupsService, ClassroomsService],
     }
   }
 }

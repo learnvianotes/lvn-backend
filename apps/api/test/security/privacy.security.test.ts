@@ -12,7 +12,8 @@ import { publicSchema } from './support/fuzz'
 /**
  * §17.1: B cannot read A's private data through any channel: account data (Phase 1); notes, their files, PDF
  * highlights and conversions, public pages, copies, search and exports (Phase 2); notifications and live updates
- * (Phase 3). Groups, classrooms, comments, recommendations and RAG arrive later; their assertions are todos until then.
+ * (Phase 3); groups and classrooms (Phase 3). Comments, recommendations and RAG arrive later; their assertions are todos
+ * until then.
  */
 describe('security: privacy', () => {
   let t: TestApp
@@ -214,6 +215,55 @@ describe('security: privacy', () => {
       // Anonymous visitors see nothing at all.
       expect((await t.gql<{ group: unknown }>('query ($id: UUID!) { group(id: $id) { name } }', { id: groupId })).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
     })
-    it.todo('A, not in Classroom C, cannot see C’s content through any channel')
+    it('A, not in Classroom C, cannot see C’s content through any channel (ADR-0046)', async () => {
+      const t1 = actors.teacher
+      const db = t.app.get(PrismaService)
+      const bus = t.app.get(InProcessEventBus)
+      const doc = (s: string) => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: s }] }] })
+      const c = await t.gql<{ createClassroom: { classroom: { id: string; joinCode: string } } }>('mutation { createClassroom(input: { name: "Classroom C" }) { classroom { id joinCode } } }', {}, t1.token)
+      const { id: classroomId, joinCode } = c.data!.createClassroom.classroom
+      // B joins by accepting T's invite, which needs a verified account; B goes back to unverified afterwards.
+      await db.user.update({ where: { id: actors.b.id }, data: { verifiedAt: new Date(), verificationMethod: 'INSTITUTIONAL_EMAIL' } })
+      try {
+        const b = await db.user.findUniqueOrThrow({ where: { id: actors.b.id } })
+        await t.gql('mutation ($input: InviteToClassroomInput!) { inviteToClassroom(input: $input) { classroom { id } } }', { input: { classroomId, person: b.handle } }, t1.token)
+        const inviteId = (await db.classroomInvite.findFirstOrThrow({ where: { classroomId, invitedUserId: b.id } })).id
+        await t.gql('mutation ($input: AnswerClassroomInviteInput!) { answerClassroomInvite(input: $input) { classroom { id } } }', { input: { inviteId, accept: true } }, actors.b.token)
+      } finally {
+        await db.user.update({ where: { id: actors.b.id }, data: { verifiedAt: null, verificationMethod: null } })
+      }
+      const word = `numbat${Date.now()}`
+      const noteId = (await t.gql<{ createNote: { note: { id: string } } }>('mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } } }', { input: { title: `For C ${word}`, cards: [{ id: newId(), type: 'text', position: 'a0', content: { doc: doc(word) } }] } }, t1.token)).data!.createNote.note.id
+      await t.gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId } }, t1.token)
+      await t.gql('mutation ($input: NoteClassroomInput!) { shareNoteToClassroom(input: $input) { note { id } } }', { input: { noteId, classroomId } }, t1.token)
+      await t.gql('mutation ($input: CreateClassroomPostInput!) { createClassroomPost(input: $input) { classroom { id } } }', { input: { classroomId, body: doc('members only') } }, t1.token)
+      await bus.drain()
+      await t.app.get(SearchIndex).indexNote(noteId)
+
+      const inside = 'name members { role } joinRequests { id } posts { edges { node { id } } } sharedNotes { edges { node { id } } } joinCode'
+      // B, a member, reads it all but the staff's parts; the check below is not vacuous.
+      const asB = await t.gql<{ classroom: Record<string, unknown> | null }>(`query ($id: UUID!) { classroom(id: $id) { ${inside} } }`, { id: classroomId }, actors.b.token)
+      expect(asB.data!.classroom).toMatchObject({ name: 'Classroom C', members: null, joinCode: null, sharedNotes: { edges: [{ node: { id: noteId } }] } })
+      expect((await t.gql<{ note: { id: string } | null }>('query ($id: UUID!) { note(id: $id) { id } }', { id: noteId }, actors.b.token)).data!.note).toEqual({ id: noteId })
+
+      const a = actors.a.token
+      expect((await t.gql<{ classroom: unknown }>(`query ($id: UUID!) { classroom(id: $id) { ${inside} } }`, { id: classroomId }, a)).data!.classroom).toBeNull()
+      expect((await t.gql<{ myClassrooms: { id: string }[] }>('{ myClassrooms { id } }', {}, a)).data!.myClassrooms).toEqual([])
+      // The code shows the name and the teacher, by design (ADR-0046), and nothing else: the type has nothing else.
+      expect((await t.gql<{ classroomByCode: unknown }>('query ($code: String!) { classroomByCode(code: $code) { id name teacher { id } } }', { code: joinCode }, a)).data!.classroomByCode).toEqual({ id: classroomId, name: 'Classroom C', teacher: { id: t1.id } })
+      expect((await t.gql<{ note: unknown }>('query ($id: UUID!) { note(id: $id) { id } }', { id: noteId }, a)).data!.note).toBeNull()
+      expect((await t.gql<{ sharedWithMe: { edges: unknown[] } }>('{ sharedWithMe { edges { node { id } } } }', {}, a)).data!.sharedWithMe.edges).toEqual([])
+      expect((await t.gql<{ search: { notes: unknown[] } }>('query ($q: String!) { search(query: $q) { notes { note { id } } } }', { q: word }, a)).data!.search.notes).toEqual([])
+      expect((await t.gql<{ syncPull: { notes: { note: { id: string } }[] } }>('{ syncPull(first: 100) { notes { note { id } } } }', {}, a)).data!.syncPull.notes.map((n) => n.note.id)).not.toContain(noteId)
+      const told = await t.gql<{ notifications: { edges: { node: { category: string } }[] } }>('{ notifications { edges { node { category } } } }', {}, a)
+      expect(told.data!.notifications.edges.map((e) => e.node.category)).not.toContain('CLASSROOM_POST')
+      // Sharing to C, or posting in it, is refused to A as to anyone outside it.
+      const own = (await t.gql<{ createNote: { note: { id: string } } }>('mutation { createNote(input: { title: "A’s" }) { note { id } } }', {}, a)).data!.createNote.note.id
+      const shareAsA = await t.gql<{ shareNoteToClassroom: { note: unknown; userErrors: { code: string }[] } }>('mutation ($input: NoteClassroomInput!) { shareNoteToClassroom(input: $input) { note { id } userErrors { code } } }', { input: { noteId: own, classroomId } }, a)
+      expect(shareAsA.data!.shareNoteToClassroom).toEqual({ note: null, userErrors: [{ code: 'NOT_FOUND' }] })
+      const postAsA = await t.gql<{ createClassroomPost: { classroom: unknown; userErrors: { code: string }[] } }>('mutation ($input: CreateClassroomPostInput!) { createClassroomPost(input: $input) { classroom { id } userErrors { code } } }', { input: { classroomId, body: doc('hi') } }, a)
+      expect(postAsA.data!.createClassroomPost).toEqual({ classroom: null, userErrors: [{ code: 'NOT_FOUND' }] })
+      expect((await t.gql<{ classroom: unknown }>('query ($id: UUID!) { classroom(id: $id) { name } }', { id: classroomId })).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
+    })
   })
 })
