@@ -295,6 +295,9 @@ importers:
       '@lvn-backend/prisma-base':
         specifier: workspace:*
         version: link:../../libs/prisma-base
+      '@lvn-backend/queue':
+        specifier: workspace:*
+        version: link:../../libs/queue
       '@lvn-backend/redis':
         specifier: workspace:*
         version: link:../../libs/redis

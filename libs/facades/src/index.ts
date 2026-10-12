@@ -1,12 +1,13 @@
 // Interfaces through which contexts call each other in-process (spec §6.1, §6.5 step 5). Only tokens and types live
 // here; each implementation belongs to the owning context and is bound by the composition roots.
-export { MAILER, type Mailer, type MailTemplate, type MailTemplates } from './mail'
+export { MAILER, type Mailer, type MailOptions, type MailTemplate, type MailTemplates } from './mail'
 export { POLICY, type Policy } from './policy'
 export { ENTITLEMENTS, type Entitlements } from './entitlements'
 export { FILES, type Files, type FileParentKind, type FilePurposeKind, type FileSummary } from './files'
 export { PEOPLE, type People, type Person } from './people'
 export { AUDIT, type Audit, type AuditEntry } from './audit'
 export { MODERATION, NOTE_MODERATION, type Moderation, type ModerationSubject, type ModerationStateKind, type ModeratedNote, type NoteModeration } from './moderation'
+export { PLACES, type Places } from './places'
 export { NOTE_ACCESS, type NoteAccess, type NoteReach, type PlaceShare } from './note-access'
 export { CORE_DATA_EXPORT, NOTES_DATA_EXPORT, type DataExportPart, type ExportFile } from './data-export'
 export { FacadesModule } from './bind'

@@ -15,10 +15,19 @@ export interface MailTemplates {
   institutionalCode: { displayName: string; code: string; expiresInMinutes: number }
   /** ADR-0018: the data export is ready to download, until expiresOn */
   dataExportReady: { displayName: string; link: string; expiresOn: string }
+  /** ADR-0050: a class announcement, to each member who keeps these emails on */
+  classroomPost: { displayName: string; teacherName: string; classroomName: string; text: string; link: string; unsubscribeLink: string }
+  /** ADR-0050: the week's unread notifications, counted by kind */
+  weeklyDigest: { displayName: string; lines: string[]; link: string; unsubscribeLink: string }
 }
 
 export type MailTemplate = keyof MailTemplates
 
+export interface MailOptions {
+  /** One-click unsubscribe (RFC 8058): sets List-Unsubscribe and List-Unsubscribe-Post to this address */
+  unsubscribeUrl?: string
+}
+
 export interface Mailer {
-  send<T extends MailTemplate>(to: string, template: T, data: MailTemplates[T]): Promise<void>
+  send<T extends MailTemplate>(to: string, template: T, data: MailTemplates[T], options?: MailOptions): Promise<void>
 }

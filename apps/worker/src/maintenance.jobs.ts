@@ -1,5 +1,5 @@
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common'
-import { NotificationService } from '@lvn-backend/communication'
+import { COMMS_EMAIL_QUEUE, COMMS_PUSH_QUEUE, DevicesService, EmailNotificationsService, NotificationService, PushService } from '@lvn-backend/communication'
 import { WorkspacesService } from '@lvn-backend/core'
 import { NotesMaintenance } from '@lvn-backend/notes'
 import { Queues } from '@lvn-backend/queue'
@@ -21,6 +21,9 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
     private readonly notes: NotesMaintenance,
     private readonly notifications: NotificationService,
     private readonly workspaces: WorkspacesService,
+    private readonly push: PushService,
+    private readonly devices: DevicesService,
+    private readonly emails: EmailNotificationsService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -61,8 +64,18 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
         this.log.log(`pruned ${pruned} notifications`)
         return { pruned }
       },
+      // ADR-0050: phones not seen for 60 days.
+      'prune-devices': async () => ({ pruned: await this.devices.pruneStale() }),
+      // ADR-0050: Mondays, 09:00 in India.
+      'weekly-digest': async () => ({ sent: await this.emails.sendDigests() }),
     })
     await this.queues.repeat(COMMS_MAINTENANCE_QUEUE, 'prune-notifications', '55 3 * * *')
+    await this.queues.repeat(COMMS_MAINTENANCE_QUEUE, 'prune-devices', '0 4 * * *')
+    await this.queues.repeat(COMMS_MAINTENANCE_QUEUE, 'weekly-digest', '30 3 * * 1')
+
+    // ADR-0050: one job per notification and per announcement email; retried by the queue.
+    this.queues.process(COMMS_PUSH_QUEUE, { send: async (data) => ({ sent: await this.push.deliver((data as { notificationId: string }).notificationId) }) }, 4)
+    this.queues.process(COMMS_EMAIL_QUEUE, { 'classroom-post': async (data) => ({ sent: await this.emails.sendClassroomPost((data as { postId: string }).postId, (data as { userId: string }).userId) }) }, 4)
 
     this.queues.process(CORE_MAINTENANCE_QUEUE, {
       // ADR-0048: project workspaces' repository details from the providers' public APIs, at most a day old.

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { render } from '@react-email/render'
-import type { Mailer, MailTemplate, MailTemplates } from '@lvn-backend/facades'
+import type { Mailer, MailOptions, MailTemplate, MailTemplates } from '@lvn-backend/facades'
 import { TEMPLATES } from './templates'
 import type { MailTransport } from './transport'
 
@@ -11,11 +11,13 @@ export class MailService implements Mailer {
 
   constructor(private readonly transport: MailTransport, private readonly from: string) {}
 
-  async send<T extends MailTemplate>(to: string, template: T, data: MailTemplates[T]): Promise<void> {
+  async send<T extends MailTemplate>(to: string, template: T, data: MailTemplates[T], options: MailOptions = {}): Promise<void> {
     const def = TEMPLATES[template]
     const element = def.element(data)
     const [html, text] = await Promise.all([render(element), render(element, { plainText: true })])
-    await this.transport.send({ from: this.from, to, subject: def.subject(data), html, text })
+    // One-click unsubscribe (RFC 8058): mail clients POST "List-Unsubscribe=One-Click" to the address.
+    const headers = options.unsubscribeUrl ? { 'List-Unsubscribe': `<${options.unsubscribeUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } : undefined
+    await this.transport.send({ from: this.from, to, subject: def.subject(data), html, text, headers })
     this.log.log(`sent ${template}`)
   }
 }

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import type { NotificationCategory } from '@lvn/contracts/notifications'
 import { LiveHub } from '../live/live-hub'
+import { PushService } from '../push/push.service'
 
 export interface NewNotification {
   /** Who it is for */
@@ -47,6 +48,7 @@ export class NotificationService {
   constructor(
     private readonly db: PrismaService,
     private readonly live: LiveHub,
+    private readonly push: PushService,
   ) {}
 
   /** Writes one notification; nobody is told about their own doing. Returns its id, or null when skipped. */
@@ -56,6 +58,7 @@ export class NotificationService {
     const createdAt = new Date()
     await this.db.notification.create({ data: this.row(id, n.userId, n, createdAt) })
     await this.announce(n.userId, id, createdAt)
+    await this.queuePush([id])
     return id
   }
 
@@ -66,11 +69,17 @@ export class NotificationService {
     if (!rows.length) return 0
     await this.db.notification.createMany({ data: rows })
     await Promise.all(rows.map((r) => this.announce(r.userId, r.id, createdAt)))
+    await this.queuePush(rows.map((r) => r.id))
     return rows.length
   }
 
   private row(id: string, userId: string, n: Omit<NewNotification, 'userId'>, createdAt: Date) {
     return { id, userId, category: n.category, path: n.path, actorId: n.actorId ?? null, noteId: n.noteId ?? null, groupId: n.groupId ?? null, classroomId: n.classroomId ?? null, data: n.data, createdAt }
+  }
+
+  // Push is a courtesy too (ADR-0050): a full queue never loses the in-app notification.
+  private async queuePush(ids: string[]) {
+    await this.push.enqueue(ids).catch((err: unknown) => this.log.warn(`push not queued: ${err instanceof Error ? err.message : String(err)}`))
   }
 
   // Live delivery is a courtesy: the notification is already stored and the next fetch shows it.

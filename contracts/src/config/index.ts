@@ -79,6 +79,14 @@ const auth = z.object({
   /** Secret for HMAC-hashing short codes (institutional email codes), so a database leak does not reveal them. */
   CODE_HMAC_SECRET: z.string().min(32),
   /**
+   * Push through FCM HTTP v1 (ADR-0021, ADR-0050): the API origin (https://fcm.googleapis.com), Google's OAuth token
+   * endpoint (https://oauth2.googleapis.com/token) and the Firebase service account's JSON key. Push is off unless all
+   * three are set.
+   */
+  FCM_API_URL: z.url().optional(),
+  GOOGLE_OAUTH_TOKEN_URL: z.url().optional(),
+  FCM_SERVICE_ACCOUNT_JSON: z.string().min(1).optional(),
+  /**
    * Age below which an account needs verified guardian or institutional consent, or is a restricted minor (§15.2):
    * 18 under India's DPDP Act (the default for learnvianotes.in), 16 in parts of the EU, at least 13 everywhere.
    */

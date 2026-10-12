@@ -1,0 +1,84 @@
+# Push, email and their preferences (ADR-0021, ADR-0050).
+
+enum DevicePlatform { ANDROID IOS }
+enum EmailKind { CLASSROOM_POST DIGEST }
+
+type OkPayload @shareable {
+  ok: Boolean!
+  userErrors: [UserError!]!
+}
+
+type CategoryPreference {
+  category: NotificationCategory!
+  push: Boolean!
+  "Null when this category sends no email"
+  email: Boolean
+}
+
+type NotificationSettings {
+  categories: [CategoryPreference!]!
+  "Pushes wait out these hours (HH:MM, in timeZone)"
+  quietStart: String!
+  quietEnd: String!
+  "An IANA time zone, e.g. Asia/Kolkata"
+  timeZone: String!
+  weeklyDigest: Boolean!
+  "The server can send push (it has FCM settings)"
+  pushAvailable: Boolean!
+  "Phones registered for push"
+  devices: Int!
+}
+
+input CategoryPreferenceInput {
+  category: NotificationCategory!
+  push: Boolean
+  email: Boolean
+}
+
+input UpdateNotificationSettingsInput {
+  categories: [CategoryPreferenceInput!]
+  quietStart: String
+  quietEnd: String
+  timeZone: String
+  weeklyDigest: Boolean
+}
+
+type NotificationSettingsPayload {
+  settings: NotificationSettings
+  userErrors: [UserError!]!
+}
+
+input RegisterDeviceInput {
+  "The native FCM (or APNs) token"
+  token: String!
+  platform: DevicePlatform!
+}
+
+input UnregisterDeviceInput {
+  token: String!
+}
+
+input UnsubscribeEmailInput {
+  "From the link in the email"
+  token: String!
+}
+
+type UnsubscribePayload {
+  "What was turned off"
+  kind: EmailKind
+  userErrors: [UserError!]!
+}
+
+extend type Query {
+  notificationSettings: NotificationSettings!
+}
+
+extend type Mutation {
+  updateNotificationSettings(input: UpdateNotificationSettingsInput!): NotificationSettingsPayload!
+  "Phones: after sign-in and whenever the token changes"
+  registerDevice(input: RegisterDeviceInput!): OkPayload!
+  "Phones: on sign-out"
+  unregisterDevice(input: UnregisterDeviceInput!): OkPayload!
+  "No sign-in: the token in an email's unsubscribe link turns off that kind of email"
+  unsubscribeEmail(input: UnsubscribeEmailInput!): UnsubscribePayload!
+}

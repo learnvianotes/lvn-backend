@@ -335,6 +335,21 @@ export class ClassroomsService {
     return p.classroomId
   }
 
+  /** PLACES facade (ADR-0050): class names for announcement emails. */
+  async classroomNames(ids: string[]): Promise<Record<string, string>> {
+    if (!ids.length) return {}
+    const rows = await this.db.classroom.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+    return Object.fromEntries(rows.map((r) => [r.id, r.name]))
+  }
+
+  /** PLACES facade (ADR-0050): an announcement as its email shows it. */
+  async announcement(postId: string): Promise<{ classroomId: string; classroomName: string; authorId: string; text: string } | null> {
+    const p = await this.db.classroomPost.findFirst({ where: { id: postId, deletedAt: null, classroom: { deletedAt: null } }, include: { classroom: { select: { name: true } } } })
+    if (!p) return null
+    const doc = docSchema.safeParse(p.body)
+    return { classroomId: p.classroomId, classroomName: p.classroom.name, authorId: p.authorId, text: doc.success ? docText(doc.data).trim() : '' }
+  }
+
   /** An announcement as comments need it (ADR-0047): null unless the viewer is a member; staff moderate. */
   async postPlace(viewerId: string, postId: string): Promise<{ classroomId: string; authorId: string; staff: boolean } | null> {
     const p = await this.db.classroomPost.findFirst({ where: { id: postId, deletedAt: null } })

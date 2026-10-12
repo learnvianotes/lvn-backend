@@ -287,6 +287,24 @@ enum CardType
   flashcard @join__enumValue(graph: NOTES)
 }
 
+type CategoryPreference
+  @join__type(graph: COMMUNICATION)
+{
+  category: NotificationCategory!
+  push: Boolean!
+
+  """Null when this category sends no email"""
+  email: Boolean
+}
+
+input CategoryPreferenceInput
+  @join__type(graph: COMMUNICATION)
+{
+  category: NotificationCategory!
+  push: Boolean
+  email: Boolean
+}
+
 input ChangeNoteVisibilityInput
   @join__type(graph: NOTES)
 {
@@ -742,6 +760,13 @@ input DecideDomainReviewInput
   approve: Boolean!
 }
 
+enum DevicePlatform
+  @join__type(graph: COMMUNICATION)
+{
+  ANDROID @join__enumValue(graph: COMMUNICATION)
+  IOS @join__enumValue(graph: COMMUNICATION)
+}
+
 type Discussion
   @join__type(graph: CORE)
 {
@@ -867,6 +892,13 @@ input EditGroupPostInput
 {
   postId: UUID!
   body: JSON!
+}
+
+enum EmailKind
+  @join__type(graph: COMMUNICATION)
+{
+  CLASSROOM_POST @join__enumValue(graph: COMMUNICATION)
+  DIGEST @join__enumValue(graph: COMMUNICATION)
 }
 
 """Fixed error vocabulary (§6.2)"""
@@ -1528,6 +1560,18 @@ type Mutation
   @join__type(graph: USERS)
 {
   markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload! @join__field(graph: COMMUNICATION)
+  updateNotificationSettings(input: UpdateNotificationSettingsInput!): NotificationSettingsPayload! @join__field(graph: COMMUNICATION)
+
+  """Phones: after sign-in and whenever the token changes"""
+  registerDevice(input: RegisterDeviceInput!): OkPayload! @join__field(graph: COMMUNICATION)
+
+  """Phones: on sign-out"""
+  unregisterDevice(input: UnregisterDeviceInput!): OkPayload! @join__field(graph: COMMUNICATION)
+
+  """
+  No sign-in: the token in an email's unsubscribe link turns off that kind of email
+  """
+  unsubscribeEmail(input: UnsubscribeEmailInput!): UnsubscribePayload! @join__field(graph: COMMUNICATION)
 
   """
   Report a note or a person you can see; reporting again updates your report
@@ -2222,6 +2266,33 @@ type NotificationEdge
   node: Notification!
 }
 
+type NotificationSettings
+  @join__type(graph: COMMUNICATION)
+{
+  categories: [CategoryPreference!]!
+
+  """Pushes wait out these hours (HH:MM, in timeZone)"""
+  quietStart: String!
+  quietEnd: String!
+
+  """An IANA time zone, e.g. Asia/Kolkata"""
+  timeZone: String!
+  weeklyDigest: Boolean!
+
+  """The server can send push (it has FCM settings)"""
+  pushAvailable: Boolean!
+
+  """Phones registered for push"""
+  devices: Int!
+}
+
+type NotificationSettingsPayload
+  @join__type(graph: COMMUNICATION)
+{
+  settings: NotificationSettings
+  userErrors: [UserError!]!
+}
+
 """
 Authorization Code + PKCE: the code from the provider's redirect and the verifier the client generated
 """
@@ -2245,6 +2316,7 @@ enum OAuthProvider
 }
 
 type OkPayload
+  @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
@@ -2448,6 +2520,7 @@ type Query
   """The viewer's notifications, newest first"""
   notifications(first: Int, after: String): NotificationConnection! @join__field(graph: COMMUNICATION)
   unreadNotificationCount: Int! @join__field(graph: COMMUNICATION)
+  notificationSettings: NotificationSettings! @join__field(graph: COMMUNICATION)
 
   """
   Signed-in users: their progress on a /core subject (web reads it on /core pages)
@@ -2659,6 +2732,14 @@ input RefreshSessionInput
 {
   """Mobile only; web sends the cookie"""
   refreshToken: String
+}
+
+input RegisterDeviceInput
+  @join__type(graph: COMMUNICATION)
+{
+  """The native FCM (or APNs) token"""
+  token: String!
+  platform: DevicePlatform!
 }
 
 """How the viewer stands with a person"""
@@ -3217,11 +3298,32 @@ type TopicPayload
   userErrors: [UserError!]!
 }
 
+input UnregisterDeviceInput
+  @join__type(graph: COMMUNICATION)
+{
+  token: String!
+}
+
 input UnshareNoteInput
   @join__type(graph: NOTES)
 {
   noteId: UUID!
   userId: UUID!
+}
+
+input UnsubscribeEmailInput
+  @join__type(graph: COMMUNICATION)
+{
+  """From the link in the email"""
+  token: String!
+}
+
+type UnsubscribePayload
+  @join__type(graph: COMMUNICATION)
+{
+  """What was turned off"""
+  kind: EmailKind
+  userErrors: [UserError!]!
 }
 
 input UpdateClassroomInput
@@ -3282,6 +3384,16 @@ type UpdateNoteDraftPayload
   """
   conflictVersion: NoteVersion
   userErrors: [UserError!]!
+}
+
+input UpdateNotificationSettingsInput
+  @join__type(graph: COMMUNICATION)
+{
+  categories: [CategoryPreferenceInput!]
+  quietStart: String
+  quietEnd: String
+  timeZone: String
+  weeklyDigest: Boolean
 }
 
 input UpdatePdfHighlightInput
