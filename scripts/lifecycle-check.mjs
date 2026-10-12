@@ -320,13 +320,15 @@ if (opt('--vm')) {
   sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'INSTITUTIONAL_EMAIL', \\"globalRole\\" = 'PLATFORM_ADMIN' WHERE id = '${admin.id}'`)
   await decide(admin, { entityType: 'USER', entityId: D.id, action: 'SUSPEND', reason: 'Posting the same link everywhere.', suspendDays: 1 })
   const standing = (await gql('{ myStanding { suspendedUntil suspensionReason canAppeal } }', {}, D.token)).myStanding
-  const refused = await gql('mutation ($input: CreateGroupPostInput!) { createGroupPost(input: $input) { post { id } } }', { input: { groupId: ws.id, body: text('Still here') } }, D.token).catch((e) => e.message)
+  const refused = await gql('mutation ($input: CreateGroupPostInput!) { createGroupPost(input: $input) { post { id } } }', { input: { groupId: ws.id, body: text('Still here').doc } }, D.token).catch((e) => e.message)
   ok(!!standing.suspendedUntil && standing.suspensionReason === 'Posting the same link everywhere.' && standing.canAppeal && /suspended until/.test(String(refused)), 'a platform admin suspends D: D reads until when and why, and posting says it is the suspension', String(refused))
   await gql('mutation ($input: AppealModerationInput!) { appealModeration(input: $input) { ok } }', { input: { entityType: 'USER', entityId: D.id, message: 'It was for the class.' } }, D.token)
   const appealedCase = (await gql('{ moderationQueue(first: 100) { edges { node { entityId suspendedUntil appeal { message } } } } }', {}, admin.token)).moderationQueue.edges.find((e) => e.node.entityId === D.id)?.node
   await decide(admin, { entityType: 'USER', entityId: D.id, action: 'APPROVE' })
-  const posted = (await gql('mutation ($input: CreateGroupPostInput!) { createGroupPost(input: $input) { post { id } } }', { input: { groupId: ws.id, body: text('Back again') } }, D.token)).createGroupPost.post
-  ok(appealedCase?.appeal?.message === 'It was for the class.' && !!appealedCase.suspendedUntil && !!posted && (await eventually(() => moderated(D, 'RESTORED', 'USER'))), 'D appeals once, the admin lifts the suspension, D is told and posts again')
+  const back = await gql('mutation ($input: CreateGroupPostInput!) { createGroupPost(input: $input) { post { id } userErrors { message } } }', { input: { groupId: ws.id, body: text('Back again').doc } }, D.token).catch((e) => ({ error: e.message }))
+  const posted = back.createGroupPost?.post
+  const toldLifted = await eventually(() => moderated(D, 'RESTORED', 'USER'))
+  ok(appealedCase?.appeal?.message === 'It was for the class.' && !!appealedCase.suspendedUntil && !!posted && toldLifted, 'D appeals once, the admin lifts the suspension, D is told and posts again', JSON.stringify({ appealedCase, back, toldLifted }))
 }
 
 // Media (ADR-0041): processed after the upload by the worker, scanned by the environment's ClamAV.
