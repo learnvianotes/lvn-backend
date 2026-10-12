@@ -94,7 +94,8 @@ describe('account standing', () => {
     expect(await told(dev)).toEqual([{ category: 'MODERATION', data: { kind: 'SUSPENDED', entityType: 'USER' }, path: '/profile' }])
 
     // Nothing reaches anyone…
-    expect(await createGroup(dev)).toMatch(/^FORBIDDEN/)
+    // Each refusal says it is the suspension, with its end, whatever the context would otherwise have said.
+    expect(await createGroup(dev)).toMatch(/^FORBIDDEN: Your account is suspended until \d{1,2} \w+ \d{4}, so nothing you do reaches other people until then\.$/)
     expect(await attempt('followUser', { userId: other.id }, dev, 'PersonInput', 'user { id } userErrors { message code }')).toMatch(/^FORBIDDEN/)
     expect(await attempt('publishNote', { noteId }, dev, 'NoteIdInput', 'note { id } userErrors { message code }')).toMatch(/^FORBIDDEN/)
     expect(await attempt('changeNoteVisibility', { noteId, visibility: 'PUBLIC' }, dev, 'ChangeNoteVisibilityInput', 'note { id } userErrors { message code }')).toMatch(/^FORBIDDEN/)

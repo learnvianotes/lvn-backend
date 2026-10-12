@@ -28,6 +28,9 @@ in the users context"). Phase 3 closed with three gaps in what moderation tells 
      moderation). The account still reads; keeps, writes and deletes its own notes; takes a note back to PRIVATE; makes
      private copies; leaves places; unfollows, blocks and restricts; reports; exports its data; appeals.
    - What it published stays up: content is judged on its own reports. Sessions are not ended.
+   - A refused mutation says why: the API's `SuspendedRefusals` interceptor replaces a suspended viewer's FORBIDDEN
+     message with "Your account is suspended until <date>, so nothing you do reaches other people until then.", since
+     each context's own refusal words are about other reasons (most say to verify the account).
    - The person is told (`SUSPENDED`), reads until when and why in `myStanding`, and may appeal each suspension once.
      The appeal reopens the USER case in the platform queue, which shows `suspendedUntil`. APPROVE on an account lifts
      the suspension (`RESTORED`); DISMISS keeps it.

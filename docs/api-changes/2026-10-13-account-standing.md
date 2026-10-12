@@ -25,7 +25,8 @@
 - `ModerationCase.suspendedUntil` (USER cases) and `ModerationCase.removedGroup` (GROUP cases).
 
 **Refusals:** while suspended, publishing, sharing, going public, commenting, reacting, posting, joining, following,
-connecting, teaching profile edits and moderating are FORBIDDEN. Taking a note back to PRIVATE is allowed.
+connecting, teaching profile edits and moderating are FORBIDDEN, with the message "Your account is suspended until
+<date>, so nothing you do reaches other people until then." Taking a note back to PRIVATE is allowed.
 
 ## What clients should do
 
