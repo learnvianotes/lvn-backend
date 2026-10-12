@@ -233,6 +233,18 @@ if (opt('--vm')) {
   const coShare = async () => (await gql('mutation ($input: ShareNoteInput!) { shareNote(input: $input) { note { id } userErrors { message } } }', { input: { noteId: id, person: C.handle, role: 'VIEWER' } }, A.token).catch((e) => ({ error: e.message })))
   const shareResult = await eventually(async () => !!(await coShare()).shareNote?.note)
   ok(invite?.role === 'TA' && shareResult, 'C accepts A\'s TA invite; A shares with C again, as co-teachers')
+
+  // Comments and reactions (ADR-0047): D, who reads the lesson plan through the class, comments and reacts; A is told
+  // and replies, and D is told; B, who cannot read the note, sees no discussion.
+  const planTarget = { type: 'NOTE', id: planId }
+  const added = await gql('mutation ($input: AddCommentInput!) { addComment(input: $input) { comment { id } userErrors { message } } }', { input: { target: planTarget, body: text('Why graphs first?').doc } }, D.token)
+  await gql('mutation ($input: ReactInput!) { react(input: $input) { reactions { viewerReaction } } }', { input: { target: { type: 'NOTE', id: planId }, kind: 'HELPFUL' } }, D.token)
+  const told = async (who, kind) => (await gql('{ notifications(first: 5) { edges { node { category data note { id } } } } }', {}, who.token)).notifications.edges.some((e) => e.node.category === 'COMMENT' && e.node.data?.kind === kind && e.node.note?.id === planId)
+  ok(!!added.addComment.comment && (await eventually(() => told(A, 'COMMENT'))), 'D comments on the lesson plan shared to the class; A is told', added.addComment.userErrors[0]?.message)
+  await gql('mutation ($input: AddCommentInput!) { addComment(input: $input) { comment { id } } }', { input: { target: planTarget, parentId: added.addComment.comment.id, body: text('Trees are graphs.').doc } }, A.token)
+  const thread = (await gql('query ($target: CommentTargetInput!) { discussion(target: $target) { commentCount reactions { counts { kind count } } } }', { target: planTarget }, A.token)).discussion
+  const unseen = (await gql('query ($target: CommentTargetInput!) { discussion(target: $target) { commentCount } }', { target: planTarget }, B.token)).discussion
+  ok((await eventually(() => told(D, 'REPLY'))) && thread.commentCount === 2 && thread.reactions.counts.find((c) => c.kind === 'HELPFUL').count === 1 && unseen === null, 'A replies and D is told; A sees one Helpful; B sees no discussion')
 }
 
 // Media (ADR-0041): processed after the upload by the worker, scanned by the environment's ClamAV.
