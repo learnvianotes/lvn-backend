@@ -18,6 +18,20 @@ export interface CompleteRegistrationInput {
   acceptedTermsVersion: string
 }
 
+export type ConnectionDirection = 'INCOMING' | 'OUTGOING'
+
+export interface ConnectionRequestInput {
+  requestId: string
+}
+
+export interface ConnectionRequestItem {
+  id: string
+  direction: ConnectionDirection
+  /** Who asked (INCOMING) or was asked (OUTGOING) */
+  person: User
+  createdAt: Date
+}
+
 export interface DataExport {
   id: string
   status: DataExportStatus
@@ -165,6 +179,26 @@ export interface MutationUnrestrictUserArgs {
   input: PersonInput
 }
 
+export interface MutationRequestConnectionArgs {
+  input: PersonInput
+}
+
+export interface MutationRespondToConnectionRequestArgs {
+  input: RespondToConnectionRequestInput
+}
+
+export interface MutationWithdrawConnectionRequestArgs {
+  input: ConnectionRequestInput
+}
+
+export interface MutationRemoveConnectionArgs {
+  input: PersonInput
+}
+
+export interface MutationUpdateTeacherProfileArgs {
+  input: UpdateTeacherProfileInput
+}
+
 export interface MutationAcceptTermsArgs {
   input: AcceptTermsInput
 }
@@ -212,6 +246,11 @@ export interface OkPayload {
 export interface PageInfo {
   hasNextPage: boolean
   endCursor: string | null
+}
+
+export interface PendingConnection {
+  direction: ConnectionDirection
+  requestId: string
 }
 
 export interface PersonConnection {
@@ -285,6 +324,9 @@ export interface Relation {
   /** The viewer blocked them; being blocked by them is never shown */
   blocked: boolean
   restricted: boolean
+  /** Teachers who connected (ADR-0013) */
+  connected: boolean
+  pendingConnection: PendingConnection | null
   viewerCan: RelationActions
 }
 
@@ -297,6 +339,10 @@ export interface RelationActions {
   unblock: boolean
   restrict: boolean
   unrestrict: boolean
+  /** Teachers connect with teachers (ADR-0013) */
+  requestConnection: boolean
+  respondToConnection: boolean
+  removeConnection: boolean
 }
 
 /** fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by platform admins only, deleted 30 days after the decision */
@@ -317,6 +363,11 @@ export interface RequestTeacherVerificationInput {
 export interface ResetPasswordInput {
   token: string
   password: string
+}
+
+export interface RespondToConnectionRequestInput {
+  requestId: string
+  accept: boolean
 }
 
 export interface ReviewVerificationRequestInput {
@@ -387,12 +438,52 @@ export interface StudentProfile {
   showOnProfile: boolean
 }
 
+export interface TeacherProfile {
+  headline: string | null
+  bio: string | null
+  /** In the teacher's order */
+  skills: Array<TeacherSkill>
+  updatedAt: Date | null
+}
+
+export interface TeacherProfilePayload {
+  profile: TeacherProfile | null
+  userErrors: Array<UserError>
+}
+
+export interface TeacherSkill {
+  id: string
+  kind: TeacherSkillKind
+  name: string
+  detail: string | null
+  source: TeacherSkillSource
+}
+
+export interface TeacherSkillInput {
+  kind: TeacherSkillKind
+  /** At most 120 characters */
+  name: string
+  /** At most 500 characters */
+  detail?: string | null
+}
+
+export type TeacherSkillKind = 'SKILL' | 'QUALIFICATION' | 'EXPERIENCE'
+
+export type TeacherSkillSource = 'MANUAL'
+
 /** Omitted fields stay as they are; null clears a field */
 export interface UpdateProfileInput {
   department?: string | null
   yearOfStudy?: YearOfStudy | null
   interestTopicIds?: Array<string> | null
   showOnProfile?: boolean | null
+}
+
+/** Replaces the whole tab: headline (120 characters), bio (2,000) and at most 60 items in this order */
+export interface UpdateTeacherProfileInput {
+  headline?: string | null
+  bio?: string | null
+  skills: Array<TeacherSkillInput>
 }
 
 /** A person on LVN (§4.1). Fields marked viewer-only are null for anyone else. */
@@ -431,6 +522,8 @@ export interface User {
   followerMilestone?: number | null
   /** The viewer's relation to this person; null for anonymous viewers and on one's own profile */
   relation?: Relation | null
+  /** The Skills tab, for anyone; null for people who are not teachers */
+  teacherProfile?: TeacherProfile | null
   /** The viewer's own: whether they accepted the current version (Query.termsVersion); false means ask again. null for others. */
   termsAccepted?: boolean | null
 }

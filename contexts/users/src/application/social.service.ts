@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common'
 import { Action, can, milestoneFor, type Actor, type GlobalRole, type Resource } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { PrismaService, type Prisma } from '@lvn-backend/prisma-base'
+import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { isRestrictedMinor } from '../domain/rules'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
@@ -11,6 +11,11 @@ import { PolicyService } from './policy.service'
 
 /** ADR-0043: follows a person may make in an hour. */
 export const FOLLOWS_PER_HOUR = 200
+/** ADR-0044: connection requests a teacher may send in a day. */
+export const CONNECTION_REQUESTS_PER_DAY = 30
+
+/** A connection pair, lower id first (one row per pair). */
+export const pair = (a: string, b: string) => (a < b ? { userLowId: a, userHighId: b } : { userLowId: b, userHighId: a })
 
 type UserResource = Extract<Resource, { kind: 'user' }>
 
@@ -20,7 +25,21 @@ export interface Relation {
   followedBy: boolean
   blocked: boolean
   restricted: boolean
-  can: { follow: boolean; unfollow: boolean; removeFollower: boolean; block: boolean; unblock: boolean; restrict: boolean; unrestrict: boolean }
+  connected: boolean
+  /** A pending connection request between them: sent by the viewer (OUTGOING) or to the viewer (INCOMING) */
+  pendingConnection: { direction: 'OUTGOING' | 'INCOMING'; requestId: string } | null
+  can: {
+    follow: boolean
+    unfollow: boolean
+    removeFollower: boolean
+    block: boolean
+    unblock: boolean
+    restrict: boolean
+    unrestrict: boolean
+    requestConnection: boolean
+    respondToConnection: boolean
+    removeConnection: boolean
+  }
 }
 
 export interface Listed {
@@ -44,7 +63,7 @@ export class SocialService {
   ) {}
 
   /** The actor and everything `can()` needs about the target; a missing or deleted target is NOT_FOUND. */
-  private async facts(actorId: string, targetId: string): Promise<{ actor: Actor; resource: UserResource }> {
+  private async facts(actorId: string, targetId: string): Promise<{ actor: Actor; resource: UserResource; pendingRequestId: string | null }> {
     const actor = await this.policy.actor(actorId)
     if (!actor) throw Errors.unauthenticated()
     const target = await this.db.user.findFirst({
@@ -52,14 +71,20 @@ export class SocialService {
       select: { id: true, globalRole: true, dateOfBirth: true, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } },
     })
     if (!target) throw Errors.notFound('Nobody on LearnViaNotes has that account.')
-    const [following, followsActor, blockedByActor, blockingActor, restrictedByActor] = await Promise.all([
+    const [following, followsActor, blockedByActor, blockingActor, restrictedByActor, connected, pending] = await Promise.all([
       this.db.follow.count({ where: { followerId: actorId, followeeId: targetId } }),
       this.db.follow.count({ where: { followerId: targetId, followeeId: actorId } }),
       this.db.block.count({ where: { blockerId: actorId, blockedId: targetId } }),
       this.db.block.count({ where: { blockerId: targetId, blockedId: actorId } }),
       this.db.restriction.count({ where: { restricterId: actorId, restrictedId: targetId } }),
+      this.db.connection.count({ where: pair(actorId, targetId) }),
+      this.db.connectionRequest.findFirst({
+        where: { status: 'PENDING', OR: [{ fromUserId: actorId, toUserId: targetId }, { fromUserId: targetId, toUserId: actorId }] },
+        select: { id: true, fromUserId: true },
+      }),
     ])
     return {
+      pendingRequestId: pending?.id ?? null,
       actor,
       resource: {
         kind: 'user',
@@ -71,6 +96,8 @@ export class SocialService {
         blocked: blockedByActor + blockingActor > 0,
         blockedByActor: blockedByActor > 0,
         restrictedByActor: restrictedByActor > 0,
+        connected: connected > 0,
+        ...(pending ? { pendingConnection: pending.fromUserId === actorId ? ('OUTGOING' as const) : ('INCOMING' as const) } : {}),
       },
     }
   }
@@ -78,7 +105,7 @@ export class SocialService {
   /** The viewer's relation to someone, for profiles; null for anonymous viewers or oneself. */
   async relation(viewerId: string | null, targetId: string): Promise<Relation | null> {
     if (!viewerId || viewerId === targetId) return null
-    const { actor, resource } = await this.facts(viewerId, targetId)
+    const { actor, resource, pendingRequestId } = await this.facts(viewerId, targetId)
     const may = (action: Action) => can(actor, action, resource)
     return {
       following: resource.following ?? false,
@@ -86,7 +113,12 @@ export class SocialService {
       // Only the viewer's own block shows: being blocked by the other person is never revealed (ADR-0016).
       blocked: resource.blockedByActor ?? false,
       restricted: resource.restrictedByActor ?? false,
+      connected: resource.connected ?? false,
+      pendingConnection: resource.pendingConnection && pendingRequestId ? { direction: resource.pendingConnection, requestId: pendingRequestId } : null,
       can: {
+        requestConnection: may(Action.USER_REQUEST_CONNECTION),
+        respondToConnection: may(Action.USER_RESPOND_TO_CONNECTION),
+        removeConnection: may(Action.USER_REMOVE_CONNECTION),
         follow: may(Action.USER_FOLLOW),
         unfollow: may(Action.USER_UNFOLLOW),
         removeFollower: may(Action.USER_REMOVE_FOLLOWER),
@@ -133,16 +165,23 @@ export class SocialService {
     const { actor, resource } = await this.facts(actorId, targetId)
     if (resource.blockedByActor) return
     if (!can(actor, Action.USER_BLOCK, resource)) throw Errors.forbidden()
-    const ended = await this.db.$transaction(async (tx) => {
+    const { ended, disconnected } = await this.db.$transaction(async (tx) => {
       await tx.block.createMany({ data: [{ blockerId: actorId, blockedId: targetId }], skipDuplicates: true })
       await tx.restriction.deleteMany({ where: { restricterId: actorId, restrictedId: targetId } })
+      // A block ends a connection and any request between the two as well (ADR-0013, ADR-0044).
+      const { count: disconnected } = await tx.connection.deleteMany({ where: pair(actorId, targetId) })
+      await tx.connectionRequest.updateMany({
+        where: { status: 'PENDING', OR: [{ fromUserId: actorId, toUserId: targetId }, { fromUserId: targetId, toUserId: actorId }] },
+        data: { status: 'WITHDRAWN', respondedAt: new Date() },
+      })
       const follows = await tx.follow.findMany({ where: { OR: [{ followerId: actorId, followeeId: targetId }, { followerId: targetId, followeeId: actorId }] } })
       await tx.follow.deleteMany({ where: { OR: [{ followerId: actorId, followeeId: targetId }, { followerId: targetId, followeeId: actorId }] } })
       await this.audit.record({ actorId, action: 'user.block', targetType: 'USER', targetId }, tx)
-      return follows
+      return { ended: follows, disconnected }
     })
     await this.events.publish('UserBlocked', { blockerId: actorId, blockedId: targetId })
     for (const f of ended) await this.events.publish('UserUnfollowed', { followerId: f.followerId, followeeId: f.followeeId, quiet: true })
+    if (disconnected) await this.events.publish('ConnectionChanged', { userIds: [actorId, targetId], change: 'DISCONNECTED', by: actorId })
   }
 
   async unblock(actorId: string, targetId: string): Promise<void> {
@@ -167,6 +206,70 @@ export class SocialService {
     if (!count) return
     await this.audit.record({ actorId, action: 'user.unrestrict', targetType: 'USER', targetId })
     await this.events.publish('UserUnrestricted', { restricterId: actorId, restrictedId: targetId })
+  }
+
+  // ── Connections (ADR-0013, ADR-0044) ──────────────────────────────────────────────────────────────────────────
+
+  async requestConnection(actorId: string, targetId: string): Promise<void> {
+    if (actorId === targetId) throw Errors.validation('You cannot connect with yourself.')
+    const { actor, resource } = await this.facts(actorId, targetId)
+    if (resource.connected || resource.pendingConnection === 'OUTGOING') return
+    if (resource.pendingConnection === 'INCOMING') throw Errors.conflict('They already asked to connect with you: accept their request instead.')
+    if (!can(actor, Action.USER_REQUEST_CONNECTION, resource)) {
+      if (!actor.institutionVerified) throw Errors.forbidden('Verify your account to connect with teachers.')
+      throw Errors.forbidden('Teachers connect with other teachers.')
+    }
+    const limit = await this.limiter.hit(`users:connect:${actorId}`, { max: CONNECTION_REQUESTS_PER_DAY, windowSeconds: 86_400 })
+    if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'You have asked a lot of teachers to connect today. Try again tomorrow.')
+    const id = newId()
+    await this.db.connectionRequest.create({ data: { id, fromUserId: actorId, toUserId: targetId } })
+    await this.events.publish('ConnectionRequested', { requestId: id, fromUserId: actorId, toUserId: targetId })
+  }
+
+  /** The person asked accepts or declines; a decline is silent. */
+  async respondToConnection(actorId: string, requestId: string, accept: boolean): Promise<string> {
+    const request = await this.db.connectionRequest.findFirst({ where: { id: requestId, toUserId: actorId } })
+    if (!request) throw Errors.notFound('That request is not there any more.')
+    if (request.status !== 'PENDING') throw Errors.conflict('That request was already answered.')
+    const { actor, resource } = await this.facts(actorId, request.fromUserId)
+    if (accept && !can(actor, Action.USER_RESPOND_TO_CONNECTION, resource)) throw Errors.forbidden(actor.institutionVerified ? undefined : 'Verify your account to connect with teachers.')
+    await this.db.$transaction(async (tx) => {
+      await tx.connectionRequest.update({ where: { id: requestId }, data: { status: accept ? 'ACCEPTED' : 'DECLINED', respondedAt: new Date() } })
+      if (accept) await tx.connection.createMany({ data: [pair(actorId, request.fromUserId)], skipDuplicates: true })
+    })
+    if (accept) await this.events.publish('ConnectionChanged', { userIds: [request.fromUserId, actorId], change: 'CONNECTED', by: actorId })
+    return request.fromUserId
+  }
+
+  async withdrawConnectionRequest(actorId: string, requestId: string): Promise<string> {
+    const request = await this.db.connectionRequest.findFirst({ where: { id: requestId, fromUserId: actorId } })
+    if (!request) throw Errors.notFound('That request is not there any more.')
+    if (request.status === 'PENDING') await this.db.connectionRequest.update({ where: { id: requestId }, data: { status: 'WITHDRAWN', respondedAt: new Date() } })
+    return request.toUserId
+  }
+
+  async removeConnection(actorId: string, targetId: string): Promise<void> {
+    const { count } = await this.db.connection.deleteMany({ where: pair(actorId, targetId) })
+    if (count) await this.events.publish('ConnectionChanged', { userIds: [actorId, targetId], change: 'DISCONNECTED', by: actorId })
+  }
+
+  async connections(userId: string): Promise<Listed[]> {
+    const rows = await this.db.connection.findMany({
+      where: { OR: [{ userLowId: userId, high: { deletedAt: null } }, { userHighId: userId, low: { deletedAt: null } }] },
+      orderBy: { createdAt: 'desc' },
+      take: 1000,
+    })
+    return rows.map((r) => ({ id: r.userLowId === userId ? r.userHighId : r.userLowId, since: r.createdAt }))
+  }
+
+  /** Pending requests to the person (INCOMING) or from them (OUTGOING), newest first. */
+  async connectionRequests(userId: string): Promise<{ id: string; direction: 'INCOMING' | 'OUTGOING'; personId: string; createdAt: Date }[]> {
+    const rows = await this.db.connectionRequest.findMany({
+      where: { status: 'PENDING', OR: [{ toUserId: userId, from: { deletedAt: null } }, { fromUserId: userId, to: { deletedAt: null } }] },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    })
+    return rows.map((r) => (r.toUserId === userId ? { id: r.id, direction: 'INCOMING' as const, personId: r.fromUserId, createdAt: r.createdAt } : { id: r.id, direction: 'OUTGOING' as const, personId: r.toUserId, createdAt: r.createdAt }))
   }
 
   /** People who may be named in a list: not deleted, and not restricted minors (ADR-0016). */

@@ -89,6 +89,8 @@ export const events = {
   ConnectionChanged: eventEnvelope('ConnectionChanged', 1, z.object({
     userIds: z.tuple([uuid, uuid]),
     change: z.enum(['CONNECTED', 'DISCONNECTED']),
+    /** Who caused it (accepted, removed, blocked); optional, additive in v1 (ADR-0044). */
+    by: uuid.optional(),
   })),
   // Block and restrict (§15.1, ADR-0016). A block ends follows and connections both ways (users emits the
   // matching UserUnfollowed / ConnectionChanged too); notes and core hide the blocked user's content and comments;

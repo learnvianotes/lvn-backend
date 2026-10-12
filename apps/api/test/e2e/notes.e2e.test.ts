@@ -151,8 +151,10 @@ describe('notes', () => {
       expect(await db.note.count()).toBe(before)
     })
 
-    it('creates only NOTE notes in Phase 2', async () => {
-      expect((await create(owner.token, { kind: 'BLOG' })).userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'kind'] })
+    it('creates notes and projects for anyone; blogs and posts are for teachers (ADR-0014, ADR-0044)', async () => {
+      const res = await t.gql(`mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } ${ERRORS} } }`, { input: { kind: 'BLOG' } }, owner.token)
+      expect(res.errors?.[0]).toMatchObject({ message: 'Blogs and posts are for teachers.', extensions: { code: 'FORBIDDEN' } })
+      expect((await create(owner.token, { kind: 'PROJECT', title: 'A project' })).note).not.toBeNull()
     })
   })
 

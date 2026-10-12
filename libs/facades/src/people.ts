@@ -25,4 +25,8 @@ export interface People {
   blockedIds(userId: string): Promise<string[]>
   /** Either of the two blocked the other: no new interaction between them (ADR-0016). */
   blockedBetween(a: string, b: string): Promise<boolean>
+  /** The teachers `userId` is connected with (ADR-0013, ADR-0044). */
+  connectionIds(userId: string): Promise<string[]>
+  /** The two are connected. */
+  connected(a: string, b: string): Promise<boolean>
 }

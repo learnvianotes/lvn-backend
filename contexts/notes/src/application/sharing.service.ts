@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common'
+import { Inject, Injectable, type OnModuleInit } from '@nestjs/common'
 import { Action, can, type Visibility } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
@@ -19,7 +19,7 @@ const SHARES_PER_NOTE = 100
  * owner's switch for forking. Every change of visibility or shares goes to the audit log (§4.5).
  */
 @Injectable()
-export class SharingService {
+export class SharingService implements OnModuleInit {
   constructor(
     private readonly db: PrismaService,
     private readonly notes: NotesService,
@@ -30,6 +30,10 @@ export class SharingService {
     @Inject(AUDIT) private readonly audit: Audit,
     @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
+
+  onModuleInit(): void {
+    this.events.subscribe('ConnectionChanged', ({ payload }) => this.onConnectionChanged(payload.userIds, payload.change))
+  }
 
   /** PRIVATE ⇄ SHARED ⇄ PUBLIC (§4.2). PUBLIC needs a published version, a verified account and no minor restriction. */
   async changeVisibility(ownerId: string, noteId: string, visibility: Visibility): Promise<OpenedNote> {
@@ -69,7 +73,9 @@ export class SharingService {
     if (person.id === ownerId) throw Errors.validation('This is your own note.', ['input', 'person'])
     // A block stops new shares both ways; the message does not say who blocked whom (ADR-0016, ADR-0043).
     if (await this.people.blockedBetween(ownerId, person.id)) throw Errors.forbidden("This note can't be shared with that person.")
-    const target = { kind: 'USER' as const, recipientIsTeacher: person.globalRole === 'TEACHER' }
+    const recipientIsTeacher = person.globalRole === 'TEACHER'
+    // Teacher to teacher needs a connection (ADR-0013); co-teaching a classroom counts once classrooms exist (P3d).
+    const target = { kind: 'USER' as const, recipientIsTeacher, connectedToRecipient: recipientIsTeacher ? await this.people.connected(ownerId, person.id) : false }
     if (!can(actor, Action.NOTE_SHARE, { kind: 'note', note: noteFacts(note, null), shareTarget: target })) {
       if (!actor.institutionVerified) throw Errors.forbidden('Verify your account to share notes.')
       throw Errors.forbidden('Teachers share with other teachers once they are connected.')
@@ -80,13 +86,14 @@ export class SharingService {
     if (!existing && (await this.db.noteShare.count({ where: { noteId } })) >= SHARES_PER_NOTE) throw Errors.validation(`A note can be shared with at most ${SHARES_PER_NOTE} people.`)
 
     await this.db.$transaction(async (tx) => {
-      await tx.noteShare.upsert({ where: { noteId_userId: { noteId, userId: person.id } }, create: { noteId, userId: person.id, role, createdById: ownerId }, update: { role } })
+      // A direct share wins over one through connections (ADR-0044): it stays when connections change.
+      await tx.noteShare.upsert({ where: { noteId_userId: { noteId, userId: person.id } }, create: { noteId, userId: person.id, role, createdById: ownerId }, update: { role, source: 'DIRECT' } })
       // The note counts as changed (updatedAt), so the devices of the person it is shared with pick it up (§13.2).
       await tx.note.update({ where: { id: noteId }, data: { updatedAt: new Date(), ...(note.visibility === 'PRIVATE' ? { visibility: 'SHARED' as const } : {}) } })
     })
     await this.audit.record({ actorId: ownerId, action: existing ? 'note.share.role' : 'note.share', targetType: 'NOTE', targetId: noteId, metadata: { userId: person.id, role } })
     if (note.visibility === 'PRIVATE') await this.audit.record({ actorId: ownerId, action: 'note.visibility', targetType: 'NOTE', targetId: noteId, metadata: { from: 'PRIVATE', to: 'SHARED' } })
-    if (!existing) await this.events.publish('NoteShared', { noteId, sharedBy: ownerId, target: { kind: 'USER', userId: person.id } })
+    if (!existing || existing.source === 'CONNECTIONS') await this.events.publish('NoteShared', { noteId, sharedBy: ownerId, target: { kind: 'USER', userId: person.id } })
     return (await this.notes.open(ownerId, noteId, actor))!
   }
 
@@ -95,6 +102,51 @@ export class SharingService {
     const { count } = await this.db.noteShare.deleteMany({ where: { noteId, userId } })
     if (count) await this.audit.record({ actorId: ownerId, action: 'note.unshare', targetType: 'NOTE', targetId: noteId, metadata: { userId } })
     return (await this.notes.open(ownerId, noteId, actor))!
+  }
+
+  /**
+   * Shares with every connection of the owner, live, or stops (ADR-0013, ADR-0044): teachers only. Each connection
+   * gets a VIEWER row marked CONNECTIONS; people shared with directly keep their own rows.
+   */
+  async setSharedWithConnections(ownerId: string, noteId: string, shared: boolean): Promise<OpenedNote> {
+    const { note, actor } = await this.notes.require(ownerId, noteId, 'owner')
+    if (note.deletedAt) throw Errors.validation('Restore the note from the trash first.')
+    if (shared && !can(actor, Action.NOTE_SHARE, { kind: 'note', note: noteFacts(note, null), shareTarget: { kind: 'CONNECTIONS' } })) {
+      throw Errors.forbidden(actor.institutionVerified ? 'Only teachers share with their connections.' : 'Verify your account to share notes.')
+    }
+    if (shared) {
+      const connections = await this.people.connectionIds(ownerId)
+      await this.db.$transaction(async (tx) => {
+        await tx.note.update({ where: { id: noteId }, data: { sharedWithConnections: true, updatedAt: new Date(), ...(note.visibility === 'PRIVATE' ? { visibility: 'SHARED' as const } : {}) } })
+        if (connections.length) await tx.noteShare.createMany({ data: connections.map((userId) => ({ noteId, userId, role: 'VIEWER' as const, source: 'CONNECTIONS' as const, createdById: ownerId })), skipDuplicates: true })
+      })
+      if (note.visibility === 'PRIVATE') await this.audit.record({ actorId: ownerId, action: 'note.visibility', targetType: 'NOTE', targetId: noteId, metadata: { from: 'PRIVATE', to: 'SHARED' } })
+    } else {
+      await this.db.$transaction([
+        this.db.note.update({ where: { id: noteId }, data: { sharedWithConnections: false, updatedAt: new Date() } }),
+        this.db.noteShare.deleteMany({ where: { noteId, source: 'CONNECTIONS' } }),
+      ])
+    }
+    await this.audit.record({ actorId: ownerId, action: shared ? 'note.share.connections' : 'note.unshare.connections', targetType: 'NOTE', targetId: noteId })
+    return (await this.notes.open(ownerId, noteId, actor))!
+  }
+
+  /**
+   * Keeps "all my connections" live (ADR-0044): a new connection reads the other's notes shared with connections, a
+   * removed one stops. Rows shared directly are never touched.
+   */
+  async onConnectionChanged(userIds: [string, string], change: 'CONNECTED' | 'DISCONNECTED'): Promise<void> {
+    const [a, b] = userIds
+    if (change === 'CONNECTED') {
+      for (const [owner, reader] of [[a, b], [b, a]] as const) {
+        const notes = await this.db.note.findMany({ where: { ownerId: owner, sharedWithConnections: true, deletedAt: null }, select: { id: true } })
+        if (!notes.length) continue
+        await this.db.noteShare.createMany({ data: notes.map((n) => ({ noteId: n.id, userId: reader, role: 'VIEWER' as const, source: 'CONNECTIONS' as const, createdById: owner })), skipDuplicates: true })
+        await this.db.note.updateMany({ where: { id: { in: notes.map((n) => n.id) } }, data: { updatedAt: new Date() } })
+      }
+    } else {
+      await this.db.noteShare.deleteMany({ where: { source: 'CONNECTIONS', OR: [{ userId: b, note: { ownerId: a } }, { userId: a, note: { ownerId: b } }] } })
+    }
   }
 
   /** The people a note is shared with (the owner sees them; nobody else). */

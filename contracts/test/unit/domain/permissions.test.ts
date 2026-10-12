@@ -519,6 +519,13 @@ describe('actions without a resource', () => {
     expect(can(other, Action.CLASSROOM_CREATE)).toBe(false)
   })
 
+  it('only a teacher edits a Skills tab, their own (ADR-0012, ADR-0044)', () => {
+    expect(can(student('t', { globalRole: GlobalRole.TEACHER }), Action.TEACHER_EDIT_PROFILE)).toBe(true)
+    expect(can(other, Action.TEACHER_EDIT_PROFILE)).toBe(false)
+    expect(can(student('a', { globalRole: GlobalRole.PLATFORM_ADMIN }), Action.TEACHER_EDIT_PROFILE)).toBe(false)
+    expect(can(anon, Action.TEACHER_EDIT_PROFILE)).toBe(false)
+  })
+
   it('resource-bound actions need their resource', () => {
     expect(can(owner, Action.NOTE_READ)).toBe(false)
   })
