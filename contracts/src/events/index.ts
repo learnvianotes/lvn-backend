@@ -203,6 +203,21 @@ export const events = {
     classroomId: uuid.optional(),
     noteId: uuid.optional(),
   })),
+  /**
+   * Someone named people with @handle in a comment or a post (ADR-0054). Only people who can read it and have nothing
+   * between them and the author are listed; where it is, never what it says.
+   */
+  PeopleMentioned: eventEnvelope('PeopleMentioned', 1, z.object({
+    entityType: z.enum(['COMMENT', 'GROUP_POST']),
+    entityId: uuid,
+    authorId: uuid,
+    mentionedIds: z.array(uuid).min(1).max(10),
+    place: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('NOTE'), noteId: uuid }),
+      z.object({ kind: z.literal('GROUP'), groupId: uuid }),
+      z.object({ kind: z.literal('CLASSROOM'), classroomId: uuid }),
+    ]),
+  })),
   LearningEventRecorded: eventEnvelope('LearningEventRecorded', 1, z.object({ userId: uuid, eventIds: z.array(uuid).min(1) })),
   // ai
   NoteArtifactReady: eventEnvelope('NoteArtifactReady', 1, z.object({ artifactId: uuid, noteId: uuid, versionId: uuid, artifactType: z.string() })),

@@ -8,6 +8,7 @@ import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { ClassroomsService } from './classrooms.service'
 import { GroupsService } from './groups.service'
+import { MentionsService } from './mentions.service'
 import { ModerationService } from './moderation.service'
 
 export type CommentTargetKind = 'NOTE' | 'GROUP_POST' | 'CLASSROOM_POST'
@@ -57,6 +58,7 @@ export class CommentsService {
     private readonly groups: GroupsService,
     private readonly classrooms: ClassroomsService,
     private readonly moderation: ModerationService,
+    private readonly mentions: MentionsService,
     @Inject(NOTE_ACCESS) private readonly notes: NoteAccess,
     @Inject(PEOPLE) private readonly people: People,
     @Inject(POLICY) private readonly policy: Policy,
@@ -156,7 +158,13 @@ export class CommentsService {
       if (place.ownerId !== viewerId && !recipients.some((r) => r.userId === place.ownerId)) recipients.push({ userId: place.ownerId, kind: 'COMMENT' })
     }
     await this.events.publish('CommentAdded', { commentId: id, targetType: input.target.type, targetId: input.target.id, authorId: viewerId, recipients, place: place.link })
+    // People named with @handle who can read the comment (ADR-0054); not while it waits for approval or review.
+    if (!pending && !held) await this.mentionIn(id, viewerId, docText(body as never), null, place, recipients.map((r) => r.userId))
     return id
+  }
+
+  private mentionIn(commentId: string, authorId: string, text: string, before: string | null, place: Place, alreadyTold: string[] = []) {
+    return this.mentions.mention({ entityType: 'COMMENT', entityId: commentId, authorId, text, before, place: place.link, alreadyTold, canSee: async (userId) => !!(await this.get(userId, commentId)) })
   }
 
   /** The comment, when the viewer can see it, with the discussion it is in. */
@@ -176,12 +184,14 @@ export class CommentsService {
   }
 
   async edit(viewerId: string, commentId: string, body: unknown): Promise<string> {
-    const { comment } = await this.mustGet(viewerId, commentId)
+    const { comment, place } = await this.mustGet(viewerId, commentId)
     if (comment.authorId !== viewerId) throw Errors.forbidden('Only its author edits a comment.')
     if (comment.moderation === 'HIDDEN' || comment.moderation === 'REMOVED') throw Errors.validation('A moderator took this comment down; appeal instead of editing it.')
     const { doc, held } = this.body(body)
     await this.db.comment.update({ where: { id: commentId }, data: { body: doc, editedAt: new Date(), ...(held ? { moderation: 'PENDING_REVIEW' as const, moderationReason: this.heldReason(held.message) } : {}) } })
     if (held) await this.moderation.fileSystemReport('COMMENT', commentId, held.reason, `Held when edited: ${held.message}`)
+    // Only people named for the first time in this edit are told.
+    else if (comment.state === 'VISIBLE' && comment.moderation === 'OK') await this.mentionIn(commentId, viewerId, docText(doc as never), docText(comment.body as never), place)
     return commentId
   }
 

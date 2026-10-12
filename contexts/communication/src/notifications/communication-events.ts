@@ -84,6 +84,15 @@ export class CommunicationEvents implements OnModuleInit {
         await this.notifications.notify({ userId: r.userId, category: 'COMMENT', actorId: payload.authorId, data: { kind: r.kind }, ...where })
       }
     })
+    // Mentions (ADR-0054): each person named, where they were named.
+    this.events.subscribe('PeopleMentioned', async ({ payload }) => {
+      const place = payload.place
+      const where =
+        place.kind === 'NOTE' ? { path: `/notes/${place.noteId}`, noteId: place.noteId } : place.kind === 'GROUP' ? { path: `/groups/${place.groupId}`, groupId: place.groupId } : { path: `/classes/${place.classroomId}`, classroomId: place.classroomId }
+      for (const userId of payload.mentionedIds) {
+        await this.notifications.notify({ userId, category: 'MENTION', actorId: payload.authorId, data: { entityType: payload.entityType }, ...where })
+      }
+    })
     // Project workspaces (ADR-0048): the teacher asked to mentor; mentors hear of doubts, askers of answers.
     this.events.subscribe('MentorInvited', async ({ payload }) => {
       await this.notifications.notify({ userId: payload.teacherId, category: 'MENTOR_INVITE', path: `/groups/${payload.groupId}`, actorId: payload.invitedBy, groupId: payload.groupId })
