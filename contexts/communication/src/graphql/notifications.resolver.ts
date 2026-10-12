@@ -50,4 +50,9 @@ export class NotificationsResolver {
   note(@Parent() n: NotificationRow) {
     return n.noteId ? { __typename: 'Note', id: n.noteId } : null
   }
+
+  @ResolveField('group')
+  group(@Parent() n: NotificationRow) {
+    return n.groupId ? { __typename: 'Group', id: n.groupId } : null
+  }
 }

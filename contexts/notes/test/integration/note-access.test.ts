@@ -17,12 +17,16 @@ describe('note visibility: the single-note rule and the list query agree', () =>
   const editor = newId()
   const viewer = newId()
   const stranger = newId()
+  /** In a group the shared notes are shared to (ADR-0045) */
+  const member = newId()
+  const group = newId()
   const notes: (NoteAccessRow & { shares: Record<string, 'EDITOR' | 'VIEWER'> })[] = []
 
   beforeAll(async () => {
     const pg = await startPostgres()
     stop = () => pg.container.stop()
     db = new PrismaService(pg.url)
+    await db.groupRead.create({ data: { id: group, members: { create: [{ userId: member }] } } })
     for (const visibility of ['PRIVATE', 'SHARED', 'PUBLIC'] as const) {
       for (const published of [false, true]) {
         for (const trashed of [false, true]) {
@@ -38,6 +42,7 @@ describe('note visibility: the single-note rule and the list query agree', () =>
               }
               const shares: Record<string, 'EDITOR' | 'VIEWER'> = shared ? { [editor]: 'EDITOR', [viewer]: 'VIEWER' } : {}
               for (const [userId, role] of Object.entries(shares)) await db.noteShare.create({ data: { noteId: id, userId, role, createdById: owner } })
+              if (shared) await db.groupShare.create({ data: { noteId: id, groupId: group, sharedById: owner } })
               notes.push({ id, ownerId: owner, visibility, moderation, forkingEnabled: true, publishedVersionId, deletedAt: trashed ? new Date() : null, shares })
             }
           }
@@ -57,6 +62,7 @@ describe('note visibility: the single-note rule and the list query agree', () =>
     ['the owner', owner],
     ['a share editor', editor],
     ['a share viewer', viewer],
+    ['a member of a group it is shared to', member],
     ['someone else', stranger],
     ['an anonymous visitor', null],
   ])('%s sees the same notes either way', async (_, id) => {
@@ -64,7 +70,8 @@ describe('note visibility: the single-note rule and the list query agree', () =>
       const a = id ? actor(id, verified) : null
       const listed = new Set((await db.note.findMany({ where: visibleNotesWhere(id), select: { id: true } })).map((n) => n.id))
       // Lists leave the trash out; the owner reaches trashed notes through the trash view.
-      const opened = new Set(notes.filter((n) => !n.deletedAt && noteAccess(a, n, id ? (n.shares[id] ?? null) : null) !== null).map((n) => n.id))
+      const inSharedGroup = (n: (typeof notes)[number]) => id === member && Object.keys(n.shares).length > 0
+      const opened = new Set(notes.filter((n) => !n.deletedAt && noteAccess(a, n, id ? (n.shares[id] ?? null) : null, { inSharedGroup: inSharedGroup(n) }) !== null).map((n) => n.id))
       expect([...listed].sort()).toEqual([...opened].sort())
     }
   })
@@ -94,5 +101,11 @@ describe('note visibility: the single-note rule and the list query agree', () =>
     expect(access(editor, find('SHARED', true, false, true, 'HIDDEN'))).toBeNull()
     expect(access(viewer, find('PUBLIC', true, false, true, 'REMOVED'))).toBeNull()
     expect(access(owner, find('PUBLIC', true, false, true, 'REMOVED'))).toBe('OWNER')
+    // ADR-0045: a group's members read what is shared to it once published, like viewers; never a PRIVATE note.
+    const inGroup = (n: (typeof notes)[number]) => noteAccess(actor(member, true), n, null, { inSharedGroup: true })
+    expect(inGroup(find('SHARED', true, false, true))).toBe('READER')
+    expect(inGroup(find('SHARED', false, false, true))).toBeNull()
+    expect(inGroup(find('PRIVATE', true, false, true))).toBeNull()
+    expect(inGroup(find('SHARED', true, false, true, 'PENDING_REVIEW'))).toBe('READER')
   })
 })

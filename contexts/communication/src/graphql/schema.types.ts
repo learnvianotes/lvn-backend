@@ -2,6 +2,11 @@
 
 export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL'
 
+/** A group, owned by the core subgraph: null when the viewer may no longer see it */
+export interface Group {
+  id: string
+}
+
 export interface MarkNotificationsReadInput {
   /** These notifications; ignored when all is true */
   ids?: Array<string> | null
@@ -34,7 +39,9 @@ export interface Notification {
   actor: User | null
   /** The note it is about; null when there is none or the viewer can no longer read it */
   note: Note | null
-  /** Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed } */
+  /** The group it is about (JOIN_REQUEST, JOIN_DECISION); null when there is none or the viewer may no longer see it */
+  group: Group | null
+  /** Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED } */
   data: unknown | null
   readAt: Date | null
   createdAt: Date

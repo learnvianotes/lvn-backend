@@ -192,6 +192,20 @@ if (opt('--vm')) {
   ok(await cReads(), 'A shares a note with all connections, and C reads it')
   await gql('mutation ($input: PersonInput!) { removeConnection(input: $input) { userErrors { message } } }', { input: { userId: C.id } }, A.token)
   ok(await eventually(async () => !(await cReads())), 'the connection ends, and C no longer reads it')
+
+  // Groups (ADR-0045): A starts a private group; C asks to join with its link and A lets them in; a note shared to the
+  // group is read by C and not by B, who is not in it.
+  const created = await gql('mutation ($input: CreateGroupInput!) { createGroup(input: $input) { group { id } userErrors { message } } }', { input: { name: `Study ${WORD}`, privacy: 'PRIVATE' } }, A.token)
+  const groupId = created.createGroup.group.id
+  await gql('mutation ($input: RequestToJoinGroupInput!) { requestToJoinGroup(input: $input) { group { id } } }', { input: { groupId, message: 'I teach this too' } }, C.token)
+  const pending = (await gql('query ($id: UUID!) { group(id: $id) { joinRequests { id user { id } } } }', { id: groupId }, A.token)).group.joinRequests
+  await gql('mutation ($input: ReviewGroupJoinRequestInput!) { reviewGroupJoinRequest(input: $input) { group { id } } }', { input: { requestId: pending[0].id, decision: 'APPROVED' } }, A.token)
+  ok((await gql('query ($id: UUID!) { group(id: $id) { viewerRole } }', { id: groupId }, C.token)).group.viewerRole === 'MEMBER', 'a private group: C asks to join with its link, A lets them in')
+  await gql('mutation ($input: NoteGroupInput!) { shareNoteToGroup(input: $input) { note { id } } }', { input: { noteId: planId, groupId } }, A.token)
+  const readsPlan = async (who) => (await gql('query ($id: UUID!) { note(id: $id) { id } }', { id: planId }, who.token)).note?.id === planId
+  ok(await eventually(() => readsPlan(C)), 'a note shared to the group is read by its members')
+  const outside = await gql('query ($id: UUID!) { group(id: $id) { name posts { edges { node { id } } } sharedNotes { edges { node { id } } } } }', { id: groupId }, B.token)
+  ok(!(await readsPlan(B)) && outside.group.posts === null && outside.group.sharedNotes === null, 'and not by B, who is not in it: B sees the name only')
 }
 
 // Media (ADR-0041): processed after the upload by the worker, scanned by the environment's ClamAV.

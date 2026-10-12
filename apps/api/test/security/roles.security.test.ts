@@ -20,7 +20,7 @@ describe('security: roles', () => {
 
   const mutations = () => Object.values(schema.getMutationType()!.getFields())
 
-  it('no mutation takes a role, except the platform-admin tool setGlobalRole and an owner sharing their note', () => {
+  it('no mutation takes a role, except the platform-admin tool setGlobalRole, an owner sharing their note and a group admin', () => {
     const roleInputs: string[] = []
     const visit = (type: GraphQLInputType, path: string, seen: Set<string>) => {
       const named = getNamedType(type)
@@ -29,8 +29,9 @@ describe('security: roles', () => {
       for (const f of Object.values(named.getFields())) visit(f.type, `${path}.${f.name}`, new Set([...seen, named.name]))
     }
     for (const m of mutations()) for (const a of m.args) visit(a.type, `${m.name}(${a.name})`, new Set())
-    // shareNote's role is what the owner lets one person do with one note (§5: EDITOR or VIEWER), never an account role.
-    expect(roleInputs.sort()).toEqual(['setGlobalRole(input).role', 'shareNote(input).role'])
+    // shareNote's role is what the owner lets one person do with one note (§5: EDITOR or VIEWER), never an account role;
+    // setGroupRole is an admin giving a member a role below their own (ADR-0045), tested below.
+    expect(roleInputs.sort()).toEqual(['setGlobalRole(input).role', 'setGroupRole(input).role', 'shareNote(input).role'])
   })
 
   it('every mutation, called by a student with every role value and their own or a teacher’s id, leaves them a student', async () => {
@@ -85,5 +86,26 @@ describe('security: roles', () => {
     expect(res.data?.signUp.session?.user.globalRole).toBe('STUDENT')
   })
 
-  it.todo('GROUP_ADMIN cannot be obtained through any group or classroom mutation (Phase 3: groups and classrooms)')
+  it('a group role above one’s own cannot be taken through any group mutation (ADR-0045)', async () => {
+    const owner = actors.teacher
+    const gql = <T>(q: string, input: object, token: string) => t.gql<T>(q, { input }, token)
+    const groupId = (await gql<{ createGroup: { group: { id: string } } }>('mutation ($input: CreateGroupInput!) { createGroup(input: $input) { group { id } } }', { name: 'Roles G', privacy: 'PUBLIC', joinPolicy: 'OPEN' }, owner.token)).data!.createGroup.group.id
+    const db = t.app.get(PrismaService)
+    await db.user.update({ where: { id: actors.b.id }, data: { verifiedAt: new Date(), verificationMethod: 'INSTITUTIONAL_EMAIL' } })
+    const b = actors.b
+    await gql('mutation ($input: GroupIdInput!) { joinGroup(input: $input) { group { id } } }', { groupId }, b.token)
+    const roleOfB = async () => (await db.groupMember.findUniqueOrThrow({ where: { groupId_userId: { groupId, userId: b.id } } })).role
+    // Every way a member might try: give themselves a role, hand themselves the group, change settings, review.
+    for (const role of ['ADMIN', 'MODERATOR', 'OWNER']) {
+      const res = await gql('mutation ($input: SetGroupRoleInput!) { setGroupRole(input: $input) { group { id } } }', { groupId, userId: b.id, role }, b.token)
+      expect(res.errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+    }
+    expect((await gql('mutation ($input: UpdateGroupInput!) { updateGroup(input: $input) { group { id } } }', { groupId, joinPolicy: 'APPROVAL' }, b.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+    expect((await gql('mutation ($input: GroupMemberInput!) { removeGroupMember(input: $input) { group { id } } }', { groupId, userId: owner.id }, b.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+    // Inputs that carry a role are refused at the schema when the value is not a role at all.
+    expect((await gql('mutation ($input: SetGroupRoleInput!) { setGroupRole(input: $input) { group { id } } }', { groupId, userId: b.id, role: 'GROUP_ADMIN' }, b.token)).errors).toBeDefined()
+    expect(await roleOfB()).toBe('MEMBER')
+  })
+
+  it.todo('a classroom role cannot be obtained through any classroom mutation (Phase 3: classrooms)')
 })

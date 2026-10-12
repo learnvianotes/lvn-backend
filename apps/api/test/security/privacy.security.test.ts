@@ -1,5 +1,6 @@
 import { getNamedType, isObjectType, type GraphQLSchema } from 'graphql'
 import { LIVE_SDL, NotificationService } from '@lvn-backend/communication'
+import { InProcessEventBus } from '@lvn-backend/event-bus'
 import { PdfConversionService, SearchIndex } from '@lvn-backend/notes'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { createTestApp, type TestApp } from '../support/app'
@@ -191,7 +192,28 @@ describe('security: privacy', () => {
   })
 
   describe('groups and classrooms (Phase 3)', () => {
-    it.todo('B, not in Group G, cannot see G’s shared notes or posts through any channel')
+    it('B, not in Group G, cannot see G’s shared notes or posts through any channel (ADR-0045)', async () => {
+      const t1 = actors.teacher
+      const g = await t.gql<{ createGroup: { group: { id: string } } }>('mutation { createGroup(input: { name: "Group G", privacy: PRIVATE }) { group { id } } }', {}, t1.token)
+      const groupId = g.data!.createGroup.group.id
+      const word = `wombat${Date.now()}`
+      const noteId = (await t.gql<{ createNote: { note: { id: string } } }>('mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } } }', { input: { title: `For G ${word}`, cards: [{ id: newId(), type: 'text', position: 'a0', content: { doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: word }] }] } } }] } }, t1.token)).data!.createNote.note.id
+      await t.gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId } }, t1.token)
+      await t.app.get(InProcessEventBus).drain()
+      await t.gql('mutation ($input: NoteGroupInput!) { shareNoteToGroup(input: $input) { note { id } } }', { input: { noteId, groupId } }, t1.token)
+      await t.gql('mutation ($input: CreateGroupPostInput!) { createGroupPost(input: $input) { post { id } } }', { input: { groupId, body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'members only' }] }] } } }, t1.token)
+      await t.app.get(SearchIndex).indexNote(noteId)
+
+      const b = actors.b.token
+      const seen = await t.gql<{ group: Record<string, unknown> | null }>('query ($id: UUID!) { group(id: $id) { name members { role } posts { edges { node { id } } } joinRequests { id } sharedNotes { edges { node { id } } } } }', { id: groupId }, b)
+      expect(seen.data!.group).toEqual({ name: 'Group G', members: null, posts: null, joinRequests: null, sharedNotes: null })
+      expect((await t.gql<{ note: unknown }>('query ($id: UUID!) { note(id: $id) { id } }', { id: noteId }, b)).data!.note).toBeNull()
+      expect((await t.gql<{ sharedWithMe: { edges: unknown[] } }>('{ sharedWithMe { edges { node { id } } } }', {}, b)).data!.sharedWithMe.edges).toEqual([])
+      expect((await t.gql<{ search: { notes: unknown[] } }>('query ($q: String!) { search(query: $q) { notes { note { id } } } }', { q: word }, b)).data!.search.notes).toEqual([])
+      expect((await t.gql<{ syncPull: { notes: { note: { id: string } }[] } }>('{ syncPull(first: 100) { notes { note { id } } } }', {}, b)).data!.syncPull.notes.map((n) => n.note.id)).not.toContain(noteId)
+      // Anonymous visitors see nothing at all.
+      expect((await t.gql<{ group: unknown }>('query ($id: UUID!) { group(id: $id) { name } }', { id: groupId })).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
+    })
     it.todo('A, not in Classroom C, cannot see C’s content through any channel')
   })
 })

@@ -75,10 +75,16 @@ export class NotesService {
   async open(viewerId: string | null, noteId: string, actor?: Actor | null): Promise<OpenedNote | null> {
     const note = await this.db.note.findUnique({ where: { id: noteId } })
     if (!note) return null
-    const share = viewerId && viewerId !== note.ownerId ? await this.db.noteShare.findUnique({ where: { noteId_userId: { noteId, userId: viewerId } } }) : null
+    const other = viewerId && viewerId !== note.ownerId ? viewerId : null
+    const [share, inSharedGroup] = other
+      ? await Promise.all([
+          this.db.noteShare.findUnique({ where: { noteId_userId: { noteId, userId: other } } }),
+          this.db.groupShare.count({ where: { noteId, group: { deletedAt: null, members: { some: { userId: other } } } } }).then((n) => n > 0),
+        ])
+      : [null, false]
     const resolvedActor = actor === undefined ? await this.actor(viewerId) : actor
     const shareRole = share?.role ?? null
-    const access = noteAccess(resolvedActor, note as NoteAccessRow, shareRole)
+    const access = noteAccess(resolvedActor, note as NoteAccessRow, shareRole, { inSharedGroup })
     return access ? { note, access, shareRole, actor: resolvedActor } : null
   }
 

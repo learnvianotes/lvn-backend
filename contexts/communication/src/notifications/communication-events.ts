@@ -50,6 +50,16 @@ export class CommunicationEvents implements OnModuleInit {
       const other = payload.userIds.find((id) => id !== payload.by)
       if (other) await this.notifications.notify({ userId: other, category: 'CONNECTION', path: `/u/${payload.by}`, actorId: payload.by, data: { kind: 'ACCEPTED' } })
     })
+    // Groups (ADR-0045): the owner and admins are asked; the person who asked hears the answer.
+    this.events.subscribe('GroupJoinRequested', async ({ payload }) => {
+      for (const reviewer of payload.reviewerIds ?? []) {
+        await this.notifications.notify({ userId: reviewer, category: 'JOIN_REQUEST', path: `/groups/${payload.groupId}`, actorId: payload.userId, groupId: payload.groupId })
+      }
+    })
+    this.events.subscribe('JoinRequestReviewed', async ({ payload }) => {
+      if (payload.scope.kind !== 'GROUP') return
+      await this.notifications.notify({ userId: payload.userId, category: 'JOIN_DECISION', path: `/groups/${payload.scope.groupId}`, groupId: payload.scope.groupId, data: { decision: payload.decision } })
+    })
     // Sockets of a revoked session close on every instance.
     this.events.subscribe('SessionRevoked', async ({ payload }) => {
       await this.live.publish(payload.userId, { type: 'revoke', sessionId: payload.sessionId })

@@ -11,6 +11,7 @@ export interface NewNotification {
   path: string
   actorId?: string | null
   noteId?: string | null
+  groupId?: string | null
   /** Category facts that are never user content: a decision, counts */
   data?: Record<string, string | number | boolean>
 }
@@ -22,6 +23,7 @@ export interface NotificationRow {
   path: string
   actorId: string | null
   noteId: string | null
+  groupId: string | null
   data: unknown
   readAt: Date | null
   createdAt: Date
@@ -51,7 +53,7 @@ export class NotificationService {
     const id = newId()
     const createdAt = new Date()
     await this.db.notification.create({
-      data: { id, userId: n.userId, category: n.category, path: n.path, actorId: n.actorId ?? null, noteId: n.noteId ?? null, data: n.data, createdAt },
+      data: { id, userId: n.userId, category: n.category, path: n.path, actorId: n.actorId ?? null, noteId: n.noteId ?? null, groupId: n.groupId ?? null, data: n.data, createdAt },
     })
     // Live delivery is a courtesy: the notification is already stored and the next fetch shows it.
     await this.live.publish(n.userId, { type: 'event', event: { kind: 'NOTIFICATION', id, at: createdAt.toISOString() } }).catch((err: unknown) => {

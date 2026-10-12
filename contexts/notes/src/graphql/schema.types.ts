@@ -134,6 +134,18 @@ export interface ForkCredit {
   title: string | null
 }
 
+/** A group, owned by the core subgraph; notes adds what is shared to it (ADR-0045) */
+export interface Group {
+  id: string
+  /** Members only: notes shared to the group that the viewer may open, the most recently shared first */
+  sharedNotes: NoteConnection | null
+}
+
+export interface GroupSharedNotesArgs {
+  first?: number | null
+  after?: string | null
+}
+
 export type HighlightColor = 'YELLOW' | 'GREEN' | 'BLUE' | 'PINK' | 'PURPLE'
 
 export type HighlightKind = 'TEXT' | 'AREA'
@@ -294,6 +306,14 @@ export interface MutationSetNoteSharedWithConnectionsArgs {
   input: SetNoteSharedWithConnectionsInput
 }
 
+export interface MutationShareNoteToGroupArgs {
+  input: NoteGroupInput
+}
+
+export interface MutationUnshareNoteFromGroupArgs {
+  input: NoteGroupInput
+}
+
 export interface MutationSyncPushArgs {
   ops: Array<SyncOpInput>
 }
@@ -350,6 +370,8 @@ export interface Note {
   forkedFrom?: ForkCredit | null
   /** Owner only: every connection of the owner reads it, and new connections will too (teachers, ADR-0013) */
   sharedWithConnections?: boolean | null
+  /** Owner only: the groups the note is shared to */
+  groups?: Array<Group> | null
 }
 
 export interface NoteCardsArgs {
@@ -393,6 +415,11 @@ export interface NoteFilter {
   kind?: NoteKind | null
   /** The trash instead of the live notes */
   trashed?: boolean | null
+}
+
+export interface NoteGroupInput {
+  noteId: string
+  groupId: string
 }
 
 export interface NoteIdInput {

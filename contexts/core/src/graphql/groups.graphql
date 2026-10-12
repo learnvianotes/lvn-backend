@@ -1,0 +1,207 @@
+# Groups (§4.1, §5, ADR-0009, ADR-0011, ADR-0045): membership, roles, posts. PUBLIC groups are discoverable; everything
+# inside a group is for its members. Notes shared to a group are a field of Group in the notes subgraph.
+
+scalar JSON
+
+enum GroupType { COMMUNITY PROJECT }
+enum GroupPrivacy { PUBLIC PRIVATE }
+enum GroupJoinPolicy { OPEN APPROVAL }
+enum GroupRole { OWNER ADMIN MODERATOR MEMBER MENTOR }
+enum JoinDecision { APPROVED REJECTED }
+
+"What the viewer may do in the group, from the same rules the API applies"
+type GroupActions {
+  join: Boolean!
+  requestJoin: Boolean!
+  post: Boolean!
+  moderate: Boolean!
+  manage: Boolean!
+  delete: Boolean!
+  reviewRequests: Boolean!
+  leave: Boolean!
+}
+
+type Group @key(fields: "id") {
+  id: UUID!
+  name: String!
+  description: String
+  type: GroupType!
+  privacy: GroupPrivacy!
+  "A private group always approves members, whatever was chosen"
+  joinPolicy: GroupJoinPolicy!
+  owner: User!
+  memberCount: Int!
+  viewerRole: GroupRole
+  "The viewer's request to join, while it waits"
+  viewerRequestId: UUID
+  viewerCan: GroupActions!
+  createdAt: DateTime!
+  "Members only"
+  members: [GroupMember!]
+  "Admins only: requests waiting for an answer, oldest first"
+  joinRequests: [GroupJoinRequest!]
+  "Members only: pinned posts, then the newest"
+  posts(first: Int, after: String): GroupPostConnection
+}
+
+type GroupMember {
+  user: User!
+  role: GroupRole!
+  joinedAt: DateTime!
+  "Muted members cannot post until then"
+  mutedUntil: DateTime
+}
+
+type GroupJoinRequest {
+  id: UUID!
+  user: User!
+  message: String
+  createdAt: DateTime!
+}
+
+type GroupPostActions {
+  edit: Boolean!
+  delete: Boolean!
+  pin: Boolean!
+}
+
+type GroupPost {
+  id: UUID!
+  author: User!
+  "Rich text: a card's document"
+  body: JSON!
+  pinned: Boolean!
+  createdAt: DateTime!
+  editedAt: DateTime
+  viewerCan: GroupPostActions!
+}
+
+type GroupPostEdge {
+  cursor: String!
+  node: GroupPost!
+}
+
+type GroupPostConnection {
+  "On the first page only"
+  pinned: [GroupPost!]!
+  edges: [GroupPostEdge!]!
+  pageInfo: PageInfo!
+}
+
+extend type Query {
+  "A group the viewer may know about: public ones, and private ones they are in or asked to join"
+  group(id: UUID!): Group
+  "The viewer's groups, most recently active first"
+  myGroups: [Group!]!
+  "Public groups to join, by name"
+  discoverGroups(query: String, first: Int): [Group!]!
+}
+
+input CreateGroupInput {
+  "3 to 80 characters"
+  name: String!
+  "At most 2,000 characters"
+  description: String
+  privacy: GroupPrivacy!
+  "OPEN lets anyone join a public group at once; new groups approve members unless told otherwise"
+  joinPolicy: GroupJoinPolicy
+}
+
+input UpdateGroupInput {
+  groupId: UUID!
+  name: String
+  description: String
+  privacy: GroupPrivacy
+  joinPolicy: GroupJoinPolicy
+}
+
+input GroupIdInput {
+  groupId: UUID!
+}
+
+input RequestToJoinGroupInput {
+  groupId: UUID!
+  "At most 500 characters, for the admins"
+  message: String
+}
+
+input JoinRequestIdInput {
+  requestId: UUID!
+}
+
+input ReviewGroupJoinRequestInput {
+  requestId: UUID!
+  decision: JoinDecision!
+}
+
+input GroupMemberInput {
+  groupId: UUID!
+  userId: UUID!
+}
+
+input SetGroupRoleInput {
+  groupId: UUID!
+  userId: UUID!
+  "OWNER hands the group over (the owner only); otherwise a role below the viewer's own"
+  role: GroupRole!
+}
+
+input MuteGroupMemberInput {
+  groupId: UUID!
+  userId: UUID!
+  "Null lifts the mute"
+  until: DateTime
+}
+
+input CreateGroupPostInput {
+  groupId: UUID!
+  body: JSON!
+}
+
+input EditGroupPostInput {
+  postId: UUID!
+  body: JSON!
+}
+
+input GroupPostIdInput {
+  postId: UUID!
+}
+
+input PinGroupPostInput {
+  postId: UUID!
+  pinned: Boolean!
+}
+
+type GroupPayload {
+  group: Group
+  userErrors: [UserError!]!
+}
+
+type GroupPostPayload {
+  post: GroupPost
+  userErrors: [UserError!]!
+}
+
+extend type Mutation {
+  createGroup(input: CreateGroupInput!): GroupPayload!
+  "Admins: name, description, privacy, join policy"
+  updateGroup(input: UpdateGroupInput!): GroupPayload!
+  "The owner; the group is gone for everyone"
+  deleteGroup(input: GroupIdInput!): OkPayload!
+  "A public group with the OPEN policy"
+  joinGroup(input: GroupIdInput!): GroupPayload!
+  "Every other group: the admins accept or reject"
+  requestToJoinGroup(input: RequestToJoinGroupInput!): GroupPayload!
+  withdrawGroupJoinRequest(input: JoinRequestIdInput!): GroupPayload!
+  reviewGroupJoinRequest(input: ReviewGroupJoinRequestInput!): GroupPayload!
+  "The owner hands the group over first"
+  leaveGroup(input: GroupIdInput!): GroupPayload!
+  removeGroupMember(input: GroupMemberInput!): GroupPayload!
+  setGroupRole(input: SetGroupRoleInput!): GroupPayload!
+  muteGroupMember(input: MuteGroupMemberInput!): GroupPayload!
+  createGroupPost(input: CreateGroupPostInput!): GroupPostPayload!
+  editGroupPost(input: EditGroupPostInput!): GroupPostPayload!
+  "Its author, or a moderator"
+  deleteGroupPost(input: GroupPostIdInput!): GroupPayload!
+  pinGroupPost(input: PinGroupPostInput!): GroupPostPayload!
+}
