@@ -1,5 +1,8 @@
 # Phase 3 — Community (closed on the local environment; AWS still deferred by the owner)
 
+After the exit the phone was completed and the gaps carried forward were closed: see
+[After the exit](#after-the-exit-the-phone-completed-and-the-gaps-closed-2026-10-13).
+
 Spec: [lvn-architecture-v2.md](../architecture/lvn-architecture-v2.md) §18. Plan: [phase-3.md](../plans/phase-3.md).
 
 Scope:
@@ -119,6 +122,59 @@ Bugs the new suites found and fixed in this phase:
   - The leakage suite: B sees nothing of a group or class B is not in; a post moderators hid reaches no other member;
     an author never learns who reported them; no role is taken through any mutation.
 
+## After the exit: the phone completed, and the gaps closed (2026-10-13)
+
+The owner asked to "complete mobile and continue with other issues". Seven slices followed the exit
+([plan](../plans/phase-3.md#after-the-exit-the-phone-completed-and-the-gaps-carried-forward)); each was merged in every
+repo it touched after its checks on the local environment.
+
+| Slice | What | ADR |
+| --- | --- | --- |
+| P3k Phone: running places | Start groups, workspaces and (teachers) classes on the phone; settings, roles, hand-over, mute and removal; a class's new code; a workspace's repository, mentor and showcase with its credits; deleting a doubt; editing a comment; the Skills tab; the platform queue for platform admins | 0048 (amended) |
+| P3l Phone: publishing | Blogs, posts and projects started on the phone (the kind travels in the sync); publishing, who can read a note, sharing, copies, versions, folders, tags and topics; the list filters by kind, folder and tag offline | 0052 |
+| P3m Phone: media and cards | Pictures, video and recordings play in notes; pictures, videos, recordings and PDFs are added from the photos, the camera or the files; tables, questions, quizzes, flashcards, diagrams and Markdown are edited on the phone | — |
+| P3n Phone: account | New terms wait for acceptance; study details, a college email, the old site's progress and importing notes are on the phone | — |
+| P3o Moderation gaps | Warnings reach the person; suspensions for 1–365 days with one appeal, refusals that say so; a removed group's owner reads why and appeals | 0053 |
+| P3p Mentions | `@handle` in comments, posts and ideas tells the people named who can read it | 0054 |
+| P3q Verification without a college email | The screens for ADR-0019, built in the API in Phase 1 but never shown: ask a teacher to vouch or send proof of study; teachers and platform admins answer | 0019 |
+
+The phone now does everything the web does for notes, community, moderation and the account, except what neither
+does yet (below).
+
+### Bugs the follow-up slices found and fixed
+
+- **Mentors:** an admin could turn a workspace's mentor into an admin or hand them the group (the API now refuses).
+- **Group hand-over:** the API allowed it, but the web never offered it, so an owner could not leave their group.
+- **Phone tabs:** the sixth tab of a group or class ran off the screen with no sign that it scrolled (they wrap now).
+- **A new note's standing** was asked before the server had the note, and never again (the note's menu then said it
+  needed a connection).
+- **New quizzes on the phone** had two choices with one id (the time prefix of a UUIDv7), so they were never valid to
+  send.
+- **The phone's copy of `@lvn/contracts`** was several slices behind (synced, and synced with each slice since).
+- **Tests:** a live web test read the text still in the post box as the posted post (about one run in six); the
+  Maestro runner took whichever emulator came first (another project runs one on this machine too).
+
+### Test evidence (2026-10-13)
+
+| Check | lvn-backend | lvn-web | lvn-mobile |
+| --- | --- | --- | --- |
+| Lint, typecheck | clean | clean | clean; `expo-doctor` 21/21 |
+| Unit / integration / e2e | 650 passing + 3 todo: API 309 (account standing, mentions, a kinds sync, the mentor rule, a suspension in the permission matrix), contracts 171, core 6 | 93 unit (Vitest) | 221 (Jest) |
+| Browser / device E2E | — | Playwright 271 on desktop and phone | Maestro 17/17 on `lvn_pixel_7` against the VM |
+| `pnpm audit --prod --audit-level high` | clean | clean | clean |
+| Contract | `graphql:check`, `env:check` (51 variables); contracts 0.29.0 | codegen against the current schema; contracts copy synced | same |
+| Migrations | two (suspension and group removal; MENTION), applied to an empty database, no drift | — | — |
+
+On the local environment: `lvn-backend:6d5336d40d10` (main), `lvn-web:4fce2be2cd7e` (the P3q branch, merged
+unchanged) and `lvn-pdf-engine:ba7b4eb92070`.
+
+| Check | Result |
+| --- | --- |
+| `pnpm smoke` | 13/13 |
+| `pnpm lifecycle` | 59/59: Phase 3's 55, then a project started offline and a blog refused until A teaches; A mentions C and B on the lesson plan (only C, who reads it, is told); a platform admin suspends D, D reads why and cannot post, appeals once, the suspension is lifted and D posts again |
+| Playwright, live | 30/30 on desktop and phone: the 26 of the exit, an admin suspends a learner who reads it and is told so starting a group, and a learner without a college email asks a teacher and is verified when the teacher agrees |
+| Maestro | 17/17: the 11 of the exit and `manage` (a teacher runs a group and a class), `publishing` (a blog post started, published and made public on the phone), `cards` (a quiz and a table written on the phone), `account` (study details), `standing` (a suspended learner appeals), `verify` (an unverified learner asks a teacher) |
+
 ## Needed from the owner
 
 - **Push:** the Firebase project's service account (`FCM_SERVICE_ACCOUNT_JSON`) and `google-services.json`. Until
@@ -132,13 +188,16 @@ Bugs the new suites found and fixed in this phase:
 ## Known gaps carried forward
 
 **Moderation:**
-- Account warnings are recorded but not shown to the person, and suspension is not built (ADR-0037).
-- A removed group's owner is told it was removed but not why; groups cannot be appealed.
-- The platform queue is on the web only (the phone has the group and class queues).
+- Repeated suspensions do not escalate by themselves (§15.2's repeat-infringer policy stays a moderator's decision).
+- The admin app (§15.1) is still the web's `/admin/*` pages (and the phone's admin screens).
 
 **Phone:**
-- Group settings, roles and member removal are changed on the web.
-- Blogs, posts and projects are started on the web.
+- PDFs and highlights need a connection; cards made from a PDF work offline.
+- pdf.js parses on the web view's own thread, which is slower on low-end phones; to be measured on a mid-range phone.
+- Structured fields are plain text on the phone: a field formatted on the web keeps its formatting until it is
+  changed on the phone.
+- Voice notes are not built (on either), so the Create sheet keeps them "coming soon", with Quiz and Flashcards
+  (Phase 4 and the AI generation of Phase 5).
 
 **Pipelines:**
 - The GitHub workflows of the three repos have never run, since nothing is pushed yet. Each step was run locally for
@@ -149,9 +208,9 @@ Bugs the new suites found and fixed in this phase:
   are the owner's.
 
 **Not built yet:**
-- Mentions in comments.
+- A people picker for mentions: the writer types `@handle`.
 - Feeds are read-time queries; a precomputed timeline waits for measurements.
 - Quizzes and class performance (Phase 4).
 - The owner's notes for Phase 5 are recorded in ADR-0025: quizzes, flashcards and revision sheets generated from notes.
 
-GraphQL schema: `contracts/graphql/schema.graphql` as of `@lvn/contracts` 0.26.0.
+GraphQL schema: `contracts/graphql/schema.graphql` as of `@lvn/contracts` 0.29.0.
