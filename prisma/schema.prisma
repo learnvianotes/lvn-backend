@@ -869,6 +869,8 @@ enum SearchEntity {
   NOTE
   USER
   TOPIC
+  GROUP
+  CLASSROOM
 
   @@schema("notes")
 }

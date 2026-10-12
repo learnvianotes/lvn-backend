@@ -533,6 +533,9 @@ export type NoteShareRole = 'EDITOR' | 'VIEWER'
 /** DIRECT: shared with this person; CONNECTIONS: a connection of the owner, who shares with all of them (ADR-0044) */
 export type NoteShareSource = 'DIRECT' | 'CONNECTIONS'
 
+/** Where a note comes from, for the person searching (ADR-0056) */
+export type NoteSource = 'MINE' | 'SHARED' | 'PUBLIC'
+
 /** An immutable snapshot of a note's cards (§4.3) */
 export interface NoteVersion {
   id: string
@@ -688,6 +691,8 @@ export interface QuerySearchArgs {
   query: string
   scopes?: Array<SearchScope> | null
   first?: number | null
+  filters?: SearchFilters | null
+  after?: string | null
 }
 
 export interface QuerySharedWithMeArgs {
@@ -711,15 +716,35 @@ export interface RestoreNoteVersionInput {
   versionId: string
 }
 
-export interface SearchResults {
-  /** Only notes the viewer may read, best match first */
-  notes: Array<NoteSearchHit>
-  /** People past the digital-consent age, by handle or name */
-  people: Array<User>
-  topics: Array<Topic>
+/** Narrows the notes found (and topics, by subject); never widens what the viewer may read */
+export interface SearchFilters {
+  /** Notes of these kinds */
+  kinds?: Array<NoteKind> | null
+  /** Notes about a topic of this subject; topics of this subject */
+  subjectId?: string | null
+  /** Notes about this topic */
+  topicId?: string | null
+  /** Notes by this person */
+  authorId?: string | null
+  /** Any of these sources; signed out, only PUBLIC gives anything */
+  sources?: Array<NoteSource> | null
 }
 
-export type SearchScope = 'NOTES' | 'PEOPLE' | 'TOPICS'
+export interface SearchResults {
+  /** Only notes the viewer may read, best match first (newest first when filters alone searched) */
+  notes: Array<NoteSearchHit>
+  /** More notes: pass as `after` with the same query and filters; null when there are no more (at most 200 notes) */
+  notesCursor: string | null
+  /** People past the digital-consent age, by handle, name or (teachers) headline and bio */
+  people: Array<User>
+  topics: Array<Topic>
+  /** Signed in: public groups and project workspaces, and private ones the viewer is in */
+  groups: Array<Group>
+  /** Classes the viewer is in */
+  classrooms: Array<Classroom>
+}
+
+export type SearchScope = 'NOTES' | 'PEOPLE' | 'TOPICS' | 'GROUPS' | 'CLASSROOMS'
 
 export interface SetNoteForkingInput {
   noteId: string

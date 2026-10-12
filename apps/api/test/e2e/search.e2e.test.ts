@@ -1,3 +1,4 @@
+import { InProcessEventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { SearchIndex } from '@lvn-backend/notes'
 import { createTestApp, infra, type TestApp } from '../support/app'
@@ -27,8 +28,8 @@ describe.each(['postgres', 'typesense'] as const)('search on %s', (provider) => 
     return { data: res.data?.search, errors: res.errors }
   }
   const titles = async (query: string, token?: string) => (await search(query, token, ['NOTES'])).data!.notes.map((h) => h.note.title).sort()
-  const write = async (title: string, body: string, visibility: 'PRIVATE' | 'SHARED' | 'PUBLIC') => {
-    const created = await t.gql<{ createNote: { note: { id: string } } }>(`mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } ${ERRORS} } }`, { input: { title, cards: [{ id: newId(), type: 'text', position: 'a0', content: { doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: body }] }] } } }] } }, owner.token)
+  const write = async (title: string, body: string, visibility: 'PRIVATE' | 'SHARED' | 'PUBLIC', kind: 'NOTE' | 'PROJECT' = 'NOTE') => {
+    const created = await t.gql<{ createNote: { note: { id: string } } }>(`mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } ${ERRORS} } }`, { input: { title, kind, cards: [{ id: newId(), type: 'text', position: 'a0', content: { doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: body }] }] } } }] } }, owner.token)
     const id = created.data!.createNote.note.id
     await t.gql(`mutation ($input: NoteIdInput!) { publishNote(input: $input) { ${ERRORS} } }`, { input: { noteId: id } }, owner.token)
     if (visibility !== 'PRIVATE') await t.gql(`mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { ${ERRORS} } }`, { input: { noteId: id, visibility } }, owner.token)
@@ -117,5 +118,95 @@ describe.each(['postgres', 'typesense'] as const)('search on %s', (provider) => 
   it('refuses very long queries and ignores ones without words', async () => {
     expect((await search('x'.repeat(101))).errors?.[0]).toMatchObject({ extensions: { code: 'VALIDATION' } })
     expect((await search('!!! ??')).data).toEqual({ notes: [], people: [], topics: [] })
+  })
+
+  describe('everywhere (ADR-0056)', () => {
+    type Found = { notes: { note: { id: string; title: string } }[]; notesCursor: string | null; groups: { id: string; name: string }[]; classrooms: { id: string; name: string }[] }
+    const find = async (query: string, token?: string, extra: { filters?: object; after?: string; first?: number; scopes?: string[] } = {}) => {
+      const res = await t.gql<{ search: Found }>(
+        'query ($q: String!, $scopes: [SearchScope!], $first: Int, $filters: SearchFilters, $after: String) { search(query: $q, scopes: $scopes, first: $first, filters: $filters, after: $after) { notes { note { id title } } notesCursor groups { id name } classrooms { id name } } }',
+        { q: query, first: 10, ...extra },
+        token,
+      )
+      return { data: res.data?.search, errors: res.errors }
+    }
+    const noteTitles = async (query: string, token: string | undefined, filters: object) => (await find(query, token, { filters, scopes: ['NOTES'] })).data!.notes.map((h) => h.note.title).sort()
+    const settle = async () => {
+      await t.app.get(InProcessEventBus).drain()
+      await index.drainAll()
+    }
+    let teacher: { id: string; token: string }
+    const places: Record<string, string> = {}
+
+    beforeAll(async () => {
+      const s = await seedUser(t.app, { verified: true, displayName: 'Kavya Teacher', handle: `kavya${Date.now()}`, globalRole: 'TEACHER' })
+      teacher = { id: s.id, token: tokenFor(t.config, s.id) }
+      const group = async (name: string, privacy: 'PUBLIC' | 'PRIVATE', description: string) =>
+        (await t.gql<{ createGroup: { group: { id: string } } }>(`mutation ($input: CreateGroupInput!) { createGroup(input: $input) { group { id } ${ERRORS} } }`, { input: { name, privacy, description } }, owner.token)).data!.createGroup.group.id
+      places.open = await group('Graph theory circle', 'PUBLIC', 'Shortest paths every Friday.')
+      places.closed = await group('Graph exam crew', 'PRIVATE', 'Only us.')
+      places.classroom = (await t.gql<{ createClassroom: { classroom: { id: string } } }>(`mutation ($input: CreateClassroomInput!) { createClassroom(input: $input) { classroom { id } ${ERRORS} } }`, { input: { name: 'Graph algorithms, section B', description: 'Tuesdays' } }, teacher.token)).data!.createClassroom.classroom.id
+      ids.project = await write('Graph visualiser project', 'A tool that draws shortest paths.', 'PUBLIC', 'PROJECT')
+      await settle()
+    })
+
+    it('finds public groups for everyone, private ones for their members, classes for theirs only', async () => {
+      const groups = async (token?: string) => (await find('graph', token, { scopes: ['GROUPS'] })).data!.groups.map((g) => g.name).sort()
+      // Group pages need an account: signed out, none.
+      expect(await groups()).toEqual([])
+      expect(await groups(stranger.token)).toEqual(['Graph theory circle'])
+      expect(await groups(owner.token)).toEqual(['Graph exam crew', 'Graph theory circle'])
+      const classes = async (token?: string) => (await find('graph', token, { scopes: ['CLASSROOMS'] })).data!.classrooms.map((c) => c.name)
+      expect(await classes(teacher.token)).toEqual(['Graph algorithms, section B'])
+      expect(await classes(owner.token)).toEqual([])
+      expect(await classes()).toEqual([])
+      // Renamed, then deleted: search follows.
+      await t.gql(`mutation ($input: UpdateGroupInput!) { updateGroup(input: $input) { ${ERRORS} } }`, { input: { groupId: places.open, name: 'Network flows circle' } }, owner.token)
+      await settle()
+      expect(await groups(stranger.token)).toEqual([])
+      expect((await find('flows', stranger.token, { scopes: ['GROUPS'] })).data!.groups.map((g) => g.id)).toEqual([places.open])
+      await t.gql(`mutation ($input: GroupIdInput!) { deleteGroup(input: $input) { ${ERRORS} } }`, { input: { groupId: places.open } }, owner.token)
+      await settle()
+      expect((await find('flows', stranger.token, { scopes: ['GROUPS'] })).data!.groups).toEqual([])
+    })
+
+    it('narrows notes by kind, source, author and topic, never past what the viewer may read', async () => {
+      expect(await noteTitles('graph', owner.token, { kinds: ['PROJECT'] })).toEqual(['Graph visualiser project'])
+      // By id: the owner reads their draft titles, which an earlier test changes.
+      const mine = (await find('dijkstra', owner.token, { filters: { sources: ['MINE'] }, scopes: ['NOTES'] })).data!.notes.map((h) => h.note.id).sort()
+      expect(mine).toEqual([ids.public, ids.shared, ids.private].sort())
+      expect(await noteTitles('dijkstra', friend.token, { sources: ['SHARED'] })).toEqual(['Graph exam notes'])
+      expect(await noteTitles('dijkstra', friend.token, { sources: ['PUBLIC'] })).toEqual(["Dijkstra's algorithm"])
+      expect(await noteTitles('dijkstra', stranger.token, { sources: ['MINE', 'SHARED'] })).toEqual([])
+      expect(await noteTitles('dijkstra', undefined, { sources: ['MINE'] })).toEqual([])
+      expect(await noteTitles('dijkstra', stranger.token, { authorId: owner.id })).toEqual(["Dijkstra's algorithm"])
+      const topic = await db.topic.findFirstOrThrow({ where: { origin: 'CURATED' } })
+      await db.noteTopic.create({ data: { noteId: ids.shared!, topicId: topic.id } })
+      await index.drainAll()
+      expect(await noteTitles('dijkstra', friend.token, { topicId: topic.id })).toEqual(['Graph exam notes'])
+      expect(await noteTitles('dijkstra', friend.token, { subjectId: topic.subjectId })).toEqual(['Graph exam notes'])
+      expect(await noteTitles('dijkstra', stranger.token, { topicId: topic.id })).toEqual([])
+      // Filters alone list what they allow, newest first.
+      expect(await noteTitles('', friend.token, { topicId: topic.id })).toEqual(['Graph exam notes'])
+      expect((await find('', undefined, { filters: { authorId: owner.id }, scopes: ['NOTES'] })).data!.notes.map((h) => h.note.title)).toEqual(['Graph visualiser project', "Dijkstra's algorithm"])
+    })
+
+    it('gives more notes page by page, and refuses a page of another search', async () => {
+      const made: string[] = []
+      for (let i = 1; i <= 7; i++) made.push(await write(`Paging lesson ${i}`, 'Pagination keeps pages small.', 'PUBLIC'))
+      const seen: string[] = []
+      let after: string | undefined
+      for (let page = 0; page < 4; page++) {
+        const res = (await find('pagination', undefined, { first: 3, after, scopes: ['NOTES', 'GROUPS'] })).data!
+        seen.push(...res.notes.map((h) => h.note.id))
+        if (page > 0) expect(res.groups).toEqual([])
+        if (!res.notesCursor) break
+        after = res.notesCursor
+      }
+      expect(seen.sort()).toEqual(made.sort())
+      const first = (await find('pagination', undefined, { first: 3 })).data!.notesCursor!
+      expect((await find('dijkstra', undefined, { after: first })).errors?.[0]).toMatchObject({ extensions: { code: 'VALIDATION' } })
+      expect((await find('pagination', undefined, { after: 'nonsense' })).errors?.[0]).toMatchObject({ extensions: { code: 'VALIDATION' } })
+    })
   })
 })

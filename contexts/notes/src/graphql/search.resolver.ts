@@ -13,9 +13,9 @@ export class SearchResolver {
   ) {}
 
   @Query('search')
-  async searchAll(@Args() { query, scopes, first }: QuerySearchArgs, @CurrentViewer() viewer: Viewer | null) {
+  async searchAll(@Args() { query, scopes, first, filters, after }: QuerySearchArgs, @CurrentViewer() viewer: Viewer | null) {
     const viewerId = viewer?.userId ?? null
-    const found = await this.search.search(viewerId, query, scopes, first)
+    const found = await this.search.search(viewerId, query, scopes, first, filters ?? null, after ?? null)
     const actor = viewerId ? await this.notes.actor(viewerId) : null
     // Opened as the viewer, like any note they read: the hit carries their access and permissions.
     const notes = await Promise.all(found.notes.map(async (hit) => {
@@ -24,8 +24,11 @@ export class SearchResolver {
     }))
     return {
       notes: notes.filter((n) => n !== null),
+      notesCursor: found.notesCursor,
       people: found.people.map((id) => ({ __typename: 'User', id })),
       topics: found.topics,
+      groups: found.groups.map((id) => ({ __typename: 'Group', id })),
+      classrooms: found.classrooms.map((id) => ({ __typename: 'Classroom', id })),
     }
   }
 }

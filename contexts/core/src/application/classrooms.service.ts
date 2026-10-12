@@ -145,6 +145,7 @@ export class ClassroomsService {
     if (role !== 'TEACHER') throw Errors.forbidden('Only the class’s teacher changes it.')
     const { name, description } = this.clean(input.name ?? classroom.name, input.description === undefined ? classroom.description : input.description)
     await this.db.classroom.update({ where: { id: classroomId }, data: { name, description, ...(input.newCode ? { joinCode: await this.uniqueCode() } : {}) } })
+    await this.events.publish('ClassroomUpdated', { classroomId })
     if (input.newCode) await this.audit.record({ actorId, action: 'classroom.code', targetType: 'CLASSROOM', targetId: classroomId })
   }
 

@@ -2287,6 +2287,20 @@ enum NoteShareSource
   CONNECTIONS @join__enumValue(graph: NOTES)
 }
 
+"""Where a note comes from, for the person searching (ADR-0056)"""
+enum NoteSource
+  @join__type(graph: NOTES)
+{
+  """Their own notes"""
+  MINE @join__enumValue(graph: NOTES)
+
+  """Notes shared with them, directly or through a group or class of theirs"""
+  SHARED @join__enumValue(graph: NOTES)
+
+  """Other people's public notes"""
+  PUBLIC @join__enumValue(graph: NOTES)
+}
+
 """An immutable snapshot of a note's cards (§4.3)"""
 type NoteVersion
   @join__type(graph: NOTES)
@@ -2751,9 +2765,11 @@ type Query
   noteFile(noteId: UUID!, fileId: UUID!): MediaFile @join__field(graph: NOTES)
 
   """
-  At most 100 characters; `first` per group, 1 to 20 (default 5). Works signed out too: public notes only.
+  At most 100 characters; `first` per kind, 1 to 20 (default 5). With filters the words may be left out: the notes
+  the filters allow come newest first. `after` continues the notes of the same search; a continued page has notes
+  only. Works signed out too: public notes, people and topics (group and class pages need an account).
   """
-  search(query: String!, scopes: [SearchScope!], first: Int): SearchResults! @join__field(graph: NOTES)
+  search(query: String!, scopes: [SearchScope!], first: Int, filters: SearchFilters, after: String): SearchResults! @join__field(graph: NOTES)
 
   """Notes other people shared with the viewer, most recently changed first"""
   sharedWithMe(first: Int, after: String): NoteConnection! @join__field(graph: NOTES)
@@ -3073,15 +3089,54 @@ input ReviewVerificationRequestInput
   reason: String
 }
 
+"""
+Narrows the notes found (and topics, by subject); never widens what the viewer may read
+"""
+input SearchFilters
+  @join__type(graph: NOTES)
+{
+  """Notes of these kinds"""
+  kinds: [NoteKind!]
+
+  """Notes about a topic of this subject; topics of this subject"""
+  subjectId: UUID
+
+  """Notes about this topic"""
+  topicId: UUID
+
+  """Notes by this person"""
+  authorId: UUID
+
+  """Any of these sources; signed out, only PUBLIC gives anything"""
+  sources: [NoteSource!]
+}
+
 type SearchResults
   @join__type(graph: NOTES)
 {
-  """Only notes the viewer may read, best match first"""
+  """
+  Only notes the viewer may read, best match first (newest first when filters alone searched)
+  """
   notes: [NoteSearchHit!]!
 
-  """People past the digital-consent age, by handle or name"""
+  """
+  More notes: pass as `after` with the same query and filters; null when there are no more (at most 200 notes)
+  """
+  notesCursor: String
+
+  """
+  People past the digital-consent age, by handle, name or (teachers) headline and bio
+  """
   people: [User!]!
   topics: [Topic!]!
+
+  """
+  Signed in: public groups and project workspaces, and private ones the viewer is in
+  """
+  groups: [Group!]!
+
+  """Classes the viewer is in"""
+  classrooms: [Classroom!]!
 }
 
 enum SearchScope
@@ -3090,6 +3145,8 @@ enum SearchScope
   NOTES @join__enumValue(graph: NOTES)
   PEOPLE @join__enumValue(graph: NOTES)
   TOPICS @join__enumValue(graph: NOTES)
+  GROUPS @join__enumValue(graph: NOTES)
+  CLASSROOMS @join__enumValue(graph: NOTES)
 }
 
 type Session

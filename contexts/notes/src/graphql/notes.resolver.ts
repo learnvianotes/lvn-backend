@@ -123,6 +123,16 @@ export class NotesResolver {
     return n.opened.access === 'READER' ? null : n.draftUpdatedAt
   }
 
+  /** Editors read the draft's title, readers the published version's (§4.3): a title not yet published is the owner's. */
+  @ResolveField('title')
+  title(@Parent() n: NoteParent, @Context() context: RequestContext) {
+    if (n.opened.access !== 'READER' || !n.publishedVersionId) return n.title
+    return requestLoader<string, string>(context, 'notes.publishedTitle', async (ids) => {
+      const titles = await this.drafts.versionTitles([...ids])
+      return ids.map((id) => titles.get(id) ?? '')
+    }).load(n.publishedVersionId)
+  }
+
   @ResolveField('deletedAt')
   deletedAt(@Parent() n: NoteParent) {
     return n.opened.access === 'OWNER' ? n.deletedAt : null

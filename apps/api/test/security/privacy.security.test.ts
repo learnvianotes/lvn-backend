@@ -88,6 +88,24 @@ describe('security: privacy', () => {
       const own = await t.gql<{ note: { title: string; deletedAt: string | null } }>('query ($id: UUID!) { note(id: $id) { title deletedAt } }', { id }, actors.a.token)
       expect(own.data!.note).toEqual({ title: 'A’s diary', deletedAt: null })
     })
+    it('a reader sees the published title, never one A has not published yet (found in P4b)', async () => {
+      const db = t.app.get(PrismaService)
+      await db.user.update({ where: { id: actors.a.id }, data: { verifiedAt: new Date(), verificationMethod: 'INSTITUTIONAL_EMAIL' } })
+      const word = `title${Date.now()}`
+      const created = await t.gql<{ createNote: { note: { id: string } } }>(`mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } } }`, { input: { title: `Published ${word}`, cards: [{ id: newId(), type: 'text', position: 'a0', content: { doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: word }] }] } } }] } }, actors.a.token)
+      const id = created.data!.createNote.note.id
+      await t.gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId: id } }, actors.a.token)
+      await t.gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { id } } }', { input: { noteId: id, visibility: 'PUBLIC' } }, actors.a.token)
+      await t.gql('mutation ($input: UpdateNoteDraftInput!) { updateNoteDraft(input: $input) { note { id } } }', { input: { noteId: id, title: 'Not ready: rename before Friday' } }, actors.a.token)
+      await t.app.get(SearchIndex).drainAll()
+      const title = async (token?: string) => (await t.gql<{ note: { title: string } }>('query ($id: UUID!) { note(id: $id) { title } }', { id }, token)).data!.note.title
+      expect(await title(actors.a.token)).toBe('Not ready: rename before Friday')
+      expect(await title(actors.b.token)).toBe(`Published ${word}`)
+      expect(await title()).toBe(`Published ${word}`)
+      const found = await t.gql<{ search: { notes: { note: { title: string } }[] } }>('query ($q: String!) { search(query: $q, scopes: [NOTES]) { notes { note { title } } } }', { q: word }, actors.b.token)
+      expect(found.data!.search.notes.map((h) => h.note.title)).toEqual([`Published ${word}`])
+    })
+
     describe('A’s private note with a PDF, a highlight and a published version', () => {
       const WORD = `zygomorphic${Date.now()}`
       let noteId = ''

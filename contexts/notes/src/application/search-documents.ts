@@ -1,6 +1,6 @@
 import { cardPlainText } from '@lvn/contracts/validation'
 import type { CardType } from '@lvn/contracts/domain'
-import type { SearchProfile } from '@lvn-backend/facades'
+import type { ClassroomForSearch, GroupForSearch, SearchProfile } from '@lvn-backend/facades'
 import type { PrismaService } from '@lvn-backend/prisma-base'
 import type { SnapshotCard } from '../domain/snapshot'
 
@@ -119,6 +119,14 @@ export async function topicDocuments(db: PrismaService, ids: string[]): Promise<
     out.set(t.id, { id: t.id, title: t.title, subject: t.subject.title, subjectId: t.subjectId, origin: t.origin, ...(t.proposedById ? { proposedById: t.proposedById } : {}) })
   }
   return out
+}
+
+export function groupDocument(g: GroupForSearch) {
+  return { id: g.id, name: g.name, ...(g.description ? { description: g.description } : {}), type: g.type, privacy: g.privacy, memberCount: g.memberCount }
+}
+
+export function classroomDocument(c: ClassroomForSearch) {
+  return { id: c.id, name: c.name, ...(c.description ? { description: c.description } : {}), memberCount: c.memberCount }
 }
 
 /** Today as days since 1970 (UTC), for "past the consent age" filters. */

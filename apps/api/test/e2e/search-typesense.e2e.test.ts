@@ -1,3 +1,4 @@
+import { InProcessEventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { SearchIndex } from '@lvn-backend/notes'
 import { createTestApp, infra, type TestApp } from '../support/app'
@@ -177,6 +178,33 @@ describe('search on Typesense', () => {
     expect(names).not.toContain(old)
     await expectParity()
     expect(await found(t, 'graph')).toEqual([notes.graphs])
+  })
+
+  it('keeps groups and classes in step with core: created, renamed, joined, deleted (ADR-0056)', async () => {
+    const settle = async () => {
+      await t.app.get(InProcessEventBus).drain()
+      await index.drainAll()
+    }
+    const doc = async (collection: string, id: string) => {
+      const res = await fetch(`${ts.url}/collections/${prefix}${collection}/documents/${id}`, { headers: { 'X-TYPESENSE-API-KEY': ts.apiKey } })
+      return res.ok ? ((await res.json()) as Record<string, unknown>) : null
+    }
+    const created = await t.gql<{ createGroup: { group: { id: string } } }>('mutation { createGroup(input: { name: "Compilers reading group", privacy: PRIVATE }) { group { id } } }', {}, owner.token)
+    const groupId = created.data!.createGroup.group.id
+    await settle()
+    expect(await doc('groups', groupId)).toMatchObject({ name: 'Compilers reading group', privacy: 'PRIVATE', type: 'COMMUNITY', memberCount: 1 })
+    await t.gql('mutation ($input: UpdateGroupInput!) { updateGroup(input: $input) { group { id } } }', { input: { groupId, name: 'Compilers circle', privacy: 'PUBLIC' } }, owner.token)
+    await t.gql('mutation ($input: GroupIdInput!) { joinGroup(input: $input) { group { id } } }', { input: { groupId } }, friend.token)
+    await settle()
+    expect(await doc('groups', groupId)).toMatchObject({ name: 'Compilers circle', privacy: 'PUBLIC' })
+    await t.gql('mutation ($input: GroupIdInput!) { deleteGroup(input: $input) { ok } }', { input: { groupId } }, owner.token)
+    await settle()
+    expect(await doc('groups', groupId)).toBeNull()
+    const teacher = await seedUser(t.app, { verified: true, displayName: 'Teacher T', handle: `tt${Date.now().toString(36)}`, globalRole: 'TEACHER' })
+    const made = await t.gql<{ createClassroom: { classroom: { id: string } } }>('mutation { createClassroom(input: { name: "Compilers, section A" }) { classroom { id } } }', {}, tokenFor(t.config, teacher.id))
+    const classroomId = made.data!.createClassroom.classroom.id
+    await settle()
+    expect(await doc('classrooms', classroomId)).toMatchObject({ name: 'Compilers, section A', memberCount: 1 })
   })
 
   it('finds people past the consent age by name or handle, never minors or across a block', async () => {

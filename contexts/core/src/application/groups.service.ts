@@ -151,6 +151,8 @@ export class GroupsService {
     const privacy = input.privacy ?? group.privacy
     const joinPolicy = privacy === 'PRIVATE' ? 'APPROVAL' : (input.joinPolicy ?? group.joinPolicy)
     await this.db.group.update({ where: { id: groupId }, data: { name, description, privacy, joinPolicy } })
+    // What search finds of a group (ADR-0056): its name, description and who may find it.
+    await this.events.publish('GroupUpdated', { groupId })
     if (privacy !== group.privacy || joinPolicy !== group.joinPolicy) {
       await this.audit.record({ actorId, action: 'group.settings', targetType: 'GROUP', targetId: groupId, metadata: { fromPrivacy: group.privacy, fromJoinPolicy: group.joinPolicy, privacy, joinPolicy } })
     }
