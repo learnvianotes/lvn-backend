@@ -28,6 +28,19 @@ input AcceptTermsInput
   version: String!
 }
 
+input AddCommentInput
+  @join__type(graph: CORE)
+{
+  target: CommentTargetInput!
+
+  """A card of the note"""
+  cardId: UUID
+
+  """Reply to this top-level comment"""
+  parentId: UUID
+  body: JSON!
+}
+
 input AddPdfHighlightInput
   @join__type(graph: NOTES)
 {
@@ -311,6 +324,11 @@ type ClassroomPost
   body: JSON!
   createdAt: DateTime!
   viewerCanDelete: Boolean!
+
+  """
+  Members: comments and reactions. A student's thread is seen by them and the class's staff only
+  """
+  discussion: Discussion!
 }
 
 type ClassroomPostConnection
@@ -352,6 +370,92 @@ enum ClassroomRole
   TEACHER @join__enumValue(graph: CORE)
   TA @join__enumValue(graph: CORE)
   STUDENT @join__enumValue(graph: CORE)
+}
+
+type Comment
+  @join__type(graph: CORE)
+{
+  id: UUID!
+
+  """Null when removed"""
+  author: User
+
+  """Rich text: a card's document; null when removed"""
+  body: JSON
+
+  """The card of the note it is about"""
+  cardId: UUID
+  removed: Boolean!
+
+  """
+  Waiting for the owner's approval: seen by its author and the owner only
+  """
+  pendingApproval: Boolean!
+
+  """
+  In a class: seen by the student whose thread it is and the class's staff only
+  """
+  private: Boolean!
+  createdAt: DateTime!
+  editedAt: DateTime
+
+  """Replies, oldest first (one level)"""
+  replies: [Comment!]!
+  reactions: Reactions!
+  viewerCan: CommentActions!
+}
+
+type CommentActions
+  @join__type(graph: CORE)
+{
+  reply: Boolean!
+  edit: Boolean!
+  delete: Boolean!
+
+  """The content's owner: let a restricted person's comment be seen"""
+  approve: Boolean!
+}
+
+type CommentConnection
+  @join__type(graph: CORE)
+{
+  edges: [CommentEdge!]!
+  pageInfo: PageInfo!
+}
+
+type CommentEdge
+  @join__type(graph: CORE)
+{
+  cursor: String!
+  node: Comment!
+}
+
+input CommentIdInput
+  @join__type(graph: CORE)
+{
+  commentId: UUID!
+}
+
+type CommentPayload
+  @join__type(graph: CORE)
+{
+  comment: Comment
+  userErrors: [UserError!]!
+}
+
+input CommentTargetInput
+  @join__type(graph: CORE)
+{
+  type: CommentTargetType!
+  id: UUID!
+}
+
+enum CommentTargetType
+  @join__type(graph: CORE)
+{
+  NOTE @join__enumValue(graph: CORE)
+  GROUP_POST @join__enumValue(graph: CORE)
+  CLASSROOM_POST @join__enumValue(graph: CORE)
 }
 
 """
@@ -548,6 +652,23 @@ input DecideDomainReviewInput
   approve: Boolean!
 }
 
+type Discussion
+  @join__type(graph: CORE)
+{
+  """
+  Top-level comments, oldest first; with cardId, those on one card of the note
+  """
+  comments(first: Int, after: String, cardId: UUID): CommentConnection!
+
+  """Comments and replies the viewer can see"""
+  commentCount: Int!
+  reactions: Reactions!
+  viewerCanComment: Boolean!
+
+  """Why the viewer may not comment or react, in words"""
+  whyNot: String
+}
+
 type DomainReview
   @join__type(graph: USERS)
 {
@@ -566,6 +687,13 @@ enum DomainReviewStatus
   NEEDS_REVIEW @join__enumValue(graph: USERS)
   APPROVED @join__enumValue(graph: USERS)
   REJECTED @join__enumValue(graph: USERS)
+}
+
+input EditCommentInput
+  @join__type(graph: CORE)
+{
+  commentId: UUID!
+  body: JSON!
 }
 
 input EditGroupPostInput
@@ -759,6 +887,9 @@ type GroupPost
   createdAt: DateTime!
   editedAt: DateTime
   viewerCan: GroupPostActions!
+
+  """Members: comments and reactions on the post"""
+  discussion: Discussion!
 }
 
 type GroupPostActions
@@ -1196,6 +1327,17 @@ type Mutation
   """Staff: an announcement every member reads"""
   createClassroomPost(input: CreateClassroomPostInput!): ClassroomPayload! @join__field(graph: CORE)
   deleteClassroomPost(input: ClassroomPostIdInput!): ClassroomPayload! @join__field(graph: CORE)
+  addComment(input: AddCommentInput!): CommentPayload! @join__field(graph: CORE)
+
+  """Its author"""
+  editComment(input: EditCommentInput!): CommentPayload! @join__field(graph: CORE)
+
+  """
+  Its author, the note's owner, group moderators or class staff; with replies it stays as removed
+  """
+  deleteComment(input: CommentIdInput!): CommentPayload! @join__field(graph: CORE)
+  approveComment(input: CommentIdInput!): CommentPayload! @join__field(graph: CORE)
+  react(input: ReactInput!): ReactPayload! @join__field(graph: CORE)
   createGroup(input: CreateGroupInput!): GroupPayload! @join__field(graph: CORE)
 
   """Admins: name, description, privacy, join policy"""
@@ -1413,9 +1555,15 @@ A note, owned by the notes subgraph: null when the viewer can no longer read it
 """
 type Note
   @join__type(graph: COMMUNICATION, key: "id", resolvable: false)
+  @join__type(graph: CORE, key: "id")
   @join__type(graph: NOTES, key: "id")
 {
   id: UUID!
+
+  """
+  Signed-in readers of the note: its comments and reactions. Null for anonymous visitors
+  """
+  discussion: Discussion @join__field(graph: CORE)
   kind: NoteKind! @join__field(graph: NOTES)
 
   """Empty when untitled"""
@@ -1758,7 +1906,7 @@ type Notification
   classroom: Classroom
 
   """
-  Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED }
+  Facts of the category that are not user content: VERIFICATION { kind: REQUESTED | DECIDED, decision }, NOTES_IMPORT { created, skipped, failed }, CONNECTION { kind: REQUESTED | ACCEPTED }, JOIN_DECISION { decision: APPROVED | REJECTED }, COMMENT { kind: COMMENT | REPLY }
   """
   data: JSON
   readAt: DateTime
@@ -2042,6 +2190,11 @@ type Query
   myClassroomInvites: [ClassroomInviteItem!]! @join__field(graph: CORE)
 
   """
+  The discussion of a note, group post or class announcement the viewer can read; null otherwise. Queried on its own, it keeps comment threads within the depth limit
+  """
+  discussion(target: CommentTargetInput!): Discussion @join__field(graph: CORE)
+
+  """
   A group the viewer may know about: public ones, and private ones they are in or asked to join
   """
   group(id: UUID!): Group @join__field(graph: CORE)
@@ -2151,6 +2304,65 @@ type Query
   Platform admins: institutional email domains waiting for review (ADR-0017)
   """
   domainReviews(status: DomainReviewStatus): [DomainReview!]! @join__field(graph: USERS)
+}
+
+input ReactInput
+  @join__type(graph: CORE)
+{
+  target: ReactionTargetInput!
+
+  """Null takes the viewer's reaction away"""
+  kind: ReactionKind
+}
+
+type ReactionCount
+  @join__type(graph: CORE)
+{
+  kind: ReactionKind!
+
+  """
+  Exact; or, on a public note for anyone but its owner, a milestone (ADR-0027) when atLeast, and null below the first
+  """
+  count: Int
+  atLeast: Boolean!
+}
+
+enum ReactionKind
+  @join__type(graph: CORE)
+{
+  LIKE @join__enumValue(graph: CORE)
+  HELPFUL @join__enumValue(graph: CORE)
+  CELEBRATE @join__enumValue(graph: CORE)
+}
+
+type Reactions
+  @join__type(graph: CORE)
+{
+  counts: [ReactionCount!]!
+  viewerReaction: ReactionKind
+}
+
+input ReactionTargetInput
+  @join__type(graph: CORE)
+{
+  type: ReactionTargetType!
+  id: UUID!
+}
+
+enum ReactionTargetType
+  @join__type(graph: CORE)
+{
+  NOTE @join__enumValue(graph: CORE)
+  COMMENT @join__enumValue(graph: CORE)
+  GROUP_POST @join__enumValue(graph: CORE)
+  CLASSROOM_POST @join__enumValue(graph: CORE)
+}
+
+type ReactPayload
+  @join__type(graph: CORE)
+{
+  reactions: Reactions
+  userErrors: [UserError!]!
 }
 
 input RefreshSessionInput

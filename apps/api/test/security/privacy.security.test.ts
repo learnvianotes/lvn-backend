@@ -170,7 +170,46 @@ describe('security: privacy', () => {
       expect(await find()).toEqual([])
     })
 
-    it.todo('B cannot comment on A’s private note (comments arrive with groups, Phase 3)')
+    it('B cannot read, comment on or react to A’s private note’s discussion, even after it was public (ADR-0047)', async () => {
+      const db = t.app.get(PrismaService)
+      const verify = (id: string, on: boolean) => db.user.update({ where: { id }, data: on ? { verifiedAt: new Date(), verificationMethod: 'INSTITUTIONAL_EMAIL' } : { verifiedAt: null, verificationMethod: null } })
+      await verify(actors.a.id, true)
+      // B verified, so every refusal below is the note's read rule, not B's account.
+      await verify(actors.b.id, true)
+      try {
+        const a = actors.a.token
+        const b = actors.b.token
+        const doc = (s: string) => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: s }] }] })
+        const id = (await t.gql<{ createNote: { note: { id: string } } }>('mutation { createNote(input: { title: "Diary" }) { note { id } } }', {}, a)).data!.createNote.note.id
+        await t.gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId: id } }, a)
+        await t.gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { id } } }', { input: { noteId: id, visibility: 'PUBLIC' } }, a)
+        const target = { type: 'NOTE', id }
+        const add = (token: string, text: string, parentId?: string) => t.gql<{ addComment: { comment: { id: string } | null; userErrors: { code: string }[] } }>('mutation ($input: AddCommentInput!) { addComment(input: $input) { comment { id } userErrors { code } } }', { input: { target, body: doc(text), parentId } }, token)
+        const bs = (await add(b, 'Said while it was public')).data!.addComment.comment!.id
+        const as = (await add(a, 'Mine')).data!.addComment.comment!.id
+        await t.gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { id } } }', { input: { noteId: id, visibility: 'PRIVATE' } }, a)
+
+        const code = (res: { data?: unknown; errors?: { extensions: { code: string } }[] }) => res.errors?.[0]?.extensions.code ?? Object.values((res.data ?? {}) as Record<string, { userErrors?: { code: string }[] }>)[0]?.userErrors?.[0]?.code
+        expect((await t.gql<{ discussion: unknown }>('query ($target: CommentTargetInput!) { discussion(target: $target) { commentCount } }', { target }, b)).data!.discussion).toBeNull()
+        expect((await t.gql<{ note: unknown }>('query ($id: UUID!) { note(id: $id) { discussion { commentCount } } }', { id }, b)).data!.note).toBeNull()
+        expect(code(await add(b, 'Still here?'))).toBe('NOT_FOUND')
+        expect(code(await add(b, 'Reply', as))).toBe('NOT_FOUND')
+        for (const [mutation, input] of [
+          ['editComment(input: { commentId: $id, body: { type: "doc", content: [] } })', bs],
+          ['deleteComment(input: { commentId: $id })', as],
+          ['approveComment(input: { commentId: $id })', as],
+        ] as const) {
+          expect(code(await t.gql(`mutation ($id: UUID!) { r: ${mutation} { comment { id } userErrors { code } } }`, { id: input }, b))).toBe('NOT_FOUND')
+        }
+        for (const reaction of [target, { type: 'COMMENT', id: as }, { type: 'COMMENT', id: bs }]) {
+          expect(code(await t.gql('mutation ($input: ReactInput!) { react(input: $input) { reactions { viewerReaction } userErrors { code } } }', { input: { target: reaction, kind: 'LIKE' } }, b))).toBe('NOT_FOUND')
+        }
+        // A still sees the whole discussion of their note.
+        expect((await t.gql<{ discussion: { commentCount: number } }>('query ($target: CommentTargetInput!) { discussion(target: $target) { commentCount } }', { target }, a)).data!.discussion.commentCount).toBe(2)
+      } finally {
+        await verify(actors.b.id, false)
+      }
+    })
     it.todo('B gets no recommendations or Ask AI answers that draw on A’s private notes (Phase 5)')
     it.todo('unpublishing removes a note from recommendations and RAG within 60 seconds (Phase 5)')
     it('subscriptions never deliver A’s events to B, and cannot ask for anyone else’s (ADR-0042)', async () => {

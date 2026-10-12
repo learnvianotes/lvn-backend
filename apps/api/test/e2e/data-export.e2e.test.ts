@@ -34,6 +34,12 @@ describe('data export', () => {
     await t.gql(`mutation ($input: UpdateNoteDraftInput!) { updateNoteDraft(input: $input) { ${ERRORS} } }`, { input: { noteId, ops: [{ kind: 'UPSERT', id: newId(), type: 'image', position: 'a2', content: { fileId, alt: 'A heap' } }] } }, me.token)
     await t.gql(`mutation ($input: NoteIdInput!) { publishNote(input: $input) { ${ERRORS} } }`, { input: { noteId } }, me.token)
 
+    // Something said in a group, on one's own note (ADR-0047): it travels with the export.
+    const groupId = (await t.gql<{ createGroup: { group: { id: string } } }>('mutation { createGroup(input: { name: "Heap club", privacy: PUBLIC }) { group { id } } }', {}, me.token)).data!.createGroup.group.id
+    await t.gql('mutation ($input: CreateGroupPostInput!) { createGroupPost(input: $input) { post { id } } }', { input: { groupId, body: doc('Welcome').doc } }, me.token)
+    await t.gql('mutation ($input: AddCommentInput!) { addComment(input: $input) { comment { id } } }', { input: { target: { type: 'NOTE', id: noteId }, body: doc('Note to self').doc } }, me.token)
+    await t.gql('mutation ($input: ReactInput!) { react(input: $input) { reactions { viewerReaction } } }', { input: { target: { type: 'NOTE', id: noteId }, kind: 'HELPFUL' } }, me.token)
+
     const sent = jest.spyOn(t.app.get(MailService), 'send').mockResolvedValue()
     const asked = (await request(me.token)).data!.requestDataExport
     expect(asked.export).toMatchObject({ status: 'PENDING' })
@@ -62,7 +68,10 @@ describe('data export', () => {
     expect(account).not.toHaveProperty('passwordHash')
     // The manifest's checksums match the files.
     const manifest = JSON.parse(strFromU8(zip['manifest.json']!)) as { counts: Record<string, number>; files: { path: string; sha256: string }[] }
-    expect(manifest.counts).toMatchObject({ notes: 1, versions: 1, media: 1 })
+    expect(manifest.counts).toMatchObject({ notes: 1, versions: 1, media: 1, groups: 1, groupPosts: 1, comments: 1, reactions: 1 })
+    const said = JSON.parse(strFromU8(zip['data/core/comments.json']!)) as { on: string; targetId: string; body: unknown }[]
+    expect(said).toEqual([expect.objectContaining({ on: 'NOTE', targetId: noteId, body: doc('Note to self').doc })])
+    expect(JSON.parse(strFromU8(zip['data/core/groups.json']!))).toEqual([expect.objectContaining({ groupId, name: 'Heap club', role: 'OWNER' })])
     for (const f of manifest.files) expect(createHash('sha256').update(zip[f.path]!).digest('hex')).toBe(f.sha256)
   })
 

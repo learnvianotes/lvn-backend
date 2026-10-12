@@ -1,5 +1,14 @@
 // Generated from this folder's *.graphql by scripts/graphql-types.mjs (ADR-0033). Do not edit.
 
+export interface AddCommentInput {
+  target: CommentTargetInput
+  /** A card of the note */
+  cardId?: string | null
+  /** Reply to this top-level comment */
+  parentId?: string | null
+  body: unknown
+}
+
 export interface AnswerClassroomInviteInput {
   inviteId: string
   accept: boolean
@@ -89,6 +98,8 @@ export interface ClassroomPost {
   body: unknown
   createdAt: Date
   viewerCanDelete: boolean
+  /** Members: comments and reactions. A student's thread is seen by them and the class's staff only */
+  discussion?: Discussion
 }
 
 export interface ClassroomPostConnection {
@@ -115,6 +126,61 @@ export interface ClassroomPreview {
 }
 
 export type ClassroomRole = 'TEACHER' | 'TA' | 'STUDENT'
+
+export interface Comment {
+  id: string
+  /** Null when removed */
+  author: User | null
+  /** Rich text: a card's document; null when removed */
+  body: unknown | null
+  /** The card of the note it is about */
+  cardId: string | null
+  removed: boolean
+  /** Waiting for the owner's approval: seen by its author and the owner only */
+  pendingApproval: boolean
+  /** In a class: seen by the student whose thread it is and the class's staff only */
+  private: boolean
+  createdAt: Date
+  editedAt: Date | null
+  /** Replies, oldest first (one level) */
+  replies: Array<Comment>
+  reactions: Reactions
+  viewerCan: CommentActions
+}
+
+export interface CommentActions {
+  reply: boolean
+  edit: boolean
+  delete: boolean
+  /** The content's owner: let a restricted person's comment be seen */
+  approve: boolean
+}
+
+export interface CommentConnection {
+  edges: Array<CommentEdge>
+  pageInfo: PageInfo
+}
+
+export interface CommentEdge {
+  cursor: string
+  node: Comment
+}
+
+export interface CommentIdInput {
+  commentId: string
+}
+
+export interface CommentPayload {
+  comment: Comment | null
+  userErrors: Array<UserError>
+}
+
+export interface CommentTargetInput {
+  type: CommentTargetType
+  id: string
+}
+
+export type CommentTargetType = 'NOTE' | 'GROUP_POST' | 'CLASSROOM_POST'
 
 export interface CoreProblemMark {
   problemId: string
@@ -159,6 +225,28 @@ export interface CreateGroupInput {
 
 export interface CreateGroupPostInput {
   groupId: string
+  body: unknown
+}
+
+export interface Discussion {
+  /** Top-level comments, oldest first; with cardId, those on one card of the note */
+  comments: CommentConnection
+  /** Comments and replies the viewer can see */
+  commentCount: number
+  reactions: Reactions
+  viewerCanComment: boolean
+  /** Why the viewer may not comment or react, in words */
+  whyNot: string | null
+}
+
+export interface DiscussionCommentsArgs {
+  first?: number | null
+  after?: string | null
+  cardId?: string | null
+}
+
+export interface EditCommentInput {
+  commentId: string
   body: unknown
 }
 
@@ -249,6 +337,8 @@ export interface GroupPost {
   createdAt: Date
   editedAt: Date | null
   viewerCan: GroupPostActions
+  /** Members: comments and reactions on the post */
+  discussion?: Discussion
 }
 
 export interface GroupPostActions {
@@ -424,6 +514,26 @@ export interface MutationDeleteClassroomPostArgs {
   input: ClassroomPostIdInput
 }
 
+export interface MutationAddCommentArgs {
+  input: AddCommentInput
+}
+
+export interface MutationEditCommentArgs {
+  input: EditCommentInput
+}
+
+export interface MutationDeleteCommentArgs {
+  input: CommentIdInput
+}
+
+export interface MutationApproveCommentArgs {
+  input: CommentIdInput
+}
+
+export interface MutationReactArgs {
+  input: ReactInput
+}
+
 export interface MutationCreateGroupArgs {
   input: CreateGroupInput
 }
@@ -491,6 +601,13 @@ export interface MuteGroupMemberInput {
   until?: Date | null
 }
 
+/** A note, owned by the notes subgraph; core adds its discussion */
+export interface Note {
+  id: string
+  /** Signed-in readers of the note: its comments and reactions. Null for anonymous visitors */
+  discussion: Discussion | null
+}
+
 export interface OkPayload {
   ok: boolean
   userErrors: Array<UserError>
@@ -520,6 +637,10 @@ export interface QueryClassroomByCodeArgs {
   code: string
 }
 
+export interface QueryDiscussionArgs {
+  target: CommentTargetInput
+}
+
 export interface QueryGroupArgs {
   id: string
 }
@@ -532,6 +653,38 @@ export interface QueryDiscoverGroupsArgs {
 export interface QueryModerationQueueArgs {
   first?: number | null
   after?: string | null
+}
+
+export interface ReactInput {
+  target: ReactionTargetInput
+  /** Null takes the viewer's reaction away */
+  kind?: ReactionKind | null
+}
+
+export interface ReactionCount {
+  kind: ReactionKind
+  /** Exact; or, on a public note for anyone but its owner, a milestone (ADR-0027) when atLeast, and null below the first */
+  count: number | null
+  atLeast: boolean
+}
+
+export type ReactionKind = 'LIKE' | 'HELPFUL' | 'CELEBRATE'
+
+export interface Reactions {
+  counts: Array<ReactionCount>
+  viewerReaction: ReactionKind | null
+}
+
+export interface ReactionTargetInput {
+  type: ReactionTargetType
+  id: string
+}
+
+export type ReactionTargetType = 'NOTE' | 'COMMENT' | 'GROUP_POST' | 'CLASSROOM_POST'
+
+export interface ReactPayload {
+  reactions: Reactions | null
+  userErrors: Array<UserError>
 }
 
 export interface ReportContentInput {

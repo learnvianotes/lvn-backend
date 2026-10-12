@@ -57,6 +57,12 @@ export class ModerationService implements Moderation {
 
   // ── MODERATION facade ────────────────────────────────────────────────────────────────────────────────────
 
+  /** The rule-based verdict on a few words (ADR-0047): comments are refused when flagged, with the reason in words. */
+  check(text: string): { flagged: boolean; message: string | null } {
+    const verdict = score({ title: '', text }, this.words)
+    return { flagged: verdict.flagged, message: verdict.flagged ? verdict.message : null }
+  }
+
   async screen(subject: ModerationSubject): Promise<{ held: boolean; reason: string | null }> {
     const verdict = score(subject, this.words)
     if (!verdict.flagged) return { held: false, reason: null }

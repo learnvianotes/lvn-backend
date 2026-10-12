@@ -111,6 +111,13 @@ describe('note rows of §5', () => {
     expect(can(unverified, Action.NOTE_PUBLISH, { kind: 'note', note: note('PRIVATE') })).toBe(false)
   })
 
+  it('restricted minors comment and react on notes shared with them, never on PUBLIC notes (§15.2, ADR-0047)', () => {
+    const minor = student('viewer', { restrictedMinor: true })
+    expect(can(minor, Action.NOTE_COMMENT, { kind: 'note', note: { ...note('SHARED'), shareRole: 'VIEWER' } })).toBe(true)
+    expect(can(minor, Action.NOTE_COMMENT, { kind: 'note', note: { ...note('PUBLIC'), shareRole: 'VIEWER' } })).toBe(false)
+    expect(can(minor, Action.NOTE_COMMENT, { kind: 'note', note: note('PUBLIC') })).toBe(false)
+  })
+
   it('restricted minors cannot make a note PUBLIC but can share it (§15.2)', () => {
     const minor = student('owner', { restrictedMinor: true })
     expect(can(minor, Action.NOTE_PUBLISH, { kind: 'note', note: note('PRIVATE'), targetVisibility: 'PUBLIC' })).toBe(false)

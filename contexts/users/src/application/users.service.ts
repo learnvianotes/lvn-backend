@@ -71,6 +71,11 @@ export class UsersService implements People {
     return (await this.db.connection.count({ where: a < b ? { userLowId: a, userHighId: b } : { userLowId: b, userHighId: a } })) > 0
   }
 
+  /** People facade (ADR-0016, ADR-0047): the first restricts the second. */
+  async restricts(restricterId: string, restrictedId: string): Promise<boolean> {
+    return (await this.db.restriction.count({ where: { restricterId, restrictedId } })) > 0
+  }
+
   /** Anyone's view of a user: no email, institutional address, verification details or age signal. */
   async publicProfile(userId: string): Promise<User | null> {
     const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null } })

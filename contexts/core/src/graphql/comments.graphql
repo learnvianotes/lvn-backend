@@ -1,0 +1,144 @@
+# Comments and reactions (§4.5, ADR-0016, ADR-0047) on notes, group posts and class announcements. Whoever may read
+# the target reads its discussion; the target's rules say who joins in.
+
+enum CommentTargetType { NOTE GROUP_POST CLASSROOM_POST }
+enum ReactionTargetType { NOTE COMMENT GROUP_POST CLASSROOM_POST }
+enum ReactionKind { LIKE HELPFUL CELEBRATE }
+
+"A note, owned by the notes subgraph; core adds its discussion"
+type Note @key(fields: "id") {
+  id: UUID!
+  "Signed-in readers of the note: its comments and reactions. Null for anonymous visitors"
+  discussion: Discussion
+}
+
+extend type GroupPost {
+  "Members: comments and reactions on the post"
+  discussion: Discussion!
+}
+
+extend type ClassroomPost {
+  "Members: comments and reactions. A student's thread is seen by them and the class's staff only"
+  discussion: Discussion!
+}
+
+type Discussion {
+  "Top-level comments, oldest first; with cardId, those on one card of the note"
+  comments(first: Int, after: String, cardId: UUID): CommentConnection!
+  "Comments and replies the viewer can see"
+  commentCount: Int!
+  reactions: Reactions!
+  viewerCanComment: Boolean!
+  "Why the viewer may not comment or react, in words"
+  whyNot: String
+}
+
+type CommentActions {
+  reply: Boolean!
+  edit: Boolean!
+  delete: Boolean!
+  "The content's owner: let a restricted person's comment be seen"
+  approve: Boolean!
+}
+
+type Comment {
+  id: UUID!
+  "Null when removed"
+  author: User
+  "Rich text: a card's document; null when removed"
+  body: JSON
+  "The card of the note it is about"
+  cardId: UUID
+  removed: Boolean!
+  "Waiting for the owner's approval: seen by its author and the owner only"
+  pendingApproval: Boolean!
+  "In a class: seen by the student whose thread it is and the class's staff only"
+  private: Boolean!
+  createdAt: DateTime!
+  editedAt: DateTime
+  "Replies, oldest first (one level)"
+  replies: [Comment!]!
+  reactions: Reactions!
+  viewerCan: CommentActions!
+}
+
+type CommentEdge {
+  cursor: String!
+  node: Comment!
+}
+
+type CommentConnection {
+  edges: [CommentEdge!]!
+  pageInfo: PageInfo!
+}
+
+type ReactionCount {
+  kind: ReactionKind!
+  "Exact; or, on a public note for anyone but its owner, a milestone (ADR-0027) when atLeast, and null below the first"
+  count: Int
+  atLeast: Boolean!
+}
+
+type Reactions {
+  counts: [ReactionCount!]!
+  viewerReaction: ReactionKind
+}
+
+input CommentTargetInput {
+  type: CommentTargetType!
+  id: UUID!
+}
+
+extend type Query {
+  "The discussion of a note, group post or class announcement the viewer can read; null otherwise. Queried on its own, it keeps comment threads within the depth limit"
+  discussion(target: CommentTargetInput!): Discussion
+}
+
+input AddCommentInput {
+  target: CommentTargetInput!
+  "A card of the note"
+  cardId: UUID
+  "Reply to this top-level comment"
+  parentId: UUID
+  body: JSON!
+}
+
+input EditCommentInput {
+  commentId: UUID!
+  body: JSON!
+}
+
+input CommentIdInput {
+  commentId: UUID!
+}
+
+input ReactionTargetInput {
+  type: ReactionTargetType!
+  id: UUID!
+}
+
+input ReactInput {
+  target: ReactionTargetInput!
+  "Null takes the viewer's reaction away"
+  kind: ReactionKind
+}
+
+type CommentPayload {
+  comment: Comment
+  userErrors: [UserError!]!
+}
+
+type ReactPayload {
+  reactions: Reactions
+  userErrors: [UserError!]!
+}
+
+extend type Mutation {
+  addComment(input: AddCommentInput!): CommentPayload!
+  "Its author"
+  editComment(input: EditCommentInput!): CommentPayload!
+  "Its author, the note's owner, group moderators or class staff; with replies it stays as removed"
+  deleteComment(input: CommentIdInput!): CommentPayload!
+  approveComment(input: CommentIdInput!): CommentPayload!
+  react(input: ReactInput!): ReactPayload!
+}

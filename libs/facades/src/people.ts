@@ -29,4 +29,6 @@ export interface People {
   connectionIds(userId: string): Promise<string[]>
   /** The two are connected. */
   connected(a: string, b: string): Promise<boolean>
+  /** `restricterId` restricts `restrictedId` (ADR-0016): their comments wait for approval and cause no notification. */
+  restricts(restricterId: string, restrictedId: string): Promise<boolean>
 }

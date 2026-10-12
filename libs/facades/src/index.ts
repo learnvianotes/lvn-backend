@@ -7,5 +7,6 @@ export { FILES, type Files, type FileParentKind, type FilePurposeKind, type File
 export { PEOPLE, type People, type Person } from './people'
 export { AUDIT, type Audit, type AuditEntry } from './audit'
 export { MODERATION, NOTE_MODERATION, type Moderation, type ModerationSubject, type ModerationStateKind, type ModeratedNote, type NoteModeration } from './moderation'
+export { NOTE_ACCESS, type NoteAccess, type NoteReach } from './note-access'
 export { CORE_DATA_EXPORT, NOTES_DATA_EXPORT, type DataExportPart, type ExportFile } from './data-export'
 export { FacadesModule } from './bind'

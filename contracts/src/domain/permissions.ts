@@ -327,7 +327,8 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
         case Action.FILE_CONVERT_TO_NOTE:
           return actor !== null && readable(actor, note) && (isOwner || note.forkingEnabled)
         case Action.NOTE_COMMENT:
-          return actor !== null && readable(actor, note)
+          // Commenting or reacting on a PUBLIC note is publishing in public, which restricted minors do not (§15.2, ADR-0047).
+          return actor !== null && readable(actor, note) && !(actor.restrictedMinor && note.visibility === Visibility.PUBLIC)
         case Action.NOTE_ASK_AI:
           return actor !== null && readable(actor, note)
         default:

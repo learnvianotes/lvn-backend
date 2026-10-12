@@ -74,6 +74,16 @@ export class CommunicationEvents implements OnModuleInit {
     this.events.subscribe('ClassroomPosted', async ({ payload }) => {
       await this.notifications.notifyMany(payload.memberIds, { category: 'CLASSROOM_POST', path: `/classes/${payload.classroomId}`, actorId: payload.authorId, classroomId: payload.classroomId })
     })
+    // Comments (ADR-0047): core works out who is told; the notification opens where the discussion is.
+    this.events.subscribe('CommentAdded', async ({ payload }) => {
+      const place = payload.place
+      if (!place) return
+      const where =
+        place.kind === 'NOTE' ? { path: `/notes/${place.noteId}`, noteId: place.noteId } : place.kind === 'GROUP' ? { path: `/groups/${place.groupId}`, groupId: place.groupId } : { path: `/classes/${place.classroomId}`, classroomId: place.classroomId }
+      for (const r of payload.recipients ?? []) {
+        await this.notifications.notify({ userId: r.userId, category: 'COMMENT', actorId: payload.authorId, data: { kind: r.kind }, ...where })
+      }
+    })
     // Sockets of a revoked session close on every instance.
     this.events.subscribe('SessionRevoked', async ({ payload }) => {
       await this.live.publish(payload.userId, { type: 'revoke', sessionId: payload.sessionId })

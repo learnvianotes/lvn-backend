@@ -370,6 +370,21 @@ export class GroupsService {
     return { pinned, rows }
   }
 
+  /**
+   * A post as comments need it (ADR-0047): null unless the viewer is a member; whether they may comment (members who
+   * may post and are not muted) and moderate (moderators and above).
+   */
+  async postPlace(viewerId: string, postId: string): Promise<{ groupId: string; authorId: string; canComment: boolean; canModerate: boolean } | null> {
+    const p = await this.db.groupPost.findFirst({ where: { id: postId, deletedAt: null } })
+    if (!p) return null
+    const loaded = await this.load(viewerId, p.groupId)
+    if (!loaded?.role) return null
+    const actor = await this.actor(viewerId)
+    const member = await this.db.groupMember.findUnique({ where: { groupId_userId: { groupId: p.groupId, userId: viewerId } }, select: { mutedUntil: true } })
+    const muted = !!member?.mutedUntil && member.mutedUntil > new Date()
+    return { groupId: p.groupId, authorId: p.authorId, canComment: can(actor, Action.GROUP_POST, loaded.resource) && !muted, canModerate: can(actor, Action.GROUP_MODERATE_POSTS, loaded.resource) }
+  }
+
   async getPost(viewerId: string, postId: string) {
     const p = await this.db.groupPost.findFirst({ where: { id: postId, deletedAt: null } })
     if (!p) return null

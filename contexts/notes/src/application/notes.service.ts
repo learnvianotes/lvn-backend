@@ -7,7 +7,7 @@ import { POLICY, type Policy } from '@lvn-backend/facades'
 import { decodeCursor, pageSize } from '@lvn-backend/graphql'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
-import { noteAccess, type NoteAccess, type NoteAccessRow, visibleNotesWhere } from '../domain/note-access'
+import { noteAccess, type NoteAccess, type NoteAccessRow, type ReachFacts, visibleNotesWhere } from '../domain/note-access'
 import { OrganiseService } from './organise.service'
 
 export type NoteRow = Prisma.NoteGetPayload<object>
@@ -18,6 +18,8 @@ export interface OpenedNote {
   access: NoteAccess
   shareRole: 'EDITOR' | 'VIEWER' | null
   actor: Actor | null
+  /** How else it reaches the viewer (a group or class it is shared to); set by `open` */
+  reach?: ReachFacts
 }
 
 export interface CardInput {
@@ -86,7 +88,7 @@ export class NotesService {
     const resolvedActor = actor === undefined ? await this.actor(viewerId) : actor
     const shareRole = share?.role ?? null
     const access = noteAccess(resolvedActor, note as NoteAccessRow, shareRole, { inSharedGroup, inSharedClassroom })
-    return access ? { note, access, shareRole, actor: resolvedActor } : null
+    return access ? { note, access, shareRole, actor: resolvedActor, reach: { inSharedGroup, inSharedClassroom } } : null
   }
 
   /** Like `open`, for a mutation: NOT_FOUND when invisible, FORBIDDEN when visible but not allowed. */
