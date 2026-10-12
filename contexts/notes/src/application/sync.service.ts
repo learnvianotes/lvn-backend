@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
+import type { NoteKind } from '@lvn/contracts/domain'
 import { AppError, ErrorCode, Errors } from '@lvn-backend/errors'
 import { decodeCursor, encodeCursor } from '@lvn-backend/graphql'
 import { PrismaService, type Prisma } from '@lvn-backend/prisma-base'
@@ -19,6 +20,8 @@ export interface SyncOp {
   title?: string | null
   cards?: CardInput[] | null
   ops?: CardOp[] | null
+  /** CREATE_NOTE: the note's kind (ADR-0052) */
+  noteKind?: NoteKind | null
 }
 
 export interface SyncOpResult {
@@ -83,7 +86,7 @@ export class SyncService {
           // Created already (an answer lost on the way back, or the log expired): the device's note is the same note.
           const existing = await this.db.note.findUnique({ where: { id: op.noteId }, select: { ownerId: true } })
           if (existing?.ownerId === userId) return this.result(op, 'APPLIED', null, null)
-          await this.notes.create(userId, { id: op.noteId, title: op.title ?? '', cards: op.cards ?? [] })
+          await this.notes.create(userId, { id: op.noteId, title: op.title ?? '', cards: op.cards ?? [], kind: op.noteKind ?? null })
           return this.result(op, 'APPLIED', null, null)
         }
         case 'UPDATE_NOTE': {

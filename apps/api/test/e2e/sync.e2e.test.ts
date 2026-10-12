@@ -72,6 +72,33 @@ describe('sync', () => {
     ])
   })
 
+  it('starts a project, a blog or a post offline with its kind; blogs and posts only for teachers (ADR-0052)', async () => {
+    const teacher = await seedUser(t.app, { verified: true, globalRole: 'TEACHER' })
+    const teacherToken = tokenFor(t.config, teacher.id)
+    const student = await seedUser(t.app, { verified: true })
+    const [project, blog, post, plain, studentBlog] = [newId(), newId(), newId(), newId(), newId()]
+    const mine = await push(tokenFor(t.config, student.id), [
+      { clientOpId: newId(), kind: 'CREATE_NOTE', noteId: project, title: 'Rover', noteKind: 'PROJECT' },
+      { clientOpId: newId(), kind: 'CREATE_NOTE', noteId: plain, title: 'Plain' },
+      { clientOpId: newId(), kind: 'CREATE_NOTE', noteId: studentBlog, title: 'My blog', noteKind: 'BLOG' },
+    ])
+    expect(mine.map((r) => [r.status, r.code, r.message])).toEqual([
+      ['APPLIED', null, null],
+      ['APPLIED', null, null],
+      ['REJECTED', 'FORBIDDEN', 'Blogs and posts are for teachers.'],
+    ])
+    const theirs = await push(teacherToken, [
+      { clientOpId: newId(), kind: 'CREATE_NOTE', noteId: blog, title: 'On heaps', noteKind: 'BLOG' },
+      { clientOpId: newId(), kind: 'CREATE_NOTE', noteId: post, title: 'Exam on Friday', noteKind: 'POST' },
+    ])
+    expect(theirs.map((r) => r.status)).toEqual(['APPLIED', 'APPLIED'])
+    const kinds = await db.note.findMany({ where: { id: { in: [project, blog, post, plain, studentBlog] } }, select: { id: true, kind: true, forkingEnabled: true } })
+    expect(Object.fromEntries(kinds.map((n) => [n.id, [n.kind, n.forkingEnabled]]))).toEqual({ [project]: ['PROJECT', false], [plain]: ['NOTE', true], [blog]: ['BLOG', true], [post]: ['POST', false] })
+    // The pull carries the kind, the folder and the tags, for the phone's list.
+    const pulled = await t.gql<{ syncPull: { notes: { note: { id: string; kind: string; folder: { id: string } | null; tags: { name: string }[] } }[] } }>('query { syncPull(first: 50) { notes { note { id kind folder { id name } tags { id name } } } } }', {}, teacherToken)
+    expect(pulled.data!.syncPull.notes.map((n) => n.note).filter((n) => [blog, post].includes(n.id)).map((n) => [n.kind, n.folder, n.tags])).toEqual(expect.arrayContaining([['BLOG', null, []], ['POST', null, []]]))
+  })
+
   it('keeps the other side of a card changed on two devices, as a conflict version', async () => {
     const noteId = newId()
     const card = newId()
