@@ -6,7 +6,8 @@
  * read its page, the sitemap lists it and search finds it; B copies it; A publishes a second version and the page
  * follows; A makes it private again and it leaves the page, the sitemap and search; a device of A's syncs it and sends
  * an edit made offline; A moves it to the trash and back; a picture on it gets its sizes and an infected file is
- * quarantined (ADR-0041, with the environment's ClamAV). Publishing needs a verified account: on the local environment
+ * quarantined (ADR-0041, with the environment's ClamAV). On the local environment, groups, classes, workspaces, feeds and
+ * their moderation follow (Phase 3). Publishing needs a verified account: on the local environment
  * A is verified through its database (--vm), elsewhere pass a verified account's token (--token-a).
  *
  *   node scripts/lifecycle-check.mjs <public_url> --vm infra/local-vm/vm.sh
@@ -269,6 +270,38 @@ if (opt('--vm')) {
   ok(feed[0]?.id === blogId && feed.every((n) => n.owner.id === A.id && n.visibility === 'PUBLIC'), 'D follows A; A\'s new public blog leads D\'s Following feed', `${feed.length} notes`)
   const activity = (await gql('{ activityFeed(first: 20) { edges { node { kind doubt { id } note { id } } } } }', {}, C.token)).activityFeed.edges.map((e) => e.node)
   ok(activity.some((i) => i.kind === 'DOUBT' && i.doubt?.id === doubt.id), 'C\'s activity feed shows the doubt D asked in the workspace C mentors')
+
+  // Scoped moderation (ADR-0051): D's flagged comment on A's announcement waits for the class's staff and TA C removes
+  // it. In D's workspace, mentor C reports and hides a post of D's; D appeals once, into the same queue, and C puts it
+  // back. B cannot report what B cannot see.
+  const announcementId = (await gql('query ($id: UUID!) { classroom(id: $id) { posts(first: 1) { edges { node { id } } } } }', { id: classroomId }, D.token)).classroom.posts.edges[0].node.id
+  const annTarget = { type: 'CLASSROOM_POST', id: announcementId }
+  const heldComment = (await gql('mutation ($input: AddCommentInput!) { addComment(input: $input) { comment { id moderation } userErrors { message } } }', { input: { target: annTarget, body: text('Buy followers here, cheap.').doc } }, D.token)).addComment.comment
+  const queueOf = async (who, scope) => (await gql('query ($scope: ModerationScopeInput) { moderationQueue(scope: $scope) { edges { node { entityId appeal { message } reports { reporter { id } } } } } }', { scope }, who.token)).moderationQueue.edges.map((e) => e.node)
+  const classQueue = await queueOf(C, { scope: 'CLASSROOM', id: classroomId })
+  ok(heldComment?.moderation === 'PENDING_REVIEW' && classQueue.some((c) => c.entityId === heldComment.id && c.reports[0]?.reporter === null), 'D\'s flagged comment on the announcement is held, in the class\'s queue for its staff')
+  const decide = (who, input) => gql('mutation ($input: ModerateContentInput!) { moderateContent(input: $input) { ok userErrors { message } } }', { input }, who.token).catch((e) => ({ error: e.message }))
+  await decide(C, { entityType: 'COMMENT', entityId: heldComment.id, action: 'REMOVE', reason: 'No selling in class.' })
+  const moderated = async (who, kind, entityType) => (await gql('{ notifications(first: 5) { edges { node { category data } } } }', {}, who.token)).notifications.edges.some((e) => e.node.category === 'MODERATION' && e.node.data?.kind === kind && e.node.data?.entityType === entityType)
+  const dSees = (await gql('query ($target: CommentTargetInput!) { discussion(target: $target) { comments { edges { node { id moderation moderationReason } } } } }', { target: annTarget }, D.token)).discussion.comments.edges.map((e) => e.node)
+  const aSees = (await gql('query ($target: CommentTargetInput!) { discussion(target: $target) { commentCount } }', { target: annTarget }, A.token)).discussion
+  ok((await eventually(() => moderated(D, 'REMOVED', 'COMMENT'))) && dSees.some((c) => c.id === heldComment.id && c.moderation === 'REMOVED' && c.moderationReason === 'No selling in class.') && aSees.commentCount === 0, 'TA C removes it with a reason: D is told and reads why; A sees nothing')
+
+  const wsPost = (await gql('mutation ($input: CreateGroupPostInput!) { createGroupPost(input: $input) { post { id } userErrors { message } } }', { input: { groupId: ws.id, body: text('Nobody else does any work here.').doc } }, D.token)).createGroupPost.post
+  await gql('mutation ($input: ReportContentInput!) { reportContent(input: $input) { ok } }', { input: { entityType: 'GROUP_POST', entityId: wsPost.id, reason: 'HARASSMENT' } }, C.token)
+  const own = await decide(D, { entityType: 'GROUP_POST', entityId: wsPost.id, action: 'DISMISS' })
+  ok((await queueOf(D, { scope: 'GROUP', id: ws.id })).some((c) => c.entityId === wsPost.id) && /own content/.test(own.error ?? ''), 'C reports a post D wrote in the workspace: it is in the workspace\'s queue, and D cannot decide on it')
+  await decide(C, { entityType: 'GROUP_POST', entityId: wsPost.id, action: 'HIDE', reason: 'Keep it about the project.' })
+  const postsOf = async (who) => (await gql('query ($id: UUID!) { group(id: $id) { posts { edges { node { id moderation } } } } }', { id: ws.id }, who.token)).group.posts.edges.map((e) => e.node)
+  ok((await eventually(() => moderated(D, 'HIDDEN', 'GROUP_POST'))) && !(await postsOf(C)).some((p) => p.id === wsPost.id) && (await postsOf(D)).some((p) => p.id === wsPost.id && p.moderation === 'HIDDEN'), 'mentor C hides it: D is told, and only D still sees it')
+  await gql('mutation ($input: AppealModerationInput!) { appealModeration(input: $input) { ok } }', { input: { entityType: 'GROUP_POST', entityId: wsPost.id, message: 'I was frustrated; I take it back.' } }, D.token)
+  const appealed = (await queueOf(C, { scope: 'GROUP', id: ws.id })).find((c) => c.entityId === wsPost.id)
+  await decide(C, { entityType: 'GROUP_POST', entityId: wsPost.id, action: 'APPROVE' })
+  ok(appealed?.appeal?.message === 'I was frustrated; I take it back.' && (await eventually(() => moderated(D, 'RESTORED', 'GROUP_POST'))) && (await postsOf(C)).some((p) => p.id === wsPost.id), 'D appeals into the same queue; C puts the post back and D is told')
+  // A private group shows its name to anyone with the link, so B may report the group itself, to the platform; what
+  // is inside stays out of B's reach.
+  const unseenPost = await gql('mutation ($input: ReportContentInput!) { reportContent(input: $input) { ok userErrors { code } } }', { input: { entityType: 'GROUP_POST', entityId: wsPost.id, reason: 'SPAM' } }, B.token)
+  ok(unseenPost.reportContent.userErrors[0]?.code === 'NOT_FOUND', 'B cannot report a post in the private workspace B is not in')
 }
 
 // Media (ADR-0041): processed after the upload by the worker, scanned by the environment's ClamAV.
