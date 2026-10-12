@@ -56,6 +56,7 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `TYPESENSE_API_KEY` | api, worker | with `TYPESENSE_URL` (secret) | — | Typesense's admin key; it never leaves the server |
 | `TYPESENSE_COLLECTION_PREFIX` | api, worker | no | `lvn_` | Prefix of every collection, alias and stop-word set, so environments can share a cluster |
 | `SEARCH_TIMEOUT_MS` | api | no | `800` | A Typesense answer slower than this is dropped and Postgres answers instead |
+| `SEARCH_HYBRID` | api | no | `false` | Hybrid ranking (ADR-0057): keyword and semantic ranks fused by reciprocal rank fusion. Changes nothing until Phase 5 binds a semantic source |
 | `CLAMAV_URL` | worker | no | — (uploads not scanned) | ClamAV's clamd, `tcp://host:3310`: uploads are scanned and infected ones quarantined (ADR-0041) |
 | `API_HOST` | api | no | `0.0.0.0` | Bind address |
 | `API_PORT` | api | no | `4000` | HTTP + WebSocket port |
