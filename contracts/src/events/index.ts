@@ -82,8 +82,9 @@ export const events = {
   SessionRevoked: eventEnvelope('SessionRevoked', 1, z.object({ userId: uuid, sessionId: uuid, family: z.boolean() })),
   // Teacher network (ADR-0013). notes keeps a connections read model for "shared with my connections"; core
   // builds the Following feed; communication notifies.
-  UserFollowed: eventEnvelope('UserFollowed', 1, z.object({ followerId: uuid, followeeId: uuid })),
-  UserUnfollowed: eventEnvelope('UserUnfollowed', 1, z.object({ followerId: uuid, followeeId: uuid })),
+  /** quiet: the person followed restricts the follower, so no notification (ADR-0043); optional, additive in v1. */
+  UserFollowed: eventEnvelope('UserFollowed', 1, z.object({ followerId: uuid, followeeId: uuid, quiet: z.boolean().optional() })),
+  UserUnfollowed: eventEnvelope('UserUnfollowed', 1, z.object({ followerId: uuid, followeeId: uuid, quiet: z.boolean().optional() })),
   ConnectionRequested: eventEnvelope('ConnectionRequested', 1, z.object({ requestId: uuid, fromUserId: uuid, toUserId: uuid })),
   ConnectionChanged: eventEnvelope('ConnectionChanged', 1, z.object({
     userIds: z.tuple([uuid, uuid]),

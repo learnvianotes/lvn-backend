@@ -137,6 +137,34 @@ export interface MutationVerifyInstitutionalEmailArgs {
   input: VerifyInstitutionalEmailInput
 }
 
+export interface MutationFollowUserArgs {
+  input: PersonInput
+}
+
+export interface MutationUnfollowUserArgs {
+  input: PersonInput
+}
+
+export interface MutationRemoveFollowerArgs {
+  input: PersonInput
+}
+
+export interface MutationBlockUserArgs {
+  input: PersonInput
+}
+
+export interface MutationUnblockUserArgs {
+  input: PersonInput
+}
+
+export interface MutationRestrictUserArgs {
+  input: PersonInput
+}
+
+export interface MutationUnrestrictUserArgs {
+  input: PersonInput
+}
+
 export interface MutationAcceptTermsArgs {
   input: AcceptTermsInput
 }
@@ -181,9 +209,50 @@ export interface OkPayload {
   userErrors: Array<UserError>
 }
 
+export interface PageInfo {
+  hasNextPage: boolean
+  endCursor: string | null
+}
+
+export interface PersonConnection {
+  edges: Array<PersonEdge>
+  pageInfo: PageInfo
+}
+
+export interface PersonEdge {
+  cursor: string
+  node: User
+  /** Since when (followed, blocked, restricted) */
+  since: Date
+}
+
+export interface PersonInput {
+  userId: string
+}
+
+export interface PersonPayload {
+  /** The person, as the viewer now stands with them */
+  user: User | null
+  userErrors: Array<UserError>
+}
+
 export interface ProfilePayload {
   profile: StudentProfile | null
   userErrors: Array<UserError>
+}
+
+export interface QueryUserByHandleArgs {
+  handle: string
+}
+
+export interface QueryMyFollowersArgs {
+  first?: number | null
+  after?: string | null
+}
+
+export interface QueryMyFollowingArgs {
+  first?: number | null
+  after?: string | null
 }
 
 export interface QueryVerificationRequestsToReviewArgs {
@@ -207,6 +276,27 @@ export interface QueryDomainReviewsArgs {
 export interface RefreshSessionInput {
   /** Mobile only; web sends the cookie */
   refreshToken?: string | null
+}
+
+/** How the viewer stands with a person */
+export interface Relation {
+  following: boolean
+  followedBy: boolean
+  /** The viewer blocked them; being blocked by them is never shown */
+  blocked: boolean
+  restricted: boolean
+  viewerCan: RelationActions
+}
+
+/** What the viewer may do about a person, from the same rules the API applies */
+export interface RelationActions {
+  follow: boolean
+  unfollow: boolean
+  removeFollower: boolean
+  block: boolean
+  unblock: boolean
+  restrict: boolean
+  unrestrict: boolean
 }
 
 /** fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by platform admins only, deleted 30 days after the decision */
@@ -334,6 +424,13 @@ export interface User {
   institution?: Institution | null
   /** Viewer only: a minor without verified consent (§15.2) — no public publishing, no DMs */
   restrictedMinor?: boolean | null
+  /** Viewer only: exact counts */
+  followerCount?: number | null
+  followingCount?: number | null
+  /** Everyone: followers as a milestone (ADR-0027) — 1000 for 1,000+, null below 1,000 */
+  followerMilestone?: number | null
+  /** The viewer's relation to this person; null for anonymous viewers and on one's own profile */
+  relation?: Relation | null
   /** The viewer's own: whether they accepted the current version (Query.termsVersion); false means ask again. null for others. */
   termsAccepted?: boolean | null
 }

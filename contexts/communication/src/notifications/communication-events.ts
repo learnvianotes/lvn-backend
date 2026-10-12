@@ -36,6 +36,11 @@ export class CommunicationEvents implements OnModuleInit {
       const { created, skipped, failed } = payload
       await this.notifications.notify({ userId: payload.userId, category: 'NOTES_IMPORT', path: '/profile', data: { created, skipped, failed } })
     })
+    // A new follower (ADR-0043); quiet when the person restricts them, so they cause no notification (ADR-0016).
+    this.events.subscribe('UserFollowed', async ({ payload }) => {
+      if (payload.quiet) return
+      await this.notifications.notify({ userId: payload.followeeId, category: 'FOLLOW', path: `/u/${payload.followerId}`, actorId: payload.followerId })
+    })
     // Sockets of a revoked session close on every instance.
     this.events.subscribe('SessionRevoked', async ({ payload }) => {
       await this.live.publish(payload.userId, { type: 'revoke', sessionId: payload.sessionId })

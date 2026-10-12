@@ -807,9 +807,17 @@ export interface UploadIntentPayload {
   userErrors: Array<UserError>
 }
 
-/** A person, owned by the users subgraph; notes refer to people by id. */
+/** A person, owned by the users subgraph; notes refer to people by id and add what they made public. */
 export interface User {
   id: string
+  /** Their PUBLIC notes, of one kind or all, newest published first (ADR-0043): what anyone may read */
+  publicNotes: NoteConnection
+}
+
+export interface UserPublicNotesArgs {
+  kind?: NoteKind | null
+  first?: number | null
+  after?: string | null
 }
 
 export interface UserError {

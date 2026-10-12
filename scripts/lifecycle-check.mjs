@@ -162,6 +162,17 @@ await gql('mutation ($input: NoteIdInput!) { restoreNote(input: $input) { note {
 const restored = await gql('query ($id: UUID!) { note(id: $id) { deletedAt cards { edges { node { id } } } } }', { id }, A.token)
 ok(restored.note.deletedAt === null && restored.note.cards.edges.length === 3, 'and restores it with its three cards')
 
+// People (ADR-0043): A follows B and B is told; B blocks A, which ends the follow and stops A sharing with B.
+const person = (mutation) => gql(`mutation ($input: PersonInput!) { ${mutation}(input: $input) { user { id relation { following } } userErrors { message } } }`, { input: { userId: B.id } }, A.token)
+const followed = await person('followUser')
+ok(followed.followUser.user?.relation?.following === true, 'A follows B', followed.followUser.userErrors[0]?.message)
+ok(await eventually(async () => (await gql('{ notifications(first: 1) { edges { node { category actor { id } } } } }', {}, B.token)).notifications.edges[0]?.node.category === 'FOLLOW'), 'B is told A follows them')
+await gql('mutation ($input: PersonInput!) { blockUser(input: $input) { userErrors { message } } }', { input: { userId: A.id } }, B.token)
+const afterBlock = await gql('query ($h: String!) { userByHandle(handle: $h) { relation { following blocked viewerCan { follow } } } }', { h: B.id }, A.token)
+ok(afterBlock.userByHandle.relation.following === false && afterBlock.userByHandle.relation.blocked === false && afterBlock.userByHandle.relation.viewerCan.follow === false, 'B blocks A: the follow ends, A cannot follow again and is not shown the block')
+const blockedShare = await gql('mutation ($input: ShareNoteInput!) { shareNote(input: $input) { userErrors { message } } }', { input: { noteId: id, person: B.handle, role: 'EDITOR' } }, A.token).catch((e) => e.message)
+ok(String(blockedShare).includes("can't be shared"), 'and A can no longer share with B', String(blockedShare))
+
 // Media (ADR-0041): processed after the upload by the worker, scanned by the environment's ClamAV.
 let uploads = 0
 const uploadTo = async (mimeType, fileName, bytes) => {

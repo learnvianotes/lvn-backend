@@ -2,9 +2,11 @@
 
 scalar JSON
 
-"A person, owned by the users subgraph; notes refer to people by id."
-type User @key(fields: "id", resolvable: false) {
+"A person, owned by the users subgraph; notes refer to people by id and add what they made public."
+type User @key(fields: "id") {
   id: UUID!
+  "Their PUBLIC notes, of one kind or all, newest published first (ADR-0043): what anyone may read"
+  publicNotes(kind: NoteKind, first: Int, after: String): NoteConnection!
 }
 
 type PageInfo @shareable {

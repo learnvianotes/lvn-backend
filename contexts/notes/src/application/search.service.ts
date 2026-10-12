@@ -21,7 +21,7 @@ export function queryTerms(query: string): string[] {
  * One search over notes, people and topics (§10.4) — the Postgres provider of Phases 2–3. Notes match on their
  * published version (full text with English stemming, the last word as a prefix so results come while typing, and
  * trigram similarity of titles for typos), and only notes the viewer may read come back: candidates are filtered by
- * the same read predicate as every list (§5).
+ * the same read predicate as every list (§5). Blocks leave out the other person and their notes (ADR-0043).
  */
 @Injectable()
 export class SearchService {
@@ -40,7 +40,7 @@ export class SearchService {
     if (!terms.length) return { notes: [], people: [], topics: [] }
     const [notes, people, topics] = await Promise.all([
       wanted.has('NOTES') ? this.notes(viewerId, text, terms, size) : [],
-      wanted.has('PEOPLE') ? this.people.search(text, size) : ([] as Person[]),
+      wanted.has('PEOPLE') ? this.people.search(text, size, viewerId) : ([] as Person[]),
       wanted.has('TOPICS') ? this.organise.findTopics(text, null, viewerId).then((t) => t.slice(0, size)) : [],
     ])
     return { notes, people, topics }
@@ -56,7 +56,12 @@ export class SearchService {
       ORDER BY ts_rank_cd(d."document", q) + similarity(d."title", ${text}) DESC, d."noteId"
       LIMIT ${CANDIDATES}`
     if (!candidates.length) return []
-    const visible = await this.db.note.findMany({ where: { AND: [visibleNotesWhere(viewerId), { id: { in: candidates.map((c) => c.noteId) } }] }, select: { id: true } })
+    // Notes of people the viewer blocked, or who blocked the viewer, are left out (ADR-0043).
+    const blocked = viewerId ? await this.people.blockedIds(viewerId) : []
+    const visible = await this.db.note.findMany({
+      where: { AND: [visibleNotesWhere(viewerId), { id: { in: candidates.map((c) => c.noteId) } }, ...(blocked.length ? [{ ownerId: { notIn: blocked } }] : [])] },
+      select: { id: true },
+    })
     const ok = new Set(visible.map((n) => n.id))
     return candidates.filter((c) => ok.has(c.noteId)).slice(0, size)
   }

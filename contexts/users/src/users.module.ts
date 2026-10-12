@@ -15,6 +15,7 @@ import { ProfileService } from './application/profile.service'
 import { DnsMxLookup, FirebaseGoogleIdTokens, GOOGLE_ID_TOKENS, MX_LOOKUP } from './application/providers'
 import { RegistrationService } from './application/registration.service'
 import { SessionService } from './application/session.service'
+import { SocialService } from './application/social.service'
 import { UsersService } from './application/users.service'
 import { VerificationService } from './application/verification.service'
 import { AuthResolver } from './graphql/auth.resolver'
@@ -22,6 +23,7 @@ import { ProfileResolver } from './graphql/profile.resolver'
 import { TermsResolver } from './graphql/terms.resolver'
 import { DataResolver } from './graphql/data.resolver'
 import { RegistrationResolver } from './graphql/registration.resolver'
+import { PeopleResolver, SocialResolver } from './graphql/social.resolver'
 import { VerificationResolver } from './graphql/verification.resolver'
 import { UserReferenceResolver } from './graphql/user-reference.resolver'
 import { ViewerResolver } from './graphql/viewer.resolver'
@@ -29,7 +31,8 @@ import { USERS_CONFIG, type UsersConfig } from './users.config'
 
 /**
  * The `users` bounded context (spec §6.1) — Postgres schema `users`.
- * Owns: auth, sessions, users, profiles, roles, PolicyService, device tokens, organizations (read model from the admin app).
+ * Owns: auth, sessions, users, profiles, roles, PolicyService, device tokens, organizations (read model from the admin app),
+ * follows, blocks and restrictions (ADR-0043).
  * Imported only by the composition roots (apps/api, apps/worker); other contexts reach it through its
  * facade interface in libs/, never by importing this package (enforced by dependency-cruiser).
  * Needs PrismaModule, RedisModule, EventBusModule and the MAILER and FILES facades; implements POLICY and
@@ -63,7 +66,10 @@ export class UsersModule {
         ConsentService,
         DataExportService,
         LegacyService,
+        SocialService,
         ViewerResolver,
+        SocialResolver,
+        PeopleResolver,
         UserReferenceResolver,
         AuthResolver,
         RegistrationResolver,

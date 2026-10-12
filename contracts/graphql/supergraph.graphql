@@ -845,6 +845,23 @@ type Mutation
   setInstitutionalEmail(input: SetInstitutionalEmailInput!): OkPayload! @join__field(graph: USERS)
   verifyInstitutionalEmail(input: VerifyInstitutionalEmailInput!): OkPayload! @join__field(graph: USERS)
   resendInstitutionalEmailCode: OkPayload! @join__field(graph: USERS)
+  followUser(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
+  unfollowUser(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
+
+  """Stops someone following you; they are not told"""
+  removeFollower(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
+
+  """
+  Ends follows both ways and stops new interaction both ways; they are not told
+  """
+  blockUser(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
+  unblockUser(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
+
+  """
+  Their comments wait for your approval and they cause you no notifications; they are not told
+  """
+  restrictUser(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
+  unrestrictUser(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
 
   """Accept the current Terms, Privacy Policy and content licence"""
   acceptTerms(input: AcceptTermsInput!): OkPayload! @join__field(graph: USERS)
@@ -1255,6 +1272,7 @@ type PageInfo
   @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
+  @join__type(graph: USERS)
 {
   hasNextPage: Boolean!
   endCursor: String
@@ -1361,6 +1379,37 @@ type PdfPagesUsage
   limit: Int
 }
 
+type PersonConnection
+  @join__type(graph: USERS)
+{
+  edges: [PersonEdge!]!
+  pageInfo: PageInfo!
+}
+
+type PersonEdge
+  @join__type(graph: USERS)
+{
+  cursor: String!
+  node: User!
+
+  """Since when (followed, blocked, restricted)"""
+  since: DateTime!
+}
+
+input PersonInput
+  @join__type(graph: USERS)
+{
+  userId: UUID!
+}
+
+type PersonPayload
+  @join__type(graph: USERS)
+{
+  """The person, as the viewer now stands with them"""
+  user: User
+  userErrors: [UserError!]!
+}
+
 enum ProblemMark
   @join__type(graph: CORE)
 {
@@ -1457,6 +1506,19 @@ type Query
   """Your latest data exports, newest first"""
   myDataExports: [DataExport!]! @join__field(graph: USERS)
   signInOptions: SignInOptions! @join__field(graph: USERS)
+
+  """
+  A person by handle (with or without @) or by id; null when there is none, or when they have no public profile (restricted minors, ADR-0043)
+  """
+  userByHandle(handle: String!): User @join__field(graph: USERS)
+
+  """
+  The viewer's followers, newest first; restricted minors are counted but never listed
+  """
+  myFollowers(first: Int, after: String): PersonConnection! @join__field(graph: USERS)
+  myFollowing(first: Int, after: String): PersonConnection! @join__field(graph: USERS)
+  myBlocked: [PersonEdge!]! @join__field(graph: USERS)
+  myRestricted: [PersonEdge!]! @join__field(graph: USERS)
   myVerificationRequests: [VerificationRequest!]! @join__field(graph: USERS)
 
   """
@@ -1485,6 +1547,34 @@ input RefreshSessionInput
 {
   """Mobile only; web sends the cookie"""
   refreshToken: String
+}
+
+"""How the viewer stands with a person"""
+type Relation
+  @join__type(graph: USERS)
+{
+  following: Boolean!
+  followedBy: Boolean!
+
+  """The viewer blocked them; being blocked by them is never shown"""
+  blocked: Boolean!
+  restricted: Boolean!
+  viewerCan: RelationActions!
+}
+
+"""
+What the viewer may do about a person, from the same rules the API applies
+"""
+type RelationActions
+  @join__type(graph: USERS)
+{
+  follow: Boolean!
+  unfollow: Boolean!
+  removeFollower: Boolean!
+  block: Boolean!
+  unblock: Boolean!
+  restrict: Boolean!
+  unrestrict: Boolean!
 }
 
 input RenameTagInput
@@ -1956,10 +2046,15 @@ type UploadIntentPayload
 type User
   @join__type(graph: COMMUNICATION, key: "id", resolvable: false)
   @join__type(graph: CORE, key: "id", resolvable: false)
-  @join__type(graph: NOTES, key: "id", resolvable: false)
+  @join__type(graph: NOTES, key: "id")
   @join__type(graph: USERS, key: "id")
 {
   id: UUID!
+
+  """
+  Their PUBLIC notes, of one kind or all, newest published first (ADR-0043): what anyone may read
+  """
+  publicNotes(kind: NoteKind, first: Int, after: String): NoteConnection! @join__field(graph: NOTES)
   handle: String! @join__field(graph: USERS)
   displayName: String! @join__field(graph: USERS)
 
@@ -2002,6 +2097,20 @@ type User
   Viewer only: a minor without verified consent (§15.2) — no public publishing, no DMs
   """
   restrictedMinor: Boolean @join__field(graph: USERS)
+
+  """Viewer only: exact counts"""
+  followerCount: Int @join__field(graph: USERS)
+  followingCount: Int @join__field(graph: USERS)
+
+  """
+  Everyone: followers as a milestone (ADR-0027) — 1000 for 1,000+, null below 1,000
+  """
+  followerMilestone: Int @join__field(graph: USERS)
+
+  """
+  The viewer's relation to this person; null for anonymous viewers and on one's own profile
+  """
+  relation: Relation @join__field(graph: USERS)
 
   """
   The viewer's own: whether they accepted the current version (Query.termsVersion); false means ask again. null for others.

@@ -1,4 +1,6 @@
+import { MediaProcessingService } from '@lvn-backend/notes'
 import { PrismaService } from '@lvn-backend/prisma-base'
+import { EICAR_PDF, startFakeClamd } from '../support/fake-clamd'
 import { createTestApp, type TestApp } from '../support/app'
 import { complete, createIntent, put, SAMPLES, upload } from '../support/flows'
 import { seedActors, type Actors } from './support/actors'
@@ -121,7 +123,21 @@ describe('security: files', () => {
       }
     })
 
-    it.todo('an EICAR payload inside a well-formed PDF or image is quarantined by the virus scanner (Phase 2: note attachments)')
+    it('an EICAR payload inside a well-formed PDF is quarantined by the virus scanner (ADR-0041)', async () => {
+      // Its own app, with a stand-in clamd; the real ClamAV flags the same sample on the local environment.
+      const clamd = await startFakeClamd()
+      const scanned = await createTestApp({ CLAMAV_URL: clamd.url }, { resetDatabase: false })
+      try {
+        const owner = actors.teacher
+        const noteId = (await scanned.gql<{ createNote: { note: { id: string } } }>('mutation { createNote(input: { title: "Invoice" }) { note { id } } }', {}, owner.token)).data!.createNote.note.id
+        const fileId = await upload(scanned, owner.token, 'ATTACHMENT', 'application/pdf', EICAR_PDF, 'invoice.pdf', noteId)
+        expect(await scanned.app.get(MediaProcessingService).process(fileId)).toEqual({ status: 'QUARANTINED', variants: {} })
+        expect(await scanned.app.get(PrismaService).fileObject.findUniqueOrThrow({ where: { id: fileId } })).toMatchObject({ status: 'QUARANTINED', scanResult: 'INFECTED' })
+      } finally {
+        await scanned.close()
+        await clamd.close()
+      }
+    })
   })
 
   it.todo('a note media URL issued to A stops working once A loses access to the note (Phase 2: note media)')

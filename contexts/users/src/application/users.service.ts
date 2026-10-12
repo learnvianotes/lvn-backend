@@ -29,18 +29,35 @@ export class UsersService implements People {
    * People facade, for search (P2e): handles starting with, or names containing, the query. Only people known to be
    * past the digital-consent age are listed — younger people are never discoverable by strangers (§15.2).
    */
-  async search(query: string, limit: number): Promise<Person[]> {
+  async search(query: string, limit: number, viewerId?: string | null): Promise<Person[]> {
     const q = query.trim().replace(/^@/, '')
     if (q.length < 2) return []
     const adultsBornBy = new Date()
     adultsBornBy.setUTCFullYear(adultsBornBy.getUTCFullYear() - this.config.digitalConsentAge)
+    const hidden = viewerId ? await this.blockedIds(viewerId) : []
     const rows = await this.db.user.findMany({
-      where: { deletedAt: null, dateOfBirth: { lte: adultsBornBy }, OR: [{ handle: { startsWith: q, mode: 'insensitive' } }, { displayName: { contains: q, mode: 'insensitive' } }] },
+      where: {
+        deletedAt: null,
+        dateOfBirth: { lte: adultsBornBy },
+        ...(hidden.length ? { id: { notIn: hidden } } : {}),
+        OR: [{ handle: { startsWith: q, mode: 'insensitive' } }, { displayName: { contains: q, mode: 'insensitive' } }],
+      },
       select: { id: true, handle: true, displayName: true, globalRole: true },
       orderBy: [{ displayName: 'asc' }],
       take: Math.min(limit, 20),
     })
     return rows.map((u) => ({ id: u.id, handle: u.handle, displayName: u.displayName, globalRole: u.globalRole }))
+  }
+
+  /** People facade (ADR-0043): blocked by or blocking `userId`, in either direction. */
+  async blockedIds(userId: string): Promise<string[]> {
+    const rows = await this.db.block.findMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] }, select: { blockerId: true, blockedId: true } })
+    return [...new Set(rows.map((r) => (r.blockerId === userId ? r.blockedId : r.blockerId)))]
+  }
+
+  /** People facade (ADR-0016): either blocked the other. */
+  async blockedBetween(a: string, b: string): Promise<boolean> {
+    return (await this.db.block.count({ where: { OR: [{ blockerId: a, blockedId: b }, { blockerId: b, blockedId: a }] } })) > 0
   }
 
   /** Anyone's view of a user: no email, institutional address, verification details or age signal. */

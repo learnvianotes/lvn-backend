@@ -165,7 +165,54 @@ model User {
   profile              StudentProfile?
   plan                 UserPlan?
   legacyImport         LegacyImport?
+  following            Follow[]              @relation("following")
+  followers            Follow[]              @relation("followers")
+  blocking             Block[]               @relation("blocking")
+  blockedBy            Block[]               @relation("blockedBy")
+  restricting          Restriction[]         @relation("restricting")
+  restrictedBy         Restriction[]         @relation("restrictedBy")
 
+  @@schema("users")
+}
+
+/// One person following another (ADR-0013, ADR-0014, ADR-0016, ADR-0020, ADR-0043): one-way, no approval. Only the
+/// person followed sees the list; others see a milestone.
+model Follow {
+  followerId String   @db.Uuid
+  followeeId String   @db.Uuid
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  follower   User     @relation("following", fields: [followerId], references: [id], onDelete: Cascade)
+  followee   User     @relation("followers", fields: [followeeId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followeeId])
+  @@index([followeeId, createdAt(sort: Desc)])
+  @@index([followerId, createdAt(sort: Desc)])
+  @@schema("users")
+}
+
+/// A block (§15.1, ADR-0016): ends follows both ways and stops new interaction both ways; the other side is not told.
+model Block {
+  blockerId String   @db.Uuid
+  blockedId String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  blocker   User     @relation("blocking", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("blockedBy", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@id([blockerId, blockedId])
+  @@index([blockedId])
+  @@schema("users")
+}
+
+/// A restriction (ADR-0016): the restricted person's comments wait for approval and they cause no notifications.
+model Restriction {
+  restricterId String   @db.Uuid
+  restrictedId String   @db.Uuid
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  restricter   User     @relation("restricting", fields: [restricterId], references: [id], onDelete: Cascade)
+  restricted   User     @relation("restrictedBy", fields: [restrictedId], references: [id], onDelete: Cascade)
+
+  @@id([restricterId, restrictedId])
+  @@index([restrictedId])
   @@schema("users")
 }
 

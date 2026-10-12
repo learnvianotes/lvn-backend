@@ -67,6 +67,8 @@ export class SharingService {
     const person = await this.people.find(personQuery)
     if (!person) throw Errors.validation('Nobody on LearnViaNotes has that handle or email.', ['input', 'person'])
     if (person.id === ownerId) throw Errors.validation('This is your own note.', ['input', 'person'])
+    // A block stops new shares both ways; the message does not say who blocked whom (ADR-0016, ADR-0043).
+    if (await this.people.blockedBetween(ownerId, person.id)) throw Errors.forbidden("This note can't be shared with that person.")
     const target = { kind: 'USER' as const, recipientIsTeacher: person.globalRole === 'TEACHER' }
     if (!can(actor, Action.NOTE_SHARE, { kind: 'note', note: noteFacts(note, null), shareTarget: target })) {
       if (!actor.institutionVerified) throw Errors.forbidden('Verify your account to share notes.')

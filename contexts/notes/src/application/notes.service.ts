@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { Action, can, type Actor, type CardType } from '@lvn/contracts/domain'
+import { Action, can, type Actor, type CardType, type NoteKind } from '@lvn/contracts/domain'
 import { cardAnchor, isValidPosition, MEDIA_CARD_TYPES, NOTE_LIMITS, noteTitleSchema, parseCardContent } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
@@ -144,11 +144,14 @@ export class NotesService {
     return { rows, size }
   }
 
-  /** Notes anyone may read, newest published first: sitemaps and the public pages (P2d). */
-  async publicList(first: number | null | undefined, after: string | null | undefined) {
+  /**
+   * Notes anyone may read, newest published first: sitemaps and the public pages (P2d), and a person's profile by kind
+   * (ADR-0043).
+   */
+  async publicList(first: number | null | undefined, after: string | null | undefined, only: { ownerId?: string; kind?: NoteKind | null } = {}) {
     const size = pageSize(first, 100)
     const cursor = decodeCursor(after, 2) as [string, string] | null
-    const where = visibleNotesWhere(null)
+    const where = { AND: [visibleNotesWhere(null), ...(only.ownerId ? [{ ownerId: only.ownerId }] : []), ...(only.kind ? [{ kind: only.kind }] : [])] }
     const rows = await this.db.note.findMany({
       where: cursor ? { AND: [where, { OR: [{ publishedAt: { lt: new Date(cursor[0]) } }, { publishedAt: new Date(cursor[0]), id: { lt: cursor[1] } }] }] } : where,
       orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
