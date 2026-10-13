@@ -983,6 +983,18 @@ export interface MutationResetCardReviewArgs {
   input: CardIdInput
 }
 
+export interface MutationSetRhythmPlanArgs {
+  input: SetRhythmPlanInput
+}
+
+export interface MutationPauseRhythmArgs {
+  input: PauseRhythmInput
+}
+
+export interface MutationEndRhythmPauseArgs {
+  input: RhythmPauseIdInput
+}
+
 export interface MutationSetGroupRepositoryArgs {
   input: SetGroupRepositoryInput
 }
@@ -1043,6 +1055,13 @@ export interface OkPayload {
 export interface PageInfo {
   hasNextPage: boolean
   endCursor: string | null
+}
+
+export interface PauseRhythmInput {
+  /** YYYY-MM-DD, today or later */
+  from: string
+  to: string
+  reason: RhythmPauseReason
 }
 
 export interface PinGroupPostInput {
@@ -1270,6 +1289,73 @@ export type ReviewRating = 'AGAIN' | 'HARD' | 'GOOD' | 'EASY'
 
 export type ReviewState = 'NEW' | 'LEARNING' | 'REVIEW' | 'RELEARNING'
 
+export interface Rhythm {
+  timeZone: string
+  /** ISO weekdays, 1 Monday … 7 Sunday */
+  plannedDays: Array<number>
+  /** Planned days less paused ones, at least 1 */
+  target: number
+  countedDays: number
+  met: boolean
+  /** Monday to Sunday */
+  week: Array<RhythmDay>
+  today: RhythmToday
+  weeksThisTerm: number
+  weeksAllTime: number
+  countedDaysAllTime: number
+  /** Current and coming pauses */
+  pauses: Array<RhythmPause>
+  /** Of the 14 a term */
+  pauseDaysLeft: number
+}
+
+export interface RhythmDay {
+  /** YYYY-MM-DD, a learning day in the learner's zone */
+  day: string
+  /** 1 Monday … 7 Sunday */
+  weekday: number
+  planned: boolean
+  counted: boolean
+  status: RhythmDayStatus
+}
+
+export type RhythmDayStatus = 'COUNTED' | 'MISSED' | 'REST' | 'PAUSED' | 'TODAY' | 'AHEAD'
+
+/** One part of today's ring */
+export interface RhythmItem {
+  /** REVIEWS now; PLAN_TASK and WEAK_TOPIC with the exam planner */
+  kind: string
+  done: number
+  total: number
+}
+
+export interface RhythmPause {
+  id: string
+  from: string
+  to: string
+  reason: RhythmPauseReason
+  active: boolean
+}
+
+export interface RhythmPauseIdInput {
+  id: string
+}
+
+export type RhythmPauseReason = 'EXAMS' | 'ILLNESS' | 'FESTIVAL' | 'TRAVEL' | 'OTHER'
+
+export interface RhythmToday {
+  day: string
+  learningSeconds: number
+  reviews: number
+  /** 10 learning minutes or 10 reviews */
+  counted: boolean
+  /** The day after a missed planned day, until a day counts */
+  comeback: boolean
+  /** Today followed a missed planned day and counted: back on rhythm */
+  cameBack: boolean
+  items: Array<RhythmItem>
+}
+
 export interface SetClassroomRoleInput {
   classroomId: string
   userId: string
@@ -1299,6 +1385,11 @@ export interface SetProjectShowcaseInput {
   groupId: string
   /** A PUBLIC project note shared to the workspace; null clears it */
   noteId?: string | null
+}
+
+export interface SetRhythmPlanInput {
+  /** 3 to 6 weekdays, 1 Monday … 7 Sunday */
+  plannedDays: Array<number>
 }
 
 export interface StudyNoteInput {

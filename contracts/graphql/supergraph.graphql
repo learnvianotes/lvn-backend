@@ -2519,6 +2519,15 @@ type Mutation
   """The card starts again as new"""
   resetCardReview(input: CardIdInput!): OkPayload! @join__field(graph: CORE)
 
+  """Signed in only, as every mutation below"""
+  setRhythmPlan(input: SetRhythmPlanInput!): OkPayload! @join__field(graph: CORE)
+  pauseRhythm(input: PauseRhythmInput!): OkPayload! @join__field(graph: CORE)
+
+  """
+  Ends a pause early (or drops one not started); its unused days come back
+  """
+  endRhythmPause(input: RhythmPauseIdInput!): OkPayload! @join__field(graph: CORE)
+
   """Admins and the Owner"""
   setGroupRepository(input: SetGroupRepositoryInput!): GroupPayload! @join__field(graph: CORE)
 
@@ -3271,6 +3280,15 @@ type PageInfo
   endCursor: String
 }
 
+input PauseRhythmInput
+  @join__type(graph: CORE)
+{
+  """YYYY-MM-DD, today or later"""
+  from: String!
+  to: String!
+  reason: RhythmPauseReason!
+}
+
 type PdfConversion
   @join__type(graph: NOTES)
 {
@@ -3564,6 +3582,9 @@ type Query
 
   """Signed in only"""
   reviewQueue: ReviewQueue! @join__field(graph: CORE)
+
+  """Signed in only"""
+  rhythm: Rhythm! @join__field(graph: CORE)
 
   """A doubt the viewer's workspace holds"""
   doubt(id: UUID!): Doubt @join__field(graph: CORE)
@@ -4057,6 +4078,115 @@ input ReviewVerificationRequestInput
   reason: String
 }
 
+type Rhythm
+  @join__type(graph: CORE)
+{
+  timeZone: String!
+
+  """ISO weekdays, 1 Monday … 7 Sunday"""
+  plannedDays: [Int!]!
+
+  """Planned days less paused ones, at least 1"""
+  target: Int!
+  countedDays: Int!
+  met: Boolean!
+
+  """Monday to Sunday"""
+  week: [RhythmDay!]!
+  today: RhythmToday!
+  weeksThisTerm: Int!
+  weeksAllTime: Int!
+  countedDaysAllTime: Int!
+
+  """Current and coming pauses"""
+  pauses: [RhythmPause!]!
+
+  """Of the 14 a term"""
+  pauseDaysLeft: Int!
+}
+
+type RhythmDay
+  @join__type(graph: CORE)
+{
+  """YYYY-MM-DD, a learning day in the learner's zone"""
+  day: String!
+
+  """1 Monday … 7 Sunday"""
+  weekday: Int!
+  planned: Boolean!
+  counted: Boolean!
+  status: RhythmDayStatus!
+}
+
+enum RhythmDayStatus
+  @join__type(graph: CORE)
+{
+  COUNTED @join__enumValue(graph: CORE)
+
+  """A planned day that ended uncounted, and was not paused"""
+  MISSED @join__enumValue(graph: CORE)
+
+  """An unplanned day that ended uncounted: rest, never a miss"""
+  REST @join__enumValue(graph: CORE)
+  PAUSED @join__enumValue(graph: CORE)
+  TODAY @join__enumValue(graph: CORE)
+  AHEAD @join__enumValue(graph: CORE)
+}
+
+"""One part of today's ring"""
+type RhythmItem
+  @join__type(graph: CORE)
+{
+  """REVIEWS now; PLAN_TASK and WEAK_TOPIC with the exam planner"""
+  kind: String!
+  done: Int!
+  total: Int!
+}
+
+type RhythmPause
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  from: String!
+  to: String!
+  reason: RhythmPauseReason!
+  active: Boolean!
+}
+
+input RhythmPauseIdInput
+  @join__type(graph: CORE)
+{
+  id: UUID!
+}
+
+enum RhythmPauseReason
+  @join__type(graph: CORE)
+{
+  EXAMS @join__enumValue(graph: CORE)
+  ILLNESS @join__enumValue(graph: CORE)
+  FESTIVAL @join__enumValue(graph: CORE)
+  TRAVEL @join__enumValue(graph: CORE)
+  OTHER @join__enumValue(graph: CORE)
+}
+
+type RhythmToday
+  @join__type(graph: CORE)
+{
+  day: String!
+  learningSeconds: Int!
+  reviews: Int!
+
+  """10 learning minutes or 10 reviews"""
+  counted: Boolean!
+
+  """The day after a missed planned day, until a day counts"""
+  comeback: Boolean!
+
+  """Today followed a missed planned day and counted: back on rhythm"""
+  cameBack: Boolean!
+  items: [RhythmItem!]!
+}
+
 input RunAiTaskInput
   @join__type(graph: AI)
 {
@@ -4262,6 +4392,13 @@ input SetProjectShowcaseInput
 
   """A PUBLIC project note shared to the workspace; null clears it"""
   noteId: UUID
+}
+
+input SetRhythmPlanInput
+  @join__type(graph: CORE)
+{
+  """3 to 6 weekdays, 1 Monday … 7 Sunday"""
+  plannedDays: [Int!]!
 }
 
 input ShareNoteInput

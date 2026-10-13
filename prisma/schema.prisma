@@ -1167,6 +1167,49 @@ model CoreProblemMark {
   @@schema("core")
 }
 
+/// Why a learner paused Rhythm (ADR-0030)
+enum RhythmPauseReason {
+  EXAMS
+  ILLNESS
+  FESTIVAL
+  TRAVEL
+  OTHER
+
+  @@schema("core")
+}
+
+/// Days a learner paused Rhythm (ADR-0069): paused planned days are neither misses nor needed; at most 14 a term.
+model RhythmPause {
+  id        String            @id @db.Uuid
+  /// Cross-context reference to users.User
+  userId    String            @db.Uuid
+  from      DateTime          @db.Date
+  to        DateTime          @db.Date
+  reason    RhythmPauseReason
+  createdAt DateTime          @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, from])
+  @@schema("core")
+}
+
+/// A closed Rhythm week (ADR-0069), kept with the target it had: "Rhythm weeks this term" counts the met ones. The
+/// current week is computed when asked; a late event reopens its closed week.
+model RhythmWeek {
+  /// Cross-context reference to users.User
+  userId      String   @db.Uuid
+  /// The Monday
+  weekStart   DateTime @db.Date
+  targetDays  Int
+  countedDays Int
+  comebacks   Int
+  pausedDays  Int
+  met         Boolean
+  closedAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([userId, weekStart])
+  @@schema("core")
+}
+
 /// A note whose flashcards a person chose to study (ADR-0068); their own notes' flashcards count without a row.
 model StudyNote {
   /// Cross-context reference to users.User
@@ -1227,9 +1270,11 @@ model CardReviewLog {
 /// device and changeable in settings.
 model LearnerSettings {
   /// Cross-context reference to users.User
-  userId    String   @id @db.Uuid
-  timeZone  String   @default("UTC")
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  userId      String   @id @db.Uuid
+  timeZone    String   @default("UTC")
+  /// Rhythm's planned days (ADR-0069): 3–6 ISO weekdays, 1 Monday … 7 Sunday
+  plannedDays Int[]    @default([1, 2, 4, 6])
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
 
   @@schema("core")
 }
