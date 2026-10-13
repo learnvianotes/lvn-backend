@@ -1,0 +1,119 @@
+# AI tasks on notes (ADR-0025, ADR-0059): results beside the note, cards kept in one tap.
+
+scalar UUID
+scalar JSON
+
+enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL UNAVAILABLE }
+
+type UserError @shareable {
+  field: [String!]
+  message: String!
+  code: ErrorCode!
+}
+
+type OkPayload @shareable {
+  ok: Boolean!
+  userErrors: [UserError!]!
+}
+
+enum AiTask {
+  SUMMARIZE
+  KEY_CONCEPTS
+  EXPLAIN_SIMPLY
+  PRACTICE_QUESTIONS
+  TRANSLATE
+  FIND_MISTAKES
+  "On the note's code cards"
+  EXPLAIN_CODE
+  FLASHCARDS
+  QUIZ
+  REVISION_SHEET
+  "Needs the right to copy the note (ADR-0025)"
+  CREATE_NOTES
+  "Needs the right to copy the note (ADR-0025)"
+  OUTLINE_TO_NOTE
+}
+
+enum AiLanguage { ENGLISH HINDI TELUGU }
+enum AiArtifactStatus { QUEUED RUNNING READY FAILED }
+enum KeepCardsInto {
+  "The note itself (only for people who can edit it)"
+  NOTE
+  "A new private note of the viewer's"
+  NEW_NOTE
+}
+
+"A card a task made, exactly as it would be kept: `type` and `content` as in the notes subgraph's Card"
+type AiCard {
+  type: String!
+  content: JSON!
+}
+
+"What a task made for the viewer from a note (ADR-0059). Only its maker sees it, while they can read the note"
+type AiArtifact {
+  id: UUID!
+  task: AiTask!
+  status: AiArtifactStatus!
+  language: AiLanguage!
+  "Text tasks, once READY: the result as Markdown"
+  markdown: String
+  "Card tasks, once READY: the title a new note would take"
+  title: String
+  "Card tasks, once READY: the cards to choose from"
+  cards: [AiCard!]
+  "FAILED: why, in words for the person"
+  error: String
+  "Made from the published version (the viewer is a reader) rather than the draft"
+  fromPublishedVersion: Boolean!
+  "The note was longer than a task reads; its start was used"
+  truncated: Boolean!
+  keptAt: DateTime
+  createdAt: DateTime!
+  note: Note!
+}
+
+"A note, owned by the notes subgraph; ai adds the viewer's AI results"
+type Note @key(fields: "id") {
+  id: UUID!
+  "Signed-in: the viewer's own AI results for this note, newest first; empty signed out"
+  aiArtifacts: [AiArtifact!]!
+}
+
+input RunAiTaskInput {
+  noteId: UUID!
+  task: AiTask!
+  "Default ENGLISH; TRANSLATE translates into it"
+  language: AiLanguage
+  "Only these cards (default: the whole note)"
+  cardIds: [UUID!]
+}
+
+input KeepAiCardsInput {
+  artifactId: UUID!
+  "Indexes into the artifact's cards"
+  cardIndexes: [Int!]!
+  into: KeepCardsInto!
+}
+
+type AiArtifactPayload {
+  artifact: AiArtifact
+  userErrors: [UserError!]!
+}
+
+type KeepAiCardsPayload {
+  "The note the cards went into"
+  noteId: UUID
+  userErrors: [UserError!]!
+}
+
+extend type Query {
+  "One of the viewer's AI results; null when it is not theirs or they can no longer read the note"
+  aiArtifact(id: UUID!): AiArtifact
+}
+
+type Mutation {
+  "Queues a task; poll aiArtifact until it is READY or FAILED. RATE_LIMITED past the day's allowance, UNAVAILABLE when AI is off"
+  runAiTask(input: RunAiTaskInput!): AiArtifactPayload!
+  keepAiCards(input: KeepAiCardsInput!): KeepAiCardsPayload!
+  deleteAiArtifact(id: UUID!): OkPayload!
+}

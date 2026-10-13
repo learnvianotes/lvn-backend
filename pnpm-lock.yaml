@@ -282,6 +282,9 @@ importers:
       '@lvn-backend/prisma-base':
         specifier: workspace:*
         version: link:../../libs/prisma-base
+      '@lvn-backend/queue':
+        specifier: workspace:*
+        version: link:../../libs/queue
       '@lvn/contracts':
         specifier: workspace:@learnvianotes/contracts@*
         version: link:../../contracts

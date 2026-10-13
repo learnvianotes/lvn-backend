@@ -1995,3 +1995,39 @@ model AiUsage {
   @@index([createdAt])
   @@schema("ai")
 }
+
+enum AiArtifactStatus {
+  QUEUED
+  RUNNING
+  READY
+  FAILED
+
+  @@schema("ai")
+}
+
+/// What an AI task made from a note (ADR-0059): text beside it (summary, concepts, explanation, practice questions,
+/// translation, mistakes) or cards waiting to be kept (flashcards, quiz, revision sheet, new notes). Never part of the
+/// note (§10.3): its versions are not touched. A person's artifacts are theirs alone; `ownerId` is null for the
+/// public-note pipeline's (P5d).
+model NoteArtifact {
+  id        String           @id @db.Uuid
+  noteId    String           @db.Uuid
+  /// The published version it was made from; null when made from the draft
+  versionId String?          @db.Uuid
+  ownerId   String?          @db.Uuid
+  task      String
+  /// language, cardIds
+  options   Json             @default("{}")
+  status    AiArtifactStatus
+  /// { markdown } or { title, cards: [{ type, content }] }, checked before it is stored
+  payload   Json?
+  error     String?
+  hidden    Boolean          @default(false)
+  keptAt    DateTime?        @db.Timestamptz(3)
+  createdAt DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime         @updatedAt @db.Timestamptz(3)
+
+  @@index([ownerId, noteId, createdAt(sort: Desc)])
+  @@index([noteId, task])
+  @@schema("ai")
+}

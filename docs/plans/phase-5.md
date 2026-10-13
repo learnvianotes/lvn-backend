@@ -55,7 +55,7 @@ repo it touches and checked on the local environment. Nothing is pushed.
 | ADR | Question | Leaning |
 | --- | --- | --- |
 | The AI gateway (P5a) | §10.1 lists OpenAI, Anthropic and Ollama, with model routing, accounting, quotas and a budget breaker; the owner wants a local model now | *ADR-0058.* Provider adapters behind one interface; Ollama first, the others off without keys. Models and prices per task in the database. Quotas before the call (the plan's), usage after. A self-hosted model costs 0, so the budget breaker trips locally only when a route has a price (the test sets one) |
-| AI tasks and artifacts (P5b) | Where results live, who sees them, how made cards become one's own | `ai.NoteArtifact` owned by the requester for user tasks, and by the note for the public pipeline (P5d); card-making tasks keep a preview until the person keeps cards |
+| AI tasks and artifacts (P5b) | Where results live, who sees them, how made cards become one's own | *ADR-0059.* `ai.NoteArtifact`, the requester's own (no requester for P5d's pipeline); card tasks store schema-checked cards until the person keeps some, through a `NOTE_AI` facade in `notes`; the worker runs one task at a time |
 | Ask AI (P5c) | Where chunks live; streaming over the ids-only live channel (ADR-0042) | `NoteChunk` in `notes` beside the read predicate; the `ai` context retrieves through a facade; answers stream to the asker's own socket |
 | Transcription (P5e) | gemma4's audio input or a Whisper service | Measure both on the evaluation recordings; prefer one model for everything if it is good enough |
 
@@ -70,7 +70,7 @@ repo it touches and checked on the local environment. Nothing is pushed.
 | Slice | State | Evidence |
 | --- | --- | --- |
 | P5a AI gateway | In progress | |
-| P5b AI tasks | | |
+| P5b AI tasks | In progress | |
 | P5c Ask AI | | |
 | P5d Public-note pipeline | | |
 | P5e Quick notes, voice notes, transcription | | |

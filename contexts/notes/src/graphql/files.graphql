@@ -5,7 +5,7 @@ scalar DateTime
 scalar UUID
 
 "Fixed error vocabulary (§6.2)"
-enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL }
+enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL UNAVAILABLE }
 
 type UserError @shareable {
   field: [String!]

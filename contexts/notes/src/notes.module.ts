@@ -29,6 +29,7 @@ import { ClassroomNotesResolver, NoteClassroomsResolver } from './graphql/classr
 import { GroupNotesResolver, NoteGroupsResolver } from './graphql/group-notes.resolver'
 import { ClassroomSharesService } from './application/classroom-shares.service'
 import { NoteAccessFacade } from './application/note-access.facade'
+import { NoteAiFacade } from './application/note-ai.facade'
 import { ContributorsService } from './application/contributors.service'
 import { FollowingFeedService } from './application/following-feed.service'
 import { FeedsResolver } from './graphql/feeds.resolver'
@@ -94,6 +95,7 @@ export class NotesModule {
         NoteGroupsResolver,
         ClassroomSharesService,
         NoteAccessFacade,
+        NoteAiFacade,
         ContributorsService,
         FollowingFeedService,
         FeedsResolver,
@@ -112,7 +114,7 @@ export class NotesModule {
         ConversionResolver,
         NoteConversionResolver,
       ],
-      exports: [FilesService, NotesMaintenance, NoteModerationService, NoteAccessFacade, SearchIndex, NoteImportService, PdfConversionService, MediaProcessingService],
+      exports: [FilesService, NotesMaintenance, NoteModerationService, NoteAccessFacade, NoteAiFacade, SearchIndex, NoteImportService, PdfConversionService, MediaProcessingService],
     }
   }
 }
