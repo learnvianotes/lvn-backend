@@ -37,6 +37,8 @@ export interface FetchRequest {
   maxBytes: number
   /** Content types accepted (the part before `;`), e.g. /^text\/html$/ */
   types: RegExp
+  /** This request's time limit, when it differs from the fetcher's (a picture from a slow image host) */
+  timeoutMs?: number
 }
 
 export interface FetchResult {
@@ -66,7 +68,7 @@ export class SafeFetcher {
 
   async fetch(req: FetchRequest): Promise<FetchResult> {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs)
+    const timer = setTimeout(() => controller.abort(), req.timeoutMs ?? this.timeoutMs)
     try {
       let url = this.check(req.url)
       for (let hop = 0; ; hop++) {
