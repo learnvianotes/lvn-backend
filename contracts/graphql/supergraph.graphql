@@ -308,6 +308,14 @@ enum AiTask
 
   """Needs the right to copy the note (ADR-0025)"""
   OUTLINE_TO_NOTE @join__enumValue(graph: AI)
+
+  """One audio or video card (cardIds), as a text card to keep (ADR-0062)"""
+  TRANSCRIBE @join__enumValue(graph: AI)
+
+  """
+  The person's own note's rough words and photos, as a structured note (ADR-0062)
+  """
+  QUICK_NOTE @join__enumValue(graph: AI)
 }
 
 """Why AI is not answering"""

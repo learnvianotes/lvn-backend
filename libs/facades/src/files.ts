@@ -26,6 +26,11 @@ export interface Files {
   describe(fileIds: string[]): Promise<FileSummary[]>
   /** A read URL valid for 15 minutes. The caller has already decided the reader may see it. */
   readUrl(fileId: string): Promise<{ url: string; expiresAt: Date }>
+  /**
+   * Writes a READY file's bytes to `toPath` (a worker's temp file, ADR-0062): its normalised `audio` or `medium` picture
+   * when asked and made (ADR-0041), else the original. The caller has already decided the reader may see it.
+   */
+  download(fileId: string, toPath: string, variant?: 'audio' | 'medium'): Promise<{ mimeType: string }>
   /** Deletes the bytes and marks the rows DELETED (§8.2: the row stays as a record). */
   delete(fileIds: string[]): Promise<void>
   /**
