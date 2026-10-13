@@ -31,6 +31,21 @@ export interface NoteAccess {
    * first, before the (at, noteId) cursor; at most `take`.
    */
   placeShares(viewerId: string, places: { groupIds: string[]; classroomIds: string[] }, before: { at: Date; id: string } | null, take: number): Promise<PlaceShare[]>
+  /**
+   * The flashcards a person studies (ADR-0068): every flashcard of the notes they own or edit, and of the chosen
+   * notes they can read, as they read each note now. Trashed notes and notes they cannot read give none.
+   */
+  studyCards(viewerId: string, chosenNoteIds: string[]): Promise<StudyCard[]>
+}
+
+/** A flashcard as its studier reads it (ADR-0068): from the draft for owners and editors, the published version else. */
+export interface StudyCard {
+  noteId: string
+  noteTitle: string
+  cardId: string
+  /** Rich text */
+  front: unknown
+  back: unknown
 }
 
 export interface PlaceShare {

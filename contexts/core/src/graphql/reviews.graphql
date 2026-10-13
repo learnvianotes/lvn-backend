@@ -1,0 +1,91 @@
+# Flashcard reviews (§14.2, ADR-0068): FSRS scheduling, a capped queue for today, grades that may arrive late.
+
+enum ReviewRating {
+  AGAIN
+  HARD
+  GOOD
+  EASY
+}
+
+enum ReviewState {
+  NEW
+  LEARNING
+  REVIEW
+  RELEARNING
+}
+
+"A flashcard to review, as the person reads its note now"
+type ReviewCard {
+  cardId: UUID!
+  noteId: UUID!
+  noteTitle: String!
+  "Rich text"
+  front: JSON!
+  "Rich text"
+  back: JSON!
+  state: ReviewState!
+  "null for a new card"
+  due: DateTime
+}
+
+type ReviewQueue {
+  "Today's cards: due first (most overdue first), then new; 20 a day, at most 10 new"
+  cards: [ReviewCard!]!
+  "Cards due by the end of today, in the whole deck"
+  due: Int!
+  "Cards never reviewed, in the whole deck"
+  new: Int!
+  doneToday: Int!
+  "Cards past today's cap: they wait for the next days"
+  waiting: Int!
+}
+
+type CardReviewResult {
+  cardId: UUID!
+  due: DateTime!
+  state: ReviewState!
+  intervalDays: Int!
+}
+
+input ReviewCardInput {
+  cardId: UUID!
+  rating: ReviewRating!
+  "When it was graded on the device; now when absent; believed back at most 30 days"
+  reviewedAt: DateTime
+  durationMs: Int
+  "The device's id for this grade: sent twice, it counts once"
+  clientOpId: UUID!
+}
+
+type ReviewCardPayload {
+  review: CardReviewResult
+  userErrors: [UserError!]!
+}
+
+input CardIdInput {
+  cardId: UUID!
+}
+
+input StudyNoteInput {
+  noteId: UUID!
+}
+
+extend type Note {
+  "Signed in: whether the viewer studies this note's flashcards (their own notes' always count)"
+  viewerStudying: Boolean
+}
+
+extend type Query {
+  "Signed in only"
+  reviewQueue: ReviewQueue!
+}
+
+extend type Mutation {
+  "Signed in only, as every mutation below"
+  reviewCard(input: ReviewCardInput!): ReviewCardPayload!
+  "Adds a readable note's flashcards to the viewer's reviews"
+  studyNoteCards(input: StudyNoteInput!): OkPayload!
+  stopStudyingNoteCards(input: StudyNoteInput!): OkPayload!
+  "The card starts again as new"
+  resetCardReview(input: CardIdInput!): OkPayload!
+}

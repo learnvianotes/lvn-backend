@@ -86,6 +86,17 @@ export interface AskDoubtInput {
   repoRef?: string | null
 }
 
+export interface CardIdInput {
+  cardId: string
+}
+
+export interface CardReviewResult {
+  cardId: string
+  due: Date
+  state: ReviewState
+  intervalDays: number
+}
+
 export interface ClassQuiz {
   id: string
   classroomId: string
@@ -956,6 +967,22 @@ export interface MutationDeleteClassQuizArgs {
   input: ClassQuizIdInput
 }
 
+export interface MutationReviewCardArgs {
+  input: ReviewCardInput
+}
+
+export interface MutationStudyNoteCardsArgs {
+  input: StudyNoteInput
+}
+
+export interface MutationStopStudyingNoteCardsArgs {
+  input: StudyNoteInput
+}
+
+export interface MutationResetCardReviewArgs {
+  input: CardIdInput
+}
+
 export interface MutationSetGroupRepositoryArgs {
   input: SetGroupRepositoryInput
 }
@@ -1004,6 +1031,8 @@ export interface Note {
   id: string
   /** Signed-in readers of the note: its comments and reactions. Null for anonymous visitors */
   discussion: Discussion | null
+  /** Signed in: whether the viewer studies this note's flashcards (their own notes' always count) */
+  viewerStudying?: boolean | null
 }
 
 export interface OkPayload {
@@ -1186,6 +1215,35 @@ export interface RequestToJoinGroupInput {
   message?: string | null
 }
 
+/** A flashcard to review, as the person reads its note now */
+export interface ReviewCard {
+  cardId: string
+  noteId: string
+  noteTitle: string
+  /** Rich text */
+  front: unknown
+  /** Rich text */
+  back: unknown
+  state: ReviewState
+  /** null for a new card */
+  due: Date | null
+}
+
+export interface ReviewCardInput {
+  cardId: string
+  rating: ReviewRating
+  /** When it was graded on the device; now when absent; believed back at most 30 days */
+  reviewedAt?: Date | null
+  durationMs?: number | null
+  /** The device's id for this grade: sent twice, it counts once */
+  clientOpId: string
+}
+
+export interface ReviewCardPayload {
+  review: CardReviewResult | null
+  userErrors: Array<UserError>
+}
+
 export interface ReviewClassroomJoinRequestInput {
   requestId: string
   decision: JoinDecision
@@ -1195,6 +1253,22 @@ export interface ReviewGroupJoinRequestInput {
   requestId: string
   decision: JoinDecision
 }
+
+export interface ReviewQueue {
+  /** Today's cards: due first (most overdue first), then new; 20 a day, at most 10 new */
+  cards: Array<ReviewCard>
+  /** Cards due by the end of today, in the whole deck */
+  due: number
+  /** Cards never reviewed, in the whole deck */
+  new: number
+  doneToday: number
+  /** Cards past today's cap: they wait for the next days */
+  waiting: number
+}
+
+export type ReviewRating = 'AGAIN' | 'HARD' | 'GOOD' | 'EASY'
+
+export type ReviewState = 'NEW' | 'LEARNING' | 'REVIEW' | 'RELEARNING'
 
 export interface SetClassroomRoleInput {
   classroomId: string
@@ -1225,6 +1299,10 @@ export interface SetProjectShowcaseInput {
   groupId: string
   /** A PUBLIC project note shared to the workspace; null clears it */
   noteId?: string | null
+}
+
+export interface StudyNoteInput {
+  noteId: string
 }
 
 export interface SubmitQuizAttemptInput {

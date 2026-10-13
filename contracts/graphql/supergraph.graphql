@@ -666,6 +666,12 @@ type CardEdge
   node: Card!
 }
 
+input CardIdInput
+  @join__type(graph: CORE)
+{
+  cardId: UUID!
+}
+
 """
 A card as the client has it. Ids are UUIDs the client makes, so cards created offline keep their id.
 """
@@ -729,6 +735,15 @@ enum CardOpStatus
   Not applied: the card was deleted, or changed elsewhere before this delete
   """
   REJECTED @join__enumValue(graph: NOTES)
+}
+
+type CardReviewResult
+  @join__type(graph: CORE)
+{
+  cardId: UUID!
+  due: DateTime!
+  state: ReviewState!
+  intervalDays: Int!
 }
 
 """
@@ -2494,6 +2509,16 @@ type Mutation
   """Staff: moves the quiz to the trash; its attempts stay"""
   deleteClassQuiz(input: ClassQuizIdInput!): OkPayload! @join__field(graph: CORE)
 
+  """Signed in only, as every mutation below"""
+  reviewCard(input: ReviewCardInput!): ReviewCardPayload! @join__field(graph: CORE)
+
+  """Adds a readable note's flashcards to the viewer's reviews"""
+  studyNoteCards(input: StudyNoteInput!): OkPayload! @join__field(graph: CORE)
+  stopStudyingNoteCards(input: StudyNoteInput!): OkPayload! @join__field(graph: CORE)
+
+  """The card starts again as new"""
+  resetCardReview(input: CardIdInput!): OkPayload! @join__field(graph: CORE)
+
   """Admins and the Owner"""
   setGroupRepository(input: SetGroupRepositoryInput!): GroupPayload! @join__field(graph: CORE)
 
@@ -2731,6 +2756,11 @@ type Note
   Signed-in readers of the note: its comments and reactions. Null for anonymous visitors
   """
   discussion: Discussion @join__field(graph: CORE)
+
+  """
+  Signed in: whether the viewer studies this note's flashcards (their own notes' always count)
+  """
+  viewerStudying: Boolean @join__field(graph: CORE)
   kind: NoteKind! @join__field(graph: NOTES)
 
   """Empty when untitled"""
@@ -3532,6 +3562,9 @@ type Query
   """A quiz of a class the viewer is in; null otherwise"""
   classQuiz(id: UUID!): ClassQuiz @join__field(graph: CORE)
 
+  """Signed in only"""
+  reviewQueue: ReviewQueue! @join__field(graph: CORE)
+
   """A doubt the viewer's workspace holds"""
   doubt(id: UUID!): Doubt @join__field(graph: CORE)
 
@@ -3921,6 +3954,48 @@ input RestoreNoteVersionInput
   versionId: UUID!
 }
 
+"""A flashcard to review, as the person reads its note now"""
+type ReviewCard
+  @join__type(graph: CORE)
+{
+  cardId: UUID!
+  noteId: UUID!
+  noteTitle: String!
+
+  """Rich text"""
+  front: JSON!
+
+  """Rich text"""
+  back: JSON!
+  state: ReviewState!
+
+  """null for a new card"""
+  due: DateTime
+}
+
+input ReviewCardInput
+  @join__type(graph: CORE)
+{
+  cardId: UUID!
+  rating: ReviewRating!
+
+  """
+  When it was graded on the device; now when absent; believed back at most 30 days
+  """
+  reviewedAt: DateTime
+  durationMs: Int
+
+  """The device's id for this grade: sent twice, it counts once"""
+  clientOpId: UUID!
+}
+
+type ReviewCardPayload
+  @join__type(graph: CORE)
+{
+  review: CardReviewResult
+  userErrors: [UserError!]!
+}
+
 input ReviewClassroomJoinRequestInput
   @join__type(graph: CORE)
 {
@@ -3933,6 +4008,43 @@ input ReviewGroupJoinRequestInput
 {
   requestId: UUID!
   decision: JoinDecision!
+}
+
+type ReviewQueue
+  @join__type(graph: CORE)
+{
+  """
+  Today's cards: due first (most overdue first), then new; 20 a day, at most 10 new
+  """
+  cards: [ReviewCard!]!
+
+  """Cards due by the end of today, in the whole deck"""
+  due: Int!
+
+  """Cards never reviewed, in the whole deck"""
+  new: Int!
+  doneToday: Int!
+
+  """Cards past today's cap: they wait for the next days"""
+  waiting: Int!
+}
+
+enum ReviewRating
+  @join__type(graph: CORE)
+{
+  AGAIN @join__enumValue(graph: CORE)
+  HARD @join__enumValue(graph: CORE)
+  GOOD @join__enumValue(graph: CORE)
+  EASY @join__enumValue(graph: CORE)
+}
+
+enum ReviewState
+  @join__type(graph: CORE)
+{
+  NEW @join__enumValue(graph: CORE)
+  LEARNING @join__enumValue(graph: CORE)
+  REVIEW @join__enumValue(graph: CORE)
+  RELEARNING @join__enumValue(graph: CORE)
 }
 
 input ReviewVerificationRequestInput
@@ -4224,6 +4336,12 @@ type StudentProfile
   """
   interestTopicIds: [UUID!]
   showOnProfile: Boolean!
+}
+
+input StudyNoteInput
+  @join__type(graph: CORE)
+{
+  noteId: UUID!
 }
 
 input StudyPdfInput
