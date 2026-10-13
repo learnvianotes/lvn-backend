@@ -1,7 +1,7 @@
 # Recommendations (P6f)
 
 - Date: 2026-10-13
-- Package: `@lvn/contracts` (minor bump at merge)
+- Package: `@lvn/contracts` 0.44.0
 - Spec: §14.3, §17.1; ADR-0071
 - Breaking: no
 

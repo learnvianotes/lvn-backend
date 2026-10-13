@@ -1,7 +1,7 @@
 # Focus sessions, Rhythm buddies, the classroom ring and class performance (P6g)
 
 - Date: 2026-10-13
-- Package: `@lvn/contracts` (minor bump at merge)
+- Package: `@lvn/contracts` 0.44.0
 - Spec: §14.2, §18; ADR-0030, ADR-0072
 - Breaking: no
 
