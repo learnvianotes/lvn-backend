@@ -11,6 +11,8 @@ export interface AiConfig {
   timeoutMs: number
   /** The environment's monthly budget in millionths of a dollar; null: no cap */
   monthlyBudgetMicroUsd: number | null
+  /** Study aids for public notes when they are published (ADR-0061) */
+  publicPipeline: boolean
 }
 
 export const AI_CONFIG = Symbol('AI_CONFIG')
@@ -22,4 +24,5 @@ export const aiConfigFrom = (c: ApiConfig): AiConfig => ({
   embedModel: c.AI_EMBED_MODEL ?? null,
   timeoutMs: c.AI_TIMEOUT_MS,
   monthlyBudgetMicroUsd: c.AI_MONTHLY_BUDGET_MICRO_USD ?? null,
+  publicPipeline: c.AI_PUBLIC_PIPELINE,
 })

@@ -25,6 +25,8 @@ export const LIVE_SDL = /* GraphQL */ `
     NOTIFICATION
     "An Ask AI answer of the viewer's has more text: refetch aiAnswer(id) (ADR-0060)"
     AI_ANSWER
+    "A study aid for the viewer's public note finished: refetch the note's noteProcessingStatus (ADR-0061); the id is the note's"
+    NOTE_PROCESSING
   }
 
   "Something changed for the viewer: refetch it through /graphql"

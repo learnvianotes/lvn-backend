@@ -60,6 +60,21 @@ export interface AiCard {
   content: unknown
 }
 
+/** A study aid made from a public note's published version: a summary, key concepts, practice questions, a quiz or flashcards */
+export interface AiInsight {
+  id: string
+  task: AiTask
+  status: AiArtifactStatus
+  /** Text aids, once READY */
+  markdown: string | null
+  /** Card aids (quiz, flashcards), once READY: the title a kept note takes */
+  title: string | null
+  cards: Array<AiCard> | null
+  /** Hidden by the owner: only they see it */
+  hidden: boolean
+  versionId: string
+}
+
 export type AiLanguage = 'ENGLISH' | 'HINDI' | 'TELUGU'
 
 /** A passage an answer cites, by its number in the answer ([1], [2] …) */
@@ -139,11 +154,33 @@ export interface MutationDeleteAiAnswerArgs {
   id: string
 }
 
+export interface MutationSetAiInsightHiddenArgs {
+  id: string
+  hidden: boolean
+}
+
 /** A note, owned by the notes subgraph; ai adds the viewer's AI results */
 export interface Note {
   id: string
   /** Signed-in: the viewer's own AI results for this note, newest first; empty signed out */
   aiArtifacts: Array<AiArtifact>
+  /** Readers (signed in or not, while they may read the note): the READY aids the owner has not hidden. The owner: every step */
+  aiInsights?: Array<AiInsight>
+  /** The owner's: the aids' progress; null for anyone else, or before any. Live NOTE_PROCESSING events say when a step ends */
+  noteProcessingStatus?: NoteProcessing | null
+}
+
+/** The study aids' progress for the note's current published version */
+export interface NoteProcessing {
+  versionId: string
+  steps: Array<NoteProcessingStep>
+  /** Every step READY or FAILED */
+  done: boolean
+}
+
+export interface NoteProcessingStep {
+  task: AiTask
+  status: AiArtifactStatus
 }
 
 export interface OkPayload {

@@ -106,7 +106,7 @@ describe('Ask AI', () => {
     const rows = await db.noteChunk.findMany({ where: { noteId: notes.graphs }, select: { versionId: true, model: true, cardIds: true, text: true } })
     const note = await db.note.findUniqueOrThrow({ where: { id: notes.graphs }, select: { publishedVersionId: true } })
     expect(rows).toEqual([{ versionId: note.publishedVersionId, model: 'embeddinggemma', cardIds: [cards.graphs], text: 'Dijkstra finds shortest paths with a priority queue of distances.' }])
-    expect(await chunks.embedNote(notes.graphs)).toBe('kept')
+    expect(await chunks.embedNote(notes.graphs!)).toBe('kept')
     // Drafts are not embedded; the platform's embeddings count against no one's day.
     expect(await db.noteChunk.count({ where: { noteId: notes.draft } })).toBe(0)
     expect(await db.aiUsage.count({ where: { task: 'EMBED', userId: null } })).toBeGreaterThan(0)
@@ -215,7 +215,7 @@ describe('Ask AI', () => {
       const res = await off.gql<{ askAi: { userErrors: { code: string }[] } }>(`mutation { askAi(input: { question: "What is a heap?", scope: PUBLIC }) { answer { id } ${ERRORS} } }`, {}, ravi.token)
       expect(res.data!.askAi.userErrors[0]!.code).toBe('UNAVAILABLE')
       // Nothing is embedded, and nothing fails, without AI.
-      expect(await off.app.get(NoteChunks).embedNote(notes.graphs)).toBe('off')
+      expect(await off.app.get(NoteChunks).embedNote(notes.graphs!)).toBe('off')
       expect(await off.app.get<SemanticSearch>(SEMANTIC_SEARCH).similarNotes('heaps', 5)).toEqual([])
     } finally {
       await off.close()

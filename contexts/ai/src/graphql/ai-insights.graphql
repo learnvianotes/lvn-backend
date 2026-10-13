@@ -1,0 +1,41 @@
+# Study aids for public notes (§10.3, ADR-0061): made when a note is published PUBLIC, the same for every reader.
+
+"A study aid made from a public note's published version: a summary, key concepts, practice questions, a quiz or flashcards"
+type AiInsight {
+  id: UUID!
+  task: AiTask!
+  status: AiArtifactStatus!
+  "Text aids, once READY"
+  markdown: String
+  "Card aids (quiz, flashcards), once READY: the title a kept note takes"
+  title: String
+  cards: [AiCard!]
+  "Hidden by the owner: only they see it"
+  hidden: Boolean!
+  versionId: UUID!
+}
+
+type NoteProcessingStep {
+  task: AiTask!
+  status: AiArtifactStatus!
+}
+
+"The study aids' progress for the note's current published version"
+type NoteProcessing {
+  versionId: UUID!
+  steps: [NoteProcessingStep!]!
+  "Every step READY or FAILED"
+  done: Boolean!
+}
+
+extend type Note {
+  "Readers (signed in or not, while they may read the note): the READY aids the owner has not hidden. The owner: every step"
+  aiInsights: [AiInsight!]!
+  "The owner's: the aids' progress; null for anyone else, or before any. Live NOTE_PROCESSING events say when a step ends"
+  noteProcessingStatus: NoteProcessing
+}
+
+extend type Mutation {
+  "The note's owner only"
+  setAiInsightHidden(id: UUID!, hidden: Boolean!): OkPayload!
+}

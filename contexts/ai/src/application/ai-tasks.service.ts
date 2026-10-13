@@ -1,7 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { CardType, DERIVATIVE_AI_TASKS, type AiTaskType } from '@lvn/contracts/domain'
+import { LiveEventKind } from '@lvn/contracts/notifications'
 import { AppError, Errors } from '@lvn-backend/errors'
-import { NOTE_AI, type NoteAi, type NoteAiSource } from '@lvn-backend/facades'
+import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
+import { LIVE, NOTE_AI, type Live, type NoteAi, type NoteAiSource } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
 import { LANGUAGE_NAMES, SOURCE_CHARS, TASKS, type AiLanguage, type TaskResult } from '../domain/tasks'
@@ -41,6 +43,8 @@ export class AiTasksService {
     private readonly gateway: AiGateway,
     private readonly queues: Queues,
     @Inject(NOTE_AI) private readonly notes: NoteAi,
+    @Inject(EVENT_BUS) private readonly events: EventBus,
+    @Inject(LIVE) private readonly live: Live,
   ) {}
 
   async run(viewerId: string, input: RunTaskInput): Promise<ArtifactRow> {
@@ -60,16 +64,22 @@ export class AiTasksService {
     return artifact
   }
 
-  /** The worker's side: one queued artifact, start to finish. Failures end in FAILED with words for the person. */
+  /**
+   * The worker's side: one queued artifact, start to finish. Failures end in FAILED with words for the person. An
+   * artifact with no requester is a public note's study aid (ADR-0061): read as anyone reads the note, as the
+   * platform's work, and announced to the note's owner and its public page.
+   */
   async process(artifactId: string): Promise<void> {
     const claimed = await this.db.noteArtifact.updateMany({ where: { id: artifactId, status: 'QUEUED' }, data: { status: 'RUNNING' } })
     if (!claimed.count) return
     const artifact = await this.db.noteArtifact.findUniqueOrThrow({ where: { id: artifactId } })
     const options = artifact.options as unknown as Options
+    let ownerOfNote: string | null = null
     try {
       const task = artifact.task as AiTaskType
       const def = TASKS[task]
-      const source = await this.allowed(artifact.ownerId!, artifact.noteId, task)
+      const source = artifact.ownerId ? await this.allowed(artifact.ownerId, artifact.noteId, task) : await this.publicVersion(artifact.noteId, artifact.versionId)
+      ownerOfNote = source.ownerId
       const cards = this.pick(source, options.cardIds, !!def.codeOnly)
       let body = cards.map((c) => (c.type === CardType.CODE ? `\`\`\`${(c.content as { language?: string }).language ?? ''}\n${c.text}\n\`\`\`` : c.text)).join('\n\n')
       const cut = body.length > SOURCE_CHARS
@@ -87,16 +97,29 @@ export class AiTasksService {
       const result: TaskResult = def.result(generated.output, source.title)
       if ('cards' in result && !result.cards.length) throw Errors.unavailable('The AI made nothing that could be kept. Try again.')
       await this.db.noteArtifact.update({ where: { id: artifactId }, data: { status: 'READY', payload: result as unknown as Prisma.InputJsonValue, options: { ...options, cut } as unknown as Prisma.InputJsonValue } })
+      if (!artifact.ownerId) await this.events.publish('NoteArtifactReady', { artifactId, noteId: artifact.noteId, versionId: artifact.versionId!, artifactType: task })
     } catch (e) {
       const message = e instanceof AppError ? e.message : 'Something went wrong. Try again.'
       if (!(e instanceof AppError)) this.log.error(`AI task ${artifactId} failed: ${(e as Error).message}`)
       await this.db.noteArtifact.update({ where: { id: artifactId }, data: { status: 'FAILED', error: message } })
     }
+    // The owner's note page follows its study aids' progress (ADR-0061).
+    if (!artifact.ownerId && ownerOfNote) await this.live.notify(ownerOfNote, LiveEventKind.NOTE_PROCESSING, artifact.noteId).catch(() => undefined)
   }
 
-  /** Keeps chosen cards of a card task: into the note (who may edit it), or a new private note of the person's. */
+  /** A public note's published version, as anyone reads it; gone when it is no longer public or has a newer version. */
+  private async publicVersion(noteId: string, versionId: string | null): Promise<NoteAiSource> {
+    const source = await this.notes.publicSource(noteId)
+    if (!source || source.versionId !== versionId) throw Errors.notFound('This note is no longer public in this version.')
+    return source
+  }
+
+  /**
+   * Keeps chosen cards of a card task: into the note (who may edit it), or a new private note of the person's. The
+   * cards may be the person's own result, or a public note's study aid they can see (ADR-0061).
+   */
   async keep(viewerId: string, input: { artifactId: string; cardIndexes: number[]; into: 'NOTE' | 'NEW_NOTE' }): Promise<string> {
-    const artifact = await this.mine(viewerId, input.artifactId)
+    const artifact = await this.keepable(viewerId, input.artifactId)
     const payload = artifact.payload as { title?: string; cards?: { type: CardType; content: unknown }[] } | null
     if (artifact.status !== 'READY' || !payload?.cards) throw Errors.validation('There are no cards to keep here.')
     const picked = [...new Set(input.cardIndexes)].filter((i) => i >= 0 && i < payload.cards!.length).map((i) => payload.cards![i]!)
@@ -112,7 +135,8 @@ export class AiTasksService {
     } else {
       noteId = await this.notes.createNote(viewerId, { title: payload.title ?? 'From AI', cards: picked, copiedFrom: DERIVATIVE_AI_TASKS.has(artifact.task as AiTaskType) ? artifact.noteId : null })
     }
-    await this.db.noteArtifact.update({ where: { id: artifact.id }, data: { keptAt: new Date() } })
+    // A study aid is shared: nothing of one reader's keeping is recorded on it.
+    if (artifact.ownerId) await this.db.noteArtifact.update({ where: { id: artifact.id }, data: { keptAt: new Date() } })
     return noteId
   }
 
@@ -131,6 +155,15 @@ export class AiTasksService {
   async remove(viewerId: string, id: string): Promise<void> {
     const { count } = await this.db.noteArtifact.deleteMany({ where: { id, ownerId: viewerId } })
     if (!count) throw Errors.notFound('Not found.')
+  }
+
+  /** The person's own result, or a study aid of a note they may read that they may see (READY; hidden ones the owner's). */
+  private async keepable(viewerId: string, id: string): Promise<ArtifactRow> {
+    const aid = await this.db.noteArtifact.findFirst({ where: { id, ownerId: null, status: 'READY' } })
+    if (!aid) return this.mine(viewerId, id)
+    const source = await this.notes.source(viewerId, aid.noteId)
+    if (!source || (aid.hidden && source.ownerId !== viewerId)) throw Errors.notFound('Not found.')
+    return aid
   }
 
   private async mine(viewerId: string, id: string): Promise<ArtifactRow> {
