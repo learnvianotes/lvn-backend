@@ -554,6 +554,30 @@ if (opt('--vm') && (await gql('{ aiStatus { available } }')).aiStatus.available)
   ok(!!topic && !!made?.exam && made.exam.tasks.length === 1 && weak.some((w) => w.key === `topic:${topic.id}` && w.reason === 'LOW_ACCURACY') && exam?.topics[0]?.accuracy === 0, 'A sets an exam a month away on a topic; a wrong quiz answer makes it weak and counts in Readiness', JSON.stringify({ topic: topic?.title, error: made?.userErrors[0]?.message, weak, exam }))
 }
 
+// Recommendations (ADR-0071): A's weak topic from the quiz above is recommended, with why.
+{
+  const recs = (await gql('{ recommendations(limit: 20) { kind reason topicKey } }', {}, A.token)).recommendations
+  ok(recs.some((r) => r.kind === 'REVISE_TOPIC' && r.reason === 'Under 60% right in your last quizzes'), 'A is recommended the topic A got wrong, saying why', JSON.stringify(recs.slice(0, 3)))
+}
+
+// Focus and buddies (ADR-0072): D follows A and asks A to be buddies; A accepts; D focuses with a Meet link and A sees
+// D studying now; ending counts the time.
+{
+  const D = await signUp('d')
+  const aHandle = (await gql('{ viewer { handle } }', {}, A.token)).viewer.handle
+  await gql('mutation ($input: PersonInput!) { followUser(input: $input) { userErrors { message } } }', { input: { userId: A.id } }, D.token)
+  const OK = (op, type) => `mutation ($input: ${type}!) { ${op}(input: $input) { ok userErrors { message } } }`
+  const asked = (await gql(OK('inviteRhythmBuddy', 'InviteRhythmBuddyInput'), { input: { handle: aHandle } }, D.token)).inviteRhythmBuddy
+  const invite = (await gql('{ rhythmBuddies { invites { id } } }', {}, A.token)).rhythmBuddies.invites[0]
+  const accepted = invite ? (await gql(OK('answerRhythmBuddy', 'AnswerRhythmBuddyInput'), { input: { id: invite.id, accept: true } }, A.token)).answerRhythmBuddy : { ok: false, userErrors: [{ message: 'no invite' }] }
+  const started = (await gql('mutation ($input: StartFocusSessionInput!) { startFocusSession(input: $input) { session { id } userErrors { message } } }', { input: { minutes: 25, meetUrl: 'https://meet.google.com/abc-defg-hij' } }, D.token)).startFocusSession
+  const seen = (await gql('{ rhythmBuddies { buddies { studyingNow meetUrl user { id } } } }', {}, A.token)).rhythmBuddies.buddies
+  ok(asked.ok && accepted.ok && seen.some((b) => b.user.id === D.id && b.studyingNow && b.meetUrl === 'https://meet.google.com/abc-defg-hij'), 'D asks A to be buddies, A accepts, and A sees D studying now with the Meet link', JSON.stringify([asked, accepted, started.userErrors, seen]))
+  const ended = (await gql('mutation ($input: FocusSessionIdInput!) { endFocusSession(input: $input) { session { endedAt focusedSeconds } userErrors { message } } }', { input: { id: started.session?.id } }, D.token)).endFocusSession
+  const after = (await gql('{ rhythmBuddies { buddies { studyingNow } } }', {}, A.token)).rhythmBuddies.buddies
+  ok(!!ended.session?.endedAt && after.every((b) => !b.studyingNow), 'D ends the session; A no longer sees D studying', JSON.stringify(ended))
+}
+
 console.log(`1..${n}`)
 if (failed) {
   console.log(`# ${failed} of ${n} checks failed`)
