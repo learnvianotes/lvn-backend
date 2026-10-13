@@ -4,8 +4,8 @@ Two mock-up boards were shared by the owner on 2026-10-08. They set the visual d
 They are **references, not specs**: anything they show that the architecture spec does not cover is listed under
 "Needs a decision" and is not built until an ADR accepts it.
 
-> Image files: save the boards as `docs/design/reference-a-learnvianotes.png` and
-> `docs/design/reference-b-studysphere.png` so every agent sees the same pictures.
+> Board A is [`reference-a-learnvianotes.jpeg`](reference-a-learnvianotes.jpeg) (the owner sent it again on
+> 2026-10-13). Board B, when found, goes in `docs/design/reference-b-studysphere.png`.
 
 | Board | What it is | Use |
 | --- | --- | --- |
