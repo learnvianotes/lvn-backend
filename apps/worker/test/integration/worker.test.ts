@@ -100,6 +100,12 @@ describe('worker', () => {
     }
     expect(await db.noteSearchDocument.findUniqueOrThrow({ where: { noteId } })).toMatchObject({ versionId, title: 'Tries', body: 'Prefix trees for autocomplete.' })
     expect(await typesense()).toMatchObject({ title: 'Tries', visibility: 'PUBLIC' })
+    // The rest of the outbox (the curated topics a new database starts with) drains too, in its own time: under the
+    // full suite's load it can still be going when the note is done.
+    while ((await db.searchChange.count()) > 0) {
+      if (Date.now() > deadline) throw new Error(`the search outbox did not drain in time (${await db.searchChange.count()} left)`)
+      await new Promise((r) => setTimeout(r, 200))
+    }
     expect(await db.searchChange.count()).toBe(0)
     const schedulers = await app.get(Queues).queue(NOTES_SEARCH_QUEUE).getJobSchedulers()
     expect(schedulers.map((x) => [x.key, x.pattern])).toEqual([['reindex-all', '15 4 * * *']])
