@@ -1,9 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { Action, can, type Actor, type CardType, type NoteKind } from '@lvn/contracts/domain'
+import { Action, can, LearningEventType, type Actor, type CardType, type NoteKind } from '@lvn/contracts/domain'
 import { cardAnchor, isValidPosition, MEDIA_CARD_TYPES, NOTE_LIMITS, noteTitleSchema, parseCardContent } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { POLICY, type Policy } from '@lvn-backend/facades'
+import { LEARNING, POLICY, type Learning, type Policy } from '@lvn-backend/facades'
 import { decodeCursor, pageSize } from '@lvn-backend/graphql'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
@@ -63,6 +63,7 @@ export class NotesService {
     private readonly limiter: RateLimiter,
     @Inject(POLICY) private readonly policy: Policy,
     @Inject(EVENT_BUS) private readonly events: EventBus,
+    @Inject(LEARNING) private readonly learning: Learning,
   ) {}
 
   /** The actor for a viewer id; null for anonymous visitors. Throws for a signed-in id whose account is gone. */
@@ -130,6 +131,7 @@ export class NotesService {
       if (input.tagNames?.length) await this.organise.setTags(tx, ownerId, id, input.tagNames, ['input', 'tagNames'])
       if (topicIds.length) await tx.noteTopic.createMany({ data: topicIds.map((topicId) => ({ noteId: id, topicId })) })
     })
+    await this.learning.record(ownerId, { type: LearningEventType.NOTE_CREATED, entityType: 'NOTE', entityId: id, topicKeys: topicIds.map((t) => `topic:${t}`), metadata: { kind } })
     return (await this.open(ownerId, id, actor))!
   }
 

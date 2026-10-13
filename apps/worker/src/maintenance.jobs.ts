@@ -1,6 +1,6 @@
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common'
 import { COMMS_EMAIL_QUEUE, COMMS_PUSH_QUEUE, DevicesService, EmailNotificationsService, NotificationService, PushService } from '@lvn-backend/communication'
-import { WorkspacesService } from '@lvn-backend/core'
+import { LEARNING_ANALYTICS_QUEUE, LearningEventsService, WorkspacesService } from '@lvn-backend/core'
 import { NotesMaintenance } from '@lvn-backend/notes'
 import { Queues } from '@lvn-backend/queue'
 import { UsersMaintenance } from '@lvn-backend/users'
@@ -21,6 +21,7 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
     private readonly notes: NotesMaintenance,
     private readonly notifications: NotificationService,
     private readonly workspaces: WorkspacesService,
+    private readonly learning: LearningEventsService,
     private readonly push: PushService,
     private readonly devices: DevicesService,
     private readonly emails: EmailNotificationsService,
@@ -84,7 +85,16 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
         this.log.log(`refreshed ${refreshed} repositories`)
         return { refreshed }
       },
+      // ADR-0067: learning events' partitions three months ahead; ids seen over 30 days ago; partitions past 24 months.
+      'learning-partitions': async () => {
+        const done = await this.learning.maintain()
+        this.log.log(`learning events: ${done.made} partitions made, ${done.forgotten} ids forgotten, ${done.dropped.length} partitions dropped`)
+        return done
+      },
     })
     await this.queues.repeat(CORE_MAINTENANCE_QUEUE, 'refresh-repositories', '5 4 * * *')
+    await this.queues.repeat(CORE_MAINTENANCE_QUEUE, 'learning-partitions', '10 4 * * *')
+    // ADR-0067: the pseudonymous copy for PostHog, queued only when it is configured; retried by the queue.
+    this.queues.process(LEARNING_ANALYTICS_QUEUE, { copy: async (data) => ({ sent: await this.learning.copyToAnalytics((data as { userId: string }).userId, (data as { eventIds: string[] }).eventIds) }) }, 2)
   }
 }

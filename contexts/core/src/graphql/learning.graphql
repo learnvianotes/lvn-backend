@@ -1,0 +1,79 @@
+# Learning events (§14.1, ADR-0067): the apps send what a person did, batched and kept while offline.
+
+"§14.1's event types. Some are recorded by the server only: notes created, published or forked; exams; AI requests"
+enum LearningEventType {
+  NOTE_OPENED
+  NOTE_CREATED
+  NOTE_PUBLISHED
+  NOTE_FORKED
+  CARD_VIEWED
+  TOPIC_VIEWED
+  VIDEO_STARTED
+  VIDEO_COMPLETED
+  QUIZ_STARTED
+  QUIZ_COMPLETED
+  FLASHCARD_REVIEWED
+  TIME_SPENT
+  NOTE_SAVED
+  TOPIC_REVISITED
+  EXAM_CREATED
+  RESOURCE_VIEWED
+  RESOURCE_SAVED
+  AI_REQUESTED
+  SEARCH_PERFORMED
+  TOPIC_COMPLETED
+  PROBLEM_MARKED
+}
+
+enum Platform {
+  WEB
+  ANDROID
+  IOS
+}
+
+input LearningEventInput {
+  "The client's UUIDv7: an event sent twice counts once"
+  id: UUID!
+  type: LearningEventType!
+  "NOTE, CARD, CORE_TOPIC, QUIZ…"
+  entityType: String
+  entityId: String
+  "topic:<id> or core:<subject>/<topic>; at most 10"
+  topicKeys: [String!]
+  "At most 4 hours"
+  durationMs: Int
+  "At most 2 KB; TIME_SPENT takes { activity: FOCUS | REVIEW | QUIZ | READING }, QUIZ_COMPLETED { answered }"
+  metadata: JSON
+  "When it happened on the device; believed back at most 30 days"
+  clientTs: DateTime!
+  sessionId: String
+  platform: Platform!
+}
+
+input TrackEventsInput {
+  "At most 100"
+  events: [LearningEventInput!]!
+  "The device's IANA time zone (Asia/Kolkata): days are counted in it, rolling over at 04:00"
+  timeZone: String
+}
+
+type RejectedLearningEvent {
+  "Its place in the batch"
+  index: Int!
+  message: String!
+}
+
+type TrackEventsPayload {
+  "New events stored"
+  accepted: Int!
+  "Events already received (a batch sent again)"
+  duplicates: Int!
+  "Events refused one by one; the rest of the batch is kept"
+  rejected: [RejectedLearningEvent!]!
+  userErrors: [UserError!]!
+}
+
+extend type Mutation {
+  "Signed in only. Clients send every 10 s or 20 events, and keep what they could not send"
+  trackEvents(input: TrackEventsInput!): TrackEventsPayload!
+}

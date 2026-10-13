@@ -1,9 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { CardType, DERIVATIVE_AI_TASKS, type AiTaskType } from '@lvn/contracts/domain'
+import { CardType, DERIVATIVE_AI_TASKS, LearningEventType, type AiTaskType } from '@lvn/contracts/domain'
 import { LiveEventKind } from '@lvn/contracts/notifications'
 import { AppError, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { LIVE, NOTE_AI, type Live, type NoteAi, type NoteAiSource } from '@lvn-backend/facades'
+import { LEARNING, LIVE, NOTE_AI, type Learning, type Live, type NoteAi, type NoteAiSource } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
 import { batches, batchText, isRepair, type TextChange } from '../domain/clean-up'
@@ -48,6 +48,7 @@ export class AiTasksService {
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(LIVE) private readonly live: Live,
     private readonly media: MediaInput,
+    @Inject(LEARNING) private readonly learning: Learning,
   ) {}
 
   async run(viewerId: string, input: RunTaskInput): Promise<ArtifactRow> {
@@ -66,6 +67,7 @@ export class AiTasksService {
       data: { id: newId(), noteId: input.noteId, versionId: source.versionId, ownerId: viewerId, task: input.task, options: options as unknown as Prisma.InputJsonValue, status: 'QUEUED' },
     })
     await this.queues.queue(AI_TASKS_QUEUE).add('run', { artifactId: artifact.id }, { jobId: artifact.id })
+    await this.learning.record(viewerId, { type: LearningEventType.AI_REQUESTED, entityType: 'NOTE', entityId: input.noteId, metadata: { task: input.task } })
     return artifact
   }
 

@@ -1,20 +1,24 @@
 import { Injectable } from '@nestjs/common'
 import type { DataExportPart } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
+import { LearningEventsService } from './learning-events.service'
 
 const json = (v: unknown) => new TextEncoder().encode(JSON.stringify(v, null, 2))
 
 /**
  * The core part of a data export (ADR-0018): study progress on /core, the reports this person filed, their appeals,
  * moderation decisions about their account; the groups and classes they are in, what they posted there, and their
- * comments and reactions (ADR-0045, ADR-0046, ADR-0047). Quizzes and the rest join this part when they ship.
+ * comments and reactions (ADR-0045, ADR-0046, ADR-0047); class quizzes (ADR-0064); learning events and days (ADR-0067).
  */
 @Injectable()
 export class CoreExport implements DataExportPart {
-  constructor(private readonly db: PrismaService) {}
+  constructor(
+    private readonly db: PrismaService,
+    private readonly learning: LearningEventsService,
+  ) {}
 
   async exportFor(userId: string) {
-    const [progress, marks, reports, appeals, actions, groups, groupPosts, classes, classPosts, comments, reactions, quizzes, attempts] = await Promise.all([
+    const [progress, marks, reports, appeals, actions, groups, groupPosts, classes, classPosts, comments, reactions, quizzes, attempts, learning] = await Promise.all([
       this.db.coreTopicProgress.findMany({ where: { userId }, orderBy: { topicKey: 'asc' } }),
       this.db.coreProblemMark.findMany({ where: { userId }, orderBy: { markedAt: 'asc' } }),
       this.db.report.findMany({ where: { reporterId: userId }, orderBy: { createdAt: 'asc' } }),
@@ -29,10 +33,14 @@ export class CoreExport implements DataExportPart {
       // Classroom quizzes (ADR-0064): the ones they published, and their own attempts.
       this.db.classQuiz.findMany({ where: { authorId: userId, deletedAt: null }, include: { questions: { orderBy: { position: 'asc' } } }, orderBy: { publishedAt: 'asc' } }),
       this.db.quizAttempt.findMany({ where: { userId }, include: { answers: true }, orderBy: { submittedAt: 'asc' } }),
+      // Learning events and the days made from them (ADR-0067).
+      this.learning.exportFor(userId),
     ])
     return {
       files: [
         { path: 'data/core/study-progress.json', bytes: json(progress.map(({ userId: _u, ...p }) => p)) },
+        { path: 'data/learning/events.json', bytes: json(learning.events) },
+        { path: 'data/learning/days.json', bytes: json({ timeZone: learning.timeZone, days: learning.days, topics: learning.topics }) },
         { path: 'data/core/problem-marks.json', bytes: json(marks.map(({ userId: _u, ...m }) => m)) },
         { path: 'data/core/reports-you-filed.json', bytes: json(reports.map((r) => ({ entityType: r.entityType, entityId: r.entityId, reason: r.reason, details: r.details, status: r.status, createdAt: r.createdAt }))) },
         { path: 'data/core/your-appeals.json', bytes: json(appeals.map((a) => ({ entityType: a.entityType, entityId: a.entityId, message: a.message, status: a.status, createdAt: a.createdAt, decidedAt: a.decidedAt }))) },

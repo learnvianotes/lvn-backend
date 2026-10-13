@@ -26,14 +26,14 @@ export async function workerDatabase(migratedUrl: string, workerId = process.env
  */
 export const SEEDED_TABLES = ['users.Plan', 'users.Entitlement', 'notes.Subject', 'notes.Topic']
 
-/** Empties every table of the context schemas except migration-seeded reference data, so each test file starts clean. */
+/** Empties every table of the context schemas (and learning events, ADR-0067) except migration-seeded reference data, so each test file starts clean. */
 export async function resetDatabase(databaseUrl: string): Promise<void> {
   const client = new Client({ connectionString: databaseUrl })
   await client.connect()
   try {
     const { rows } = await client.query<{ name: string }>(
       `SELECT format('%I.%I', schemaname, tablename) AS name FROM pg_tables
-       WHERE schemaname IN ('users', 'notes', 'core', 'ai', 'comms') AND schemaname || '.' || tablename <> ALL($1)`,
+       WHERE schemaname IN ('users', 'notes', 'core', 'ai', 'comms', 'learning') AND schemaname || '.' || tablename <> ALL($1)`,
       [SEEDED_TABLES],
     )
     if (rows.length) await client.query(`TRUNCATE ${rows.map((r) => r.name).join(', ')}`)

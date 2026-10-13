@@ -3,6 +3,8 @@ import { Module, type DynamicModule } from '@nestjs/common'
 import { JsonScalar } from '@lvn-backend/graphql'
 import { CoreExport } from './application/core-export'
 import { CoreProgressService } from './application/core-progress.service'
+import { LearningEventsService } from './application/learning-events.service'
+import { LearningResolver } from './graphql/learning.resolver'
 import { ClassQuizzesService } from './application/class-quizzes.service'
 import { ClassroomsService } from './application/classrooms.service'
 import { PlacesService } from './application/places.service'
@@ -26,7 +28,7 @@ import { GroupModerationResolver, ModeratedContentResolver, ModeratedNoteResolve
  * The `core` bounded context (spec §6.1) — Postgres schema `core`.
  * Owns: groups, classrooms, quizzes, flashcards, exams, learning events, Rhythm (ADR-0030), recommendations,
  * resources, achievements, moderation, reports — and, from Phase 1, progress on the /core content (ADR-0023).
- * Implements the MODERATION facade (ADR-0037) and needs POLICY, AUDIT and NOTE_MODERATION.
+ * Implements the MODERATION and LEARNING facades (ADR-0037, ADR-0067) and needs POLICY, AUDIT and NOTE_MODERATION.
  * Imported only by the composition roots; never global (GraphQL subgraphs follow module imports).
  */
 @Module({})
@@ -34,8 +36,8 @@ export class CoreModule {
   static forRoot(config: CoreConfig): DynamicModule {
     return {
       module: CoreModule,
-      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver, ModeratedContentResolver, GroupModerationResolver, ScopedReportsService, MentionsService, GroupsService, GroupsResolver, GroupReferenceResolver, ClassroomsService, PlacesService, ClassroomsResolver, ClassroomReferenceResolver, ClassQuizzesService, ClassQuizzesResolver, ClassroomQuizzesResolver, CommentsService, NoteDiscussionResolver, GroupPostDiscussionResolver, ClassroomPostDiscussionResolver, DiscussionResolver, CommentResolver, WorkspacesService, WorkspaceGroupResolver, DoubtResolver, ActivityService, ActivityResolver, JsonScalar],
-      exports: [CoreProgressService, ModerationService, GroupsService, ClassroomsService, PlacesService, WorkspacesService],
+      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, LearningEventsService, LearningResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver, ModeratedContentResolver, GroupModerationResolver, ScopedReportsService, MentionsService, GroupsService, GroupsResolver, GroupReferenceResolver, ClassroomsService, PlacesService, ClassroomsResolver, ClassroomReferenceResolver, ClassQuizzesService, ClassQuizzesResolver, ClassroomQuizzesResolver, CommentsService, NoteDiscussionResolver, GroupPostDiscussionResolver, ClassroomPostDiscussionResolver, DiscussionResolver, CommentResolver, WorkspacesService, WorkspaceGroupResolver, DoubtResolver, ActivityService, ActivityResolver, JsonScalar],
+      exports: [CoreProgressService, ModerationService, GroupsService, ClassroomsService, PlacesService, WorkspacesService, LearningEventsService],
     }
   }
 }
