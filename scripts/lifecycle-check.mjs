@@ -560,10 +560,11 @@ if (opt('--vm') && (await gql('{ aiStatus { available } }')).aiStatus.available)
   ok(recs.some((r) => r.kind === 'REVISE_TOPIC' && r.reason === 'Under 60% right in your last quizzes'), 'A is recommended the topic A got wrong, saying why', JSON.stringify(recs.slice(0, 3)))
 }
 
-// Focus and buddies (ADR-0072): E follows A and asks A to be buddies; A accepts; E focuses with a Meet link and A sees
-// E studying now; ending counts the time.
-{
+// Focus and buddies (ADR-0072), on the local environment where accounts can be verified by SQL: E follows A and asks A
+// to be buddies; A accepts; E focuses with a Meet link and A sees E studying now; ending counts the time.
+if (opt('--vm')) {
   const D = await signUp('e')
+  sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'INSTITUTIONAL_EMAIL' WHERE id = '${D.id}'`)
   const aHandle = (await gql('{ viewer { handle } }', {}, A.token)).viewer.handle
   await gql('mutation ($input: PersonInput!) { followUser(input: $input) { userErrors { message } } }', { input: { userId: A.id } }, D.token)
   const OK = (op, type) => `mutation ($input: ${type}!) { ${op}(input: $input) { ok userErrors { message } } }`

@@ -89,7 +89,22 @@ exam reminders (hourly), recommendations (hourly), close focus sessions (every 1
 | Contract | `graphql:check`; `env:check` (67 variables) | codegen against the current schema; the contracts copy synced | the contracts copy synced |
 | Migrations | applied to an empty database, no drift | — | — |
 
-VM_EVIDENCE
+### On the local environment (2026-10-13)
+
+Deployed with `infra/scripts/deploy-local.sh` to `http://100.70.234.41:8080`:
+- `lvn-backend:c20d0d4d6a2b` (api, worker);
+- `lvn-web:646186398a20`;
+- `lvn-pdf-engine:35833b87f347`.
+
+| Check | Result |
+| --- | --- |
+| `pnpm smoke` | 13/13 |
+| `pnpm lifecycle` | 89/89. Phase 6 adds: a learning-event batch counted once; the focus time on the person's day in their zone; the partitions; the history showing the day; a new flashcard through today's reviews; Rhythm counting today in A's zone; a plan and a pause round trip; an exam a month away whose topic a wrong quiz answer makes weak; that topic recommended with its reason; a buddy invite accepted, the buddy seen studying with a Meet link, and gone when the session ends |
+| Playwright, live | 53/53 + 1 skipped (Google is off on the VM), on desktop and phone: a note read reaches the learning events; a flashcard reviewed shows in the history; a new account's Rhythm, a six-day plan and an exam pause; an exam on a curated topic found by name, its topic recommended, a focus session counted, and Home |
+| Maestro | 27/27 on this deploy (27 min), with the Phase 6 flows: `review` (a flashcard written on the phone, reviewed, and the day in the history), `rhythm`, `exams`, `focus`, `home`, and `events-offline` (a note read in airplane mode reaches the server when the network returns) |
+
+Slices were verified as they landed: P6a on its own; P6b and P6c together (lifecycle 83/83, live 49/49, Maestro
+23/23); P6d (lifecycle 85/85, live 51/51, Maestro 24/24 once two taps were aimed); P6e–P6h together (above).
 
 ## Exit criteria (§18)
 
@@ -104,6 +119,20 @@ VM_EVIDENCE
     connection is back (Playwright `learning.spec.ts`).
   - Phone: the Maestro `events-offline` flow reads a note in airplane mode; when the network returns, the server
     lists it among the notes opened that day.
+
+## Known gaps
+
+- **/core reading is not counted.** /core stays guest-only (the owner's decision of 2026-10-08), so time on /core pages
+  reaches neither the history nor Rhythm. A signed-in reader's notes, reviews, quizzes and focus sessions all count.
+- **Quizzes on /core pages record nothing**, so /core topics have no accuracy for weak topics or Readiness; they still
+  get exam plans and the "not revisited" rule through their curated notes topics.
+- **Recommendations are rules.** The table is ready for an embedding-based model's rows, which is not built.
+- **The classroom ring and class performance are computed when asked**, for up to 300 students a class. Larger
+  classes would want a rollup.
+- **Reminders are in-app and push only**; there is no email for a revision task.
+- **ADR-0030's A/B test of Rhythm against streaks** waits for analytics (below).
+
+GraphQL schema: `@lvn/contracts` 0.44.0 (`contracts/graphql/schema.graphql`).
 
 ## Needed from the owner (not blocking)
 
