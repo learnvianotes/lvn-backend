@@ -52,6 +52,9 @@ describe('learning history', () => {
     const me = await person()
     const other = await person()
     const topic = (await db.topic.findFirst({ where: { origin: 'CURATED' } }))!
+    // The apps tell the API the person's time zone at sign-in (ADR-0070), before anything is recorded: the notes made
+    // next count on Kolkata's day whatever the hour (in UTC, from 22:30 to 04:00 it would still be yesterday).
+    await app.gql('mutation { setLearningTimeZone(input: { timeZone: "Asia/Kolkata" }) { ok } }', {}, me.token)
     const mine = await note(me.token, 'My heaps')
     const theirs = await note(other.token, 'Their private plans')
     await track(me.token, [

@@ -81,6 +81,21 @@ describe('security: privacy', () => {
   })
 
   describe('notes (Phase 2) and AI (Phase 5)', () => {
+    it('B never sees which notes A saved: the saved list is A’s alone, and viewerSaved is false for everyone else (ADR-0076)', async () => {
+      const made = await t.gql<{ createNote: { note: { id: string } } }>('mutation { createNote(input: { title: "Open notes" }) { note { id } } }', {}, actors.teacher.token)
+      const id = made.data!.createNote.note.id
+      await t.gql('mutation ($id: UUID!) { publishNote(input: { noteId: $id }) { note { id } } }', { id }, actors.teacher.token)
+      await t.gql('mutation ($id: UUID!) { changeNoteVisibility(input: { noteId: $id, visibility: PUBLIC }) { note { id } } }', { id }, actors.teacher.token)
+      await t.gql('mutation ($id: UUID!) { saveNote(input: { noteId: $id }) { note { id } } }', { id }, actors.a.token)
+      const list = async (token: string) => (await t.gql<{ savedNotes: { edges: { node: { id: string } }[] } }>('{ savedNotes { edges { node { id } } } }', {}, token)).data!.savedNotes.edges.map((e) => e.node.id)
+      const flag = async (token?: string) => (await t.gql<{ note: { viewerSaved: boolean } }>('query ($id: UUID!) { note(id: $id) { viewerSaved } }', { id }, token)).data!.note.viewerSaved
+      expect(await list(actors.a.token)).toContain(id)
+      expect(await list(actors.b.token)).not.toContain(id)
+      expect(await flag(actors.a.token)).toBe(true)
+      expect(await flag(actors.b.token)).toBe(false)
+      expect(await flag()).toBe(false)
+    })
+
     it('B cannot read, change or even detect A’s private note by id — it answers exactly like a note that does not exist', async () => {
       const created = await t.gql<{ createNote: { note: { id: string } } }>(
         'mutation { createNote(input: { title: "A’s diary", cards: [{ id: "01920000-0000-7000-8000-00000000d1a1", type: text, position: "a0", content: { doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "secret" }] }] } } }] }) { note { id } } }',
@@ -95,7 +110,9 @@ describe('security: privacy', () => {
         const save = await t.gql('mutation ($id: UUID!) { updateNoteDraft(input: { noteId: $id, title: "mine now" }) { note { id } userErrors { code message } } }', { id: noteId }, actors.b.token)
         const publish = await t.gql('mutation ($id: UUID!) { publishNote(input: { noteId: $id }) { note { id } userErrors { code message } } }', { id: noteId }, actors.b.token)
         const trash = await t.gql('mutation ($id: UUID!) { deleteNote(input: { noteId: $id }) { note { id } userErrors { code message } } }', { id: noteId }, actors.b.token)
-        return { read: read.data, anon: anon.data, save: save.data ?? save.errors, publish: publish.data ?? publish.errors, trash: trash.data ?? trash.errors }
+        // Saving it to read later (ADR-0076) is refused the same way.
+        const keep = await t.gql('mutation ($id: UUID!) { saveNote(input: { noteId: $id }) { note { id } userErrors { code message } } }', { id: noteId }, actors.b.token)
+        return { read: read.data, anon: anon.data, save: save.data ?? save.errors, publish: publish.data ?? publish.errors, trash: trash.data ?? trash.errors, keep: keep.data ?? keep.errors }
       }
       const answers = await probe(id)
       expect(answers.read).toEqual({ note: null })

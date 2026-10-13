@@ -1,0 +1,16 @@
+extend type Note {
+  "The viewer saved it to come back to (ADR-0076); private to them. False for visitors"
+  viewerSaved: Boolean!
+}
+
+extend type Query {
+  "Notes the viewer saved and can still read, newest saved first (ADR-0076); a page can be shorter than asked"
+  savedNotes(first: Int, after: String): NoteConnection!
+}
+
+extend type Mutation {
+  "Saves a note the viewer can read to their saved notes (ADR-0076); saving it again changes nothing"
+  saveNote(input: NoteIdInput!): NotePayload!
+  "Takes a note off the viewer's saved notes"
+  unsaveNote(input: NoteIdInput!): NotePayload!
+}
