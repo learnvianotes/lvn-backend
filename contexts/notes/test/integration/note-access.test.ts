@@ -56,10 +56,11 @@ describe('note visibility: the single-note rule and the list query agree', () =>
     }
   }, 120_000)
 
+  // Stopping the database container takes longer than a hook's default 5 seconds on a busy machine.
   afterAll(async () => {
     await db.$disconnect()
     await stop()
-  })
+  }, 60_000)
 
   const actor = (id: string, verified: boolean): Actor => ({ id, globalRole: 'STUDENT', institutionVerified: verified })
 
