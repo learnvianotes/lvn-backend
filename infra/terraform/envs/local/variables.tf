@@ -107,3 +107,10 @@ variable "ai_embed_model" {
   type    = string
   default = "embeddinggemma"
 }
+
+# The monthly AI budget in millionths of a dollar (ADR-0058): the local model costs nothing, so only the lifecycle
+# check's priced usage trips it, to show the breaker tripping and resetting (Phase 5 exit).
+variable "ai_monthly_budget_micro_usd" {
+  type    = number
+  default = 5000000
+}
