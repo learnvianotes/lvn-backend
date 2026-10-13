@@ -627,6 +627,8 @@ describe('resources (ADR-0074)', () => {
     expect(can(student('owner', { suspended: true }), Action.RESOURCE_EDIT, of(ResourceStatus.REJECTED))).toBe(false)
     expect(can(admin, Action.RESOURCE_EDIT, of(ResourceStatus.PENDING))).toBe(false)
     expect(can(other, Action.RESOURCE_EDIT, of(ResourceStatus.PENDING))).toBe(false)
+    // An action that is not about resources is refused for one.
+    expect(can(owner, Action.NOTE_READ, of(ResourceStatus.APPROVED))).toBe(false)
     for (const status of Object.values(ResourceStatus)) {
       expect(can(owner, Action.RESOURCE_DELETE, of(status))).toBe(true)
       expect(can(admin, Action.RESOURCE_DELETE, of(status))).toBe(true)
