@@ -127,7 +127,7 @@ describe('push and email', () => {
     const problem = async (input: object) => (await gql<{ updateNotificationSettings: { userErrors: { message: string }[] } }>('mutation ($input: UpdateNotificationSettingsInput!) { updateNotificationSettings(input: $input) { userErrors { message } } }', { input }, asha)).data!.updateNotificationSettings.userErrors[0]?.message
     expect(await problem({ quietStart: '25:00' })).toBe('Use a time like 22:00.')
     expect(await problem({ timeZone: 'Mars/Olympus' })).toBe('Choose a time zone from the list.')
-    expect(await problem({ categories: [{ category: 'QUIZ_PUBLISHED', push: false }] })).toBe('That kind of notification cannot be set yet.')
+    expect(await problem({ categories: [{ category: 'REVISION_REMINDER', push: false }] })).toBe('That kind of notification cannot be set yet.')
     expect((await gql('{ notificationSettings { timeZone } }', {})).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
   })
 

@@ -10,6 +10,8 @@ type ClassroomActions {
   "Teacher and TAs: answer requests, invite, post"
   review: Boolean!
   post: Boolean!
+  "Teacher and TAs: publish quizzes (ADR-0064)"
+  publishQuiz: Boolean!
   "The teacher: settings, roles, removing people"
   manage: Boolean!
   leave: Boolean!

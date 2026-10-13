@@ -1615,6 +1615,7 @@ model Classroom {
   requests    ClassroomJoinRequest[]
   invites     ClassroomInvite[]
   posts       ClassroomPost[]
+  quizzes     ClassQuiz[]
 
   @@index([ownerId])
   @@schema("core")
@@ -1682,6 +1683,71 @@ model ClassroomPost {
   classroom        Classroom         @relation(fields: [classroomId], references: [id], onDelete: Cascade)
 
   @@index([classroomId, deletedAt, createdAt(sort: Desc)])
+  @@schema("core")
+}
+
+/// A quiz a class's staff published to it (ADR-0064); not edited once published, its attempts would no longer match.
+model ClassQuiz {
+  id           String              @id @db.Uuid
+  classroomId  String              @db.Uuid
+  /// Cross-context reference to users.User: the teacher or TA who published it
+  authorId     String              @db.Uuid
+  title        String
+  /// Cross-context reference to notes.Note: the note it was made from, when its author could read it
+  sourceNoteId String?             @db.Uuid
+  publishedAt  DateTime            @default(now()) @db.Timestamptz(3)
+  deletedAt    DateTime?           @db.Timestamptz(3)
+  classroom    Classroom           @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  questions    ClassQuizQuestion[]
+  attempts     QuizAttempt[]
+
+  @@index([classroomId, deletedAt, publishedAt(sort: Desc)])
+  @@index([authorId])
+  @@schema("core")
+}
+
+/// One question: quiz card content (question, choices with their ids, the correct ones, an explanation).
+model ClassQuizQuestion {
+  id       String       @id @db.Uuid
+  quizId   String       @db.Uuid
+  position Int
+  content  Json
+  quiz     ClassQuiz    @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers  QuizAnswer[]
+
+  @@unique([quizId, position])
+  @@schema("core")
+}
+
+/// One submission of a quiz (ADR-0064): scored on the server; a person's first is their score, later ones practice.
+model QuizAttempt {
+  id          String       @id @db.Uuid
+  quizId      String       @db.Uuid
+  /// Cross-context reference to users.User
+  userId      String       @db.Uuid
+  /// The client's id for the submission: the same one returns the same attempt (§11)
+  clientOpId  String       @unique @db.Uuid
+  score       Int
+  total       Int
+  submittedAt DateTime     @default(now()) @db.Timestamptz(3)
+  quiz        ClassQuiz    @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers     QuizAnswer[]
+
+  @@index([quizId, userId, submittedAt])
+  @@index([userId])
+  @@schema("core")
+}
+
+model QuizAnswer {
+  attemptId  String            @db.Uuid
+  questionId String            @db.Uuid
+  /// The choice ids chosen; empty when the question was left unanswered
+  choiceIds  String[]
+  correct    Boolean
+  attempt    QuizAttempt       @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question   ClassQuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@id([attemptId, questionId])
   @@schema("core")
 }
 
