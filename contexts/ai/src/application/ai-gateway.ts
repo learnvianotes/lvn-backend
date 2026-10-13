@@ -6,11 +6,9 @@ import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { ENTITLEMENTS, type Entitlements } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
-import { ProviderError, type AiProviderAdapter, type ChatMessage } from '../domain/provider'
+import { ProviderError, UnsupportedInput, type ChatMessage } from '../domain/provider'
+import { AiProviders, type Target } from './ai-providers'
 import { PromptLibrary } from './prompts'
-
-/** The provider adapter in use, or null when AI is off (ADR-0058). */
-export const AI_PROVIDER_ADAPTER = Symbol('AI_PROVIDER_ADAPTER')
 
 export type AiUnavailableReason = 'NOT_CONFIGURED' | 'BUDGET' | 'PROVIDER_DOWN'
 
@@ -42,45 +40,49 @@ export interface Generated<T> {
 }
 
 const RETRIES = [250, 1000]
-/** Consecutive failed calls that open the circuit, and for how long. */
+/** Consecutive failed calls that open a provider's circuit, and for how long. */
 const TRIP_AFTER = 3
 const OPEN_MS = 30_000
 const BUDGET_CACHE_MS = 60_000
-const ROUTE_CACHE_MS = 30_000
+/** The circuit of the environment's provider; a connection's is its id. */
+const ENVIRONMENT = 'environment'
 
 const startOfUtcDay = (now = new Date()) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 const startOfUtcMonth = (now = new Date()) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
 /**
- * Every AI call in the platform goes through here (§10.1, ADR-0058). In order: is AI on and within its monthly
- * budget, is the provider's circuit closed, has the person tokens left today (their plan's AI_TOKENS_DAILY), may this
- * provider see this material;
- * then the task's model, the versioned prompt with people's text fenced, retries, the answer checked against its
- * schema (with one repair), and an `AiUsage` row whatever happened.
+ * Every AI call in the platform goes through here (§10.1, ADR-0058). In order: who answers this task (AiProviders:
+ * a route, the default connection or the environment's provider, ADR-0065), is AI within its monthly budget, is that
+ * provider's circuit closed, has the person tokens left today (their plan's AI_TOKENS_DAILY), may this provider see
+ * this material;
+ * then the versioned prompt with people's text fenced, retries, the answer checked against its schema (with one
+ * repair), and an `AiUsage` row whatever happened.
  */
 @Injectable()
 export class AiGateway {
   private readonly log = new Logger('AiGateway')
-  private failures = 0
-  private openUntil = 0
+  private circuits = new Map<string, { failures: number; openUntil: number }>()
   private spend: { since: number; microUsd: number; at: number } | null = null
   private told = new Set<string>()
-  private routes = new Map<string, { at: number; route: { model: string; inPrice: number; outPrice: number } | null }>()
 
   constructor(
     private readonly db: PrismaService,
     private readonly prompts: PromptLibrary,
     @Inject(AI_CONFIG) private readonly config: AiConfig,
-    @Inject(AI_PROVIDER_ADAPTER) private readonly adapter: AiProviderAdapter | null,
+    private readonly providers: AiProviders,
     @Inject(ENTITLEMENTS) private readonly entitlements: Entitlements,
     @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
 
-  /** Whether AI answers now, and if not, why. */
+  /** Whether AI answers now (the default chat provider), and if not, why. */
   async status(): Promise<{ available: boolean; reason: AiUnavailableReason | null }> {
-    if (!this.adapter) return { available: false, reason: 'NOT_CONFIGURED' }
+    return this.statusOf(await this.providers.forTask(null))
+  }
+
+  private async statusOf(target: Target | null): Promise<{ available: boolean; reason: AiUnavailableReason | null }> {
+    if (!target) return { available: false, reason: 'NOT_CONFIGURED' }
     if (await this.overBudget()) return { available: false, reason: 'BUDGET' }
-    if (Date.now() < this.openUntil) return { available: false, reason: 'PROVIDER_DOWN' }
+    if (Date.now() < (this.circuits.get(target.connectionId ?? ENVIRONMENT)?.openUntil ?? 0)) return { available: false, reason: 'PROVIDER_DOWN' }
     return { available: true, reason: null }
   }
 
@@ -95,8 +97,8 @@ export class AiGateway {
   }
 
   async generate<T = string>(call: GenerateCall<T>): Promise<Generated<T>> {
-    const adapter = await this.ready(call.userId, call.private)
-    const route = await this.route(call.task, this.config.chatModel)
+    const route = await this.ready(await this.providers.forTask(call.task), call.userId, call.private)
+    const adapter = route.adapter
     const rendered = this.prompts.render(call.prompt, call.vars, call.content)
     const messages: ChatMessage[] = rendered.messages.map((m, i) => (i === rendered.messages.length - 1 && call.images?.length ? { ...m, images: call.images } : m))
     const schema = call.schema ? (z.toJSONSchema(call.schema) as object) : undefined
@@ -104,7 +106,7 @@ export class AiGateway {
     let promptTokens = 0
     let completionTokens = 0
     const ask = async (msgs: ChatMessage[]) => {
-      const res = await this.withRetries(() => adapter.chat({ model: route.model, messages: msgs, schema, maxTokens: call.maxTokens, temperature: call.temperature, timeoutMs: this.config.timeoutMs }, schema ? undefined : call.onDelta))
+      const res = await this.withRetries(route, () => adapter.chat({ model: route.model, messages: msgs, schema, maxTokens: call.maxTokens, temperature: call.temperature, timeoutMs: this.config.timeoutMs }, schema ? undefined : call.onDelta))
       promptTokens += res.promptTokens
       completionTokens += res.completionTokens
       return res.text
@@ -132,16 +134,19 @@ export class AiGateway {
     } catch (e) {
       if (e instanceof ProviderError) {
         await record(false)
-        throw Errors.unavailable('AI is not answering right now. Try again in a minute.')
+        throw Errors.unavailable(e instanceof UnsupportedInput ? e.message : 'AI is not answering right now. Try again in a minute.')
       }
       throw e
     }
   }
 
-  /** The model embeddings come from now (the `EMBED` route, else the environment's), or null when AI does not answer. */
+  /**
+   * The model embeddings come from now (the `EMBED` route, the default embedding connection, else the environment's),
+   * or null when none answers.
+   */
   async embedModel(): Promise<string | null> {
-    if (!(await this.status()).available) return null
-    return this.route('EMBED', this.config.embedModel).then((r) => r.model).catch(() => null)
+    const target = await this.providers.forEmbeddings()
+    return (await this.statusOf(target)).available ? target!.model : null
   }
 
   /**
@@ -150,57 +155,43 @@ export class AiGateway {
    */
   async embed(texts: string[], who: { userId: string | null; private: boolean; task?: string }): Promise<number[][]> {
     if (!texts.length) return []
-    const adapter = await this.ready(who.userId, who.private)
-    const route = await this.route('EMBED', this.config.embedModel)
+    const route = await this.ready(await this.providers.forEmbeddings(), who.userId, who.private)
     const started = Date.now()
     try {
-      const res = await this.withRetries(() => adapter.embed(route.model, texts, this.config.timeoutMs))
+      const res = await this.withRetries(route, () => route.adapter.embed(route.model, texts, this.config.timeoutMs))
       await this.record({ userId: who.userId, task: who.task ?? 'EMBED', model: route.model, promptTokens: res.promptTokens, completionTokens: 0, ok: true, started, route })
       return res.vectors
     } catch (e) {
       if (e instanceof ProviderError) {
         await this.record({ userId: who.userId, task: who.task ?? 'EMBED', model: route.model, promptTokens: 0, completionTokens: 0, ok: false, started, route })
-        throw Errors.unavailable('AI is not answering right now. Try again in a minute.')
+        throw Errors.unavailable(e instanceof UnsupportedInput ? e.message : 'AI is not answering right now. Try again in a minute.')
       }
       throw e
     }
   }
 
-  /** The checks before any call; the adapter when all pass. */
-  private async ready(userId: string | null, isPrivate: boolean): Promise<AiProviderAdapter> {
-    const state = await this.status()
-    if (!state.available || !this.adapter) {
+  /** The checks before any call; who answers when all pass. */
+  private async ready(target: Target | null, userId: string | null, isPrivate: boolean): Promise<Target> {
+    const state = await this.statusOf(target)
+    if (!state.available || !target) {
       throw Errors.unavailable(
         state.reason === 'BUDGET' ? 'AI is paused until next month: this month’s AI budget is used up.' : state.reason === 'PROVIDER_DOWN' ? 'AI is not answering right now. Try again in a minute.' : 'AI is not switched on here.',
       )
     }
-    if (isPrivate && !this.adapter.mayReceivePrivate) throw Errors.unavailable('AI cannot work on private notes here.')
+    if (isPrivate && !target.adapter.mayReceivePrivate) throw Errors.unavailable('AI cannot work on private notes here.')
     if (userId) {
       const { usedToday, limitToday, resetsAt } = await this.allowance(userId)
       if (limitToday !== null && usedToday >= limitToday) throw Errors.rateLimited(Math.ceil((resetsAt.getTime() - Date.now()) / 1000), `You have used today’s AI allowance (${limitToday.toLocaleString('en')} tokens). It renews at midnight UTC.`)
     }
-    return this.adapter
+    return target
   }
 
-  /** The task's model and prices: its row in AiModelRoute, else the environment's default. */
-  private async route(task: string, fallback: string | null): Promise<{ model: string; inPrice: number; outPrice: number }> {
-    const cached = this.routes.get(task)
-    let route = cached && Date.now() - cached.at < ROUTE_CACHE_MS ? cached.route : undefined
-    if (route === undefined) {
-      const row = await this.db.aiModelRoute.findUnique({ where: { task } })
-      route = row ? { model: row.model, inPrice: row.inputMicroUsdPerMTok, outPrice: row.outputMicroUsdPerMTok } : null
-      this.routes.set(task, { at: Date.now(), route })
-    }
-    if (route) return route
-    if (!fallback) throw Errors.unavailable('AI is not switched on here.')
-    return { model: fallback, inPrice: 0, outPrice: 0 }
-  }
-
-  private async withRetries<R>(run: () => Promise<R>): Promise<R> {
+  private async withRetries<R>(target: Target, run: () => Promise<R>): Promise<R> {
+    const key = target.connectionId ?? ENVIRONMENT
     for (let attempt = 0; ; attempt++) {
       try {
         const result = await run()
-        this.failures = 0
+        this.circuits.delete(key)
         return result
       } catch (e) {
         const retry = e instanceof ProviderError && e.retryable && attempt < RETRIES.length
@@ -208,21 +199,32 @@ export class AiGateway {
           await new Promise((r) => setTimeout(r, RETRIES[attempt]))
           continue
         }
-        if (e instanceof ProviderError && ++this.failures >= TRIP_AFTER) {
-          this.openUntil = Date.now() + OPEN_MS
-          this.log.warn(`AI provider failed ${this.failures} times in a row: the circuit is open for ${OPEN_MS / 1000} s — ${e.message}`)
+        if (e instanceof ProviderError && !(e instanceof UnsupportedInput)) {
+          const circuit = this.circuits.get(key) ?? { failures: 0, openUntil: 0 }
+          if (++circuit.failures >= TRIP_AFTER) {
+            circuit.openUntil = Date.now() + OPEN_MS
+            this.log.warn(`AI provider ${target.adapter.name} failed ${circuit.failures} times in a row: its circuit is open for ${OPEN_MS / 1000} s — ${e.message}`)
+          }
+          this.circuits.set(key, circuit)
         }
         throw e
       }
     }
   }
 
-  private async record(u: { userId: string | null; task: string; model: string; promptId?: string; promptVersion?: number; promptTokens: number; completionTokens: number; ok: boolean; started: number; route: { inPrice: number; outPrice: number } }) {
+  /** An `AiUsage` row: what a call (or a connection test, ADR-0065) used and cost. */
+  async record(u: { userId: string | null; task: string; model: string; promptId?: string; promptVersion?: number; promptTokens: number; completionTokens: number; ok: boolean; started: number; route: Target }) {
     const costMicroUsd = Math.round((u.promptTokens * u.route.inPrice + u.completionTokens * u.route.outPrice) / 1_000_000)
     await this.db.aiUsage.create({
-      data: { id: newId(), userId: u.userId, task: u.task, provider: this.adapter!.name, model: u.model, promptId: u.promptId ?? null, promptVersion: u.promptVersion ?? null, promptTokens: u.promptTokens, completionTokens: u.completionTokens, costMicroUsd, latencyMs: Date.now() - u.started, ok: u.ok },
+      data: { id: newId(), userId: u.userId, task: u.task, provider: u.route.adapter.name, connectionId: u.route.connectionId, model: u.model, promptId: u.promptId ?? null, promptVersion: u.promptVersion ?? null, promptTokens: u.promptTokens, completionTokens: u.completionTokens, costMicroUsd, latencyMs: Date.now() - u.started, ok: u.ok },
     })
     if (this.spend) this.spend.microUsd += costMicroUsd
+  }
+
+  /** What AI cost since the start of this UTC month, in millionths of a dollar. */
+  async spentThisMonth(): Promise<number> {
+    const sum = await this.db.aiUsage.aggregate({ _sum: { costMicroUsd: true }, where: { createdAt: { gte: startOfUtcMonth() } } })
+    return sum._sum.costMicroUsd ?? 0
   }
 
   /** This month's spend against the budget (cached a minute); tells the platform at 80 % and 100 %. */

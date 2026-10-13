@@ -5,6 +5,8 @@ import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { startFakeOllama, startPostgres, type FakeOllama } from '@lvn-backend/testing'
 import type { AiConfig } from '../../src/ai.config'
 import { AiGateway } from '../../src/application/ai-gateway'
+import { AiKeys } from '../../src/application/ai-keys'
+import { AiProviders } from '../../src/application/ai-providers'
 import { PromptLibrary } from '../../src/application/prompts'
 import type { AiProviderAdapter } from '../../src/domain/provider'
 import { OllamaProvider } from '../../src/infrastructure/ollama'
@@ -23,8 +25,11 @@ describe('AiGateway', () => {
   const published: { name: string; payload: unknown }[] = []
   const entitlements: Entitlements = { limit: async (userId) => planned.get(userId) ?? null }
   const events = { publish: async (name: string, payload: unknown) => void published.push({ name, payload }), subscribe: () => undefined } as unknown as EventBus
-  const config = (over: Partial<AiConfig> = {}): AiConfig => ({ provider: 'ollama', ollama: { url: ollama.url }, chatModel: 'gemma4', embedModel: 'embeddinggemma', timeoutMs: 5_000, monthlyBudgetMicroUsd: null, publicPipeline: true, ...over })
-  const gateway = (over: Partial<AiConfig> = {}, adapter: AiProviderAdapter | null = new OllamaProvider(ollama.url)) => new AiGateway(db, new PromptLibrary(), config(over), adapter, entitlements, events)
+  const config = (over: Partial<AiConfig> = {}): AiConfig => ({ provider: 'ollama', ollama: { url: ollama.url }, chatModel: 'gemma4', embedModel: 'embeddinggemma', timeoutMs: 5_000, monthlyBudgetMicroUsd: null, publicPipeline: true, keysSecret: null, ...over })
+  const gateway = (over: Partial<AiConfig> = {}, adapter: AiProviderAdapter | null = new OllamaProvider(ollama.url)) => {
+    const c = config(over)
+    return new AiGateway(db, new PromptLibrary(), c, new AiProviders(db, c, adapter, new AiKeys(c)), entitlements, events)
+  }
   const summary = z.object({ summary: z.string(), concepts: z.array(z.string()).min(1) })
   const ask = (g: AiGateway, userId: string | null = newId()) => g.generate({ task: 'SUMMARIZE', userId, private: true, prompt: 'summarize', vars: { language: 'English', sentences: 2 }, content: { title: 'Heaps', body: 'A heap keeps the smallest item on top.' }, schema: summary })
 
@@ -111,7 +116,7 @@ describe('AiGateway', () => {
   })
 
   it('trips the budget breaker when the month’s spend reaches the cap, and tells the platform at 80 % and 100 %', async () => {
-    await db.aiModelRoute.create({ data: { task: 'SUMMARIZE', provider: 'OLLAMA', model: 'gemma4', inputMicroUsdPerMTok: 1_000_000_000, outputMicroUsdPerMTok: 1_000_000_000 } })
+    await db.aiModelRoute.create({ data: { task: 'SUMMARIZE', model: 'gemma4', inputMicroUsdPerMTok: 1_000_000_000, outputMicroUsdPerMTok: 1_000_000_000 } })
     const g = gateway({ monthlyBudgetMicroUsd: 50_000 })
     expect(await g.status()).toEqual({ available: true, reason: null })
     while ((await g.status()).available) await ask(g)
@@ -149,7 +154,7 @@ describe('AiGateway', () => {
   })
 
   it('takes the model from the task’s row when there is one', async () => {
-    await db.aiModelRoute.create({ data: { task: 'SUMMARIZE', provider: 'OLLAMA', model: 'gemma4:27b' } })
+    await db.aiModelRoute.create({ data: { task: 'SUMMARIZE', model: 'gemma4:27b' } })
     await ask(gateway())
     expect(ollama.chats.at(-1)!.model).toBe('gemma4:27b')
   })

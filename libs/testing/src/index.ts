@@ -2,4 +2,5 @@ export { IMAGES, startInfra, startMailpit, startPostgres, startRedis, startS3, s
 export { resetDatabase, workerDatabase } from './database'
 export { Mailbox, type SentMail } from './mail'
 export { fakeEmbedding, startFakeOllama, type FakeChatAnswer, type FakeChatRequest, type FakeOllama } from './ollama'
+export { startFakeAnthropic, startFakeOpenAi, type FakeProvider, type FakeProviderRequest } from './providers'
 export { testSecrets } from './keys'

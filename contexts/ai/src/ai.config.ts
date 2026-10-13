@@ -13,6 +13,8 @@ export interface AiConfig {
   monthlyBudgetMicroUsd: number | null
   /** Study aids for public notes when they are published (ADR-0061) */
   publicPipeline: boolean
+  /** Encrypts the provider keys platform admins save (ADR-0065); null: keys cannot be saved */
+  keysSecret: string | null
 }
 
 export const AI_CONFIG = Symbol('AI_CONFIG')
@@ -25,4 +27,5 @@ export const aiConfigFrom = (c: ApiConfig): AiConfig => ({
   timeoutMs: c.AI_TIMEOUT_MS,
   monthlyBudgetMicroUsd: c.AI_MONTHLY_BUDGET_MICRO_USD ?? null,
   publicPipeline: c.AI_PUBLIC_PIPELINE,
+  keysSecret: c.AI_KEYS_SECRET ?? null,
 })

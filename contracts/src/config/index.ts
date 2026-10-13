@@ -178,6 +178,11 @@ const ai = z.object({
   AI_MONTHLY_BUDGET_MICRO_USD: z.coerce.number().int().min(0).optional(),
   /** Study aids made when a note is published PUBLIC (ADR-0061): five model calls per version, as the platform's work */
   AI_PUBLIC_PIPELINE: flag.default(true),
+  /**
+   * Encrypts the provider keys platform admins save on the AI providers page (ADR-0065); at least 32 characters.
+   * Unset: keys cannot be saved, and connections that need one do not answer. Changing it makes saved keys unreadable
+   */
+  AI_KEYS_SECRET: z.string().min(32).optional(),
 })
 
 const aiConfigured = <T extends { AI_PROVIDER: 'none' | 'ollama'; OLLAMA_URL?: string; AI_CHAT_MODEL?: string; AI_EMBED_MODEL?: string }>(c: T, ctx: z.RefinementCtx) => {
