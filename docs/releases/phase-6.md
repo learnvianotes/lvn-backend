@@ -57,6 +57,20 @@ exam reminders (hourly), recommendations (hourly), close focus sessions (every 1
 - **Classes:** Rhythm and Performance tabs.
 - Learning events in an SQLite outbox, sent every 10 seconds or 20 events and when the network returns.
 
+## After the phase: becoming a teacher (owner's ask)
+
+ADR-0073, 2026-10-13. Asked how teachers get their profiles, the owner chose **"try now, verify later"**:
+- Anyone who is not a child account says they teach: "Teach" at sign-up, or "Teach on LearnViaNotes" on Account.
+  They give where and what they teach, a message and up to three proof files.
+- While the application waits they set up classes, post announcements and prepare quizzes, but nobody can join:
+  inviting, admitting and class performance wait for a platform admin.
+- The admin sees the application in the existing verification queue (`/admin/verification`) and approves (the account
+  becomes `TEACHER` and verified) or declines with a reason (the person may apply again). Both are audited.
+
+Contracts 0.45.0, migration `20261024090000_teacher_onboarding`. Checked on the local environment
+(`lvn-backend:df0727324e59`, `lvn-web:8ccb46ab878e`): smoke 13/13, lifecycle 91/91, live 55/55 + 1 skipped, Maestro
+28/28 with a new `teach` flow. Details in the [plan](../plans/phase-6.md#progress).
+
 ## Bugs found and fixed
 
 - **A new account was told it had missed days before it existed**, and offered a comeback on its first day. Found on
