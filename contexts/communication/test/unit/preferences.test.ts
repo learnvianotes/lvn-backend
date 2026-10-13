@@ -26,7 +26,11 @@ describe('push text (ADR-0021)', () => {
     expect(pushBody('SHARE', {}, null)).toBe('Someone shared a note with you')
     expect(pushBody('DOUBT', { kind: 'ANSWERED' }, 'Ms Rao')).toBe('Ms Rao answered your doubt')
     expect(pushBody('QUIZ_PUBLISHED', {}, 'Ms Rao')).toBe('Ms Rao published a quiz to your class')
-    expect(pushBody('REVISION_REMINDER', {}, 'Ms Rao')).toBe('You have something new')
+    // An exam's revision (ADR-0070) says nothing of the exam; a buddy invite (ADR-0072) names who asked.
+    expect(pushBody('REVISION_REMINDER', { examName: 'Physics' }, null)).toBe('Today’s revision for your exam is waiting')
+    expect(pushBody('RHYTHM_BUDDY', { kind: 'REQUESTED' }, 'Asha')).toBe('Asha asked you to be Rhythm buddies')
+    expect(pushBody('RHYTHM_BUDDY', { kind: 'ACCEPTED' }, null)).toBe('Someone is now your Rhythm buddy')
+    expect(pushBody('STREAK_AT_RISK', {}, 'Ms Rao')).toBe('You have something new')
   })
 
   it('fits the strict contract: ids, category and an in-app path only', () => {
