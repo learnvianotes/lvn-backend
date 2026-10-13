@@ -1,0 +1,121 @@
+# Exams, weak topics and Exam Readiness (§14.2, ADR-0070).
+
+type ExamTopic {
+  "topic:<id>, as learning events name it"
+  key: String!
+  title: String!
+  "The notes topic, when the viewer may still use it"
+  topic: Topic
+  "Mean chance of recalling the topic's studied cards now, 0–1; null without studied cards"
+  recall: Float
+  "Right answers in the topic's last 3 quiz results, 0–1; null without results"
+  accuracy: Float
+  "0.6 × recall + 0.4 × accuracy, or the one there is; 0 with neither"
+  mastery: Float!
+}
+
+type ExamPlanTopic {
+  key: String!
+  title: String!
+}
+
+"One revision session of an exam's plan"
+type ExamPlanTask {
+  id: UUID!
+  "YYYY-MM-DD, a learning day in the learner's zone"
+  day: String!
+  topics: [ExamPlanTopic!]!
+  "10 minutes on its topics that day, or a quiz answered on them"
+  done: Boolean!
+  today: Boolean!
+}
+
+type Exam {
+  id: UUID!
+  name: String!
+  "YYYY-MM-DD, a learning day in the learner's zone"
+  date: String!
+  "0 on the exam's day"
+  daysLeft: Int!
+  past: Boolean!
+  topics: [ExamTopic!]!
+  "Oldest day first"
+  tasks: [ExamPlanTask!]!
+  "Exam Readiness, 0–100: the mean mastery of the topics"
+  readiness: Int!
+  "Where the target line ends on the exam's day, in %"
+  target: Int!
+  "Where the target line is today, in %"
+  targetToday: Int!
+}
+
+enum WeakTopicReason {
+  "Under 60 % right over the topic's last 3 quiz results"
+  LOW_ACCURACY
+  "A topic of an exam in the next 14 days with no time on it in the last 14"
+  NOT_REVISITED
+}
+
+type WeakTopic {
+  key: String!
+  "Null for a /core topic: show its key"
+  title: String
+  topic: Topic
+  reason: WeakTopicReason!
+  accuracy: Float
+  "The soonest exam it is a topic of, if any"
+  examId: UUID
+  examName: String
+  daysLeft: Int
+}
+
+"A topic an exam can be set on"
+type ExamTopicOption {
+  id: UUID!
+  key: String!
+  title: String!
+  subjectTitle: String!
+}
+
+type ExamPayload {
+  exam: Exam
+  userErrors: [UserError!]!
+}
+
+input CreateExamInput {
+  "1–100 characters"
+  name: String!
+  "YYYY-MM-DD, today or later, at most two years away"
+  date: String!
+  "1–20 notes topics the viewer may use"
+  topicIds: [UUID!]!
+}
+
+input UpdateExamInput {
+  id: UUID!
+  name: String
+  date: String
+  "Replaces the topics; the plan is made again from today"
+  topicIds: [UUID!]
+}
+
+input ExamIdInput {
+  id: UUID!
+}
+
+extend type Query {
+  "Signed in only: the viewer's exams from a week ago on, soonest first"
+  exams: [Exam!]!
+  exam(id: UUID!): Exam
+  "Signed in only: weak topics, each with why; an upcoming exam's first"
+  weakTopics: [WeakTopic!]!
+  "Signed in only: topics to set an exam on, by words of their titles (at most 20)"
+  examTopicOptions(query: String!): [ExamTopicOption!]!
+}
+
+extend type Mutation {
+  "Signed in only, as every mutation below; at most 10 upcoming exams"
+  createExam(input: CreateExamInput!): ExamPayload!
+  updateExam(input: UpdateExamInput!): ExamPayload!
+  deleteExam(input: ExamIdInput!): OkPayload!
+}

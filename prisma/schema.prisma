@@ -1210,6 +1210,70 @@ model RhythmWeek {
   @@schema("core")
 }
 
+/// An exam a learner prepares for (ADR-0070): a name, a day in their time zone, and its topics.
+model Exam {
+  id        String         @id @db.Uuid
+  /// Cross-context reference to users.User
+  userId    String         @db.Uuid
+  name      String
+  /// A learning day in the person's zone
+  date      DateTime       @db.Date
+  createdAt DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime       @updatedAt @db.Timestamptz(3)
+  topics    ExamTopic[]
+  tasks     ExamPlanTask[]
+
+  @@index([userId, date])
+  @@schema("core")
+}
+
+model ExamTopic {
+  examId   String @db.Uuid
+  /// topic:<uuid> or core:<subject>/<topic>, as learning events name it
+  topicKey String
+  /// The title when the exam was set, for the plan and the reminders; the notes topic's own title is read live
+  title    String
+  position Int
+  exam     Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@id([examId, topicKey])
+  @@schema("core")
+}
+
+/// One revision session of an exam's plan (ADR-0070): at most one a day for each exam. Done is computed from learning.
+model ExamPlanTask {
+  id         String    @id @db.Uuid
+  examId     String    @db.Uuid
+  /// Cross-context reference to users.User
+  userId     String    @db.Uuid
+  day        DateTime  @db.Date
+  topicKeys  String[]
+  /// When the reminder went, so it goes once
+  remindedAt DateTime? @db.Timestamptz(3)
+  exam       Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, day])
+  @@index([userId, day])
+  @@schema("core")
+}
+
+/// A quiz result on one topic (ADR-0070), from a QUIZ_COMPLETED learning event with topics: weak topics and Readiness
+/// read the last three on each topic.
+model TopicQuizResult {
+  /// Cross-context reference to users.User
+  userId   String   @db.Uuid
+  topicKey String
+  /// The learning event it came from
+  eventId  String   @db.Uuid
+  at       DateTime @db.Timestamptz(3)
+  answered Int
+  correct  Int
+
+  @@id([userId, topicKey, eventId])
+  @@index([userId, topicKey, at(sort: Desc)])
+  @@schema("core")
+}
+
 /// A note whose flashcards a person chose to study (ADR-0068); their own notes' flashcards count without a row.
 model StudyNote {
   /// Cross-context reference to users.User

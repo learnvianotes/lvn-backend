@@ -196,6 +196,8 @@ export const events = {
    * Staff published a quiz to a class (ADR-0064); memberIds are told (at most 1,000 per event). authorId and memberIds
    * are optional, additive in v1 (ADR-0045).
    */
+  // An exam's revision task left in the evening (ADR-0070): the person is reminded once.
+  ExamTaskDue: eventEnvelope('ExamTaskDue', 1, z.object({ userId: uuid, examId: uuid, examName: z.string().max(100), topics: z.array(z.string().max(200)).max(20) })),
   QuizPublished: eventEnvelope('QuizPublished', 1, z.object({ quizId: uuid, classroomId: uuid.optional(), authorId: uuid.optional(), memberIds: z.array(uuid).max(1000).optional() })),
   ContentReported: eventEnvelope('ContentReported', 1, z.object({ reportId: uuid, entityType: z.string(), entityId: uuid })),
   /**

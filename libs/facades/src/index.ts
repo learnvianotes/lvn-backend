@@ -14,4 +14,5 @@ export { NOTE_AI, type NewCard, type NoteAi, type NoteAiCard, type NoteAiSource 
 export { DOUBTS, EMBEDDINGS, LIVE, NOTE_RETRIEVAL, type DoubtForAi, type Doubts, type Embeddings, type Live, type NoteRetrieval, type RetrievalScope, type RetrievedChunk } from './ask-ai'
 export { AI_DATA_EXPORT, CORE_DATA_EXPORT, NOTES_DATA_EXPORT, type DataExportPart, type ExportFile } from './data-export'
 export { LEARNING, type Learning, type ServerLearningEvent } from './learning'
+export { TOPICS, type TopicRef, type Topics } from './topics'
 export { FacadesModule } from './bind'

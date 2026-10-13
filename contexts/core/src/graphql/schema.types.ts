@@ -353,6 +353,15 @@ export interface CreateClassroomPostInput {
   body: unknown
 }
 
+export interface CreateExamInput {
+  /** 1–100 characters */
+  name: string
+  /** YYYY-MM-DD, today or later, at most two years away */
+  date: string
+  /** 1–20 notes topics the viewer may use */
+  topicIds: Array<string>
+}
+
 export interface CreateGroupInput {
   /** 3 to 80 characters */
   name: string
@@ -458,6 +467,72 @@ export interface EditGroupPostInput {
 }
 
 export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE'
+
+export interface Exam {
+  id: string
+  name: string
+  /** YYYY-MM-DD, a learning day in the learner's zone */
+  date: string
+  /** 0 on the exam's day */
+  daysLeft: number
+  past: boolean
+  topics: Array<ExamTopic>
+  /** Oldest day first */
+  tasks: Array<ExamPlanTask>
+  /** Exam Readiness, 0–100: the mean mastery of the topics */
+  readiness: number
+  /** Where the target line ends on the exam's day, in % */
+  target: number
+  /** Where the target line is today, in % */
+  targetToday: number
+}
+
+export interface ExamIdInput {
+  id: string
+}
+
+export interface ExamPayload {
+  exam: Exam | null
+  userErrors: Array<UserError>
+}
+
+/** One revision session of an exam's plan */
+export interface ExamPlanTask {
+  id: string
+  /** YYYY-MM-DD, a learning day in the learner's zone */
+  day: string
+  topics: Array<ExamPlanTopic>
+  /** 10 minutes on its topics that day, or a quiz answered on them */
+  done: boolean
+  today: boolean
+}
+
+export interface ExamPlanTopic {
+  key: string
+  title: string
+}
+
+export interface ExamTopic {
+  /** topic:<id>, as learning events name it */
+  key: string
+  title: string
+  /** The notes topic, when the viewer may still use it */
+  topic: Topic | null
+  /** Mean chance of recalling the topic's studied cards now, 0–1; null without studied cards */
+  recall: number | null
+  /** Right answers in the topic's last 3 quiz results, 0–1; null without results */
+  accuracy: number | null
+  /** 0.6 × recall + 0.4 × accuracy, or the one there is; 0 with neither */
+  mastery: number
+}
+
+/** A topic an exam can be set on */
+export interface ExamTopicOption {
+  id: string
+  key: string
+  title: string
+  subjectTitle: string
+}
 
 export interface Group {
   id: string
@@ -887,6 +962,18 @@ export interface MutationReactArgs {
   input: ReactInput
 }
 
+export interface MutationCreateExamArgs {
+  input: CreateExamInput
+}
+
+export interface MutationUpdateExamArgs {
+  input: UpdateExamInput
+}
+
+export interface MutationDeleteExamArgs {
+  input: ExamIdInput
+}
+
 export interface MutationCreateGroupArgs {
   input: CreateGroupInput
 }
@@ -1103,6 +1190,14 @@ export interface QueryDiscussionArgs {
   target: CommentTargetInput
 }
 
+export interface QueryExamArgs {
+  id: string
+}
+
+export interface QueryExamTopicOptionsArgs {
+  query: string
+}
+
 export interface QueryGroupArgs {
   id: string
 }
@@ -1307,6 +1402,7 @@ export interface Rhythm {
   pauses: Array<RhythmPause>
   /** Of the 14 a term */
   pauseDaysLeft: number
+  suggestion: RhythmSuggestion | null
 }
 
 export interface RhythmDay {
@@ -1323,10 +1419,14 @@ export type RhythmDayStatus = 'COUNTED' | 'MISSED' | 'REST' | 'PAUSED' | 'TODAY'
 
 /** One part of today's ring */
 export interface RhythmItem {
-  /** REVIEWS now; PLAN_TASK and WEAK_TOPIC with the exam planner */
+  /** REVIEWS, PLAN_TASK (today's exam-plan tasks) or WEAK_TOPIC (one weak topic, done at 10 minutes on it today) */
   kind: string
   done: number
   total: number
+  /** The exams of today's tasks, or the weak topic's title (null for a /core topic) */
+  title: string | null
+  /** The weak topic's key */
+  topicKey: string | null
 }
 
 export interface RhythmPause {
@@ -1342,6 +1442,14 @@ export interface RhythmPauseIdInput {
 }
 
 export type RhythmPauseReason = 'EXAMS' | 'ILLNESS' | 'FESTIVAL' | 'TRAVEL' | 'OTHER'
+
+/** Three weeks before an exam, one more planned day a week; nothing changes until the learner sets it */
+export interface RhythmSuggestion {
+  plannedDays: number
+  examId: string
+  examName: string
+  daysLeft: number
+}
 
 export interface RhythmToday {
   day: string
@@ -1433,6 +1541,14 @@ export interface UpdateClassroomInput {
   newCode?: boolean | null
 }
 
+export interface UpdateExamInput {
+  id: string
+  name?: string | null
+  date?: string | null
+  /** Replaces the topics; the plan is made again from today */
+  topicIds?: Array<string> | null
+}
+
 export interface UpdateGroupInput {
   groupId: string
   name?: string | null
@@ -1451,3 +1567,18 @@ export interface UserError {
   message: string
   code: ErrorCode
 }
+
+export interface WeakTopic {
+  key: string
+  /** Null for a /core topic: show its key */
+  title: string | null
+  topic: Topic | null
+  reason: WeakTopicReason
+  accuracy: number | null
+  /** The soonest exam it is a topic of, if any */
+  examId: string | null
+  examName: string | null
+  daysLeft: number | null
+}
+
+export type WeakTopicReason = 'LOW_ACCURACY' | 'NOT_REVISITED'

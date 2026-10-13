@@ -538,6 +538,22 @@ if (opt('--vm') && (await gql('{ aiStatus { available } }')).aiStatus.available)
   ok(plan.ok && paused.ok && ended.ok && during.plannedDays.length === 6 && during.pauses[0]?.active && during.pauseDaysLeft === 13 && !after.pauses.length && after.pauseDaysLeft === 14, 'A plans six days, pauses today for exams, and ends the pause: its day comes back', JSON.stringify([plan, paused, ended].map((x) => x.userErrors[0]?.message ?? 'ok')))
 }
 
+// Exams (ADR-0070): A sets an exam on a topic, answers a quiz on it in a note (one wrong), and sees the topic weak,
+// the plan's sessions and Readiness from the answer.
+{
+  const topic = (await gql('query ($q: String!) { examTopicOptions(query: $q) { id title } }', { q: 'array' }, A.token)).examTopicOptions[0]
+  const day = (n) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10)
+  const made = topic ? (await gql('mutation ($input: CreateExamInput!) { createExam(input: $input) { exam { id readiness tasks { day } } userErrors { message } } }', { input: { name: `Exam ${WORD}`, date: day(30), topicIds: [topic.id] } }, A.token)).createExam : null
+  await gql('mutation ($input: TrackEventsInput!) { trackEvents(input: $input) { accepted } }', { input: { timeZone: 'Asia/Kolkata', events: [{ id: newId(), type: 'QUIZ_COMPLETED', entityType: 'NOTE_CARD', entityId: newId(), topicKeys: topic ? [`topic:${topic.id}`] : [], metadata: { answered: 2, correct: 0 }, clientTs: new Date().toISOString(), platform: 'WEB' }] } }, A.token)
+  let weak = []
+  for (let i = 0; i < 20 && !weak.length; i++) {
+    weak = (await gql('{ weakTopics { key reason accuracy } }', {}, A.token)).weakTopics
+    if (!weak.length) await new Promise((r) => setTimeout(r, 500))
+  }
+  const exam = made?.exam ? (await gql('query ($id: UUID!) { exam(id: $id) { readiness topics { accuracy } tasks { day } } }', { id: made.exam.id }, A.token)).exam : null
+  ok(!!topic && !!made?.exam && made.exam.tasks.length === 1 && weak.some((w) => w.key === `topic:${topic.id}` && w.reason === 'LOW_ACCURACY') && exam?.topics[0]?.accuracy === 0, 'A sets an exam a month away on a topic; a wrong quiz answer makes it weak and counts in Readiness', JSON.stringify({ topic: topic?.title, error: made?.userErrors[0]?.message, weak, exam }))
+}
+
 console.log(`1..${n}`)
 if (failed) {
   console.log(`# ${failed} of ${n} checks failed`)
