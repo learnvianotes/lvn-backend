@@ -114,3 +114,41 @@ decided:
   - the note's "cards seen" share for Continue learning.
 - Each needs its tests, its export and its erasure.
 - Built as slices UI-a…UI-e, each checked on the local environment like a phase slice.
+
+## Implementation notes (UI-a, UI-c; 2026-10-14)
+
+The owner added, during UI-a: "make sure we don't have dead buttons or dead views in the app and website after phase 7
+with the new UI implementation i asked for". So every slice:
+- wires each control, or does not show it;
+- has tests that its controls lead somewhere real;
+- leaves a full sweep of both apps for the Phase 7 exit.
+
+What the slices settled:
+- **The sidebar's "Saved" is called "Bookmarks"**, so it is not mistaken for the editor's "Saved" status. Until saved
+  notes arrive (UI-d) it opens saved resources.
+- **Public pages keep a signed-in person in the app's frame.** These are the catalogue, a resource, a public note, a
+  profile and the legal pages.
+  - The server still renders the visitor's header, so the pages stay static and indexable.
+  - The tab switches to the sidebar and top bar once it knows the session.
+  - The landing page keeps the visitor's frame.
+  - Without this, Resources in the sidebar dropped a learner out of the app, and on a phone the menu was gone.
+- **"…or ask AI"**: the top bar's search promises AI, so the palette offers "Ask AI: “…”". It opens Ask AI with the
+  words filled in as a question. Nothing is sent until the person sends it, because AI has a daily allowance.
+- **The phone's Profile tab** shows the person, their department and year, and counts of notes, followers and
+  following.
+  - Notes are the person's own notes on the phone; the phone keeps them all.
+  - The account moves to Settings, behind the gear: verification, college email, study details, old-site data, AI,
+    notification settings, data, imports and sign-out.
+  - On the phone, data-export and import notifications (`/profile` on the web) open Settings. The new-terms screen
+    leads there to sign out.
+- **Home's tiles and the create sheet share one set of actions.**
+  - Upload puts a PDF, picture, video or recording in a new note named after the file; a PDF opens in the reader.
+  - Quiz and Flashcards start a note with that card. Before, they did nothing.
+- **Recommendations always open something.** A topic to revise or be quizzed on opens its notes in Explore, by the
+  topic or, for a core subject's topic, by its name.
+- **Focus mode's pause** ends the session, so its time counts. Resume starts a new session for what was left. Breaks
+  are timed on the phone and never sent, so the server's rule (ADR-0072) is unchanged.
+- **Placeholders that were not data are gone:**
+  - the draft legal pages' "mailto:[…]" links are text until the owner fills them in;
+  - a /core problem without a video has no greyed-out video button;
+  - the phone prototype's placeholder screen and mock data, never rendered, are removed.
