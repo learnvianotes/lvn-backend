@@ -11,6 +11,8 @@ terraform {
 
 provider "aws" {
   region = var.region
+  # The AWS stand-in (ADR-0066): an emulator at AWS_ENDPOINT_URL serves buckets by path, not by host name.
+  s3_use_path_style = var.aws_emulator
   default_tags {
     tags = { Project = "learnvianotes", Environment = var.environment, ManagedBy = "terraform" }
   }

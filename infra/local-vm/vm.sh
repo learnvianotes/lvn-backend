@@ -8,12 +8,16 @@
 #   infra/local-vm/vm.sh status | stop | destroy
 #   infra/local-vm/vm.sh ssh-command  the ssh command line, for rsync -e (user lvn@127.0.0.1)
 #
+# LVN_VM_ENV=<env> runs another environment's VM with settings from envs/<env>/.env, e.g. `emulated`, the AWS
+# stand-in (ADR-0066). Each needs its own LVN_VM_DIR and LVN_VM_SSH_PORT; a port set to `off` is not forwarded.
+#
 # Needs qemu-system-x86_64 with KVM (/dev/kvm), curl, xz, sha512sum, ssh-keygen and python3 (serves the first-boot
 # configuration to the VM on 127.0.0.1 only).
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
-env_file="$here/../terraform/envs/local/.env"
+vm_env=${LVN_VM_ENV:-local}
+env_file="$here/../terraform/envs/$vm_env/.env"
 if [ -f "$env_file" ]; then
   set -a
   # shellcheck disable=SC1090
@@ -21,7 +25,7 @@ if [ -f "$env_file" ]; then
   set +a
 fi
 
-dir=${LVN_VM_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/lvn-vm}
+dir=${LVN_VM_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/lvn-$([ "$vm_env" = local ] || echo "$vm_env-")vm}
 cpus=${LVN_VM_CPUS:-6}
 memory=${LVN_VM_MEMORY_MB:-8192}
 disk_size=${LVN_VM_DISK:-40G}
@@ -32,6 +36,8 @@ addresses=${LVN_VM_PUBLISH_ADDRESSES:-127.0.0.1}
 http_port=${LVN_VM_HTTP_PORT:-8080}
 s3_port=${LVN_VM_S3_PORT:-8081}
 mail_port=${LVN_VM_MAIL_PORT:-8025}
+# More forwards, comma-separated in QEMU's form <host address>:<host port>-:<guest port>, e.g. 127.0.0.1:4566-:4566.
+forwards=${LVN_VM_FORWARDS:-}
 
 image_base=https://cloud.debian.org/images/cloud/trixie/latest
 image=debian-13-genericcloud-amd64.tar.xz
@@ -61,15 +67,21 @@ create() {
   truncate -s "$disk_size" "$dir/disk.raw"
   [ -f "$key" ] || ssh-keygen -q -t ed25519 -N '' -C lvn-local-vm -f "$key"
   mkdir -p "$dir/seed"
-  printf 'instance-id: lvn-local-1\nlocal-hostname: lvn-local\n' > "$dir/seed/meta-data"
+  printf 'instance-id: lvn-%s-1\nlocal-hostname: lvn-%s\n' "$vm_env" "$vm_env" > "$dir/seed/meta-data"
   sed -e "s|@SSH_PUBLIC_KEY@|$(cat "$key.pub")|" -e "s|@HASHICORP_KEY_FINGERPRINT@|$hashicorp_key|" \
-    -e "s|@TERRAFORM_VERSION@|$terraform_version|" "$here/user-data.yaml" > "$dir/seed/user-data"
+    -e "s|@TERRAFORM_VERSION@|$terraform_version|" -e "s|@HOSTNAME@|lvn-$vm_env|" "$here/user-data.yaml" > "$dir/seed/user-data"
 }
 
 boot() {
-  local fwd="hostfwd=tcp:127.0.0.1:$ssh_port-:22,hostfwd=tcp:127.0.0.1:$mail_port-:8025" a seed=() server=
+  local fwd="hostfwd=tcp:127.0.0.1:$ssh_port-:22" a f seed=() server=
+  [ "$mail_port" = off ] || fwd+=",hostfwd=tcp:127.0.0.1:$mail_port-:8025"
   IFS=, read -ra list <<< "$addresses"
-  for a in "${list[@]}"; do fwd+=",hostfwd=tcp:$a:$http_port-:80,hostfwd=tcp:$a:$s3_port-:9000"; done
+  for a in "${list[@]}"; do
+    [ "$http_port" = off ] || fwd+=",hostfwd=tcp:$a:$http_port-:80"
+    [ "$s3_port" = off ] || fwd+=",hostfwd=tcp:$a:$s3_port-:9000"
+  done
+  IFS=, read -ra list <<< "$forwards"
+  for f in "${list[@]}"; do fwd+=",hostfwd=tcp:$f"; done
   if [ ! -f "$dir/provisioned" ]; then
     # First boot: cloud-init fetches meta-data and user-data from this server (QEMU's 10.0.2.2 is the host's loopback).
     local port
@@ -78,8 +90,8 @@ boot() {
     server=$!
     seed=(-smbios "type=1,serial=ds=nocloud;s=http://10.0.2.2:$port/")
   fi
-  echo "==> Booting (${cpus} CPUs, ${memory} MiB; entrance on ${addresses} port $http_port)"
-  qemu-system-x86_64 -name lvn-local -machine q35,accel=kvm -cpu host -smp "$cpus" -m "$memory" \
+  echo "==> Booting lvn-$vm_env (${cpus} CPUs, ${memory} MiB$([ "$http_port" = off ] || echo "; entrance on ${addresses} port $http_port"))"
+  qemu-system-x86_64 -name "lvn-$vm_env" -machine q35,accel=kvm -cpu host -smp "$cpus" -m "$memory" \
     -drive "file=$dir/disk.raw,format=raw,if=virtio,cache=none,discard=unmap" \
     -netdev "user,id=net0,$fwd" -device virtio-net-pci,netdev=net0 -device virtio-rng-pci \
     "${seed[@]}" -display none -serial "file:$dir/console.log" -pidfile "$dir/qemu.pid" -daemonize
@@ -99,7 +111,7 @@ case ${1:-} in
     running && { echo "Already running."; exit 0; }
     [ -f "$dir/disk.raw" ] || create
     boot
-    echo "Ready: infra/local-vm/vm.sh ssh"
+    echo "Ready: $([ "$vm_env" = local ] || echo "LVN_VM_ENV=$vm_env ")infra/local-vm/vm.sh ssh"
     ;;
   ssh)
     shift
@@ -121,8 +133,8 @@ case ${1:-} in
     ;;
   destroy)
     running && "$0" stop
-    read -rp "Delete the VM's disk and keys in $dir (everything in the local environment)? [y/N] " yes
+    read -rp "Delete the VM's disk and keys in $dir (everything in the $vm_env environment)? [y/N] " yes
     [ "$yes" = y ] && rm -rf "$dir/disk.raw" "$dir/seed" "$dir/provisioned" "$dir/known_hosts" "$dir"/id_ed25519* && echo "Deleted (the image cache stays)."
     ;;
-  *) sed -n '2,12p' "$0"; exit 1 ;;
+  *) sed -n '2,15p' "$0"; exit 1 ;;
 esac

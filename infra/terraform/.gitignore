@@ -1,4 +1,6 @@
 .terraform/
+# Another environment's copy of a root module's .terraform (TF_ROOT, ADR-0066)
+.terraform-*/
 *.tfstate
 *.tfstate.*
 *.tfvars

@@ -57,12 +57,13 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `TYPESENSE_COLLECTION_PREFIX` | api, worker | no | `lvn_` | Prefix of every collection, alias and stop-word set, so environments can share a cluster |
 | `SEARCH_TIMEOUT_MS` | api | no | `800` | A Typesense answer slower than this is dropped and Postgres answers instead |
 | `SEARCH_HYBRID` | api | no | `false` | Hybrid ranking (ADR-0057): keyword and semantic ranks fused by reciprocal rank fusion. Changes nothing until Phase 5 binds a semantic source |
-| `AI_PROVIDER` | api, worker | no | `none` (AI off) | `ollama`: a local model (ADR-0058). Needs the three below |
+| `AI_PROVIDER` | api, worker | no | `none` (AI off) | `ollama`: a local model (ADR-0058). Needs the three below. Answers when platform admins have not chosen a connection on /admin/ai (ADR-0065) |
 | `OLLAMA_URL` | api, worker | with `ollama` | — | Ollama's HTTP API: `http://127.0.0.1:11434` on a dev machine, `http://10.0.2.2:11434` from the local VM (QEMU's address for the host) |
 | `AI_CHAT_MODEL` | api, worker | with `ollama` | — | Default model for text and images (`gemma4`); `ai.AiModelRoute` rows override it per task |
 | `AI_EMBED_MODEL` | api, worker | with `ollama` | — | Default embedding model (`embeddinggemma`, 768 dimensions) |
 | `AI_TIMEOUT_MS` | api, worker | no | `120000` | A provider call slower than this fails (a local model's first call loads it) |
 | `AI_MONTHLY_BUDGET_MICRO_USD` | api, worker | no | — (no cap) | The environment's monthly AI budget in millionths of a dollar: at it, the breaker pauses AI until next month (§10.1) |
+| `AI_KEYS_SECRET` | api, worker | no | — (keys cannot be saved) | Encrypts the provider keys platform admins save on the web's AI providers page (AES-256-GCM, ADR-0065); at least 32 characters. Changing it makes saved keys unreadable: enter them again |
 | `AI_PUBLIC_PIPELINE` | api, worker | no | `true` | Study aids (summary, key concepts, questions, quiz, flashcards) made when a note is published PUBLIC: five model calls per version, as the platform's work (ADR-0061) |
 | `POSTHOG_HOST` | api, worker | with the key | — (off) | A self-hosted PostHog that gets a pseudonymous copy of learning events from the worker (type, platform, duration; an HMAC of the user id), ADR-0067 |
 | `POSTHOG_API_KEY` | api, worker | with the host | — (off) | The PostHog project's key |

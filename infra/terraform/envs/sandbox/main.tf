@@ -12,8 +12,9 @@ locals {
     JWT_PRIVATE_KEY      = tls_private_key.jwt.private_key_pem_pkcs8
     JWT_PUBLIC_KEY       = tls_private_key.jwt.public_key_pem
     CODE_HMAC_SECRET     = random_password.code_hmac.result
+    AI_KEYS_SECRET       = random_password.ai_keys.result
   }
-  backend_secret_names = ["DATABASE_URL", "REDIS_URL", "JWT_PRIVATE_KEY", "JWT_PUBLIC_KEY", "CODE_HMAC_SECRET"]
+  backend_secret_names = ["DATABASE_URL", "REDIS_URL", "JWT_PRIVATE_KEY", "JWT_PUBLIC_KEY", "CODE_HMAC_SECRET", "AI_KEYS_SECRET"]
   optional = {
     FIREBASE_PROJECT_ID         = var.firebase_project_id
     SENTRY_DSN                  = var.sentry_dsn
@@ -21,13 +22,19 @@ locals {
   }
 }
 
-# RS256 key pair for access tokens (§7.1) and the secret that hashes short codes.
+# RS256 key pair for access tokens (§7.1), the secret that hashes short codes, and the one that encrypts the AI
+# provider keys admins save (ADR-0065).
 resource "tls_private_key" "jwt" {
   algorithm = "RSA"
   rsa_bits  = 2048
 }
 
 resource "random_password" "code_hmac" {
+  length  = 48
+  special = false
+}
+
+resource "random_password" "ai_keys" {
   length  = 48
   special = false
 }
@@ -45,6 +52,7 @@ module "data" {
   security_group_id = module.network.data_security_group_id
   db_instance_class = var.db_instance_class
   redis_node_type   = var.redis_node_type
+  aws_emulator      = var.aws_emulator
 }
 
 module "storage" {
@@ -117,6 +125,7 @@ module "edge" {
   name         = var.name
   alb_arn      = module.service.alb_arn
   alb_dns_name = module.service.alb_dns_name
+  aws_emulator = var.aws_emulator
 }
 
 resource "aws_budgets_budget" "monthly" {

@@ -1,7 +1,7 @@
 # Learning events (P6a)
 
 - Date: 2026-10-13
-- Package: `@lvn/contracts` (minor bump at merge)
+- Package: `@lvn/contracts` 0.41.0
 - Spec: §14.1; ADR-0067
 - Breaking: no
 

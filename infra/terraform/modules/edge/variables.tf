@@ -15,3 +15,9 @@ variable "price_class" {
   type        = string
   default     = "PriceClass_200"
 }
+
+variable "aws_emulator" {
+  description = "true only for the AWS stand-in (ADR-0066): leaves out what Moto cannot create"
+  type        = bool
+  default     = false
+}

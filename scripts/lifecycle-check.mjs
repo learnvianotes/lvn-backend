@@ -148,10 +148,11 @@ if (aiStatus.available) {
   const artifactId = run.runAiTask.artifact?.id
   ok(run.runAiTask.artifact?.status === 'QUEUED', "B asks AI for flashcards of A's note", run.runAiTask.userErrors[0]?.message)
   let made
+  // The local model answers one request at a time: behind the PDF pages it reads again, the first task can wait minutes.
   const settled = await eventually(async () => {
     made = (await gql('query ($id: UUID!) { aiArtifact(id: $id) { status fromPublishedVersion cards { type } error } }', { id: artifactId }, B.token)).aiArtifact
     return made.status === 'READY' || made.status === 'FAILED'
-  }, 180_000)
+  }, 360_000)
   ok(settled && made.status === 'READY' && made.fromPublishedVersion && made.cards.length > 0 && made.cards.every((c) => c.type === 'flashcard'), 'the worker makes them with the real model, from the published version', made?.error ?? `${made?.cards?.length ?? 0} cards`)
   const kept = await gql('mutation ($input: KeepAiCardsInput!) { keepAiCards(input: $input) { noteId userErrors { message } } }', { input: { artifactId, cardIndexes: [0], into: 'NEW_NOTE' } }, B.token)
   const keptId = kept.keepAiCards.noteId
@@ -483,6 +484,28 @@ if (opt('--vm') && (await gql('{ aiStatus { available } }')).aiStatus.available)
   // The entrance takes turns between the two API instances: both answer again.
   const answering = async () => (await gql('{ aiStatus { available } }')).aiStatus.available
   ok(await eventually(async () => (await answering()) && (await answering()), 150_000), 'last month’s spend does not count: AI answers again')
+}
+
+// Learning events (ADR-0067, Phase 6): a batch counts once however often it is sent; time lands on A's day in their
+// time zone; the server records A's note; the coming months' partitions exist (--vm).
+{
+  const now = new Date().toISOString()
+  const batch = [
+    { id: newId(), type: 'TIME_SPENT', durationMs: 660_000, metadata: { activity: 'FOCUS' }, clientTs: now, platform: 'WEB' },
+    { id: newId(), type: 'NOTE_OPENED', entityType: 'NOTE', entityId: id, clientTs: now, platform: 'WEB' },
+  ]
+  const TRACK = 'mutation ($input: TrackEventsInput!) { trackEvents(input: $input) { accepted duplicates rejected { index message } } }'
+  const first = (await gql(TRACK, { input: { events: batch, timeZone: 'Asia/Kolkata' } }, A.token)).trackEvents
+  const again = (await gql(TRACK, { input: { events: batch, timeZone: 'Asia/Kolkata' } }, A.token)).trackEvents
+  ok(first.accepted === 2 && again.accepted === 0 && again.duplicates === 2, 'learning events count once, however often a batch is sent', JSON.stringify([first, again]))
+  if (opt('--vm')) {
+    const value = (statement) => execFileSync(opt('--vm'), ['ssh', `docker exec lvn-local-postgres psql -U lvn -d lvn -tAc "${statement}"`], { stdio: 'pipe' }).toString().trim()
+    const learning = Number(value(`SELECT coalesce(sum(\\"learningSeconds\\"), 0) FROM core.\\"LearningDay\\" WHERE \\"userId\\" = '${A.id}'`))
+    const created = Number(value(`SELECT count(*) FROM learning.\\"LearningEvent\\" WHERE \\"userId\\" = '${A.id}' AND type = 'NOTE_CREATED'`))
+    ok(learning >= 660 && created >= 1, 'the focus time is on A’s day, and the server recorded the notes A created', `${learning} s, ${created} NOTE_CREATED`)
+    const partitions = Number(value(`SELECT count(*) FROM pg_inherits WHERE inhparent = 'learning.\\"LearningEvent\\"'::regclass`))
+    ok(partitions >= 5, 'learning events have this month’s and the next three months’ partitions', `${partitions} partitions`)
+  }
 }
 
 console.log(`1..${n}`)
