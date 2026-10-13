@@ -32,6 +32,9 @@ whether it counts: 10 learning minutes or 10 reviews.
      when asked. A week closed before a late event arrived is reopened by that event.
 3. **Never miss twice.**
    - A planned day that ended uncounted, and not paused, is a miss.
+   - Nothing before the person's first day is planned or missed. Their first day is the earlier of the day they joined
+     and their first learning day (old-site days included). A new account's first week aims only for the planned days
+     from that day on.
    - The day after a miss, Today shows a **Comeback**: the same low bar, with a bigger ring fill.
    - If that day counts, the week's `comebacks` goes up and the person is told plainly ("Back on rhythm").
    - Nothing ever says "lost".

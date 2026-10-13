@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
+import { PEOPLE, type People } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { countsForRhythm, learningDay } from '../domain/learning-day'
 import { addDays, DEFAULT_PLANNED_DAYS, PAUSE_DAYS_PER_TERM, pauseDaysUsed, termStart, validPlan, weekStart, weekState, type Pause, type WeekState } from '../domain/rhythm'
@@ -26,6 +27,7 @@ export class RhythmService implements OnModuleInit {
     private readonly learning: LearningEventsService,
     private readonly reviews: ReviewsService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
+    @Inject(PEOPLE) private readonly people: People,
   ) {}
 
   onModuleInit(): void {
@@ -78,10 +80,16 @@ export class RhythmService implements OnModuleInit {
     return new Set(rows.filter((r) => countsForRhythm({ learningSeconds: r.learningSeconds + r.legacyLearningSeconds, reviews: r.reviews })).map((r) => day(r.day)))
   }
 
+  /** The person's first day: the earlier of joining and their first learning day (old-site days included). */
+  private async since(userId: string, timeZone: string): Promise<string | undefined> {
+    const [joined, first] = await Promise.all([this.people.joinedAt(userId), this.db.learningDay.findFirst({ where: { userId }, orderBy: { day: 'asc' }, select: { day: true } })])
+    return [joined ? learningDay(joined, timeZone) : null, first ? day(first.day) : null].filter((d): d is string => !!d).sort()[0]
+  }
+
   private async week(userId: string, start: string, today: string, plannedDays: number[], pauses: Pause[]): Promise<WeekState> {
     // A week back too, for "the day after a miss" at the week's start.
-    const counted = await this.countedDays(userId, addDays(start, -7), addDays(start, 6))
-    return weekState({ today, plannedDays, counted, pauses }, start)
+    const [counted, since] = await Promise.all([this.countedDays(userId, addDays(start, -7), addDays(start, 6)), this.since(userId, await this.learning.timeZoneOf(userId))])
+    return weekState({ today, since, plannedDays, counted, pauses }, start)
   }
 
   async rhythm(userId: string, now = new Date()) {

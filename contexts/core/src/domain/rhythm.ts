@@ -42,6 +42,11 @@ export function validPlan(days: number[]): boolean {
 export interface WeekInput {
   /** The person's learning day today */
   today: string
+  /**
+   * The person's first day: the earlier of the day they joined and their first learning day (old-site days included).
+   * Days before it are neither planned nor missed.
+   */
+  since?: string
   plannedDays: readonly number[]
   /** Learning days that counted (ADR-0030's bar) */
   counted: ReadonlySet<string>
@@ -75,7 +80,7 @@ export interface WeekState {
 /** One week as Rhythm shows it, for the week `today` is in (or a past week, with `today` after it). */
 export function weekState(input: WeekInput, start = weekStart(input.today)): WeekState {
   const days = daysBetween(start, addDays(start, 6)).map((day): WeekDay => {
-    const planned = input.plannedDays.includes(weekday(day))
+    const planned = input.plannedDays.includes(weekday(day)) && !(input.since && day < input.since)
     const counted = input.counted.has(day)
     const paused = pausedOn(day, input.pauses)
     let status: RhythmDayStatus
@@ -87,7 +92,8 @@ export function weekState(input: WeekInput, start = weekStart(input.today)): Wee
     return { day, weekday: weekday(day), planned, counted, status }
   })
   const pausedPlanned = days.filter((d) => d.planned && pausedOn(d.day, input.pauses)).length
-  const target = Math.max(input.plannedDays.length - pausedPlanned, 1)
+  const beforeStart = days.filter((d) => !d.planned && input.plannedDays.includes(d.weekday)).length
+  const target = Math.max(input.plannedDays.length - pausedPlanned - beforeStart, 1)
   const countedDays = days.filter((d) => d.counted).length
   return {
     weekStart: start,
@@ -106,9 +112,10 @@ export function weekState(input: WeekInput, start = weekStart(input.today)): Wee
  * Whether the last planned, unpaused day before `day` (looking back at most a week, past rest days) ended uncounted:
  * the day after a miss. A day counted since then ends it.
  */
-export function missedBefore(day: string, input: Pick<WeekInput, 'plannedDays' | 'counted' | 'pauses'>): boolean {
+export function missedBefore(day: string, input: Pick<WeekInput, 'plannedDays' | 'counted' | 'pauses' | 'since'>): boolean {
   for (let i = 1; i <= 7; i++) {
     const d = addDays(day, -i)
+    if (input.since && d < input.since) return false
     if (input.counted.has(d)) return false
     if (pausedOn(d, input.pauses)) continue
     if (input.plannedDays.includes(weekday(d))) return true
