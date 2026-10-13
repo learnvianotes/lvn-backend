@@ -20,8 +20,8 @@ const text = (v: unknown, max: number): string | null => {
 
 /**
  * Books by ISBN from Open Library (ADR-0074): no key, one request at a time, each through the safe fetcher (which
- * names LearnViaNotes in its User-Agent, as Open Library asks). The edition, its first three authors and, when the
- * edition has none, its work's description.
+ * names LearnViaNotes in its User-Agent, as Open Library asks). The edition, and its work for the authors and the
+ * description when the edition lacks them; at most three authors.
  */
 export class OpenLibrary {
   constructor(
@@ -40,21 +40,36 @@ export class OpenLibrary {
     }
   }
 
+  /** `/authors/OL…A` keys from an edition's `[{ key }]` or a work's `[{ author: { key } }]`. */
+  private authorKeys(list: unknown): string[] {
+    if (!Array.isArray(list)) return []
+    return list.flatMap((a: Json) => {
+      const key = (a?.key ?? (a?.author as Json | undefined)?.key) as unknown
+      return typeof key === 'string' && /^\/authors\/OL\d+A$/.test(key) ? [key] : []
+    })
+  }
+
   /** null when Open Library does not know the ISBN or does not answer. */
   async byIsbn(isbn: string): Promise<OpenLibraryBook | null> {
     const edition = await this.json(`/isbn/${isbn}.json`)
     const title = text(edition?.title, 200)
     if (!edition || !title) return null
     const subtitle = text(edition.subtitle, 200)
+    // Authors are on the edition, or often only on its work (as { author: { key } }), which also has the description.
+    const work = (Array.isArray(edition.works) ? edition.works[0] : null) as Json | null
+    const workKey = typeof work?.key === 'string' && /^\/works\/OL\d+W$/.test(work.key) ? work.key : null
+    let description = text(edition.description, 2_000)
+    let authorKeys = this.authorKeys(edition.authors)
+    if ((!description || !authorKeys.length) && workKey) {
+      const w = await this.json(`${workKey}.json`)
+      description ??= text(w?.description, 2_000)
+      if (!authorKeys.length) authorKeys = this.authorKeys(w?.authors)
+    }
     const names: string[] = []
-    for (const a of (Array.isArray(edition.authors) ? edition.authors : []).slice(0, 3) as Json[]) {
-      const key = typeof a?.key === 'string' && /^\/authors\/OL\d+A$/.test(a.key) ? a.key : null
-      const name = key ? text((await this.json(`${key}.json`))?.name, 100) : null
+    for (const key of authorKeys.slice(0, 3)) {
+      const name = text((await this.json(`${key}.json`))?.name, 100)
       if (name) names.push(name)
     }
-    let description = text(edition.description, 2_000)
-    const work = (Array.isArray(edition.works) ? edition.works[0] : null) as Json | null
-    if (!description && typeof work?.key === 'string' && /^\/works\/OL\d+W$/.test(work.key)) description = text((await this.json(`${work.key}.json`))?.description, 2_000)
     const cover = Array.isArray(edition.covers) ? edition.covers.find((c) => typeof c === 'number' && c > 0) : undefined
     return {
       title: subtitle ? `${title}: ${subtitle}`.slice(0, 200) : title,

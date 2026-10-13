@@ -604,7 +604,7 @@ if (opt('--vm')) {
   sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'INSTITUTIONAL_EMAIL' WHERE id = '${G.id}'`)
   sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'INSTITUTIONAL_EMAIL', \\"globalRole\\" = 'PLATFORM_ADMIN' WHERE id = '${moderator.id}'`)
   const preview = (await gql('query ($input: ResourcePreviewInput!) { resourcePreview(input: $input) { url title author isbn type imageUrl found } }', { input: { isbn: '0-13-235088-2' } }, G.token)).resourcePreview
-  ok(preview.found && /Clean Code/.test(preview.title ?? '') && preview.isbn === '9780132350884' && preview.type === 'BOOK', 'G looks a book up by its ISBN on Open Library', JSON.stringify(preview))
+  ok(preview.found && /Clean Code/.test(preview.title ?? '') && /Martin/.test(preview.author ?? '') && preview.isbn === '9780132350884' && preview.type === 'BOOK', 'G looks a book up by its ISBN on Open Library, its authors from the work', JSON.stringify(preview))
   const topic = (await gql('query ($q: String!) { examTopicOptions(query: $q) { id } }', { q: 'array' }, G.token)).examTopicOptions[0]
   const sent = (await gql('mutation ($input: SubmitResourceInput!) { submitResource(input: $input) { resource { id status coverUrl } userErrors { message } } }', { input: { type: 'BOOK', title: preview.title, url: `${preview.url}?run=${WORD}`, isbn: `${preview.isbn}`, author: preview.author, topicIds: [topic?.id], imageUrl: preview.imageUrl } }, G.token)).submitResource
   const id = sent.resource?.id
