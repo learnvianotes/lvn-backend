@@ -16,6 +16,7 @@ export { WorkspacesService, parseRepository } from './application/workspaces.ser
 export { CoreExport } from './application/core-export'
 /** Learning events (ADR-0067): the LEARNING facade, and the worker's nightly partition care. */
 export { LEARNING_ANALYTICS_QUEUE, LearningEventsService } from './application/learning-events.service'
+export { LearningHistoryService } from './application/learning-history.service'
 
 /** This context's federation subgraph, composed by apps/api's gateway (ADR-0033). */
 export const coreSubgraph = { name: 'core', typeDefs: coreTypeDefs, modules: [CoreModule] }

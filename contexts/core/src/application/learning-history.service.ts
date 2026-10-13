@@ -80,7 +80,7 @@ export class LearningHistoryService implements OnModuleInit {
       SELECT "entityId", "clientTs" FROM "learning"."LearningEvent"
       WHERE "userId" = ${userId}::uuid AND "type" = ${LearningEventType.NOTE_OPENED} AND "entityId" IS NOT NULL
         AND "clientTs" >= ${from} AND "clientTs" < ${to}
-      ORDER BY "clientTs" DESC`
+      ORDER BY "clientTs" DESC, "id" DESC`
     const byDay = new Map<string, string[]>()
     for (const r of rows) {
       if (!/^[0-9a-f-]{36}$/i.test(r.entityId)) continue

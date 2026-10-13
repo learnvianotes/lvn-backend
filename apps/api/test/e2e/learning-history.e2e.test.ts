@@ -57,15 +57,19 @@ describe('learning history', () => {
     await track(me.token, [
       event({ durationMs: 11 * 60_000, metadata: { activity: 'FOCUS' }, topicKeys: [`topic:${topic.id}`] }),
       event({ durationMs: 5 * 60_000, metadata: { activity: 'READING' }, topicKeys: ['core:dsa-basics/arrays'] }),
-      event({ type: 'NOTE_OPENED', entityType: 'NOTE', entityId: mine }),
+      event({ type: 'NOTE_OPENED', entityType: 'NOTE', entityId: mine, clientTs: at(1, 9) }),
       // A note they could read once, private now: it is not shown.
-      event({ type: 'NOTE_OPENED', entityType: 'NOTE', entityId: theirs }),
+      event({ type: 'NOTE_OPENED', entityType: 'NOTE', entityId: theirs, clientTs: at(1, 8) }),
       event({ clientTs: at(3, 8), type: 'FLASHCARD_REVIEWED', durationMs: 5_000 }),
     ])
     const res = await app.gql<History>(HISTORY, {}, me.token)
-    const { timeZone, days } = res.data!.learningHistory
+    const { timeZone, days: all } = res.data!.learningHistory
     expect(timeZone).toBe('Asia/Kolkata')
-    expect(days.map((d) => d.day)).toEqual([at(1, 8).slice(0, 10), at(3, 8).slice(0, 10)])
+    // Today has the notes made above (NOTE_CREATED, recorded by the server): a day with something in it, no time.
+    const today = new Date(Date.now() + 1.5 * 3_600_000).toISOString().slice(0, 10) // Kolkata is +05:30, the day starts at 04:00
+    expect(all.map((d) => d.day)).toEqual([today, at(1, 8).slice(0, 10), at(3, 8).slice(0, 10)])
+    expect(all[0]).toMatchObject({ learningSeconds: 0, readingSeconds: 0, counted: false })
+    const days = all.slice(1)
     expect(days[0]).toMatchObject({ learningSeconds: 660, readingSeconds: 300, counted: true })
     expect(days[0]!.topics).toEqual([
       { key: `topic:${topic.id}`, seconds: 660, topic: { id: topic.id, title: topic.title } },
@@ -74,9 +78,9 @@ describe('learning history', () => {
     expect(days[0]!.notes).toEqual([{ id: mine, title: 'My heaps' }, null])
     expect(days[1]).toMatchObject({ reviews: 1, counted: false })
     // A page at a time.
-    const first = (await app.gql<History>(HISTORY, { days: 1 }, me.token)).data!.learningHistory
-    expect(first.days).toHaveLength(1)
-    const next = (await app.gql<History>(HISTORY, { days: 1, before: first.nextBefore }, me.token)).data!.learningHistory
+    const first = (await app.gql<History>(HISTORY, { days: 2 }, me.token)).data!.learningHistory
+    expect(first.days).toHaveLength(2)
+    const next = (await app.gql<History>(HISTORY, { days: 2, before: first.nextBefore }, me.token)).data!.learningHistory
     expect(next.days.map((d) => d.day)).toEqual([at(3, 8).slice(0, 10)])
     expect(next.nextBefore).toBeNull()
   })
