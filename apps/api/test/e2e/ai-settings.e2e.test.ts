@@ -48,7 +48,7 @@ describe('AI provider settings', () => {
     expect((await settings(app, student)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     expect((await app.gql(`{ aiSettings { keysCanBeSaved } }`)).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
     const res = await save(app, student, { kind: 'OPENAI_COMPATIBLE', label: 'Mine', baseUrl: openai.url, mayReceivePrivate: true, enabled: true, chatModel: 'x' })
-    expect(res.data!.saveAiConnection.userErrors[0]!.code).toBe('FORBIDDEN')
+    expect(res.errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     const shown = (await settings(app, admin)).data!.aiSettings
     expect(shown).toMatchObject({ connections: [], chatConnectionId: null, keysCanBeSaved: true, environment: { kind: 'OLLAMA', chatModel: 'gemma4', embedModel: 'embeddinggemma' } })
     expect(shown.tasks).toEqual(expect.arrayContaining(['SUMMARIZE', 'TRANSCRIBE', 'ASK', 'READ_PAGE', 'EMBED']))
