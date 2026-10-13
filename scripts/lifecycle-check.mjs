@@ -171,6 +171,17 @@ if (aiStatus.available) {
     return answered.status === 'READY' || answered.status === 'FAILED'
   }, 180_000)
   ok(answered?.status === 'READY' && answered.text.length > 0 && answered.sources.some((s) => s.noteId === id && s.versionId), "B asks AI over public notes: the real model answers, citing A's note", answered?.error ?? question.askAi.userErrors[0]?.message ?? `${answered?.sources?.length ?? 0} sources`)
+
+  // Study aids (ADR-0061): going PUBLIC queued five for A's note; the worker makes them as the platform's work, A
+  // follows their progress, and anyone reads the READY ones.
+  let progress
+  await eventually(async () => {
+    progress = (await gql('query ($id: UUID!) { note(id: $id) { noteProcessingStatus { done steps { task status } } } }', { id }, A.token)).note.noteProcessingStatus
+    return progress?.done === true
+  }, 300_000)
+  ok(progress?.done && progress.steps.length === 5, "the worker makes A's public note its five study aids", progress?.steps.map((s) => `${s.task}:${s.status}`).join(' '))
+  const aids = (await gql('query ($id: UUID!) { note(id: $id) { aiInsights { task status markdown } } }', { id })).note.aiInsights
+  ok(aids.some((a) => a.task === 'SUMMARIZE' && a.status === 'READY' && a.markdown), 'anyone reads its summary, signed in or not', aids.map((a) => a.task).join(' '))
 } else {
   console.log(`# AI is off here (${aiStatus.reason}): AI tasks not checked`)
 }
