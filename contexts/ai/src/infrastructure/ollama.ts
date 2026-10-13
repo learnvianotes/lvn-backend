@@ -1,4 +1,5 @@
 import { ProviderError, type AiProviderAdapter, type ChatRequest, type ChatResult, type EmbedResult } from '../domain/provider'
+import { callProvider } from './http'
 
 interface OllamaChatChunk {
   message?: { content?: string }
@@ -9,14 +10,17 @@ interface OllamaChatChunk {
 }
 
 /**
- * Ollama's HTTP API (ADR-0058): a model on our own machine, so private notes may go to it. Thinking is turned off (the
- * answers are what we store); structured output uses Ollama's `format` with a JSON schema.
+ * Ollama's HTTP API (ADR-0058): a model on our own machine, so private notes may go to it (an Ollama connection on
+ * another host says whether it may, ADR-0065). Thinking is turned off (the answers are what we store); structured
+ * output uses Ollama's `format` with a JSON schema.
  */
 export class OllamaProvider implements AiProviderAdapter {
   readonly name = 'OLLAMA'
-  readonly mayReceivePrivate = true
 
-  constructor(private readonly url: string) {}
+  constructor(
+    private readonly url: string,
+    readonly mayReceivePrivate = true,
+  ) {}
 
   async chat(request: ChatRequest, onDelta?: (text: string) => void): Promise<ChatResult> {
     const res = await this.post('/api/chat', {
@@ -62,6 +66,12 @@ export class OllamaProvider implements AiProviderAdapter {
     const body = (await res.json()) as { embeddings?: number[][]; prompt_eval_count?: number; error?: string }
     if (body.error || !body.embeddings) throw new ProviderError(`ollama: ${body.error ?? 'no embeddings'}`, false)
     return { vectors: body.embeddings, promptTokens: body.prompt_eval_count ?? 0 }
+  }
+
+  async models(timeoutMs: number): Promise<string[]> {
+    const res = await callProvider('OLLAMA', `${this.url.replace(/\/$/, '')}/api/tags`, {}, {}, timeoutMs, 'GET')
+    const json = (await res.json()) as { models?: { name: string }[] }
+    return (json.models ?? []).map((m) => m.name).sort()
   }
 
   private async post(path: string, body: object, timeoutMs: number): Promise<Response> {

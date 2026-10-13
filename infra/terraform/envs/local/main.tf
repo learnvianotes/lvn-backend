@@ -71,6 +71,8 @@ locals {
       OLLAMA_URL     = var.ollama_url
       AI_CHAT_MODEL  = var.ai_chat_model
       AI_EMBED_MODEL = var.ai_embed_model
+      # Encrypts the provider keys saved on /admin/ai (ADR-0065).
+      AI_KEYS_SECRET = random_password.ai_keys.result
     },
     { for k, v in local.optional : k => v if v != "" },
     var.extra_backend_environment,
@@ -87,6 +89,11 @@ resource "tls_private_key" "jwt" {
 }
 
 resource "random_password" "code_hmac" {
+  length  = 48
+  special = false
+}
+
+resource "random_password" "ai_keys" {
   length  = 48
   special = false
 }

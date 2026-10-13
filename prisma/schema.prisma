@@ -1988,22 +1988,73 @@ enum ContentModeration {
   @@schema("core")
 }
 
-/// Who answers AI calls (ADR-0058). Ollama is self-hosted: private notes may go to it (§10.1's data-processing flag).
+/// Who answers AI calls: the environment's Ollama (ADR-0058) or a connection platform admins set up (ADR-0065).
 enum AiProvider {
   OLLAMA
+  OPENAI
+  ANTHROPIC
+  GEMINI
+  /// Any server that speaks OpenAI's API: a LiteLLM proxy, OpenRouter, vLLM… (ADR-0065)
+  OPENAI_COMPATIBLE
 
   @@schema("ai")
 }
 
-/// What answers each AI task (§10.1, ADR-0058). A row overrides the environment's default model, so a model can be
-/// swapped without a deploy. Prices are per million tokens in millionths of a dollar: 0 for a self-hosted model.
+/// A provider account platform admins set up (ADR-0065): its kind, address, key (encrypted with AI_KEYS_SECRET,
+/// never shown again) and default models. `mayReceivePrivate` is §10.1's data-processing flag: only a self-hosted
+/// model or a provider with a zero-retention agreement may see notes that are not public.
+model AiConnection {
+  id                    String         @id @db.Uuid
+  kind                  AiProvider
+  label                 String
+  /// null: the kind's own address
+  baseUrl               String?
+  /// AES-256-GCM: iv.tag.ciphertext, base64url
+  apiKeyCipher          String?
+  /// The key's last four characters, to tell keys apart
+  apiKeyHint            String?
+  mayReceivePrivate     Boolean        @default(false)
+  enabled               Boolean        @default(true)
+  chatModel             String?
+  embedModel            String?
+  /// Prices of the default models, in millionths of a dollar per million tokens; a task's route has its own
+  inputMicroUsdPerMTok  Int            @default(0)
+  outputMicroUsdPerMTok Int            @default(0)
+  embedMicroUsdPerMTok  Int            @default(0)
+  createdAt             DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime       @updatedAt @db.Timestamptz(3)
+  routes                AiModelRoute[]
+  chatDefaultOf         AiSettings[]   @relation("chatDefault")
+  embedDefaultOf        AiSettings[]   @relation("embedDefault")
+
+  @@schema("ai")
+}
+
+/// Which connection answers by default (ADR-0065); one row, id 1. With no chat connection, the environment's provider
+/// (AI_PROVIDER) answers.
+model AiSettings {
+  id                Int           @id @default(1)
+  chatConnectionId  String?       @db.Uuid
+  chatConnection    AiConnection? @relation("chatDefault", fields: [chatConnectionId], references: [id], onDelete: SetNull)
+  embedConnectionId String?       @db.Uuid
+  embedConnection   AiConnection? @relation("embedDefault", fields: [embedConnectionId], references: [id], onDelete: SetNull)
+  updatedAt         DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@schema("ai")
+}
+
+/// What answers each AI task (§10.1, ADR-0058, ADR-0065): a connection and its model, overriding the defaults, so a
+/// model can be swapped without a deploy. Prices are per million tokens in millionths of a dollar: 0 for a self-hosted
+/// model.
 model AiModelRoute {
-  task                  String     @id
-  provider              AiProvider
+  task                  String        @id
+  /// null: the default connection (or the environment's provider)
+  connectionId          String?       @db.Uuid
+  connection            AiConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
   model                 String
-  inputMicroUsdPerMTok  Int        @default(0)
-  outputMicroUsdPerMTok Int        @default(0)
-  updatedAt             DateTime   @updatedAt @db.Timestamptz(3)
+  inputMicroUsdPerMTok  Int           @default(0)
+  outputMicroUsdPerMTok Int           @default(0)
+  updatedAt             DateTime      @updatedAt @db.Timestamptz(3)
 
   @@schema("ai")
 }
@@ -2015,6 +2066,8 @@ model AiUsage {
   userId           String?    @db.Uuid
   task             String
   provider         AiProvider
+  /// The connection that answered (ADR-0065); null for the environment's provider. Kept after it is deleted
+  connectionId     String?    @db.Uuid
   model            String
   promptId         String?
   promptVersion    Int?

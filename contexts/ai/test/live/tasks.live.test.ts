@@ -28,6 +28,7 @@ heapq.heappush(queue, (0, source))`
     const result = def.result(parsed.data, 'Shortest paths')
     // "No mistakes found." is a fine answer about a correct note.
     if ('markdown' in result) expect(result.markdown.length).toBeGreaterThan(10)
-    else expect(result.cards.length).toBeGreaterThan(0)
+    else if ('cards' in result) expect(result.cards.length).toBeGreaterThan(0)
+    else expect(Array.isArray(result.changes)).toBe(true)
   }, 240_000)
 })

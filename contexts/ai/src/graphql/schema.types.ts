@@ -72,6 +72,59 @@ export interface AiChange {
   applied: boolean
 }
 
+export interface AiConnection {
+  id: string
+  kind: AiProviderKind
+  label: string
+  /** null: the kind's own address */
+  baseUrl: string | null
+  /** A key is saved; it is never shown again */
+  hasKey: boolean
+  /** The key's last four characters */
+  keyHint: string | null
+  /** §10.1's data-processing flag: notes that are not public may go to it (self-hosted, or a zero-retention agreement) */
+  mayReceivePrivate: boolean
+  enabled: boolean
+  chatModel: string | null
+  embedModel: string | null
+  /** Prices of its default models in millionths of a dollar per million tokens; the monthly budget counts them */
+  inputMicroUsdPerMTok: number
+  outputMicroUsdPerMTok: number
+  embedMicroUsdPerMTok: number
+  updatedAt: Date
+}
+
+export interface AiConnectionIdInput {
+  id: string
+}
+
+export interface AiConnectionPayload {
+  connection: AiConnection | null
+  userErrors: Array<UserError>
+}
+
+export interface AiConnectionTest {
+  ok: boolean
+  /** What happened; the provider's own words when it failed */
+  message: string
+  latencyMs: number
+  /** Models the account lists; empty when the provider does not list them */
+  models: Array<string>
+}
+
+export interface AiConnectionTestPayload {
+  test: AiConnectionTest | null
+  userErrors: Array<UserError>
+}
+
+/** The environment's own provider (AI_PROVIDER), which answers when no connection is chosen */
+export interface AiEnvironmentProvider {
+  /** null: AI_PROVIDER is none */
+  kind: AiProviderKind | null
+  chatModel: string | null
+  embedModel: string | null
+}
+
 /** A study aid made from a public note's published version: a summary, key concepts, practice questions, a quiz or flashcards */
 export interface AiInsight {
   id: string
@@ -88,6 +141,49 @@ export interface AiInsight {
 }
 
 export type AiLanguage = 'ENGLISH' | 'HINDI' | 'TELUGU'
+
+/** Who answers AI calls */
+export type AiProviderKind = 'OLLAMA' | 'OPENAI' | 'ANTHROPIC' | 'GEMINI' | 'OPENAI_COMPATIBLE'
+
+/** What a kind of provider is and can do */
+export interface AiProviderPreset {
+  kind: AiProviderKind
+  name: string
+  /** null: the connection must give an address */
+  defaultBaseUrl: string | null
+  needsKey: boolean
+  canEmbed: boolean
+  /** Takes recordings (transcription) */
+  canHear: boolean
+  /** Private notes may go to it unless an admin says otherwise (a model on our own machine) */
+  privateByDefault: boolean
+  /** Hints; a connection test lists what the account has */
+  chatModels: Array<string>
+  embedModels: Array<string>
+}
+
+export interface AiSettings {
+  connections: Array<AiConnection>
+  /** Answers chats; null: the environment's provider */
+  chatConnectionId: string | null
+  /** Makes embeddings (Ask AI, meaning search); null: the environment's provider */
+  embedConnectionId: string | null
+  environment: AiEnvironmentProvider
+  routes: Array<AiTaskRoute>
+  /** Tasks a route can be set for */
+  tasks: Array<string>
+  presets: Array<AiProviderPreset>
+  /** AI_KEYS_SECRET is set, so keys can be saved */
+  keysCanBeSaved: boolean
+  spentThisMonthMicroUsd: number
+  /** null: no monthly cap */
+  monthlyBudgetMicroUsd: number | null
+}
+
+export interface AiSettingsPayload {
+  settings: AiSettings | null
+  userErrors: Array<UserError>
+}
 
 /** A passage an answer cites, by its number in the answer ([1], [2] …) */
 export interface AiSource {
@@ -106,6 +202,20 @@ export interface AiStatus {
 }
 
 export type AiTask = 'SUMMARIZE' | 'KEY_CONCEPTS' | 'EXPLAIN_SIMPLY' | 'PRACTICE_QUESTIONS' | 'TRANSLATE' | 'FIND_MISTAKES' | 'EXPLAIN_CODE' | 'FLASHCARDS' | 'QUIZ' | 'REVISION_SHEET' | 'CREATE_NOTES' | 'OUTLINE_TO_NOTE' | 'TRANSCRIBE' | 'QUICK_NOTE' | 'CLEAN_UP'
+
+/** A task sent to a connection and model instead of the default */
+export interface AiTaskRoute {
+  task: string
+  /** null: the default connection */
+  connectionId: string | null
+  model: string
+  inputMicroUsdPerMTok: number
+  outputMicroUsdPerMTok: number
+}
+
+export interface AiTaskRouteInput {
+  task: string
+}
 
 /** Why AI is not answering */
 export type AiUnavailableReason = 'NOT_CONFIGURED' | 'BUDGET' | 'PROVIDER_DOWN'
@@ -187,6 +297,30 @@ export interface MutationSetAiInsightHiddenArgs {
   hidden: boolean
 }
 
+export interface MutationSaveAiConnectionArgs {
+  input: SaveAiConnectionInput
+}
+
+export interface MutationDeleteAiConnectionArgs {
+  input: AiConnectionIdInput
+}
+
+export interface MutationSetAiDefaultsArgs {
+  input: SetAiDefaultsInput
+}
+
+export interface MutationTestAiConnectionArgs {
+  input: AiConnectionIdInput
+}
+
+export interface MutationSaveAiTaskRouteArgs {
+  input: SaveAiTaskRouteInput
+}
+
+export interface MutationDeleteAiTaskRouteArgs {
+  input: AiTaskRouteInput
+}
+
 /** A note, owned by the notes subgraph; ai adds the viewer's AI results */
 export interface Note {
   id: string
@@ -237,6 +371,38 @@ export interface RunAiTaskInput {
   language?: AiLanguage | null
   /** Only these cards (default: the whole note) */
   cardIds?: Array<string> | null
+}
+
+export interface SaveAiConnectionInput {
+  /** Absent: a new connection */
+  id?: string | null
+  kind: AiProviderKind
+  label: string
+  baseUrl?: string | null
+  /** Empty or absent: keep the saved key */
+  apiKey?: string | null
+  clearApiKey?: boolean | null
+  mayReceivePrivate: boolean
+  enabled: boolean
+  chatModel?: string | null
+  embedModel?: string | null
+  inputMicroUsdPerMTok?: number | null
+  outputMicroUsdPerMTok?: number | null
+  embedMicroUsdPerMTok?: number | null
+}
+
+export interface SaveAiTaskRouteInput {
+  task: string
+  /** Absent: the default connection */
+  connectionId?: string | null
+  model: string
+  inputMicroUsdPerMTok?: number | null
+  outputMicroUsdPerMTok?: number | null
+}
+
+export interface SetAiDefaultsInput {
+  chatConnectionId?: string | null
+  embedConnectionId?: string | null
 }
 
 export interface UserError {
