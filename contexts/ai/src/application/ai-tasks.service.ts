@@ -8,6 +8,7 @@ import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
 import { LANGUAGE_NAMES, SOURCE_CHARS, TASKS, type AiLanguage, type TaskResult } from '../domain/tasks'
 import { AiGateway } from './ai-gateway'
+import { MediaInput } from './media-input'
 
 /** The `ai` context's task queue (§9.1 `ai`), run one at a time by apps/worker: one GPU serves one model. */
 export const AI_TASKS_QUEUE = 'ai.tasks'
@@ -45,6 +46,7 @@ export class AiTasksService {
     @Inject(NOTE_AI) private readonly notes: NoteAi,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(LIVE) private readonly live: Live,
+    private readonly media: MediaInput,
   ) {}
 
   async run(viewerId: string, input: RunTaskInput): Promise<ArtifactRow> {
@@ -52,7 +54,9 @@ export class AiTasksService {
     const status = await this.gateway.status()
     if (!status.available) throw Errors.unavailable(status.reason === 'BUDGET' ? 'AI is paused until next month: this month’s AI budget is used up.' : status.reason === 'PROVIDER_DOWN' ? 'AI is not answering right now. Try again in a minute.' : 'AI is not switched on here.')
     const source = await this.allowed(viewerId, input.noteId, input.task)
-    const cards = this.pick(source, input.cardIds ?? null, !!def.codeOnly)
+    if (def.editorsOnly && !source.canEdit) throw Errors.forbidden('Quick notes are made from your own notes.')
+    const cards = this.pick(source, input.cardIds ?? null, def)
+    if (def.input === 'AUDIO' && cards.length !== 1) throw Errors.validation('Choose one recording or video to transcribe.', ['input', 'cardIds'])
     if (!cards.length) throw Errors.validation(def.codeOnly ? 'This note has no code to explain.' : 'This note has nothing to work on yet.', ['input', 'noteId'])
     const { usedToday, limitToday, resetsAt } = await this.gateway.allowance(viewerId)
     if (limitToday !== null && usedToday >= limitToday) throw Errors.rateLimited(Math.ceil((resetsAt.getTime() - Date.now()) / 1000), 'You have used today’s AI allowance. It renews at midnight UTC.')
@@ -80,21 +84,35 @@ export class AiTasksService {
       const def = TASKS[task]
       const source = artifact.ownerId ? await this.allowed(artifact.ownerId, artifact.noteId, task) : await this.publicVersion(artifact.noteId, artifact.versionId)
       ownerOfNote = source.ownerId
-      const cards = this.pick(source, options.cardIds, !!def.codeOnly)
-      let body = cards.map((c) => (c.type === CardType.CODE ? `\`\`\`${(c.content as { language?: string }).language ?? ''}\n${c.text}\n\`\`\`` : c.text)).join('\n\n')
-      const cut = body.length > SOURCE_CHARS
-      if (cut) body = body.slice(0, SOURCE_CHARS)
-      const language = LANGUAGE_NAMES[options.language] ?? 'English'
-      const generated = await this.gateway.generate({
-        task,
-        userId: artifact.ownerId,
-        private: source.visibility !== 'PUBLIC',
-        prompt: def.prompt,
-        vars: { language, target: language, sentences: 5 },
-        content: { title: source.title || 'Untitled note', body },
-        schema: def.schema,
-      })
-      const result: TaskResult = def.result(generated.output, source.title)
+      const cards = this.pick(source, options.cardIds, def)
+      const isPrivate = source.visibility !== 'PUBLIC'
+      let result: TaskResult
+      let cut = false
+      if (def.input === 'AUDIO') {
+        // TRANSCRIBE: the recording, heard piece by piece (ADR-0062).
+        const heard = await this.media.transcribe(fileOf(cards[0]!)!, { userId: artifact.ownerId, private: isPrivate })
+        cut = heard.cut
+        result = def.result(heard, source.title)
+      } else {
+        const words = def.input === 'IMAGES' ? cards.filter((c) => c.type !== CardType.IMAGE) : cards
+        let body = words.map((c) => (c.type === CardType.CODE ? `\`\`\`${(c.content as { language?: string }).language ?? ''}\n${c.text}\n\`\`\`` : c.text)).join('\n\n')
+        cut = body.length > SOURCE_CHARS
+        if (cut) body = body.slice(0, SOURCE_CHARS)
+        // QUICK_NOTE also sees the note's photos (ADR-0062).
+        const images = def.input === 'IMAGES' ? await this.media.images(cards.filter((c) => c.type === CardType.IMAGE).map((c) => fileOf(c)!)) : undefined
+        const language = LANGUAGE_NAMES[options.language] ?? 'English'
+        const generated = await this.gateway.generate({
+          task,
+          userId: artifact.ownerId,
+          private: isPrivate,
+          prompt: def.prompt,
+          vars: { language, target: language, sentences: 5 },
+          content: { title: source.title || 'Untitled note', body: body || '(Only the photos.)' },
+          schema: def.schema,
+          ...(images?.length ? { images } : {}),
+        })
+        result = def.result(generated.output, source.title)
+      }
       if ('cards' in result && !result.cards.length) throw Errors.unavailable('The AI made nothing that could be kept. Try again.')
       await this.db.noteArtifact.update({ where: { id: artifactId }, data: { status: 'READY', payload: result as unknown as Prisma.InputJsonValue, options: { ...options, cut } as unknown as Prisma.InputJsonValue } })
       if (!artifact.ownerId) await this.events.publish('NoteArtifactReady', { artifactId, noteId: artifact.noteId, versionId: artifact.versionId!, artifactType: task })
@@ -180,8 +198,15 @@ export class AiTasksService {
     return source
   }
 
-  private pick(source: NoteAiSource, cardIds: string[] | null, codeOnly: boolean) {
+  /** The cards a task reads: code (EXPLAIN_CODE), one recording (TRANSCRIBE), words and photos (QUICK_NOTE), else words. */
+  private pick(source: NoteAiSource, cardIds: string[] | null, def: (typeof TASKS)[AiTaskType]) {
     const chosen = cardIds?.length ? source.cards.filter((c) => cardIds.includes(c.id)) : source.cards
-    return chosen.filter((c) => (codeOnly ? c.type === CardType.CODE : c.text.trim().length > 0))
+    if (def.codeOnly) return chosen.filter((c) => c.type === CardType.CODE)
+    if (def.input === 'AUDIO') return chosen.filter((c) => (c.type === CardType.AUDIO || c.type === CardType.VIDEO) && !!fileOf(c))
+    if (def.input === 'IMAGES') return chosen.filter((c) => c.text.trim().length > 0 || (c.type === CardType.IMAGE && !!fileOf(c)))
+    return chosen.filter((c) => c.text.trim().length > 0)
   }
 }
+
+/** A media card's file. */
+const fileOf = (c: { content: unknown }) => (c.content as { fileId?: string } | null)?.fileId ?? null

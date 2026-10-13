@@ -20,6 +20,10 @@ export interface TaskDef<T> {
   result(out: T, title: string): TaskResult
   /** Reads only the note's code cards (EXPLAIN_CODE) */
   codeOnly?: true
+  /** Hears one audio or video card (TRANSCRIBE), or also sees the note's photos (QUICK_NOTE) (ADR-0062) */
+  input?: 'AUDIO' | 'IMAGES'
+  /** Only on a note the person may edit: their own rough material (QUICK_NOTE) */
+  editorsOnly?: true
 }
 
 // ── Building cards from plain text ──────────────────────────────────────────────────────────────────────────────
@@ -58,6 +62,9 @@ const quiz = z.object({
 })
 const sheet = z.object({ sections: z.array(z.object({ heading: z.string().min(1), points: z.array(z.string().min(1)).min(1).max(10) })).min(1).max(8) })
 const newNote = z.object({ title: z.string().min(1), sections: z.array(z.object({ heading: z.string().min(1), text: z.string().min(1) })).min(1).max(12) })
+
+/** TRANSCRIBE's answer is put together from the pieces' plain text, not asked of the model as JSON. */
+const transcript = z.object({ text: z.string(), cut: z.boolean() })
 
 const noteFromSections = (out: z.infer<typeof newNote>): TaskResult => ({
   title: out.title,
@@ -119,6 +126,18 @@ export const TASKS: { [K in AiTaskType]: TaskDef<unknown> } = {
   },
   CREATE_NOTES: { task: 'CREATE_NOTES', kind: 'CARDS', prompt: 'create-notes', schema: newNote, result: noteFromSections },
   OUTLINE_TO_NOTE: { task: 'OUTLINE_TO_NOTE', kind: 'CARDS', prompt: 'outline-to-note', schema: newNote, result: noteFromSections },
+  TRANSCRIBE: {
+    task: 'TRANSCRIBE',
+    kind: 'CARDS',
+    prompt: 'transcribe',
+    schema: transcript,
+    input: 'AUDIO',
+    result: (o: z.infer<typeof transcript>, title) => ({
+      title: `Transcript — ${title || 'Untitled note'}`,
+      cards: valid(o.text.trim() ? [{ type: CardType.TEXT, content: { doc: doc(o.cut ? `${o.text}\n\n(The recording is longer than 30 minutes: the rest was not transcribed.)` : o.text) } }] : []),
+    }),
+  },
+  QUICK_NOTE: { task: 'QUICK_NOTE', kind: 'CARDS', prompt: 'quick-note', schema: newNote, input: 'IMAGES', editorsOnly: true, result: noteFromSections },
 }
 
 /** The most of a note's words a task reads; the rest is cut, and the person is told. */

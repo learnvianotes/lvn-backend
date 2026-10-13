@@ -195,6 +195,14 @@ export class FilesService implements Files {
     return this.storage.presignGet(file.bucket, file.storageKey, { expiresInSeconds: READ_URL_TTL_SECONDS, downloadName: file.originalFileName })
   }
 
+  async download(fileId: string, toPath: string, variant?: 'audio' | 'medium'): Promise<{ mimeType: string }> {
+    const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
+    if (!file || file.status !== 'READY' || file.deletedAt) throw Errors.notFound('File not found.')
+    const made = variant ? ((file.variants ?? {}) as Record<string, string | undefined>)[variant] : undefined
+    await this.storage.download(file.bucket, made ?? file.storageKey, toPath)
+    return { mimeType: made ? (variant === 'audio' ? 'audio/mp4' : 'image/webp') : file.mimeType }
+  }
+
   async store(ownerId: string, file: { purpose: FilePurposeKind; parent: { type: FileParentKind; id: string }; fileName: string; mimeType: string; bytes: Uint8Array; restricted: boolean; expiresAt: Date | null }): Promise<string> {
     const id = newId()
     const bucket = file.restricted ? this.config.restrictedBucket : this.config.bucket

@@ -93,7 +93,7 @@ export interface AiStatus {
   reason: AiUnavailableReason | null
 }
 
-export type AiTask = 'SUMMARIZE' | 'KEY_CONCEPTS' | 'EXPLAIN_SIMPLY' | 'PRACTICE_QUESTIONS' | 'TRANSLATE' | 'FIND_MISTAKES' | 'EXPLAIN_CODE' | 'FLASHCARDS' | 'QUIZ' | 'REVISION_SHEET' | 'CREATE_NOTES' | 'OUTLINE_TO_NOTE'
+export type AiTask = 'SUMMARIZE' | 'KEY_CONCEPTS' | 'EXPLAIN_SIMPLY' | 'PRACTICE_QUESTIONS' | 'TRANSLATE' | 'FIND_MISTAKES' | 'EXPLAIN_CODE' | 'FLASHCARDS' | 'QUIZ' | 'REVISION_SHEET' | 'CREATE_NOTES' | 'OUTLINE_TO_NOTE' | 'TRANSCRIBE' | 'QUICK_NOTE'
 
 /** Why AI is not answering */
 export type AiUnavailableReason = 'NOT_CONFIGURED' | 'BUDGET' | 'PROVIDER_DOWN'

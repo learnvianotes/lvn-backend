@@ -32,6 +32,10 @@ enum AiTask {
   CREATE_NOTES
   "Needs the right to copy the note (ADR-0025)"
   OUTLINE_TO_NOTE
+  "One audio or video card (cardIds), as a text card to keep (ADR-0062)"
+  TRANSCRIBE
+  "The person's own note's rough words and photos, as a structured note (ADR-0062)"
+  QUICK_NOTE
 }
 
 enum AiLanguage { ENGLISH HINDI TELUGU }
