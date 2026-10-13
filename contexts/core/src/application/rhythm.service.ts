@@ -15,7 +15,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/
 /**
  * Rhythm (ADR-0030, ADR-0069): this week by learning day in the learner's time zone (planned days, misses, rest,
  * pauses, comebacks), the counters that never reset, today's ring, and the plan and pauses. Past weeks are closed
- * nightly with the target they had; a late event reopens its week.
+ * hourly, each in its person's zone, with the target they had; a late event reopens its week.
  */
 @Injectable()
 export class RhythmService implements OnModuleInit {

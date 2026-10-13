@@ -19,7 +19,7 @@ export { LEARNING_ANALYTICS_QUEUE, LearningEventsService } from './application/l
 export { LearningHistoryService } from './application/learning-history.service'
 /** Flashcard reviews (ADR-0068): Rhythm and Exam Readiness read their state. */
 export { ReviewsService } from './application/reviews.service'
-/** Rhythm (ADR-0069): the worker closes last week nightly. */
+/** Rhythm (ADR-0069): the worker closes last week hourly, in each person's zone. */
 export { RhythmService } from './application/rhythm.service'
 
 /** This context's federation subgraph, composed by apps/api's gateway (ADR-0033). */

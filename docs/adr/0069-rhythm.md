@@ -27,9 +27,9 @@ whether it counts: 10 learning minutes or 10 reviews.
 2. **The week.**
    - Monday to Sunday in the person's time zone, by learning day.
    - `countedDays` is the number of counted days. The week is **met** when `countedDays` reaches the target.
-   - Past weeks are closed nightly into `core.RhythmWeek(userId, weekStart, targetDays, countedDays, comebacks,
-     pausedDays)`. The current week is computed when asked. A week closed before a late event arrived is reopened by
-     that event.
+   - Past weeks are closed hourly (a person's week ends at 04:00 on Monday in their own zone) into
+     `core.RhythmWeek(userId, weekStart, targetDays, countedDays, comebacks, pausedDays)`. The current week is computed
+     when asked. A week closed before a late event arrived is reopened by that event.
 3. **Never miss twice.**
    - A planned day that ended uncounted, and not paused, is a miss.
    - The day after a miss, Today shows a **Comeback**: the same low bar, with a bigger ring fill.
