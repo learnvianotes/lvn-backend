@@ -41,7 +41,8 @@ export class MediaInput {
       for (const [i, piece] of pieces.entries()) {
         const sound = (await readFile(path.join(dir, piece))).toString('base64')
         const heard = await this.gateway.generate({ task: 'TRANSCRIBE', userId: who.userId, private: who.private, prompt: 'transcribe', vars: { part: i + 1, parts: pieces.length }, images: [sound], temperature: 0 })
-        texts.push(heard.output.trim())
+        // The prompt's fence rule mentions <content> tags; with nothing fenced, a model may wrap its answer in them.
+        texts.push(heard.output.replace(/<\/?content>/g, '').trim())
       }
       return { text: texts.filter(Boolean).join('\n\n'), cut: seconds !== null && seconds > MAX_SECONDS }
     })

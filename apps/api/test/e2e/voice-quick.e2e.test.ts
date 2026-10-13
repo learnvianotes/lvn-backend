@@ -78,7 +78,8 @@ describe('transcription and quick notes', () => {
 
   it('transcribes a recording piece by piece into a text card, and keeps it in the note', async () => {
     let piece = 0
-    ollama.answer = () => `Part ${++piece} of the lecture.`
+    // The model sometimes wraps an answer in the prompt's fence tags (seen with gemma4): they are dropped.
+    ollama.answer = () => (++piece === 3 ? `<content>Part ${piece} of the lecture.</content>` : `Part ${piece} of the lecture.`)
     const before = ollama.chats.length
     const transcript = await done(owner, { noteId, task: 'TRANSCRIBE', cardIds: [audioCard] })
     const heard = ollama.chats.slice(before)
