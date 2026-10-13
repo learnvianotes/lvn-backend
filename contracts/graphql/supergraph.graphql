@@ -780,6 +780,71 @@ input ChangeNoteVisibilityInput
   visibility: Visibility!
 }
 
+type ClassQuiz
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  classroomId: UUID!
+  title: String!
+  author: User!
+  publishedAt: DateTime!
+  questionCount: Int!
+
+  """
+  In order. The correct choices and explanations are null until the viewer has submitted (staff always see them)
+  """
+  questions: [ClassQuizQuestion!]!
+
+  """The viewer's attempts, newest first; the last is their score"""
+  myAttempts: [QuizAttempt!]!
+
+  """
+  Staff only: how many of the class's students have submitted (per-student results wait for Phase 6)
+  """
+  submittedCount: Int
+  viewerCanDelete: Boolean!
+}
+
+type ClassQuizChoice
+  @join__type(graph: CORE)
+{
+  id: String!
+
+  """Inline rich text"""
+  content: JSON!
+}
+
+input ClassQuizIdInput
+  @join__type(graph: CORE)
+{
+  quizId: UUID!
+}
+
+type ClassQuizPayload
+  @join__type(graph: CORE)
+{
+  quiz: ClassQuiz
+  userErrors: [UserError!]!
+}
+
+type ClassQuizQuestion
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  position: Int!
+
+  """Rich text, as a quiz card's question"""
+  question: JSON!
+  choices: [ClassQuizChoice!]!
+
+  """More than one choice is correct"""
+  multiple: Boolean!
+  correct: [String!]
+
+  """Rich text"""
+  explanation: JSON
+}
+
 """
 A class, owned by the core subgraph: null when the viewer may no longer see it
 """
@@ -811,6 +876,9 @@ type Classroom
   """Members only: announcements, newest first"""
   posts(first: Int, after: String): ClassroomPostConnection @join__field(graph: CORE)
 
+  """Members only: published quizzes, newest first"""
+  quizzes(first: Int): [ClassQuiz!] @join__field(graph: CORE)
+
   """
   Members only: notes shared to the class that the viewer may open, the most recently shared first
   """
@@ -826,6 +894,9 @@ type ClassroomActions
   """Teacher and TAs: answer requests, invite, post"""
   review: Boolean!
   post: Boolean!
+
+  """Teacher and TAs: publish quizzes (ADR-0064)"""
+  publishQuiz: Boolean!
 
   """The teacher: settings, roles, removing people"""
   manage: Boolean!
@@ -2291,6 +2362,19 @@ type Mutation
   deleteGroupPost(input: GroupPostIdInput!): GroupPayload! @join__field(graph: CORE)
   pinGroupPost(input: PinGroupPostInput!): GroupPostPayload! @join__field(graph: CORE)
 
+  """
+  Staff: a quiz every member of the class can take (classroom.publishQuiz)
+  """
+  publishClassQuiz(input: PublishClassQuizInput!): ClassQuizPayload! @join__field(graph: CORE)
+
+  """
+  Scores the viewer's answers; the same clientOpId returns the same attempt
+  """
+  submitQuizAttempt(input: SubmitQuizAttemptInput!): QuizAttemptPayload! @join__field(graph: CORE)
+
+  """Staff: moves the quiz to the trash; its attempts stay"""
+  deleteClassQuiz(input: ClassQuizIdInput!): OkPayload! @join__field(graph: CORE)
+
   """Admins and the Owner"""
   setGroupRepository(input: SetGroupRepositoryInput!): GroupPayload! @join__field(graph: CORE)
 
@@ -3216,6 +3300,21 @@ input ProposeTopicInput
   title: String!
 }
 
+input PublishClassQuizInput
+  @join__type(graph: CORE)
+{
+  classroomId: UUID!
+  title: String!
+
+  """
+  1 to 50 questions, each quiz card content: question, choices, correct, multiple, explanation
+  """
+  questions: [JSON!]!
+
+  """The note the questions came from; kept when the author can read it"""
+  sourceNoteId: UUID
+}
+
 type Query
   @join__type(graph: AI)
   @join__type(graph: COMMUNICATION)
@@ -3297,6 +3396,9 @@ type Query
   Its owner only: a group platform moderators removed, with why; null for anything else
   """
   removedGroup(id: UUID!): RemovedGroup @join__field(graph: CORE)
+
+  """A quiz of a class the viewer is in; null otherwise"""
+  classQuiz(id: UUID!): ClassQuiz @join__field(graph: CORE)
 
   """A doubt the viewer's workspace holds"""
   doubt(id: UUID!): Doubt @join__field(graph: CORE)
@@ -3407,6 +3509,43 @@ type Query
   Platform admins: institutional email domains waiting for review (ADR-0017)
   """
   domainReviews(status: DomainReviewStatus): [DomainReview!]! @join__field(graph: USERS)
+}
+
+type QuizAnswer
+  @join__type(graph: CORE)
+{
+  questionId: UUID!
+  choiceIds: [String!]!
+  correct: Boolean!
+}
+
+input QuizAnswerInput
+  @join__type(graph: CORE)
+{
+  questionId: UUID!
+
+  """Empty leaves the question unanswered (wrong)"""
+  choiceIds: [String!]!
+}
+
+type QuizAttempt
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  score: Int!
+  total: Int!
+  submittedAt: DateTime!
+  answers: [QuizAnswer!]!
+}
+
+type QuizAttemptPayload
+  @join__type(graph: CORE)
+{
+  attempt: QuizAttempt
+
+  """The quiz again, now with its answers for the viewer"""
+  quiz: ClassQuiz
+  userErrors: [UserError!]!
 }
 
 input ReactInput
@@ -3956,6 +4095,18 @@ type Subject
 
   """Top-level topics: curated ones and the viewer's proposals"""
   topics: [Topic!]!
+}
+
+input SubmitQuizAttemptInput
+  @join__type(graph: CORE)
+{
+  quizId: UUID!
+
+  """
+  The client's id for this submission: sending it again returns the same attempt
+  """
+  clientOpId: UUID!
+  answers: [QuizAnswerInput!]!
 }
 
 type SyncedNote

@@ -74,6 +74,11 @@ export class CommunicationEvents implements OnModuleInit {
     this.events.subscribe('ClassroomPosted', async ({ payload }) => {
       await this.notifications.notifyMany(payload.memberIds, { category: 'CLASSROOM_POST', path: `/classes/${payload.classroomId}`, actorId: payload.authorId, classroomId: payload.classroomId })
     })
+    // A quiz published to a class (ADR-0064): its other members are told, and the notification opens the quiz.
+    this.events.subscribe('QuizPublished', async ({ payload }) => {
+      if (!payload.classroomId || !payload.memberIds?.length) return
+      await this.notifications.notifyMany(payload.memberIds, { category: 'QUIZ_PUBLISHED', path: `/classes/${payload.classroomId}/quizzes/${payload.quizId}`, actorId: payload.authorId ?? null, classroomId: payload.classroomId })
+    })
     // Comments (ADR-0047): core works out who is told; the notification opens where the discussion is.
     this.events.subscribe('CommentAdded', async ({ payload }) => {
       const place = payload.place

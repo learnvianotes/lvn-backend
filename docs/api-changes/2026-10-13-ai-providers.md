@@ -1,7 +1,7 @@
 # AI providers platform admins choose
 
 - Date: 2026-10-13
-- Package: `@lvn/contracts` (minor bump at merge)
+- Package: `@lvn/contracts` 0.40.0
 - Spec: §10.1; ADR-0065
 - Breaking: no
 
