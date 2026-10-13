@@ -18,7 +18,7 @@ export function handlesIn(text: string): string[] {
   return [...seen]
 }
 
-export type MentionPlace = { kind: 'NOTE'; noteId: string } | { kind: 'GROUP'; groupId: string } | { kind: 'CLASSROOM'; classroomId: string }
+export type MentionPlace = { kind: 'NOTE'; noteId: string } | { kind: 'GROUP'; groupId: string } | { kind: 'CLASSROOM'; classroomId: string } | { kind: 'RESOURCE'; resourceId: string }
 
 /**
  * Mentions (ADR-0054): who a comment or a post names, told once each. A name is skipped when it is not a person, is

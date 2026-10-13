@@ -15,7 +15,7 @@ export const ENGLISH_STOPWORDS = (
 
 export const STOPWORDS_SET = 'english'
 
-export type SearchEntityName = 'NOTE' | 'USER' | 'TOPIC' | 'GROUP' | 'CLASSROOM'
+export type SearchEntityName = 'NOTE' | 'USER' | 'TOPIC' | 'GROUP' | 'CLASSROOM' | 'RESOURCE'
 
 /** One Typesense collection: `<prefix><name>_v<version>` behind the alias `<prefix><name>` (ADR-0055). */
 export interface CollectionDef {
@@ -91,6 +91,22 @@ export const COLLECTIONS: Record<SearchEntityName, CollectionDef> = {
     version: 1,
     fields: [text('name'), { name: 'description', type: 'string', stem: true, optional: true }, { name: 'memberCount', type: 'int32' }],
     defaultSortingField: 'memberCount',
+  },
+  /** Approved resources (ADR-0075), for everyone; ranked by saves. */
+  RESOURCE: {
+    name: 'resources',
+    entity: 'RESOURCE',
+    version: 1,
+    fields: [
+      text('title'),
+      { name: 'author', type: 'string', optional: true },
+      { name: 'description', type: 'string', stem: true, optional: true },
+      { name: 'topics', type: 'string[]', stem: true },
+      keyword('type'),
+      keyword('submittedById'),
+      { name: 'saveCount', type: 'int32' },
+    ],
+    defaultSortingField: 'saveCount',
   },
 }
 

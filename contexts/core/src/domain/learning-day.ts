@@ -27,6 +27,15 @@ export function learningDay(at: Date, timeZone: string): string {
   return d.toISOString().slice(0, 10)
 }
 
+/**
+ * The calendar date in the person's zone, with no rollover: what a countdown counts from. At 01:00 an exam on the 4th
+ * is three days after the 1st, although the learning day is still the 31st until 04:00.
+ */
+export function calendarDay(at: Date, timeZone: string): string {
+  const parts = Object.fromEntries(formatter(timeZone).formatToParts(at).map((p) => [p.type, p.value]))
+  return `${parts.year}-${parts.month}-${parts.day}`
+}
+
 export interface DayContribution {
   learningSeconds: number
   readingSeconds: number

@@ -74,6 +74,11 @@ export function groupsFilter(groupIds: string[]): string {
   return groupIds.length ? `privacy:=PUBLIC || id:=${list(groupIds)}` : 'privacy:=PUBLIC'
 }
 
+/** Resources a viewer may find (ADR-0075): approved ones (the only ones indexed), none by people a block keeps apart. */
+export function resourcesFilter(blockedIds: string[]): string | undefined {
+  return blockedIds.length ? `submittedById:!=${list(blockedIds)}` : undefined
+}
+
 /** Classes a viewer may find: their own (§11, members only); null signed out or in none. */
 export function classroomsFilter(classroomIds: string[]): string | null {
   return classroomIds.length ? `id:=${list(classroomIds)}` : null

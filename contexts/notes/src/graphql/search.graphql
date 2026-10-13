@@ -1,7 +1,7 @@
 # Search (§11, ADR-0055, ADR-0056): one field over notes, people, topics, groups and classes. Typesense or Postgres
 # answers; clients never know which.
 
-enum SearchScope { NOTES PEOPLE TOPICS GROUPS CLASSROOMS }
+enum SearchScope { NOTES PEOPLE TOPICS GROUPS CLASSROOMS RESOURCES }
 
 "Where a note comes from, for the person searching (ADR-0056)"
 enum NoteSource {
@@ -45,6 +45,8 @@ type SearchResults {
   groups: [Group!]!
   "Classes the viewer is in"
   classrooms: [Classroom!]!
+  "Approved resources, most saved first among equal matches (ADR-0075)"
+  resources: [Resource!]!
 }
 
 extend type Query {
@@ -54,4 +56,9 @@ extend type Query {
   only. Works signed out too: public notes, people and topics (group and class pages need an account).
   """
   search(query: String!, scopes: [SearchScope!], first: Int, filters: SearchFilters, after: String): SearchResults!
+}
+
+"A resource, owned by the core subgraph (ADR-0075)"
+type Resource @key(fields: "id", resolvable: false) {
+  id: UUID!
 }

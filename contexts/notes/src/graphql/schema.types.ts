@@ -715,6 +715,11 @@ export interface RenameTagInput {
   name: string
 }
 
+/** A resource, owned by the core subgraph (ADR-0075) */
+export interface Resource {
+  id: string
+}
+
 export interface RestoreNoteVersionInput {
   noteId: string
   versionId: string
@@ -746,9 +751,11 @@ export interface SearchResults {
   groups: Array<Group>
   /** Classes the viewer is in */
   classrooms: Array<Classroom>
+  /** Approved resources, most saved first among equal matches (ADR-0075) */
+  resources: Array<Resource>
 }
 
-export type SearchScope = 'NOTES' | 'PEOPLE' | 'TOPICS' | 'GROUPS' | 'CLASSROOMS'
+export type SearchScope = 'NOTES' | 'PEOPLE' | 'TOPICS' | 'GROUPS' | 'CLASSROOMS' | 'RESOURCES'
 
 export interface SetNoteForkingInput {
   noteId: string

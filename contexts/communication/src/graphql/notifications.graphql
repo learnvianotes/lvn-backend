@@ -61,7 +61,7 @@ enum NotificationCategory {
   MENTION
   "Someone asked the viewer to be Rhythm buddies, or accepted (ADR-0072)"
   RHYTHM_BUDDY
-  "Moderators approved or rejected a resource the person submitted (ADR-0074)"
+  "Moderators approved or rejected a resource the person submitted (ADR-0074), or someone recommended one to them (ADR-0075)"
   RESOURCE
 }
 

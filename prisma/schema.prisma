@@ -914,6 +914,8 @@ enum SearchEntity {
   TOPIC
   GROUP
   CLASSROOM
+  /// An approved resource (ADR-0075)
+  RESOURCE
 
   @@schema("notes")
 }
@@ -1275,6 +1277,8 @@ enum RecommendationKind {
   CONTINUE_NOTE
   QUIZ_ON_TOPIC
   POPULAR_NOTE
+  /// An approved resource on an exam or weak topic (ADR-0075)
+  RESOURCE
 
   @@schema("core")
 }
@@ -2117,6 +2121,8 @@ enum CommentTargetType {
   NOTE
   GROUP_POST
   CLASSROOM_POST
+  /// An approved resource (ADR-0075)
+  RESOURCE
 
   @@schema("core")
 }
@@ -2234,34 +2240,77 @@ enum ResourceStatus {
 
 /// A resource of the learning catalogue. No commerce fields (price, store, seller, affiliate): a test reads this model.
 model Resource {
-  id            String          @id @db.Uuid
-  type          ResourceType
-  title         String
-  description   String?
+  id              String                   @id @db.Uuid
+  type            ResourceType
+  title           String
+  description     String?
   /// As the submitter gave it, after normaliseUrl (no tracking or affiliate parameters)
-  url           String
+  url             String
   /// normaliseUrl(url) without the scheme: one key for http and https, for duplicates
-  urlKey        String
+  urlKey          String
   /// ISBN-13, for books
-  isbn          String?
+  isbn            String?
   /// "By": the author or maker
-  author        String?
+  author          String?
   /// Cross-context reference to notes.File (purpose COVER, parent RESOURCE)
-  coverFileId   String?         @db.Uuid
+  coverFileId     String?                  @db.Uuid
   /// Cross-context reference to users.User
-  submittedById String          @db.Uuid
-  status        ResourceStatus  @default(PENDING)
+  submittedById   String                   @db.Uuid
+  status          ResourceStatus           @default(PENDING)
   /// The moderator's reason for a rejection or a removal, for the submitter
-  reason        String?
-  decidedAt     DateTime?       @db.Timestamptz(3)
-  createdAt     DateTime        @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime        @updatedAt @db.Timestamptz(3)
-  topics        ResourceTopic[]
+  reason          String?
+  decidedAt       DateTime?                @db.Timestamptz(3)
+  createdAt       DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime                 @updatedAt @db.Timestamptz(3)
+  topics          ResourceTopic[]
+  saves           ResourceSave[]
+  recommendations ResourceRecommendation[]
 
   @@index([status, createdAt])
   @@index([submittedById, createdAt])
   @@index([urlKey])
   @@index([isbn])
+  @@schema("core")
+}
+
+/// A person keeps a resource in their Saved list (ADR-0075). Private: nobody sees who saved what, only how many.
+model ResourceSave {
+  resourceId String   @db.Uuid
+  /// Cross-context reference to users.User
+  userId     String   @db.Uuid
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@id([resourceId, userId])
+  @@index([userId, createdAt])
+  @@index([resourceId, createdAt])
+  @@schema("core")
+}
+
+enum ResourceRecommendationTarget {
+  USER
+  GROUP
+  CLASSROOM
+
+  @@schema("core")
+}
+
+/// A resource someone recommends to a person, a group or a class, with a short reason (ADR-0075).
+model ResourceRecommendation {
+  id         String                       @id @db.Uuid
+  resourceId String                       @db.Uuid
+  /// Cross-context reference to users.User
+  fromUserId String                       @db.Uuid
+  targetType ResourceRecommendationTarget
+  /// The person, the group or the class
+  targetId   String                       @db.Uuid
+  reason     String?
+  createdAt  DateTime                     @default(now()) @db.Timestamptz(3)
+  resource   Resource                     @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, targetType, targetId, fromUserId])
+  @@index([targetType, targetId, createdAt])
+  @@index([fromUserId])
   @@schema("core")
 }
 

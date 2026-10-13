@@ -7,8 +7,9 @@ import { learningDay } from '../domain/learning-day'
 import { addDays } from '../domain/rhythm'
 import { ExamsService } from './exams.service'
 import { LearningEventsService } from './learning-events.service'
+import { ResourcesService } from './resources.service'
 
-export type RecommendationKind = 'EXAM_TOPIC' | 'REVISE_TOPIC' | 'CONTINUE_NOTE' | 'QUIZ_ON_TOPIC' | 'POPULAR_NOTE'
+export type RecommendationKind = 'EXAM_TOPIC' | 'REVISE_TOPIC' | 'CONTINUE_NOTE' | 'QUIZ_ON_TOPIC' | 'POPULAR_NOTE' | 'RESOURCE'
 interface Item {
   kind: RecommendationKind
   entityId: string
@@ -38,6 +39,7 @@ export class RecommendationsService implements OnModuleInit {
     private readonly db: PrismaService,
     private readonly exams: ExamsService,
     private readonly learning: LearningEventsService,
+    private readonly resources: ResourcesService,
     @Inject(NOTE_ACCESS) private readonly notes: NoteAccess,
     @Inject(TOPICS) private readonly topics: Topics,
     @Inject(PEOPLE) private readonly people: People,
@@ -60,20 +62,25 @@ export class RecommendationsService implements OnModuleInit {
     const noteRows = kept.filter((r) => isNoteKind(r.kind) && UUID.test(r.entityId))
     const readable = new Map((await this.notes.readable(userId, noteRows.map((r) => r.entityId))).map((n) => [n.noteId, n]))
     const blocked = new Set(await this.people.blockedIds(userId))
-    const topicIds = kept.filter((r) => !isNoteKind(r.kind) && r.entityId.startsWith('topic:')).map((r) => r.entityId.slice(6))
+    const topicIds = kept.filter((r) => !isNoteKind(r.kind) && r.kind !== 'RESOURCE' && r.entityId.startsWith('topic:')).map((r) => r.entityId.slice(6))
     const usable = new Map((await this.topics.usable(userId, topicIds)).map((t) => [t.key, t]))
     const out = []
     for (const r of kept) {
-      if (isNoteKind(r.kind)) {
+      if (r.kind === 'RESOURCE') {
+        // Read as the person reads it now: a resource no longer approved, or a blocked person's, is not recommended.
+        const resource = await this.resources.one(userId, r.entityId)
+        if (!resource || resource.status !== 'APPROVED' || blocked.has(resource.submittedById)) continue
+        out.push({ kind: r.kind, reason: r.reason, score: r.score, noteId: null, noteTitle: null, topicKey: null, topicId: null, topicTitle: null, resource })
+      } else if (isNoteKind(r.kind)) {
         const note = readable.get(r.entityId)
         if (!note || blocked.has(note.ownerId)) continue
         // Popular notes and quizzes are someone else's public notes; once one is not public it is not recommended.
         if ((r.kind === 'POPULAR_NOTE' || r.kind === 'QUIZ_ON_TOPIC') && note.visibility !== 'PUBLIC') continue
-        out.push({ kind: r.kind, reason: r.reason, score: r.score, noteId: note.noteId, noteTitle: note.title, topicKey: null, topicId: null, topicTitle: null })
+        out.push({ kind: r.kind, reason: r.reason, score: r.score, noteId: note.noteId, noteTitle: note.title, topicKey: null, topicId: null, topicTitle: null, resource: null })
       } else {
         const t = r.entityId.startsWith('topic:') ? usable.get(r.entityId) : null
         if (r.entityId.startsWith('topic:') && !t) continue
-        out.push({ kind: r.kind, reason: r.reason, score: r.score, noteId: null, noteTitle: null, topicKey: r.entityId, topicId: t?.id ?? null, topicTitle: t?.title ?? null })
+        out.push({ kind: r.kind, reason: r.reason, score: r.score, noteId: null, noteTitle: null, topicKey: r.entityId, topicId: t?.id ?? null, topicTitle: t?.title ?? null, resource: null })
       }
       if (out.length >= take) break
     }
@@ -95,7 +102,8 @@ export class RecommendationsService implements OnModuleInit {
 
   /** One person's rows, replaced in one go. */
   async compute(userId: string, now = new Date()): Promise<Item[]> {
-    const items = [...(await this.topicItems(userId, now)), ...(await this.noteItems(userId, now))]
+    const topics = await this.topicItems(userId, now)
+    const items = [...topics, ...(await this.noteItems(userId, now)), ...(await this.resourceItems(topics))]
     // One row per entity: the higher band wins (a note can be both to continue and popular).
     const best = new Map<string, Item>()
     for (const i of items) if (!best.has(i.entityId) || best.get(i.entityId)!.score < i.score) best.set(i.entityId, i)
@@ -122,6 +130,25 @@ export class RecommendationsService implements OnModuleInit {
       if (examKeys.has(w.key)) continue
       const reason = w.reason === 'LOW_ACCURACY' ? 'Under 60% right in your last quizzes' : `Not revised in 14 days, before ${w.examName ?? 'your exam'}`
       items.push({ kind: 'REVISE_TOPIC', entityId: w.key, score: 60 + 20 * (1 - (w.accuracy ?? 0.5)), reason })
+    }
+    return items
+  }
+
+  /**
+   * RESOURCE (25–45, ADR-0075): the most saved approved resources on the person's exam and weak topics, at most two a
+   * topic and six in all; resources on an exam's topics rank above those on weak ones.
+   */
+  private async resourceItems(topicItems: Item[]): Promise<Item[]> {
+    const items: Item[] = []
+    const seen = new Set<string>()
+    for (const t of topicItems.filter((i) => i.entityId.startsWith('topic:')).sort((a, b) => b.score - a.score).slice(0, 6)) {
+      const rows = await this.db.resource.findMany({ where: { status: 'APPROVED', topics: { some: { topicId: t.entityId.slice(6) } } }, orderBy: [{ saves: { _count: 'desc' } }, { createdAt: 'desc' }], take: 2, select: { id: true, _count: { select: { saves: true } } } })
+      rows.forEach((r, i) => {
+        if (seen.has(r.id) || items.length >= 6) return
+        seen.add(r.id)
+        const saved = r._count.saves ? `, saved by ${r._count.saves} ${r._count.saves === 1 ? 'person' : 'people'}` : ''
+        items.push({ kind: 'RESOURCE', entityId: r.id, score: (t.kind === 'EXAM_TOPIC' ? 45 : 35) - i * 5, reason: `${t.kind === 'EXAM_TOPIC' ? 'For your exam' : 'To revise a weak topic'}${saved}` })
+      })
     }
     return items
   }

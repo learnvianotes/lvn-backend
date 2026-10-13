@@ -299,16 +299,23 @@ export class ResourcesService implements OnModuleInit {
     if (current && current !== next) await this.files.delete([current]).catch(() => undefined)
   }
 
-  /** Copies a picture into storage through the safe fetcher (never hot-linked); null when it cannot. */
+  /**
+   * Copies a picture into storage through the safe fetcher (never hot-linked); null when it cannot. Image hosts can be
+   * slow (Open Library's covers redirect to archive.org): 10 seconds, and one more try after a timeout or a dropped line.
+   */
   private async copyPicture(ownerId: string, resourceId: string, imageUrl: string): Promise<string | null> {
     try {
-      const res = await this.fetcher.fetch({ url: imageUrl, accept: 'image/jpeg,image/png,image/webp', maxBytes: RESOURCE_LIMITS.coverBytes, types: /^image\/(jpeg|png|webp)$/ })
+      const request = { url: imageUrl, accept: 'image/jpeg,image/png,image/webp', maxBytes: RESOURCE_LIMITS.coverBytes, types: /^image\/(jpeg|png|webp)$/, timeoutMs: 10_000 }
+      const res = await this.fetcher.fetch(request).catch((err: unknown) => {
+        if (err instanceof SafeFetchError && (err.code === 'TIMEOUT' || err.code === 'NETWORK')) return this.fetcher.fetch(request)
+        throw err
+      })
       const mimeType = pictureType(res.body)
       if (!mimeType) return null
       const ext = mimeType.split('/')[1] === 'jpeg' ? 'jpg' : mimeType.split('/')[1]
       return await this.files.store(ownerId, { purpose: 'COVER', parent: { type: 'RESOURCE', id: resourceId }, fileName: `cover.${ext}`, mimeType, bytes: res.body, restricted: false, expiresAt: null })
     } catch (err) {
-      this.log.debug(`cover for ${resourceId}: ${err instanceof Error ? err.message : String(err)}`)
+      this.log.warn(`cover for ${resourceId} was not copied: ${err instanceof SafeFetchError ? err.code : err instanceof Error ? err.message : String(err)}`)
       return null
     }
   }
@@ -321,6 +328,7 @@ export class ResourcesService implements OnModuleInit {
     await this.db.resource.delete({ where: { id } })
     if (row.coverFileId) await this.files.delete([row.coverFileId]).catch(() => undefined)
     await this.moderation.closeCases('RESOURCE', [id], viewerId)
+    await this.events.publish('ResourceChanged', { resourceId: id })
     if (row.submittedById !== viewerId) await this.audit.record({ actorId: viewerId, action: 'resource.deleted', targetType: 'RESOURCE', targetId: id, metadata: { submittedById: row.submittedById } })
   }
 
@@ -338,5 +346,6 @@ export class ResourcesService implements OnModuleInit {
     if (!rows.length) return
     await this.db.resource.deleteMany({ where: { submittedById: userId } })
     await this.moderation.closeCases('RESOURCE', rows.map((r) => r.id), null)
+    for (const r of rows) await this.events.publish('ResourceChanged', { resourceId: r.id })
   }
 }

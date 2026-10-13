@@ -3,6 +3,7 @@ import type { DataExportPart } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { LearningEventsService } from './learning-events.service'
 import { ReviewsService } from './reviews.service'
+import { ResourceCatalogueService } from './resource-catalogue.service'
 import { ResourcesService } from './resources.service'
 import { ExamsService } from './exams.service'
 import { RecommendationsService } from './recommendations.service'
@@ -29,10 +30,11 @@ export class CoreExport implements DataExportPart {
     private readonly focus: FocusService,
     private readonly buddies: BuddiesService,
     private readonly resources: ResourcesService,
+    private readonly catalogue: ResourceCatalogueService,
   ) {}
 
   async exportFor(userId: string) {
-    const [progress, marks, reports, appeals, actions, groups, groupPosts, classes, classPosts, comments, reactions, quizzes, attempts, learning, reviews, rhythm, exams, recommendations, focus, buddies, resources] = await Promise.all([
+    const [progress, marks, reports, appeals, actions, groups, groupPosts, classes, classPosts, comments, reactions, quizzes, attempts, learning, reviews, rhythm, exams, recommendations, focus, buddies, resources, catalogue] = await Promise.all([
       this.db.coreTopicProgress.findMany({ where: { userId }, orderBy: { topicKey: 'asc' } }),
       this.db.coreProblemMark.findMany({ where: { userId }, orderBy: { markedAt: 'asc' } }),
       this.db.report.findMany({ where: { reporterId: userId }, orderBy: { createdAt: 'asc' } }),
@@ -59,6 +61,8 @@ export class CoreExport implements DataExportPart {
       this.buddies.exportFor(userId),
       // Resources they submitted (ADR-0074), whatever moderators decided.
       this.resources.exportOf(userId),
+      // Saved resources and recommendations sent (ADR-0075).
+      this.catalogue.exportOf(userId),
     ])
     return {
       files: [
@@ -72,6 +76,7 @@ export class CoreExport implements DataExportPart {
         { path: 'data/learning/focus-sessions.json', bytes: json(focus) },
         { path: 'data/learning/rhythm-buddies.json', bytes: json(buddies) },
         { path: 'data/core/resources-you-submitted.json', bytes: json(resources) },
+        { path: 'data/core/resources-saved-and-recommended.json', bytes: json(catalogue) },
         { path: 'data/core/problem-marks.json', bytes: json(marks.map(({ userId: _u, ...m }) => m)) },
         { path: 'data/core/reports-you-filed.json', bytes: json(reports.map((r) => ({ entityType: r.entityType, entityId: r.entityId, reason: r.reason, details: r.details, status: r.status, createdAt: r.createdAt }))) },
         { path: 'data/core/your-appeals.json', bytes: json(appeals.map((a) => ({ entityType: a.entityType, entityId: a.entityId, message: a.message, status: a.status, createdAt: a.createdAt, decidedAt: a.decidedAt }))) },

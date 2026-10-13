@@ -172,7 +172,10 @@ export class ModerationService implements Moderation {
     } else if (input.entityType === 'RESOURCE') {
       // An approved resource leaves the catalogue until a moderator looks (ADR-0074).
       const held = await this.db.resource.updateMany({ where: { id: input.entityId, status: 'APPROVED' }, data: { status: 'PENDING' } })
-      if (held.count) await this.audit.record({ actorId: null, action: 'moderation.held', targetType: 'RESOURCE', targetId: input.entityId, metadata: { reports: people } })
+      if (held.count) {
+        await this.audit.record({ actorId: null, action: 'moderation.held', targetType: 'RESOURCE', targetId: input.entityId, metadata: { reports: people } })
+        await this.events.publish('ResourceChanged', { resourceId: input.entityId })
+      }
     }
   }
 
@@ -523,6 +526,7 @@ export class ModerationService implements Moderation {
     if (resource) {
       const next = input.action === 'REMOVE' ? 'REJECTED' : 'APPROVED'
       await this.db.resource.update({ where: { id: input.entityId }, data: { status: next, reason: next === 'REJECTED' ? reason : null, decidedAt: now } })
+      await this.events.publish('ResourceChanged', { resourceId: input.entityId })
       // Dismissing people's reports puts a held resource back without a word: its submitter was not told of the hold.
       if (next !== resource.status && input.action !== 'DISMISS') await this.events.publish('ResourceDecided', { resourceId: input.entityId, submittedById: resource.submittedById, decision: next, moderatorId: userId })
     }

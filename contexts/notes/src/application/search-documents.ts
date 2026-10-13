@@ -1,6 +1,6 @@
 import { cardPlainText } from '@lvn/contracts/validation'
 import type { CardType } from '@lvn/contracts/domain'
-import type { ClassroomForSearch, GroupForSearch, SearchProfile } from '@lvn-backend/facades'
+import type { ClassroomForSearch, GroupForSearch, ResourceForSearch, SearchProfile } from '@lvn-backend/facades'
 import type { PrismaService } from '@lvn-backend/prisma-base'
 import type { SnapshotCard } from '../domain/snapshot'
 
@@ -123,6 +123,10 @@ export async function topicDocuments(db: PrismaService, ids: string[]): Promise<
 
 export function groupDocument(g: GroupForSearch) {
   return { id: g.id, name: g.name, ...(g.description ? { description: g.description } : {}), type: g.type, privacy: g.privacy, memberCount: g.memberCount }
+}
+
+export function resourceDocument(r: ResourceForSearch) {
+  return { id: r.id, title: r.title, ...(r.author ? { author: r.author } : {}), ...(r.description ? { description: r.description } : {}), topics: r.topics, type: r.type, submittedById: r.submittedById, saveCount: r.saveCount }
 }
 
 export function classroomDocument(c: ClassroomForSearch) {

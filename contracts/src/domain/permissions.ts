@@ -104,6 +104,8 @@ export const Action = {
   /** Its submitter, while it waits or after it was rejected (saving resubmits it) */
   RESOURCE_EDIT: 'resource.edit',
   RESOURCE_DELETE: 'resource.delete',
+  /** Recommending an approved resource to a person, a group or a class (ADR-0075) */
+  RESOURCE_RECOMMEND: 'resource.recommend',
 } as const
 export type Action = (typeof Action)[keyof typeof Action]
 
@@ -316,6 +318,7 @@ export const NEEDS_VERIFIED_ACCOUNT: ReadonlySet<Action> = new Set<Action>([
   Action.USER_RESPOND_TO_CONNECTION,
   Action.ACCOUNT_REVIEW_VERIFICATION,
   Action.RESOURCE_SUBMIT,
+  Action.RESOURCE_RECOMMEND,
 ])
 
 /**
@@ -536,6 +539,9 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           return actor.globalRole === GlobalRole.TEACHER || actor.teacherApplicant === true
         case Action.CONTENT_MODERATE:
           return actor.globalRole === GlobalRole.PLATFORM_ADMIN
+        case Action.RESOURCE_RECOMMEND:
+          // Where it may go (a person, a group, a class) is the place's own rule (ADR-0075).
+          return true
         case Action.RESOURCE_SUBMIT:
           // A resource is public with its submitter's name: child accounts do not publish in public (§15.2).
           return !actor.restrictedMinor

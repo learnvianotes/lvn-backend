@@ -16,3 +16,4 @@ export { AI_DATA_EXPORT, CORE_DATA_EXPORT, NOTES_DATA_EXPORT, type DataExportPar
 export { LEARNING, type Learning, type ServerLearningEvent } from './learning'
 export { TOPICS, type TopicRef, type Topics } from './topics'
 export { FacadesModule } from './bind'
+export { RESOURCE_SEARCH, type ResourceForSearch, type ResourceSearch } from './resource-search'

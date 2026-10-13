@@ -476,7 +476,7 @@ describe('verified account (ADR-0017)', () => {
       'classroom.acceptInvite', 'classroom.create', 'classroom.requestJoin',
       'group.acceptMentorInvite', 'group.answerDoubt', 'group.askDoubt', 'group.create', 'group.join', 'group.post', 'group.requestJoin',
       'note.changeVisibility', 'note.comment', 'note.publish', 'note.share',
-      'resource.submit',
+      'resource.recommend', 'resource.submit',
       'user.follow', 'user.requestConnection', 'user.respondToConnection',
     ])
   })
@@ -607,6 +607,14 @@ describe('resources (ADR-0074)', () => {
     expect(can(student('u', { institutionVerified: false }), Action.RESOURCE_SUBMIT)).toBe(false)
     expect(can(student('s', { suspended: true }), Action.RESOURCE_SUBMIT)).toBe(false)
     expect(can(anon, Action.RESOURCE_SUBMIT)).toBe(false)
+  })
+
+  it('verified accounts recommend resources, child accounts too (within their own places); not unverified or suspended ones (ADR-0075)', () => {
+    expect(can(other, Action.RESOURCE_RECOMMEND)).toBe(true)
+    expect(can(student('m', { restrictedMinor: true }), Action.RESOURCE_RECOMMEND)).toBe(true)
+    expect(can(student('u', { institutionVerified: false }), Action.RESOURCE_RECOMMEND)).toBe(false)
+    expect(can(student('s', { suspended: true }), Action.RESOURCE_RECOMMEND)).toBe(false)
+    expect(can(anon, Action.RESOURCE_RECOMMEND)).toBe(false)
   })
 
   it('an approved resource is everyone’s to read; a waiting or rejected one its submitter’s and the moderators’ alone', () => {
