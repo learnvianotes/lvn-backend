@@ -1,6 +1,6 @@
 import type { DynamicModule } from '@nestjs/common'
 import type { WorkerConfig } from '@lvn-backend/config'
-import { AiModule } from '@lvn-backend/ai'
+import { AiModule, aiConfigFrom } from '@lvn-backend/ai'
 import { CommunicationModule, communicationConfigFrom, MailService } from '@lvn-backend/communication'
 import { CoreExport, CoreModule, coreConfigFrom, ModerationService, PlacesService } from '@lvn-backend/core'
 import { AUDIT, CORE_DATA_EXPORT, ENTITLEMENTS, FacadesModule, FILES, MAILER, MODERATION, NOTE_ACCESS, PLACES, NOTE_MODERATION, NOTES_DATA_EXPORT, PEOPLE, POLICY } from '@lvn-backend/facades'
@@ -11,12 +11,12 @@ import { AuditService, EntitlementService, PolicyService, UsersModule, usersConf
  * The five bounded contexts this process composes (spec §6), configured as in apps/api. Extracting a context
  * (§6.5 step 4) removes it from this list and from apps/api, and adds apps/<name>-worker.
  */
-export function contextModules(config: WorkerConfig): (DynamicModule | typeof AiModule)[] {
+export function contextModules(config: WorkerConfig): DynamicModule[] {
   return [
     UsersModule.forRoot(usersConfigFrom(config)),
     NotesModule.forRoot(notesConfigFrom(config)),
     CoreModule.forRoot(coreConfigFrom(config)),
-    AiModule,
+    AiModule.forRoot(aiConfigFrom(config)),
     CommunicationModule.forRoot(communicationConfigFrom(config)),
   ]
 }

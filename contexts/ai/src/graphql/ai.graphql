@@ -1,0 +1,35 @@
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.6", import: ["@key", "@shareable"])
+
+# AI (spec §10, ADR-0058): the gateway's state and the viewer's allowance. Tasks and Ask AI come in later slices.
+
+scalar DateTime
+
+"Why AI is not answering"
+enum AiUnavailableReason {
+  "Not switched on in this environment"
+  NOT_CONFIGURED
+  "This month's AI budget is used up; it resumes next month"
+  BUDGET
+  "The model failed several times in a row; it is tried again shortly"
+  PROVIDER_DOWN
+}
+
+type AiStatus {
+  available: Boolean!
+  reason: AiUnavailableReason
+}
+
+"The viewer's AI tokens today (UTC) against their plan's daily limit (§10.1, ADR-0024)"
+type AiAllowance {
+  usedToday: Int!
+  "null: the plan sets no limit"
+  limitToday: Int
+  resetsAt: DateTime!
+}
+
+extend type Query {
+  "Whether AI answers now; works signed out"
+  aiStatus: AiStatus!
+  "Signed in only"
+  myAiAllowance: AiAllowance!
+}

@@ -138,6 +138,40 @@ input AddPdfHighlightInput
   cardId: UUID
 }
 
+"""
+The viewer's AI tokens today (UTC) against their plan's daily limit (§10.1, ADR-0024)
+"""
+type AiAllowance
+  @join__type(graph: AI)
+{
+  usedToday: Int!
+
+  """null: the plan sets no limit"""
+  limitToday: Int
+  resetsAt: DateTime!
+}
+
+type AiStatus
+  @join__type(graph: AI)
+{
+  available: Boolean!
+  reason: AiUnavailableReason
+}
+
+"""Why AI is not answering"""
+enum AiUnavailableReason
+  @join__type(graph: AI)
+{
+  """Not switched on in this environment"""
+  NOT_CONFIGURED @join__enumValue(graph: AI)
+
+  """This month's AI budget is used up; it resumes next month"""
+  BUDGET @join__enumValue(graph: AI)
+
+  """The model failed several times in a row; it is tried again shortly"""
+  PROVIDER_DOWN @join__enumValue(graph: AI)
+}
+
 input AnswerClassroomInviteInput
   @join__type(graph: CORE)
 {
@@ -795,6 +829,7 @@ enum DataExportStatus
 }
 
 scalar DateTime
+  @join__type(graph: AI)
   @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
@@ -1371,6 +1406,7 @@ input InviteToClassroomInput
 scalar join__FieldSet
 
 enum join__Graph {
+  AI @join__graph(name: "ai", url: "local://ai")
   COMMUNICATION @join__graph(name: "communication", url: "local://communication")
   CORE @join__graph(name: "core", url: "local://core")
   NOTES @join__graph(name: "notes", url: "local://notes")
@@ -2662,11 +2698,18 @@ input ProposeTopicInput
 }
 
 type Query
+  @join__type(graph: AI)
   @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
+  """Whether AI answers now; works signed out"""
+  aiStatus: AiStatus! @join__field(graph: AI)
+
+  """Signed in only"""
+  myAiAllowance: AiAllowance! @join__field(graph: AI)
+
   """The viewer's notifications, newest first"""
   notifications(first: Int, after: String): NotificationConnection! @join__field(graph: COMMUNICATION)
   unreadNotificationCount: Int! @join__field(graph: COMMUNICATION)

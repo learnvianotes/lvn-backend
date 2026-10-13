@@ -5,14 +5,27 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node ../../scripts/graphql-types.mjs ai && tsc -p tsconfig.build.json && cp src/graphql/*.graphql dist/graphql/",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "jest --passWithNoTests"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests"
   },
   "dependencies": {
+    "@lvn-backend/auth-guard": "workspace:*",
+    "@lvn-backend/errors": "workspace:*",
+    "@lvn-backend/event-bus": "workspace:*",
+    "@lvn-backend/facades": "workspace:*",
+    "@lvn-backend/graphql": "workspace:*",
+    "@lvn-backend/prisma-base": "workspace:*",
+    "@lvn/contracts": "workspace:@learnvianotes/contracts@*",
     "@nestjs/common": "^11.2.7",
+    "@nestjs/graphql": "13.4.5",
+    "graphql": "16.14.2",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@lvn-backend/testing": "workspace:*"
   }
 }

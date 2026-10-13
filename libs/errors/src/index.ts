@@ -32,6 +32,7 @@ export const Errors = {
   validation: (message: string, field?: string[]) => new AppError(ErrorCode.VALIDATION, message, field),
   conflict: (message: string, field?: string[]) => new AppError(ErrorCode.CONFLICT, message, field),
   rateLimited: (retryAfter: number, message = 'Too many attempts. Try again later.') => new AppError(ErrorCode.RATE_LIMITED, message, undefined, retryAfter),
+  unavailable: (message: string) => new AppError(ErrorCode.UNAVAILABLE, message),
 }
 
 /** An AppError as a payload entry. */

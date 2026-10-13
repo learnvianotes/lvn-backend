@@ -161,6 +161,28 @@ const search = z.object({
   SEARCH_HYBRID: flag.default(false),
 })
 
+/**
+ * AI (§10.1, ADR-0058). Every call goes through the `ai` context's gateway; clients never hold keys. With AI_PROVIDER
+ * `none` (the default) AI is off and says so. The task → model table in the database overrides these defaults.
+ */
+const ai = z.object({
+  AI_PROVIDER: z.enum(['none', 'ollama']).default('none'),
+  /** Ollama's HTTP API: http://127.0.0.1:11434 on a dev machine, http://10.0.2.2:11434 from the local VM */
+  OLLAMA_URL: httpUrl.optional(),
+  /** Default models: one for text (and images), one for embeddings */
+  AI_CHAT_MODEL: z.string().min(1).optional(),
+  AI_EMBED_MODEL: z.string().min(1).optional(),
+  /** A provider call slower than this fails (a local model's first call loads it) */
+  AI_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(120_000),
+  /** The environment's monthly AI budget in millionths of a dollar; past it the breaker trips. Unset: no cap */
+  AI_MONTHLY_BUDGET_MICRO_USD: z.coerce.number().int().min(0).optional(),
+})
+
+const aiConfigured = <T extends { AI_PROVIDER: 'none' | 'ollama'; OLLAMA_URL?: string; AI_CHAT_MODEL?: string; AI_EMBED_MODEL?: string }>(c: T, ctx: z.RefinementCtx) => {
+  if (c.AI_PROVIDER !== 'ollama') return
+  for (const key of ['OLLAMA_URL', 'AI_CHAT_MODEL', 'AI_EMBED_MODEL'] as const) if (!c[key]) ctx.addIssue({ code: 'custom', path: [key], message: 'required when AI_PROVIDER=ollama' })
+}
+
 const searchConfigured = <T extends { SEARCH_PROVIDER: 'postgres' | 'typesense'; TYPESENSE_URL?: string; TYPESENSE_API_KEY?: string }>(c: T, ctx: z.RefinementCtx) => {
   if (!!c.TYPESENSE_URL !== !!c.TYPESENSE_API_KEY) ctx.addIssue({ code: 'custom', path: [c.TYPESENSE_URL ? 'TYPESENSE_API_KEY' : 'TYPESENSE_URL'], message: 'TYPESENSE_URL and TYPESENSE_API_KEY go together' })
   if (c.SEARCH_PROVIDER === 'typesense' && !c.TYPESENSE_URL) ctx.addIssue({ code: 'custom', path: ['TYPESENSE_URL'], message: 'required when SEARCH_PROVIDER=typesense' })
@@ -182,8 +204,9 @@ const apiShape = backendBase
   .extend(mail.shape)
   .extend(auth.shape)
   .extend(search.shape)
+  .extend(ai.shape)
 
-export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(searchConfigured)
+export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(searchConfigured).superRefine(aiConfigured)
 export type ApiConfig = z.infer<typeof apiConfigSchema>
 
 /**
@@ -199,6 +222,7 @@ export const workerConfigSchema = apiShape
   .superRefine(mailTransportConfigured)
   .superRefine(providersConfigured)
   .superRefine(searchConfigured)
+  .superRefine(aiConfigured)
 export type WorkerConfig = z.infer<typeof workerConfigSchema>
 
 const publicId = z.string().min(1).optional()

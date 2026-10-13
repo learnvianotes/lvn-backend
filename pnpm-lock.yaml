@@ -264,15 +264,49 @@ importers:
 
   contexts/ai:
     dependencies:
+      '@lvn-backend/auth-guard':
+        specifier: workspace:*
+        version: link:../../libs/auth-guard
+      '@lvn-backend/errors':
+        specifier: workspace:*
+        version: link:../../libs/errors
+      '@lvn-backend/event-bus':
+        specifier: workspace:*
+        version: link:../../libs/event-bus
+      '@lvn-backend/facades':
+        specifier: workspace:*
+        version: link:../../libs/facades
+      '@lvn-backend/graphql':
+        specifier: workspace:*
+        version: link:../../libs/graphql
+      '@lvn-backend/prisma-base':
+        specifier: workspace:*
+        version: link:../../libs/prisma-base
+      '@lvn/contracts':
+        specifier: workspace:@learnvianotes/contracts@*
+        version: link:../../contracts
       '@nestjs/common':
         specifier: ^11.2.7
         version: 11.2.7(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/graphql':
+        specifier: 13.4.5
+        version: 13.4.5(@apollo/subgraph@2.14.4(graphql@16.14.2))(@nestjs/common@11.2.7(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.2.7)(graphql@16.14.2)(reflect-metadata@0.2.2)(ts-morph@27.0.2)
+      graphql:
+        specifier: 16.14.2
+        version: 16.14.2
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
       rxjs:
         specifier: ^7.8.2
         version: 7.8.2
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@lvn-backend/testing':
+        specifier: workspace:*
+        version: link:../../libs/testing
 
   contexts/communication:
     dependencies:
