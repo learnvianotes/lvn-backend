@@ -3918,6 +3918,11 @@ type Query
   """The viewer's resources, newest first, whatever their state"""
   myResources: [Resource!]! @join__field(graph: CORE)
 
+  """
+  Curated topics with every word of the query in their title, at most 20: a resource's topics come from these
+  """
+  resourceTopicOptions(query: String!): [ExamTopicOption!]! @join__field(graph: CORE)
+
   """Reads a link's page or looks a book up by ISBN (30 an hour)"""
   resourcePreview(input: ResourcePreviewInput!): ResourcePreview! @join__field(graph: CORE)
 

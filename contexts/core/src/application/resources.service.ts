@@ -139,6 +139,11 @@ export class ResourcesService implements OnModuleInit {
     }
   }
 
+  /** Topics a resource may have: curated ones, never a person's own proposals (ADR-0074). */
+  async topicOptions(viewerId: string, query: string) {
+    return (await this.topics.find(viewerId, query)).filter((t) => t.curated)
+  }
+
   // ── Preview ──────────────────────────────────────────────────────────────────────────────────────────────────
 
   /**

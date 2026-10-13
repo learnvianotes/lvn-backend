@@ -3338,6 +3338,11 @@ type Query {
   """Reads a link's page or looks a book up by ISBN (30 an hour)"""
   resourcePreview(input: ResourcePreviewInput!): ResourcePreview!
 
+  """
+  Curated topics with every word of the query in their title, at most 20: a resource's topics come from these
+  """
+  resourceTopicOptions(query: String!): [ExamTopicOption!]!
+
   """Signed in only"""
   reviewQueue: ReviewQueue!
 

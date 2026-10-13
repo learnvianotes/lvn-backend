@@ -36,6 +36,7 @@
     - `reason` (submitter and moderators only);
     - `viewerCan { edit delete report }`.
 - **`myResources`** lists the viewer's resources, newest first, in every state.
+- **`resourceTopicOptions(query)`** finds curated topics only (a resource's topics); a person's own proposals are left out.
 - **Moderation:**
   - `ReportEntityType.RESOURCE` exists, and `ModerationCase.resource` is set for resource cases.
   - Every submission opens a case in the platform queue. Its report has no reporter, with details "New resource,

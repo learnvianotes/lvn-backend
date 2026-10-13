@@ -110,6 +110,8 @@ extend type Query {
   resource(id: UUID!): Resource
   "The viewer's resources, newest first, whatever their state"
   myResources: [Resource!]!
+  "Curated topics with every word of the query in their title, at most 20: a resource's topics come from these"
+  resourceTopicOptions(query: String!): [ExamTopicOption!]!
   "Reads a link's page or looks a book up by ISBN (30 an hour)"
   resourcePreview(input: ResourcePreviewInput!): ResourcePreview!
 }

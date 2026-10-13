@@ -23,6 +23,12 @@ export class ResourcesResolver {
     return this.resources.mine(viewer.userId)
   }
 
+  @Query('resourceTopicOptions')
+  @UseGuards(SignedInGuard)
+  resourceTopicOptions(@Args('query') query: string, @CurrentViewer() viewer: Viewer) {
+    return this.resources.topicOptions(viewer.userId, query)
+  }
+
   @Query('resourcePreview')
   @UseGuards(SignedInGuard)
   async resourcePreview(@Args('input') input: { url?: string | null; isbn?: string | null }, @CurrentViewer() viewer: Viewer) {

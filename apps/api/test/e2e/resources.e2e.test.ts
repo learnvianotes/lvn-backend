@@ -164,8 +164,13 @@ describe('resources', () => {
     expect(await err({ topicIds: [] })).toBe('Choose 1 to 5 topics.')
     const own = newId()
     const subject = await db.subject.findFirstOrThrow()
-    await db.topic.create({ data: { id: own, subjectId: subject.id, slug: `mine-${own.slice(-8)}`, title: 'My own topic', origin: 'PROPOSED', proposedById: me.id } })
+    await db.topic.create({ data: { id: own, subjectId: subject.id, slug: `mine-${own.slice(-8)}`, title: 'Zebra stripes of my own', origin: 'PROPOSED', proposedById: me.id } })
     expect(await err({ topicIds: [own] })).toBe('Choose topics from LearnViaNotes’ list: your own topics are private to you.')
+    // The topic search offers curated topics only.
+    const curated = await db.topic.findUniqueOrThrow({ where: { id: topicIds[0] } })
+    const options = async (q: string) => (await t.gql<{ resourceTopicOptions: { id: string }[] }>('query ($q: String!) { resourceTopicOptions(query: $q) { id } }', { q }, me.token)).data!.resourceTopicOptions.map((o) => o.id)
+    expect(await options(curated.title)).toContain(curated.id)
+    expect(await options('Zebra stripes of my own')).toEqual([])
 
     // The same link (whatever its tracking, scheme or slash) or ISBN is one resource.
     const url = `https://nptel.ac.in/courses/${newId()}/`

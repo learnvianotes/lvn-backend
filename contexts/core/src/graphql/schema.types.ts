@@ -1376,6 +1376,10 @@ export interface QueryResourceArgs {
   id: string
 }
 
+export interface QueryResourceTopicOptionsArgs {
+  query: string
+}
+
 export interface QueryResourcePreviewArgs {
   input: ResourcePreviewInput
 }
