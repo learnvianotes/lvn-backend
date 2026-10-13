@@ -14,9 +14,14 @@ output "migrate_database_url" {
   sensitive   = true
 }
 
+locals {
+  # The AWS stand-in (ADR-0066) has no Redis (main.tf): a placeholder host stands in; nothing connects to it there.
+  redis_host = var.aws_emulator ? "${var.name}.emulated.cache.amazonaws.com" : aws_elasticache_replication_group.this[0].primary_endpoint_address
+}
+
 output "redis_url" {
   description = "TLS to ElastiCache (its certificates chain to a public CA)"
-  value       = "rediss://${aws_elasticache_replication_group.this.primary_endpoint_address}:6379"
+  value       = "rediss://${local.redis_host}:6379"
 }
 
 output "db_address" {

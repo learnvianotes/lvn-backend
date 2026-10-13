@@ -4,12 +4,12 @@
 
 locals {
   images = {
-    postgres = "pgvector/pgvector:0.8.7-pg16"
-    redis    = "redis:7.4.11-alpine"
-    s3       = "rustfs/rustfs:1.0.1"
-    mailpit  = "axllent/mailpit:v1.31.4"
-    proxy    = "caddy:2.11.7-alpine"
-    awscli   = "amazon/aws-cli:2.37.10"
+    postgres  = "pgvector/pgvector:0.8.7-pg16"
+    redis     = "redis:7.4.11-alpine"
+    s3        = "rustfs/rustfs:1.0.1"
+    mailpit   = "axllent/mailpit:v1.31.4"
+    proxy     = "caddy:2.11.7-alpine"
+    awscli    = "amazon/aws-cli:2.37.10"
     clamav    = "clamav/clamav:1.5.4"
     typesense = "typesense/typesense:30.2"
   }

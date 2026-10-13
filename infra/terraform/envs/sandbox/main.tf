@@ -52,6 +52,7 @@ module "data" {
   security_group_id = module.network.data_security_group_id
   db_instance_class = var.db_instance_class
   redis_node_type   = var.redis_node_type
+  aws_emulator      = var.aws_emulator
 }
 
 module "storage" {
@@ -124,6 +125,7 @@ module "edge" {
   name         = var.name
   alb_arn      = module.service.alb_arn
   alb_dns_name = module.service.alb_dns_name
+  aws_emulator = var.aws_emulator
 }
 
 resource "aws_budgets_budget" "monthly" {
