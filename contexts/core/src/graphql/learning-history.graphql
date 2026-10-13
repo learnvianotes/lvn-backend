@@ -1,0 +1,55 @@
+# Learning history (§14.2, ADR-0067): a person's days, newest first.
+
+"A topic of the notes subgraph"
+type Topic @key(fields: "id", resolvable: false) {
+  id: UUID!
+}
+
+type LearningHistoryTopic {
+  "topic:<id> or core:<subject>/<topic>"
+  key: String!
+  "The notes topic, when the key is one the viewer may see; null for /core topics"
+  topic: Topic
+  seconds: Int!
+}
+
+type LearningHistoryDay {
+  "The learning day, YYYY-MM-DD, in the person's time zone (it rolls over at 04:00)"
+  day: String!
+  "Focus sessions, reviews and quizzes"
+  learningSeconds: Int!
+  "Notes and /core topics open"
+  readingSeconds: Int!
+  reviews: Int!
+  quizAnswers: Int!
+  "Counts towards Rhythm: 10 learning minutes or 10 reviews (ADR-0030)"
+  counted: Boolean!
+  "Most time first"
+  topics: [LearningHistoryTopic!]!
+  "Notes opened that day that the viewer can still read, newest first"
+  notes: [Note]!
+}
+
+type LearningHistory {
+  "The time zone days are counted in"
+  timeZone: String!
+  "Days with something in them, newest first"
+  days: [LearningHistoryDay!]!
+  "Pass as `before` for older days; null when there are none"
+  nextBefore: String
+}
+
+input SetLearningTimeZoneInput {
+  "An IANA time zone, e.g. Asia/Kolkata"
+  timeZone: String!
+}
+
+extend type Query {
+  "Signed in only: days before `before` (YYYY-MM-DD), `days` at a time (at most 60)"
+  learningHistory(before: String, days: Int): LearningHistory!
+}
+
+extend type Mutation {
+  "Signed in only. The apps send the device's zone with events; this sets it by hand"
+  setLearningTimeZone(input: SetLearningTimeZoneInput!): OkPayload!
+}

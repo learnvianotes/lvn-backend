@@ -1183,16 +1183,20 @@ model LearnerSettings {
 /// sent late count where they belong.
 model LearningDay {
   /// Cross-context reference to users.User
-  userId          String   @db.Uuid
-  day             DateTime @db.Date
+  userId                String   @db.Uuid
+  day                   DateTime @db.Date
   /// Learning actions only (ADR-0030): focus sessions, reviews, quizzes
-  learningSeconds Int      @default(0)
+  learningSeconds       Int      @default(0)
   /// Notes and /core topics open: history shows it, Rhythm does not count it
-  readingSeconds  Int      @default(0)
-  reviews         Int      @default(0)
-  quizAnswers     Int      @default(0)
-  events          Int      @default(0)
-  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+  readingSeconds        Int      @default(0)
+  reviews               Int      @default(0)
+  quizAnswers           Int      @default(0)
+  events                Int      @default(0)
+  /// The old site's study days (ADR-0023), set when a learner claims them and cleared if they decline: its focus
+  /// minutes as learning time, its topic time as reading
+  legacyLearningSeconds Int      @default(0)
+  legacyReadingSeconds  Int      @default(0)
+  updatedAt             DateTime @updatedAt @db.Timestamptz(3)
 
   @@id([userId, day])
   @@schema("core")
@@ -1201,12 +1205,14 @@ model LearningDay {
 /// Time and events per topic per local day (ADR-0067): history by topic, weak topics and recommendations read it.
 model LearningDayTopic {
   /// Cross-context reference to users.User
-  userId   String   @db.Uuid
-  day      DateTime @db.Date
+  userId        String   @db.Uuid
+  day           DateTime @db.Date
   /// topic:<uuid> or core:<subject>/<topic>
-  topicKey String
-  seconds  Int      @default(0)
-  events   Int      @default(0)
+  topicKey      String
+  seconds       Int      @default(0)
+  events        Int      @default(0)
+  /// The old site's time on the topic that day (ADR-0023)
+  legacySeconds Int      @default(0)
 
   @@id([userId, day, topicKey])
   @@index([userId, topicKey])

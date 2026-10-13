@@ -5,6 +5,8 @@ import { CoreExport } from './application/core-export'
 import { CoreProgressService } from './application/core-progress.service'
 import { LearningEventsService } from './application/learning-events.service'
 import { LearningResolver } from './graphql/learning.resolver'
+import { LearningHistoryService } from './application/learning-history.service'
+import { LearningHistoryResolver } from './graphql/learning-history.resolver'
 import { ClassQuizzesService } from './application/class-quizzes.service'
 import { ClassroomsService } from './application/classrooms.service'
 import { PlacesService } from './application/places.service'
@@ -36,7 +38,7 @@ export class CoreModule {
   static forRoot(config: CoreConfig): DynamicModule {
     return {
       module: CoreModule,
-      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, LearningEventsService, LearningResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver, ModeratedContentResolver, GroupModerationResolver, ScopedReportsService, MentionsService, GroupsService, GroupsResolver, GroupReferenceResolver, ClassroomsService, PlacesService, ClassroomsResolver, ClassroomReferenceResolver, ClassQuizzesService, ClassQuizzesResolver, ClassroomQuizzesResolver, CommentsService, NoteDiscussionResolver, GroupPostDiscussionResolver, ClassroomPostDiscussionResolver, DiscussionResolver, CommentResolver, WorkspacesService, WorkspaceGroupResolver, DoubtResolver, ActivityService, ActivityResolver, JsonScalar],
+      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, LearningEventsService, LearningResolver, LearningHistoryService, LearningHistoryResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver, ModeratedContentResolver, GroupModerationResolver, ScopedReportsService, MentionsService, GroupsService, GroupsResolver, GroupReferenceResolver, ClassroomsService, PlacesService, ClassroomsResolver, ClassroomReferenceResolver, ClassQuizzesService, ClassQuizzesResolver, ClassroomQuizzesResolver, CommentsService, NoteDiscussionResolver, GroupPostDiscussionResolver, ClassroomPostDiscussionResolver, DiscussionResolver, CommentResolver, WorkspacesService, WorkspaceGroupResolver, DoubtResolver, ActivityService, ActivityResolver, JsonScalar],
       exports: [CoreProgressService, ModerationService, GroupsService, ClassroomsService, PlacesService, WorkspacesService, LearningEventsService],
     }
   }

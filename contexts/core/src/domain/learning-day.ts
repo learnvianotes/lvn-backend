@@ -60,3 +60,28 @@ export function contributionOf(e: { type: string; durationMs: number | null; met
   }
   return c
 }
+
+/** The UTC instant at which a local wall-clock time happens in a time zone (the later one when the clocks go back). */
+function localToUtc(date: string, hour: number, timeZone: string): Date {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number]
+  const wanted = Date.UTC(y, m - 1, d, hour)
+  let guess = wanted
+  // Two corrections settle it: the zone's offset at the guess, then at the corrected guess.
+  for (let i = 0; i < 2; i++) {
+    const parts = Object.fromEntries(formatter(timeZone).formatToParts(new Date(guess)).map((p) => [p.type, p.value]))
+    const minutes = new Intl.DateTimeFormat('en-US', { timeZone, minute: '2-digit' }).format(new Date(guess))
+    const seen = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(minutes))
+    guess += wanted - seen
+  }
+  return new Date(guess)
+}
+
+/** When a learning day starts and ends (04:00 local to 04:00 local the next day), as UTC instants. */
+export function dayBounds(day: string, timeZone: string): { from: Date; to: Date } {
+  const next = new Date(`${day}T00:00:00Z`)
+  next.setUTCDate(next.getUTCDate() + 1)
+  return { from: localToUtc(day, DAY_ROLLOVER_HOUR, timeZone), to: localToUtc(next.toISOString().slice(0, 10), DAY_ROLLOVER_HOUR, timeZone) }
+}
+
+/** A day counts for Rhythm at 10 learning minutes or 10 reviews (ADR-0030). */
+export const countsForRhythm = (d: { learningSeconds: number; reviews: number }) => d.learningSeconds >= 600 || d.reviews >= 10

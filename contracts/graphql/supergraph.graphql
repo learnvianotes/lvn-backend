@@ -1835,6 +1835,58 @@ enum LearningEventType
   PROBLEM_MARKED @join__enumValue(graph: CORE)
 }
 
+type LearningHistory
+  @join__type(graph: CORE)
+{
+  """The time zone days are counted in"""
+  timeZone: String!
+
+  """Days with something in them, newest first"""
+  days: [LearningHistoryDay!]!
+
+  """Pass as `before` for older days; null when there are none"""
+  nextBefore: String
+}
+
+type LearningHistoryDay
+  @join__type(graph: CORE)
+{
+  """
+  The learning day, YYYY-MM-DD, in the person's time zone (it rolls over at 04:00)
+  """
+  day: String!
+
+  """Focus sessions, reviews and quizzes"""
+  learningSeconds: Int!
+
+  """Notes and /core topics open"""
+  readingSeconds: Int!
+  reviews: Int!
+  quizAnswers: Int!
+
+  """Counts towards Rhythm: 10 learning minutes or 10 reviews (ADR-0030)"""
+  counted: Boolean!
+
+  """Most time first"""
+  topics: [LearningHistoryTopic!]!
+
+  """Notes opened that day that the viewer can still read, newest first"""
+  notes: [Note]!
+}
+
+type LearningHistoryTopic
+  @join__type(graph: CORE)
+{
+  """topic:<id> or core:<subject>/<topic>"""
+  key: String!
+
+  """
+  The notes topic, when the key is one the viewer may see; null for /core topics
+  """
+  topic: Topic
+  seconds: Int!
+}
+
 type LegacyCounts
   @join__type(graph: USERS)
 {
@@ -2237,6 +2289,11 @@ type Mutation
   """Its author, or a moderator"""
   deleteGroupPost(input: GroupPostIdInput!): GroupPayload! @join__field(graph: CORE)
   pinGroupPost(input: PinGroupPostInput!): GroupPostPayload! @join__field(graph: CORE)
+
+  """
+  Signed in only. The apps send the device's zone with events; this sets it by hand
+  """
+  setLearningTimeZone(input: SetLearningTimeZoneInput!): OkPayload! @join__field(graph: CORE)
 
   """
   Signed in only. Clients send every 10 s or 20 events, and keep what they could not send
@@ -3269,6 +3326,11 @@ type Query
   discoverGroups(query: String, first: Int): [Group!]! @join__field(graph: CORE)
 
   """
+  Signed in only: days before `before` (YYYY-MM-DD), `days` at a time (at most 60)
+  """
+  learningHistory(before: String, days: Int): LearningHistory! @join__field(graph: CORE)
+
+  """
   Open cases, oldest first: a group's (its moderators and mentor) or a class's (its staff), or every case (PLATFORM_ADMIN)
   """
   moderationQueue(first: Int, after: String, scope: ModerationScopeInput): ModerationCaseConnection! @join__field(graph: CORE)
@@ -3836,6 +3898,13 @@ input SetInstitutionalEmailInput
   email: String!
 }
 
+input SetLearningTimeZoneInput
+  @join__type(graph: CORE)
+{
+  """An IANA time zone, e.g. Asia/Kolkata"""
+  timeZone: String!
+}
+
 input SetNoteForkingInput
   @join__type(graph: NOTES)
 {
@@ -4132,19 +4201,18 @@ enum TeacherSkillSource
   MANUAL @join__enumValue(graph: USERS)
 }
 
-"""
-A topic within a subject; curated by LVN or proposed by a user (usable by its proposer until curated)
-"""
+"""A topic of the notes subgraph"""
 type Topic
-  @join__type(graph: NOTES)
+  @join__type(graph: CORE, key: "id", resolvable: false)
+  @join__type(graph: NOTES, key: "id")
 {
   id: UUID!
-  slug: String!
-  title: String!
-  origin: TopicOrigin!
-  subject: Subject!
-  parentId: UUID
-  children: [Topic!]!
+  slug: String! @join__field(graph: NOTES)
+  title: String! @join__field(graph: NOTES)
+  origin: TopicOrigin! @join__field(graph: NOTES)
+  subject: Subject! @join__field(graph: NOTES)
+  parentId: UUID @join__field(graph: NOTES)
+  children: [Topic!]! @join__field(graph: NOTES)
 }
 
 enum TopicOrigin
