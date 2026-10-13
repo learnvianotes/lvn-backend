@@ -90,7 +90,7 @@ export class ClassroomsService {
         requestJoin: may(Action.CLASSROOM_REQUEST_JOIN) && !loaded.invite,
         acceptInvite: may(Action.CLASSROOM_ACCEPT_INVITE),
         review: may(Action.CLASSROOM_REVIEW_JOIN_REQUESTS),
-        post: may(Action.CLASSROOM_REVIEW_JOIN_REQUESTS),
+        post: may(Action.CLASSROOM_POST),
         publishQuiz: may(Action.CLASSROOM_PUBLISH_QUIZ),
         manage: loaded.role === 'TEACHER',
         leave: !!loaded.role && loaded.role !== 'TEACHER',
@@ -216,7 +216,9 @@ export class ClassroomsService {
   /** Staff invite by handle or email (ADR-0009): a TA only by the teacher. */
   async invite(actorId: string, classroomId: string, person: string, role: 'STUDENT' | 'TA'): Promise<string> {
     const { classroom, role: mine, resource, actor } = await this.require(actorId, classroomId)
-    if (!can(actor, Action.CLASSROOM_REVIEW_JOIN_REQUESTS, resource)) throw Errors.forbidden('Only the class’s teacher and TAs invite people.')
+    if (!can(actor, Action.CLASSROOM_REVIEW_JOIN_REQUESTS, resource)) {
+      throw Errors.forbidden(actor?.globalRole === 'STUDENT' && resource.role === Role.TEACHER ? 'Students can join once you are verified as a teacher.' : 'Only the class’s teacher and TAs invite people.')
+    }
     if (role === 'TA' && mine !== 'TEACHER') throw Errors.forbidden('Only the class’s teacher invites TAs.')
     const found = await this.people.find(person)
     if (!found) throw Errors.validation('Nobody on LearnViaNotes has that handle or email.', ['input', 'person'])
@@ -309,7 +311,7 @@ export class ClassroomsService {
 
   async post(actorId: string, classroomId: string, body: unknown): Promise<string> {
     const { resource, actor } = await this.require(actorId, classroomId)
-    if (!can(actor, Action.CLASSROOM_REVIEW_JOIN_REQUESTS, resource)) throw Errors.forbidden('Only the class’s teacher and TAs post announcements.')
+    if (!can(actor, Action.CLASSROOM_POST, resource)) throw Errors.forbidden('Only the class’s teacher and TAs post announcements.')
     const doc = docSchema.safeParse(body)
     if (!doc.success) throw Errors.validation('This announcement could not be read.', ['input', 'body'])
     const text = docText(doc.data).trim()
@@ -333,7 +335,7 @@ export class ClassroomsService {
     const p = await this.db.classroomPost.findFirst({ where: { id: postId, deletedAt: null } })
     if (!p) throw Errors.notFound('Announcement not found.')
     const { resource, actor } = await this.require(actorId, p.classroomId)
-    if (!can(actor, Action.CLASSROOM_REVIEW_JOIN_REQUESTS, resource)) throw Errors.forbidden('Only the class’s teacher and TAs remove announcements.')
+    if (!can(actor, Action.CLASSROOM_POST, resource)) throw Errors.forbidden('Only the class’s teacher and TAs remove announcements.')
     await this.db.classroomPost.update({ where: { id: postId }, data: { deletedAt: new Date() } })
     return p.classroomId
   }

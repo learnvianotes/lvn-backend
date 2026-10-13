@@ -5,6 +5,15 @@ export interface AcceptTermsInput {
   version: string
 }
 
+/** An application to teach (ADR-0073). fileIds: 0–3 proof files uploaded with createUploadIntent(purpose:
+ * VERIFICATION_DOCUMENT), seen by platform admins only, deleted 30 days after the decision */
+export interface ApplyToTeachInput {
+  institution: string
+  subjects?: string | null
+  message?: string | null
+  fileIds?: Array<string> | null
+}
+
 export interface AuthPayload {
   session: Session | null
   userErrors: Array<UserError>
@@ -209,6 +218,10 @@ export interface MutationRequestTeacherVerificationArgs {
 
 export interface MutationRequestDocumentVerificationArgs {
   input: RequestDocumentVerificationInput
+}
+
+export interface MutationApplyToTeachArgs {
+  input: ApplyToTeachInput
 }
 
 export interface MutationWithdrawVerificationRequestArgs {
@@ -471,6 +484,9 @@ export type TeacherSkillKind = 'SKILL' | 'QUALIFICATION' | 'EXPERIENCE'
 
 export type TeacherSkillSource = 'MANUAL'
 
+/** Where the viewer stands as a teacher (ADR-0073) */
+export type TeacherStatus = 'NONE' | 'PENDING' | 'VERIFIED' | 'DECLINED'
+
 /** Omitted fields stay as they are; null clears a field */
 export interface UpdateProfileInput {
   department?: string | null
@@ -526,6 +542,8 @@ export interface User {
   teacherProfile?: TeacherProfile | null
   /** The viewer's own: whether they accepted the current version (Query.termsVersion); false means ask again. null for others. */
   termsAccepted?: boolean | null
+  /** Viewer only (ADR-0073) */
+  teacherStatus?: TeacherStatus | null
 }
 
 /** An expected failure of a mutation; `field` is the dotted input path, e.g. ["input", "email"] */
@@ -544,10 +562,17 @@ export interface VerificationDocument {
 
 export type VerificationMethod = 'INSTITUTIONAL_EMAIL' | 'TEACHER' | 'DOCUMENTS'
 
+/** ACCOUNT: have the account verified (ADR-0019). TEACHER_ROLE: an application to teach (ADR-0073) */
+export type VerificationPurpose = 'ACCOUNT' | 'TEACHER_ROLE'
+
 /** Shown to the requester, the addressed teacher and platform admins. Documents are listed for platform admins only. */
 export interface VerificationRequest {
   id: string
+  purpose: VerificationPurpose
   method: VerificationMethod
+  /** TEACHER_ROLE: where and what they teach */
+  institution: string | null
+  subjects: string | null
   status: VerificationRequestStatus
   message: string | null
   createdAt: Date

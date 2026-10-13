@@ -579,6 +579,22 @@ if (opt('--vm')) {
   ok(!!ended.session?.endedAt && after.every((b) => !b.studyingNow), 'E ends the session; A no longer sees E studying', JSON.stringify(ended))
 }
 
+// Becoming a teacher (ADR-0073), on the local environment where an admin can be made by SQL: F applies to teach and
+// prepares a class at once, but cannot invite; a platform admin approves, and F's class takes students.
+if (opt('--vm')) {
+  const F = await signUp('f')
+  const reviewer = await signUp('teach-admin')
+  sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'INSTITUTIONAL_EMAIL', \\"globalRole\\" = 'PLATFORM_ADMIN' WHERE id = '${reviewer.id}'`)
+  const applied = (await gql('mutation ($input: ApplyToTeachInput!) { applyToTeach(input: $input) { request { id status } userErrors { message } } }', { input: { institution: 'Govt. Junior College', subjects: 'Physics' } }, F.token)).applyToTeach
+  const klass = (await gql('mutation ($input: CreateClassroomInput!) { createClassroom(input: $input) { classroom { id } userErrors { message } } }', { input: { name: `Physics ${WORD}` } }, F.token)).createClassroom
+  const early = await gql('mutation ($input: InviteToClassroomInput!) { inviteToClassroom(input: $input) { classroom { id } } }', { input: { classroomId: klass.classroom?.id, person: B.handle } }, F.token).catch((e) => e.message)
+  ok(applied.request?.status === 'PENDING' && !!klass.classroom?.id && /verified as a teacher/.test(String(early)), 'F applies to teach and prepares a class at once, but cannot invite yet', JSON.stringify([applied.userErrors, klass.userErrors, String(early)]))
+  const decided = (await gql('mutation ($input: ReviewVerificationRequestInput!) { reviewVerificationRequest(input: $input) { request { status } userErrors { message } } }', { input: { requestId: applied.request?.id, approve: true } }, reviewer.token)).reviewVerificationRequest
+  const viewer = (await gql('{ viewer { teacherStatus globalRole verified } }', {}, F.token)).viewer
+  const invited = (await gql('mutation ($input: InviteToClassroomInput!) { inviteToClassroom(input: $input) { classroom { id } userErrors { message } } }', { input: { classroomId: klass.classroom?.id, person: B.handle } }, F.token)).inviteToClassroom
+  ok(decided.request?.status === 'APPROVED' && viewer.teacherStatus === 'VERIFIED' && viewer.globalRole === 'TEACHER' && viewer.verified && !invited.userErrors.length, 'a platform admin approves: F is a verified teacher, and F’s class takes students', JSON.stringify([decided.userErrors, viewer, invited.userErrors]))
+}
+
 console.log(`1..${n}`)
 if (failed) {
   console.log(`# ${failed} of ${n} checks failed`)

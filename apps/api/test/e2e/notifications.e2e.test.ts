@@ -131,8 +131,8 @@ describe('notifications', () => {
     const rows = await db.notification.findMany({ where: { userId: student.id } })
     expect(rows.map((r) => [r.category, r.actorId, r.data])).toHaveLength(4)
     expect(rows.map((r) => [r.category, r.actorId, r.data])).toEqual(expect.arrayContaining([
-      ['VERIFICATION', teacher.id, { kind: 'DECIDED', decision: 'APPROVED' }],
-      ['VERIFICATION', null, { kind: 'DECIDED', decision: 'REJECTED' }],
+      ['VERIFICATION', teacher.id, { kind: 'DECIDED', decision: 'APPROVED', purpose: 'ACCOUNT' }],
+      ['VERIFICATION', null, { kind: 'DECIDED', decision: 'REJECTED', purpose: 'ACCOUNT' }],
       ['DATA_EXPORT', null, null],
       ['NOTES_IMPORT', null, { created: 3, skipped: 1, failed: 0 }],
     ]))

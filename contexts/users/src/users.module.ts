@@ -26,7 +26,7 @@ import { DataResolver } from './graphql/data.resolver'
 import { RegistrationResolver } from './graphql/registration.resolver'
 import { PeopleResolver, SocialResolver } from './graphql/social.resolver'
 import { TeacherProfileResolver } from './graphql/teacher.resolver'
-import { VerificationResolver } from './graphql/verification.resolver'
+import { TeacherStatusResolver, VerificationResolver } from './graphql/verification.resolver'
 import { UserReferenceResolver } from './graphql/user-reference.resolver'
 import { ViewerResolver } from './graphql/viewer.resolver'
 import { USERS_CONFIG, type UsersConfig } from './users.config'
@@ -78,6 +78,7 @@ export class UsersModule {
         AuthResolver,
         RegistrationResolver,
         VerificationResolver,
+        TeacherStatusResolver,
         ProfileResolver,
         TermsResolver,
         DataResolver,

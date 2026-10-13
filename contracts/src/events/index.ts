@@ -38,6 +38,8 @@ export const events = {
     userId: uuid,
     method: z.enum(['TEACHER', 'DOCUMENTS']),
     teacherId: uuid.optional(),
+    /** ADR-0073: an application for the TEACHER role; ACCOUNT when absent */
+    purpose: z.enum(['ACCOUNT', 'TEACHER_ROLE']).optional(),
   })),
   VerificationDecided: eventEnvelope('VerificationDecided', 1, z.object({
     requestId: uuid,
@@ -45,6 +47,8 @@ export const events = {
     method: z.enum(['TEACHER', 'DOCUMENTS']),
     decision: z.enum(['APPROVED', 'REJECTED']),
     reviewerId: uuid,
+    /** ADR-0073: an application for the TEACHER role; ACCOUNT when absent */
+    purpose: z.enum(['ACCOUNT', 'TEACHER_ROLE']).optional(),
   })),
   // Data export (ADR-0018): users asks every context for its part, then assembles one archive.
   DataExportRequested: eventEnvelope('DataExportRequested', 1, z.object({ exportId: uuid, userId: uuid })),

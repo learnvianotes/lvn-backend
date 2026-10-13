@@ -7,6 +7,8 @@ import { Action, aiTaskAction, BLOCKED_WHILE_SUSPENDED, can, NEEDS_VERIFIED_ACCO
  */
 
 const student = (id: string, extra: Partial<Actor> = {}): Actor => ({ id, globalRole: GlobalRole.STUDENT, institutionVerified: true, ...extra })
+/** A verified teacher, the TEACHER global role (ADR-0073: only they admit students to the class they teach). */
+const verifiedTeacher = student('verified-teacher', { globalRole: GlobalRole.TEACHER })
 const owner = student('owner')
 const other = student('other')
 const anon = null
@@ -289,17 +291,28 @@ describe('classroom rows of §5', () => {
     expect(can(other, Action.CLASSROOM_ACCEPT_INVITE, { kind: 'classroom', role: ClassroomRole.STUDENT, invitedByStaff: true })).toBe(false)
   })
 
-  it('review join requests, publish quiz and moderate reports: teacher and TA', () => {
-    for (const a of [Action.CLASSROOM_REVIEW_JOIN_REQUESTS, Action.CLASSROOM_PUBLISH_QUIZ, Action.CLASSROOM_MODERATE_REPORTS]) {
-      expect(can(other, a, c(ClassroomRole.TEACHER))).toBe(true)
+  it('post, publish quiz and moderate reports: teacher and TA, a teacher applicant too (ADR-0073)', () => {
+    const applicant = student('p', { teacherApplicant: true })
+    for (const a of [Action.CLASSROOM_POST, Action.CLASSROOM_PUBLISH_QUIZ, Action.CLASSROOM_MODERATE_REPORTS]) {
+      expect(can(verifiedTeacher, a, c(ClassroomRole.TEACHER))).toBe(true)
+      expect(can(applicant, a, c(ClassroomRole.TEACHER))).toBe(true)
       expect(can(other, a, c(ClassroomRole.TA))).toBe(true)
       expect(can(other, a, c(ClassroomRole.STUDENT))).toBe(false)
       expect(can(other, a, c())).toBe(false)
     }
   })
 
+  it('admit people (join requests, invites): the class’s teacher only once verified as a teacher, and TAs (ADR-0073)', () => {
+    expect(can(verifiedTeacher, Action.CLASSROOM_REVIEW_JOIN_REQUESTS, c(ClassroomRole.TEACHER))).toBe(true)
+    expect(can(other, Action.CLASSROOM_REVIEW_JOIN_REQUESTS, c(ClassroomRole.TA))).toBe(true)
+    expect(can(student('p', { teacherApplicant: true }), Action.CLASSROOM_REVIEW_JOIN_REQUESTS, c(ClassroomRole.TEACHER))).toBe(false)
+    expect(can(other, Action.CLASSROOM_REVIEW_JOIN_REQUESTS, c(ClassroomRole.STUDENT))).toBe(false)
+  })
+
   it('view performance: staff see everyone, students only themselves', () => {
     expect(can(other, Action.CLASSROOM_VIEW_PERFORMANCE, c(ClassroomRole.TA, 'someone'))).toBe(true)
+    expect(can(verifiedTeacher, Action.CLASSROOM_VIEW_PERFORMANCE, c(ClassroomRole.TEACHER, 'someone'))).toBe(true)
+    expect(can(student('p', { teacherApplicant: true }), Action.CLASSROOM_VIEW_PERFORMANCE, c(ClassroomRole.TEACHER, 'someone'))).toBe(false)
     expect(can(other, Action.CLASSROOM_VIEW_PERFORMANCE, c(ClassroomRole.STUDENT, 'other'))).toBe(true)
     expect(can(other, Action.CLASSROOM_VIEW_PERFORMANCE, c(ClassroomRole.STUDENT, 'someone'))).toBe(false)
     expect(can(other, Action.CLASSROOM_VIEW_PERFORMANCE, c(undefined, 'other'))).toBe(false)
@@ -521,8 +534,10 @@ describe('actions without a resource', () => {
     expect(can(anon, Action.CONTENT_MODERATE)).toBe(false)
   })
 
-  it('only the TEACHER role creates classrooms; it is never self-selected', () => {
+  it('the TEACHER role creates classrooms, and so does a teacher applicant, verified or not (ADR-0073)', () => {
     expect(can(student('t', { globalRole: GlobalRole.TEACHER }), Action.CLASSROOM_CREATE)).toBe(true)
+    expect(can(student('p', { teacherApplicant: true, institutionVerified: false }), Action.CLASSROOM_CREATE)).toBe(true)
+    expect(can(student('p', { teacherApplicant: true, suspended: true }), Action.CLASSROOM_CREATE)).toBe(false)
     expect(can(other, Action.CLASSROOM_CREATE)).toBe(false)
   })
 

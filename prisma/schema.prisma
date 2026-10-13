@@ -388,10 +388,22 @@ model ConsentRecord {
 }
 
 /// ADR-0019. Documents are notes.FileObject rows (purpose VERIFICATION_DOCUMENT) referenced by id.
+/// What a verification request asks for (ADR-0073): the account verified (ADR-0019), or the TEACHER role.
+enum VerificationPurpose {
+  ACCOUNT
+  TEACHER_ROLE
+
+  @@schema("users")
+}
+
 model VerificationRequest {
   id          String                    @id @db.Uuid
   userId      String                    @db.Uuid
+  purpose     VerificationPurpose       @default(ACCOUNT)
   method      VerificationMethod
+  /// TEACHER_ROLE: where they teach, and what
+  institution String?
+  subjects    String?
   /// TEACHER method: the verified teacher asked to vouch
   teacherId   String?                   @db.Uuid
   status      VerificationRequestStatus @default(PENDING)

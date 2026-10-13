@@ -184,12 +184,19 @@ describe('security: the permission matrix, action by action', () => {
   })
 
   it('classrooms: create, join, invites, requests, announcements and reports (ADR-0009, ADR-0046, ADR-0051)', async () => {
-    ;[Action.CLASSROOM_CREATE, Action.CLASSROOM_REQUEST_JOIN, Action.CLASSROOM_ACCEPT_INVITE, Action.CLASSROOM_REVIEW_JOIN_REQUESTS, Action.CLASSROOM_MODERATE_REPORTS].forEach(action)
+    ;[Action.CLASSROOM_CREATE, Action.CLASSROOM_REQUEST_JOIN, Action.CLASSROOM_ACCEPT_INVITE, Action.CLASSROOM_REVIEW_JOIN_REQUESTS, Action.CLASSROOM_POST, Action.CLASSROOM_MODERATE_REPORTS].forEach(action)
     const queue = 'query ($scope: ModerationScopeInput) { moderationQueue(scope: $scope) { edges { cursor } } }'
     const newcomer = await person({ name: 'Newcomer' })
+    // A teacher applicant (ADR-0073), not yet verified: prepares a class of their own but admits no one.
+    const applicant = await person({ verified: false, name: 'Applicant' })
+    await t.gql('mutation ($input: ApplyToTeachInput!) { applyToTeach(input: $input) { request { id } } }', { input: { institution: 'Govt. College' } }, applicant.token)
+    const applicantClass = (await t.gql<{ createClassroom: { classroom: { id: string } } }>('mutation ($input: CreateClassroomInput!) { createClassroom(input: $input) { classroom { id } } }', { input: { name: 'Prepared' } }, applicant.token)).data!.createClassroom.classroom.id
     await expectCases([
       ['create a class, a student', 'refused', () => run(student, 'createClassroom', { name: 'Mine' })],
       ['create a class, a teacher', 'allowed', () => run(teacher2, 'createClassroom', { name: 'Theirs' })],
+      ['create a class, a teacher applicant', 'allowed', () => run(applicant, 'createClassroom', { name: 'Another' })],
+      ['invite someone to their class, a teacher applicant', 'refused', () => run(applicant, 'inviteToClassroom', { classroomId: applicantClass, person: newcomer.handle })],
+      ['post an announcement in their class, a teacher applicant', 'allowed', () => run(applicant, 'createClassroomPost', { classroomId: applicantClass, body: doc('Coming soon') })],
       ['ask to join, already in it', 'refused', () => run(student, 'requestToJoinClassroom', { code: klass.joinCode })],
       ['ask to join, unverified', 'refused', () => run(unverified, 'requestToJoinClassroom', { code: klass.joinCode })],
       ['ask to join with the code', 'allowed', () => run(outsider, 'requestToJoinClassroom', { code: klass.joinCode })],

@@ -30,6 +30,9 @@ interface RequestRow {
   id: string
   userId: string
   teacherId: string | null
+  purpose: string
+  institution: string | null
+  subjects: string | null
   method: string
   status: string
   message: string | null
@@ -52,6 +55,16 @@ export class VerificationResolver {
   @Query('myVerificationRequests')
   myVerificationRequests(@CurrentViewer() viewer: Viewer): Promise<RequestRow[]> {
     return this.verification.mine(viewer.userId)
+  }
+
+  @Query('myTeacherApplication')
+  myTeacherApplication(@CurrentViewer() viewer: Viewer): Promise<RequestRow | null> {
+    return this.verification.teacherApplication(viewer.userId)
+  }
+
+  @Mutation('applyToTeach')
+  applyToTeach(@Args('input') input: { institution: string; subjects?: string | null; message?: string | null; fileIds?: string[] | null }, @CurrentViewer() viewer: Viewer): Promise<VerificationRequestPayload> {
+    return withUserErrors<VerificationRequestPayload>(async () => ({ request: (await this.verification.applyToTeach(viewer.userId, input)) as never }), { request: null })
   }
 
   @Query('verificationRequestsToReview')
@@ -153,5 +166,16 @@ export class VerificationResolver {
   async documents(@Parent() r: RequestRow, @CurrentViewer() viewer: Viewer): Promise<VerificationDocument[]> {
     const files = await this.verification.documentsFor(viewer.userId, r.documentIds)
     return files.map((f) => ({ fileId: f.id, fileName: f.originalFileName, mimeType: f.mimeType, sizeBytes: f.sizeBytes }))
+  }
+}
+
+/** `User.teacherStatus`, for the viewer only (ADR-0073). */
+@Resolver('User')
+export class TeacherStatusResolver {
+  constructor(private readonly verification: VerificationService) {}
+
+  @ResolveField('teacherStatus')
+  teacherStatus(@Parent() user: { id: string }, @CurrentViewer() viewer: Viewer | null) {
+    return viewer?.userId === user.id ? this.verification.teacherStatus(user.id) : null
   }
 }
