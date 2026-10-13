@@ -95,6 +95,11 @@ export class UsersService implements People {
     return (await this.db.follow.findMany({ where: { followerId: userId }, orderBy: { createdAt: 'desc' }, select: { followeeId: true }, take: 2000 })).map((f) => f.followeeId)
   }
 
+  /** People facade (ADR-0071): the notes topics on the person's study profile, for recommendations. */
+  async interestTopicIds(userId: string): Promise<string[]> {
+    return (await this.db.studentProfile.findUnique({ where: { userId }, select: { interestTopicIds: true } }))?.interestTopicIds ?? []
+  }
+
   /** People facade (ADR-0016, ADR-0047): the first restricts the second. */
   async restricts(restricterId: string, restrictedId: string): Promise<boolean> {
     return (await this.db.restriction.count({ where: { restricterId, restrictedId } })) > 0

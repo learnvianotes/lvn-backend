@@ -548,6 +548,13 @@ input AnswerMentorInviteInput
   accept: Boolean!
 }
 
+input AnswerRhythmBuddyInput
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  accept: Boolean!
+}
+
 input AppealModerationInput
   @join__type(graph: CORE)
 {
@@ -795,6 +802,16 @@ input ChangeNoteVisibilityInput
   visibility: Visibility!
 }
 
+type ClassPerformance
+  @join__type(graph: CORE)
+{
+  quizzes: Int!
+  students: [ClassStudentPerformance!]!
+
+  """Hardest first"""
+  topics: [ClassTopicPerformance!]!
+}
+
 type ClassQuiz
   @join__type(graph: CORE)
 {
@@ -860,6 +877,18 @@ type ClassQuizQuestion
   explanation: JSON
 }
 
+type ClassQuizScore
+  @join__type(graph: CORE)
+{
+  quizId: UUID!
+  quizTitle: String!
+
+  """The student's first attempt"""
+  score: Int!
+  total: Int!
+  submittedAt: DateTime!
+}
+
 """
 A class, owned by the core subgraph: null when the viewer may no longer see it
 """
@@ -890,6 +919,14 @@ type Classroom
 
   """Members only: announcements, newest first"""
   posts(first: Int, after: String): ClassroomPostConnection @join__field(graph: CORE)
+
+  """Members only: this week's Rhythm across the class"""
+  rhythmRing: ClassroomRhythm @join__field(graph: CORE)
+
+  """
+  Staff only: each student's first score on each quiz, and the topics the class finds hard
+  """
+  performance: ClassPerformance @join__field(graph: CORE)
 
   """Members only: published quizzes, newest first"""
   quizzes(first: Int): [ClassQuiz!] @join__field(graph: CORE)
@@ -1022,12 +1059,68 @@ type ClassroomPreview
   viewerRequestId: UUID
 }
 
+"""This week across a class's students"""
+type ClassroomRhythm
+  @join__type(graph: CORE)
+{
+  students: Int!
+
+  """Students whose week is met"""
+  metCount: Int!
+  countedDays: Int!
+
+  """The sum of the students' targets"""
+  targetDays: Int!
+
+  """Only students who share their Rhythm with their classes"""
+  people: [ClassroomRhythmPerson!]!
+}
+
+type ClassroomRhythmPerson
+  @join__type(graph: CORE)
+{
+  user: User!
+
+  """A child account's first name only"""
+  name: String!
+  countedDays: Int!
+  target: Int!
+  met: Boolean!
+}
+
 enum ClassroomRole
   @join__type(graph: CORE)
 {
   TEACHER @join__enumValue(graph: CORE)
   TA @join__enumValue(graph: CORE)
   STUDENT @join__enumValue(graph: CORE)
+}
+
+type ClassStudentPerformance
+  @join__type(graph: CORE)
+{
+  user: User!
+  name: String!
+  scores: [ClassQuizScore!]!
+  submitted: Int!
+
+  """Right over asked across the scores, 0–1; null before a first quiz"""
+  average: Float
+}
+
+type ClassTopicPerformance
+  @join__type(graph: CORE)
+{
+  key: String!
+  topic: Topic
+  title: String!
+
+  """Right over answers on the topic in first attempts, 0–1"""
+  accuracy: Float!
+  answers: Int!
+
+  """Under 60 %"""
+  hard: Boolean!
 }
 
 type Comment
@@ -1227,6 +1320,19 @@ input CreateClassroomPostInput
   body: JSON!
 }
 
+input CreateExamInput
+  @join__type(graph: CORE)
+{
+  """1–100 characters"""
+  name: String!
+
+  """YYYY-MM-DD, today or later, at most two years away"""
+  date: String!
+
+  """1–20 notes topics the viewer may use"""
+  topicIds: [UUID!]!
+}
+
 input CreateFolderInput
   @join__type(graph: NOTES)
 {
@@ -1359,6 +1465,15 @@ type Discussion
 
   """Why the viewer may not comment or react, in words"""
   whyNot: String
+}
+
+input DismissRecommendationInput
+  @join__type(graph: CORE)
+{
+  kind: RecommendationKind!
+
+  """The note id or the topic key"""
+  entityId: String!
 }
 
 type DomainReview
@@ -1505,6 +1620,102 @@ enum ErrorCode
   UNAVAILABLE @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
 }
 
+type Exam
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  name: String!
+
+  """YYYY-MM-DD, a learning day in the learner's zone"""
+  date: String!
+
+  """0 on the exam's day"""
+  daysLeft: Int!
+  past: Boolean!
+  topics: [ExamTopic!]!
+
+  """Oldest day first"""
+  tasks: [ExamPlanTask!]!
+
+  """Exam Readiness, 0–100: the mean mastery of the topics"""
+  readiness: Int!
+
+  """Where the target line ends on the exam's day, in %"""
+  target: Int!
+
+  """Where the target line is today, in %"""
+  targetToday: Int!
+}
+
+input ExamIdInput
+  @join__type(graph: CORE)
+{
+  id: UUID!
+}
+
+type ExamPayload
+  @join__type(graph: CORE)
+{
+  exam: Exam
+  userErrors: [UserError!]!
+}
+
+"""One revision session of an exam's plan"""
+type ExamPlanTask
+  @join__type(graph: CORE)
+{
+  id: UUID!
+
+  """YYYY-MM-DD, a learning day in the learner's zone"""
+  day: String!
+  topics: [ExamPlanTopic!]!
+
+  """10 minutes on its topics that day, or a quiz answered on them"""
+  done: Boolean!
+  today: Boolean!
+}
+
+type ExamPlanTopic
+  @join__type(graph: CORE)
+{
+  key: String!
+  title: String!
+}
+
+type ExamTopic
+  @join__type(graph: CORE)
+{
+  """topic:<id>, as learning events name it"""
+  key: String!
+  title: String!
+
+  """The notes topic, when the viewer may still use it"""
+  topic: Topic
+
+  """
+  Mean chance of recalling the topic's studied cards now, 0–1; null without studied cards
+  """
+  recall: Float
+
+  """
+  Right answers in the topic's last 3 quiz results, 0–1; null without results
+  """
+  accuracy: Float
+
+  """0.6 × recall + 0.4 × accuracy, or the one there is; 0 with neither"""
+  mastery: Float!
+}
+
+"""A topic an exam can be set on"""
+type ExamTopicOption
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  key: String!
+  title: String!
+  subjectTitle: String!
+}
+
 """
 What an upload is for: AVATAR, VERIFICATION_DOCUMENT, and ATTACHMENT (a picture, video, audio or PDF for a note you can edit, given as parentId). Other purposes arrive with their features.
 """
@@ -1518,6 +1729,37 @@ enum FilePurpose
   IMPORT @join__enumValue(graph: NOTES)
   EXPORT @join__enumValue(graph: NOTES)
   VERIFICATION_DOCUMENT @join__enumValue(graph: NOTES)
+}
+
+type FocusSession
+  @join__type(graph: CORE)
+{
+  id: UUID!
+
+  """topic:<id> or core:<subject>/<topic>"""
+  topicKey: String
+  note: Note
+  plannedMinutes: Int!
+  breakMinutes: Int!
+  meetUrl: String
+  startedAt: DateTime!
+  endedAt: DateTime
+
+  """Counted when it ended: the time since it started, at most the plan"""
+  focusedSeconds: Int!
+}
+
+input FocusSessionIdInput
+  @join__type(graph: CORE)
+{
+  id: UUID!
+}
+
+type FocusSessionPayload
+  @join__type(graph: CORE)
+{
+  session: FocusSession
+  userErrors: [UserError!]!
 }
 
 """The viewer's folder; nested up to 5 levels"""
@@ -1886,6 +2128,13 @@ input InviteMentorInput
 
   """A teacher's handle or email"""
   person: String!
+}
+
+input InviteRhythmBuddyInput
+  @join__type(graph: CORE)
+{
+  """Someone the viewer follows or is connected with"""
+  handle: String!
 }
 
 input InviteToClassroomInput
@@ -2458,6 +2707,22 @@ type Mutation
   deleteComment(input: CommentIdInput!): CommentPayload! @join__field(graph: CORE)
   approveComment(input: CommentIdInput!): CommentPayload! @join__field(graph: CORE)
   react(input: ReactInput!): ReactPayload! @join__field(graph: CORE)
+
+  """Signed in only, as every mutation below; at most 10 upcoming exams"""
+  createExam(input: CreateExamInput!): ExamPayload! @join__field(graph: CORE)
+  updateExam(input: UpdateExamInput!): ExamPayload! @join__field(graph: CORE)
+  deleteExam(input: ExamIdInput!): OkPayload! @join__field(graph: CORE)
+
+  """
+  Signed in only, as every mutation below. A session already open ends first
+  """
+  startFocusSession(input: StartFocusSessionInput!): FocusSessionPayload! @join__field(graph: CORE)
+  endFocusSession(input: FocusSessionIdInput!): FocusSessionPayload! @join__field(graph: CORE)
+  inviteRhythmBuddy(input: InviteRhythmBuddyInput!): OkPayload! @join__field(graph: CORE)
+  answerRhythmBuddy(input: AnswerRhythmBuddyInput!): OkPayload! @join__field(graph: CORE)
+
+  """Ends a buddy link, or takes back an invite"""
+  removeRhythmBuddy(input: RhythmBuddyIdInput!): OkPayload! @join__field(graph: CORE)
   createGroup(input: CreateGroupInput!): GroupPayload! @join__field(graph: CORE)
 
   """Admins: name, description, privacy, join policy"""
@@ -2509,6 +2774,9 @@ type Mutation
   """Staff: moves the quiz to the trash; its attempts stay"""
   deleteClassQuiz(input: ClassQuizIdInput!): OkPayload! @join__field(graph: CORE)
 
+  """Signed in only: not shown again for 30 days"""
+  dismissRecommendation(input: DismissRecommendationInput!): OkPayload! @join__field(graph: CORE)
+
   """Signed in only, as every mutation below"""
   reviewCard(input: ReviewCardInput!): ReviewCardPayload! @join__field(graph: CORE)
 
@@ -2527,6 +2795,11 @@ type Mutation
   Ends a pause early (or drops one not started); its unused days come back
   """
   endRhythmPause(input: RhythmPauseIdInput!): OkPayload! @join__field(graph: CORE)
+
+  """
+  Shows, or stops showing, the viewer's name and counted days on their classes' Rhythm ring
+  """
+  setRhythmSharing(input: SetRhythmSharingInput!): OkPayload! @join__field(graph: CORE)
 
   """Admins and the Owner"""
   setGroupRepository(input: SetGroupRepositoryInput!): GroupPayload! @join__field(graph: CORE)
@@ -3186,6 +3459,9 @@ enum NotificationCategory
   CLASSROOM_INVITE @join__enumValue(graph: COMMUNICATION)
   MODERATION @join__enumValue(graph: COMMUNICATION)
   MENTION @join__enumValue(graph: COMMUNICATION)
+
+  """Someone asked the viewer to be Rhythm buddies, or accepted (ADR-0072)"""
+  RHYTHM_BUDDY @join__enumValue(graph: COMMUNICATION)
 }
 
 type NotificationConnection
@@ -3546,6 +3822,24 @@ type Query
   """
   discussion(target: CommentTargetInput!): Discussion @join__field(graph: CORE)
 
+  """Signed in only: the viewer's exams from a week ago on, soonest first"""
+  exams: [Exam!]! @join__field(graph: CORE)
+  exam(id: UUID!): Exam @join__field(graph: CORE)
+
+  """Signed in only: weak topics, each with why; an upcoming exam's first"""
+  weakTopics: [WeakTopic!]! @join__field(graph: CORE)
+
+  """
+  Signed in only: topics to set an exam on, by words of their titles (at most 20)
+  """
+  examTopicOptions(query: String!): [ExamTopicOption!]! @join__field(graph: CORE)
+
+  """Signed in only: the viewer's open focus session"""
+  focusSession: FocusSession @join__field(graph: CORE)
+
+  """Signed in only"""
+  rhythmBuddies: RhythmBuddies! @join__field(graph: CORE)
+
   """
   A group the viewer may know about: public ones, and private ones they are in or asked to join
   """
@@ -3579,6 +3873,9 @@ type Query
 
   """A quiz of a class the viewer is in; null otherwise"""
   classQuiz(id: UUID!): ClassQuiz @join__field(graph: CORE)
+
+  """Signed in only: best first, at most 20 (default 10)"""
+  recommendations(limit: Int): [Recommendation!]! @join__field(graph: CORE)
 
   """Signed in only"""
   reviewQueue: ReviewQueue! @join__field(graph: CORE)
@@ -3791,6 +4088,48 @@ type ReactPayload
 {
   reactions: Reactions
   userErrors: [UserError!]!
+}
+
+type Recommendation
+  @join__type(graph: CORE)
+{
+  kind: RecommendationKind!
+
+  """Why, in words"""
+  reason: String!
+
+  """Higher first; each kind has its band"""
+  score: Float!
+
+  """The note, for CONTINUE_NOTE, QUIZ_ON_TOPIC and POPULAR_NOTE"""
+  note: Note
+
+  """Its title as the viewer sees it"""
+  noteTitle: String
+
+  """The topic key, for EXAM_TOPIC and REVISE_TOPIC"""
+  topicKey: String
+  topic: Topic
+  topicTitle: String
+}
+
+enum RecommendationKind
+  @join__type(graph: CORE)
+{
+  """A topic of an exam in the next 14 days"""
+  EXAM_TOPIC @join__enumValue(graph: CORE)
+
+  """A weak topic"""
+  REVISE_TOPIC @join__enumValue(graph: CORE)
+
+  """A note opened in the last 14 days, not today"""
+  CONTINUE_NOTE @join__enumValue(graph: CORE)
+
+  """A public note with a quiz on a topic read this week"""
+  QUIZ_ON_TOPIC @join__enumValue(graph: CORE)
+
+  """A public note on the learner's topics that many people read"""
+  POPULAR_NOTE @join__enumValue(graph: CORE)
 }
 
 input RefreshSessionInput
@@ -4103,6 +4442,58 @@ type Rhythm
 
   """Of the 14 a term"""
   pauseDaysLeft: Int!
+  suggestion: RhythmSuggestion
+
+  """
+  Their name and counted days show on their classes' Rhythm ring (ADR-0072); off by default
+  """
+  shareRhythm: Boolean!
+}
+
+type RhythmBuddies
+  @join__type(graph: CORE)
+{
+  """At most five"""
+  buddies: [RhythmBuddy!]!
+  invites: [RhythmBuddyInvite!]!
+  sent: [RhythmBuddyInvite!]!
+}
+
+"""
+What a buddy may see of the other: studying now, and this week's counted days
+"""
+type RhythmBuddy
+  @join__type(graph: CORE)
+{
+  """The link's id: end it with removeRhythmBuddy"""
+  id: UUID!
+  user: User!
+  since: DateTime!
+  studyingNow: Boolean!
+  studyingSince: DateTime
+
+  """The session's topic, when it has one the viewer may see"""
+  topicTitle: String
+  meetUrl: String
+  countedDays: Int!
+  target: Int!
+  met: Boolean!
+}
+
+input RhythmBuddyIdInput
+  @join__type(graph: CORE)
+{
+  id: UUID!
+}
+
+type RhythmBuddyInvite
+  @join__type(graph: CORE)
+{
+  id: UUID!
+
+  """Who asked (invites), or who was asked (sent)"""
+  user: User!
+  at: DateTime!
 }
 
 type RhythmDay
@@ -4137,10 +4528,20 @@ enum RhythmDayStatus
 type RhythmItem
   @join__type(graph: CORE)
 {
-  """REVIEWS now; PLAN_TASK and WEAK_TOPIC with the exam planner"""
+  """
+  REVIEWS, PLAN_TASK (today's exam-plan tasks) or WEAK_TOPIC (one weak topic, done at 10 minutes on it today)
+  """
   kind: String!
   done: Int!
   total: Int!
+
+  """
+  The exams of today's tasks, or the weak topic's title (null for a /core topic)
+  """
+  title: String
+
+  """The weak topic's key"""
+  topicKey: String
 }
 
 type RhythmPause
@@ -4167,6 +4568,18 @@ enum RhythmPauseReason
   FESTIVAL @join__enumValue(graph: CORE)
   TRAVEL @join__enumValue(graph: CORE)
   OTHER @join__enumValue(graph: CORE)
+}
+
+"""
+Three weeks before an exam, one more planned day a week; nothing changes until the learner sets it
+"""
+type RhythmSuggestion
+  @join__type(graph: CORE)
+{
+  plannedDays: Int!
+  examId: UUID!
+  examName: String!
+  daysLeft: Int!
 }
 
 type RhythmToday
@@ -4401,6 +4814,12 @@ input SetRhythmPlanInput
   plannedDays: [Int!]!
 }
 
+input SetRhythmSharingInput
+  @join__type(graph: CORE)
+{
+  share: Boolean!
+}
+
 input ShareNoteInput
   @join__type(graph: NOTES)
 {
@@ -4457,6 +4876,26 @@ input SignUpInput
   dateOfBirth: String!
   institutionalEmail: String
   acceptedTermsVersion: String!
+}
+
+input StartFocusSessionInput
+  @join__type(graph: CORE)
+{
+  topicKey: String
+
+  """A note the viewer can read"""
+  noteId: UUID
+
+  """5–90, 25 by default"""
+  minutes: Int
+
+  """0–30, 5 by default"""
+  breakMinutes: Int
+
+  """
+  https://meet.google.com/abc-defg-hij; buddies see it during the session
+  """
+  meetUrl: String
 }
 
 """
@@ -4773,6 +5212,17 @@ input UpdateClassroomInput
   newCode: Boolean
 }
 
+input UpdateExamInput
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  name: String
+  date: String
+
+  """Replaces the topics; the plan is made again from today"""
+  topicIds: [UUID!]
+}
+
 """
 Omitted fields stay as they are; `parentId: null` moves the folder to the top level
 """
@@ -5069,6 +5519,35 @@ enum Visibility
   PRIVATE @join__enumValue(graph: NOTES)
   SHARED @join__enumValue(graph: NOTES)
   PUBLIC @join__enumValue(graph: NOTES)
+}
+
+type WeakTopic
+  @join__type(graph: CORE)
+{
+  key: String!
+
+  """Null for a /core topic: show its key"""
+  title: String
+  topic: Topic
+  reason: WeakTopicReason!
+  accuracy: Float
+
+  """The soonest exam it is a topic of, if any"""
+  examId: UUID
+  examName: String
+  daysLeft: Int
+}
+
+enum WeakTopicReason
+  @join__type(graph: CORE)
+{
+  """Under 60 % right over the topic's last 3 quiz results"""
+  LOW_ACCURACY @join__enumValue(graph: CORE)
+
+  """
+  A topic of an exam in the next 14 days with no time on it in the last 14
+  """
+  NOT_REVISITED @join__enumValue(graph: CORE)
 }
 
 enum YearOfStudy

@@ -27,6 +27,11 @@ export class RhythmResolver {
     return withUserErrors<Ok>(async () => (await this.rhythm.pause(viewer.userId, input), { ok: true }), { ok: false })
   }
 
+  @Mutation('setRhythmSharing')
+  setRhythmSharing(@Args('input') input: { share: boolean }, @CurrentViewer() viewer: Viewer) {
+    return withUserErrors<Ok>(async () => (await this.rhythm.setSharing(viewer.userId, input.share), { ok: true }), { ok: false })
+  }
+
   @Mutation('endRhythmPause')
   endRhythmPause(@Args('input') input: { id: string }, @CurrentViewer() viewer: Viewer) {
     return withUserErrors<Ok>(async () => (await this.rhythm.endPause(viewer.userId, input.id), { ok: true }), { ok: false })

@@ -74,6 +74,14 @@ export class CommunicationEvents implements OnModuleInit {
     this.events.subscribe('ClassroomPosted', async ({ payload }) => {
       await this.notifications.notifyMany(payload.memberIds, { category: 'CLASSROOM_POST', path: `/classes/${payload.classroomId}`, actorId: payload.authorId, classroomId: payload.classroomId })
     })
+    // A revision task of an exam's plan left today (ADR-0070): one reminder, which opens the exam.
+    this.events.subscribe('ExamTaskDue', async ({ payload }) => {
+      await this.notifications.notify({ userId: payload.userId, category: 'REVISION_REMINDER', path: `/exams/${payload.examId}`, data: { examName: payload.examName, topics: payload.topics.join(', ') } })
+    })
+    // Rhythm buddies (ADR-0072): an invite, or an invite accepted; the notification opens Rhythm.
+    this.events.subscribe('RhythmBuddyChanged', async ({ payload }) => {
+      await this.notifications.notify({ userId: payload.userId, category: 'RHYTHM_BUDDY', path: '/rhythm', actorId: payload.otherId, data: { kind: payload.kind } })
+    })
     // A quiz published to a class (ADR-0064): its other members are told, and the notification opens the quiz.
     this.events.subscribe('QuizPublished', async ({ payload }) => {
       if (!payload.classroomId || !payload.memberIds?.length) return

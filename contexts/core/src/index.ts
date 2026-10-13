@@ -21,6 +21,12 @@ export { LearningHistoryService } from './application/learning-history.service'
 export { ReviewsService } from './application/reviews.service'
 /** Rhythm (ADR-0069): the worker closes last week hourly, in each person's zone. */
 export { RhythmService } from './application/rhythm.service'
+/** Exams (ADR-0070): the worker sends the evening reminders of revision tasks left. */
+export { ExamsService } from './application/exams.service'
+/** Recommendations (ADR-0071): the worker recomputes them hourly for active people. */
+export { RecommendationsService } from './application/recommendations.service'
+/** Focus sessions (ADR-0072): the worker ends the ones left open. */
+export { FocusService } from './application/focus.service'
 
 /** This context's federation subgraph, composed by apps/api's gateway (ADR-0033). */
 export const coreSubgraph = { name: 'core', typeDefs: coreTypeDefs, modules: [CoreModule] }

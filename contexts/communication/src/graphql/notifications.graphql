@@ -59,6 +59,8 @@ enum NotificationCategory {
   CLASSROOM_INVITE
   MODERATION
   MENTION
+  "Someone asked the viewer to be Rhythm buddies, or accepted (ADR-0072)"
+  RHYTHM_BUDDY
 }
 
 """

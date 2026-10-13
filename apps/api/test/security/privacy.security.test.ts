@@ -1,6 +1,7 @@
 import { getNamedType, isObjectType, type GraphQLSchema } from 'graphql'
 import { LIVE_SDL, NotificationService } from '@lvn-backend/communication'
 import { InProcessEventBus } from '@lvn-backend/event-bus'
+import { RecommendationsService } from '@lvn-backend/core'
 import { PdfConversionService, SearchIndex } from '@lvn-backend/notes'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { createTestApp, infra, type TestApp } from '../support/app'
@@ -13,7 +14,7 @@ import { publicSchema } from './support/fuzz'
  * §17.1: B cannot read A's private data through any channel: account data (Phase 1); notes, their files, PDF
  * highlights and conversions, public pages, copies, search and exports (Phase 2); notifications and live updates
  * (Phase 3); groups and classrooms (Phase 3). Ask AI has its own suite (rag-leakage.security.test.ts, Phase 5);
- * recommendations arrive later and their assertions are todos until then. Search is asked of both providers on the
+ * recommendations are read through the read rule (Phase 6, ADR-0071). Search is asked of both providers on the
  * same data (Phase 4, ADR-0055): Postgres and Typesense must give the same answer.
  */
 describe('security: privacy', () => {
@@ -247,9 +248,54 @@ describe('security: privacy', () => {
       }
     })
     // Ask AI (ADR-0060): rag-leakage.security.test.ts asks 1,000 questions without a leak, and ask-ai.e2e.test.ts shows a
-    // note leaving PUBLIC drops out of the next answer at once. Recommendations are not built yet.
-    it.todo('B gets no recommendations that draw on A’s private notes')
-    it.todo('unpublishing removes a note from recommendations within 60 seconds')
+    // note leaving PUBLIC drops out of the next answer at once. Recommendations (ADR-0071) are read through the same rule.
+    describe('recommendations (ADR-0071)', () => {
+      const RECS = '{ recommendations(limit: 20) { kind note { id } noteTitle } }'
+      type Recs = { recommendations: { kind: string; note: { id: string } | null; noteTitle: string | null }[] }
+      const recs = async (token: string) => (await t.gql<Recs>(RECS, {}, token)).data!.recommendations
+      const quizNote = async (title: string, topicId: string) => {
+        const quiz = { question: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Which?' }] }] }, choices: [{ id: 'a', content: [{ type: 'text', text: 'This' }] }, { id: 'b', content: [{ type: 'text', text: 'That' }] }], correct: ['a'], multiple: false }
+        const created = await t.gql<{ createNote: { note: { id: string } } }>('mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } } }', { input: { title, topicIds: [topicId], cards: [{ id: newId(), type: 'quiz', position: 'a0', content: quiz }] } }, actors.a.token)
+        return created.data!.createNote.note.id
+      }
+      /** B spends a minute on the topic, and says it opened the note: the client is not believed. */
+      const bReads = (topicId: string, noteId: string) =>
+        t.gql('mutation ($input: TrackEventsInput!) { trackEvents(input: $input) { accepted } }', {
+          input: {
+            timeZone: 'UTC',
+            events: [
+              { id: newId(), type: 'TIME_SPENT', durationMs: 60_000, topicKeys: [`topic:${topicId}`], metadata: { activity: 'READING' }, clientTs: new Date().toISOString(), platform: 'WEB' },
+              { id: newId(), type: 'NOTE_OPENED', entityType: 'NOTE', entityId: noteId, clientTs: new Date(Date.now() - 3 * 86_400_000).toISOString(), platform: 'WEB' },
+            ],
+          },
+        }, actors.b.token)
+
+      it('B gets no recommendations that draw on A’s private notes', async () => {
+        const db = t.app.get(PrismaService)
+        const topic = await db.topic.findFirstOrThrow({ where: { origin: 'CURATED' }, orderBy: { id: 'desc' } })
+        const id = await quizNote(`Private quiz ${Date.now()}`, topic.id)
+        await bReads(topic.id, id)
+        await t.app.get(RecommendationsService).compute(actors.b.id)
+        expect(await db.recommendation.count({ where: { userId: actors.b.id, entityId: id } })).toBe(0)
+        expect((await recs(actors.b.token)).map((r) => r.note?.id)).not.toContain(id)
+      })
+
+      it('unpublishing removes a note from recommendations at once, before they are computed again', async () => {
+        const db = t.app.get(PrismaService)
+        await db.user.update({ where: { id: actors.a.id }, data: { verifiedAt: new Date(), verificationMethod: 'INSTITUTIONAL_EMAIL' } })
+        const topic = await db.topic.findFirstOrThrow({ where: { origin: 'CURATED' }, orderBy: { id: 'asc' } })
+        const id = await quizNote(`Public quiz ${Date.now()}`, topic.id)
+        await t.gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId: id } }, actors.a.token)
+        await t.gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { id } } }', { input: { noteId: id, visibility: 'PUBLIC' } }, actors.a.token)
+        await t.gql('mutation ($input: TrackEventsInput!) { trackEvents(input: $input) { accepted } }', { input: { timeZone: 'UTC', events: [{ id: newId(), type: 'TIME_SPENT', durationMs: 60_000, topicKeys: [`topic:${topic.id}`], metadata: { activity: 'READING' }, clientTs: new Date().toISOString(), platform: 'WEB' }] } }, actors.b.token)
+        await t.app.get(RecommendationsService).compute(actors.b.id)
+        expect(await recs(actors.b.token)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'QUIZ_ON_TOPIC', note: { id } })]))
+        await t.gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { id } } }', { input: { noteId: id, visibility: 'PRIVATE' } }, actors.a.token)
+        // The stored rows still name it; the read drops it.
+        expect(await db.recommendation.count({ where: { userId: actors.b.id, entityId: id } })).toBe(1)
+        expect((await recs(actors.b.token)).map((r) => r.note?.id)).not.toContain(id)
+      })
+    })
     it('subscriptions never deliver A’s events to B, and cannot ask for anyone else’s (ADR-0042)', async () => {
       // The live subscription takes no arguments: whose events a socket gets comes only from its token.
       expect(LIVE_SDL).toMatch(/type Subscription \{\s*live: LiveEvent!\s*\}/)

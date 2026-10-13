@@ -1,0 +1,161 @@
+# Focus sessions, Rhythm buddies, the classroom ring and class performance (ADR-0072).
+
+type FocusSession {
+  id: UUID!
+  "topic:<id> or core:<subject>/<topic>"
+  topicKey: String
+  note: Note
+  plannedMinutes: Int!
+  breakMinutes: Int!
+  meetUrl: String
+  startedAt: DateTime!
+  endedAt: DateTime
+  "Counted when it ended: the time since it started, at most the plan"
+  focusedSeconds: Int!
+}
+
+input StartFocusSessionInput {
+  topicKey: String
+  "A note the viewer can read"
+  noteId: UUID
+  "5–90, 25 by default"
+  minutes: Int
+  "0–30, 5 by default"
+  breakMinutes: Int
+  "https://meet.google.com/abc-defg-hij; buddies see it during the session"
+  meetUrl: String
+}
+
+input FocusSessionIdInput {
+  id: UUID!
+}
+
+type FocusSessionPayload {
+  session: FocusSession
+  userErrors: [UserError!]!
+}
+
+"What a buddy may see of the other: studying now, and this week's counted days"
+type RhythmBuddy {
+  "The link's id: end it with removeRhythmBuddy"
+  id: UUID!
+  user: User!
+  since: DateTime!
+  studyingNow: Boolean!
+  studyingSince: DateTime
+  "The session's topic, when it has one the viewer may see"
+  topicTitle: String
+  meetUrl: String
+  countedDays: Int!
+  target: Int!
+  met: Boolean!
+}
+
+type RhythmBuddyInvite {
+  id: UUID!
+  "Who asked (invites), or who was asked (sent)"
+  user: User!
+  at: DateTime!
+}
+
+type RhythmBuddies {
+  "At most five"
+  buddies: [RhythmBuddy!]!
+  invites: [RhythmBuddyInvite!]!
+  sent: [RhythmBuddyInvite!]!
+}
+
+input InviteRhythmBuddyInput {
+  "Someone the viewer follows or is connected with"
+  handle: String!
+}
+
+input AnswerRhythmBuddyInput {
+  id: UUID!
+  accept: Boolean!
+}
+
+input RhythmBuddyIdInput {
+  id: UUID!
+}
+
+type ClassroomRhythmPerson {
+  user: User!
+  "A child account's first name only"
+  name: String!
+  countedDays: Int!
+  target: Int!
+  met: Boolean!
+}
+
+"This week across a class's students"
+type ClassroomRhythm {
+  students: Int!
+  "Students whose week is met"
+  metCount: Int!
+  countedDays: Int!
+  "The sum of the students' targets"
+  targetDays: Int!
+  "Only students who share their Rhythm with their classes"
+  people: [ClassroomRhythmPerson!]!
+}
+
+type ClassQuizScore {
+  quizId: UUID!
+  quizTitle: String!
+  "The student's first attempt"
+  score: Int!
+  total: Int!
+  submittedAt: DateTime!
+}
+
+type ClassStudentPerformance {
+  user: User!
+  name: String!
+  scores: [ClassQuizScore!]!
+  submitted: Int!
+  "Right over asked across the scores, 0–1; null before a first quiz"
+  average: Float
+}
+
+type ClassTopicPerformance {
+  key: String!
+  topic: Topic
+  title: String!
+  "Right over answers on the topic in first attempts, 0–1"
+  accuracy: Float!
+  answers: Int!
+  "Under 60 %"
+  hard: Boolean!
+}
+
+type ClassPerformance {
+  quizzes: Int!
+  students: [ClassStudentPerformance!]!
+  "Hardest first"
+  topics: [ClassTopicPerformance!]!
+}
+
+extend type Classroom {
+  "Members only: this week's Rhythm across the class"
+  rhythmRing: ClassroomRhythm
+  "Staff only: each student's first score on each quiz, and the topics the class finds hard"
+  performance: ClassPerformance
+}
+
+extend type Query {
+  "Signed in only: the viewer's open focus session"
+  focusSession: FocusSession
+  "Signed in only"
+  rhythmBuddies: RhythmBuddies!
+}
+
+extend type Mutation {
+  "Signed in only, as every mutation below. A session already open ends first"
+  startFocusSession(input: StartFocusSessionInput!): FocusSessionPayload!
+  endFocusSession(input: FocusSessionIdInput!): FocusSessionPayload!
+  inviteRhythmBuddy(input: InviteRhythmBuddyInput!): OkPayload!
+  answerRhythmBuddy(input: AnswerRhythmBuddyInput!): OkPayload!
+  "Ends a buddy link, or takes back an invite"
+  removeRhythmBuddy(input: RhythmBuddyIdInput!): OkPayload!
+}

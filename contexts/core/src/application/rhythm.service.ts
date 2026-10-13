@@ -5,6 +5,7 @@ import { PEOPLE, type People } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { countsForRhythm, learningDay } from '../domain/learning-day'
 import { addDays, DEFAULT_PLANNED_DAYS, PAUSE_DAYS_PER_TERM, pauseDaysUsed, termStart, validPlan, weekStart, weekState, type Pause, type WeekState } from '../domain/rhythm'
+import { ExamsService } from './exams.service'
 import { LearningEventsService } from './learning-events.service'
 import { ReviewsService } from './reviews.service'
 
@@ -26,6 +27,7 @@ export class RhythmService implements OnModuleInit {
     private readonly db: PrismaService,
     private readonly learning: LearningEventsService,
     private readonly reviews: ReviewsService,
+    private readonly exams: ExamsService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(PEOPLE) private readonly people: People,
   ) {}
@@ -92,14 +94,32 @@ export class RhythmService implements OnModuleInit {
     return weekState({ today, since, plannedDays, counted, pauses }, start)
   }
 
+  /** This week at a glance, for buddies and the classroom ring (ADR-0072). */
+  async weekSummary(userId: string, now = new Date()): Promise<{ countedDays: number; target: number; met: boolean }> {
+    const today = learningDay(now, await this.learning.timeZoneOf(userId))
+    const [plannedDays, pauses] = await Promise.all([this.plannedDays(userId), this.pauses(userId)])
+    const w = await this.week(userId, weekStart(today), today, plannedDays, pauses)
+    return { countedDays: w.countedDays, target: w.target, met: w.met }
+  }
+
+  /** Whether the person's name and counted days show on their classes' Rhythm ring (ADR-0072). */
+  async sharing(userId: string): Promise<boolean> {
+    return (await this.db.learnerSettings.findUnique({ where: { userId }, select: { shareRhythm: true } }))?.shareRhythm ?? false
+  }
+
+  async setSharing(userId: string, share: boolean): Promise<void> {
+    await this.db.learnerSettings.upsert({ where: { userId }, create: { userId, shareRhythm: share }, update: { shareRhythm: share } })
+  }
+
   async rhythm(userId: string, now = new Date()) {
     const timeZone = await this.learning.timeZoneOf(userId)
     const today = learningDay(now, timeZone)
-    const [plannedDays, pauses, todayRow, queue] = await Promise.all([
+    const [plannedDays, pauses, todayRow, queue, examItems] = await Promise.all([
       this.plannedDays(userId),
       this.pauses(userId),
       this.db.learningDay.findUnique({ where: { userId_day: { userId, day: date(today) } } }),
       this.reviews.queue(userId, now),
+      this.exams.ringItems(userId, now),
     ])
     const week = await this.week(userId, weekStart(today), today, plannedDays, pauses)
     const term = termStart(today)
@@ -126,14 +146,16 @@ export class RhythmService implements OnModuleInit {
         counted: countsForRhythm({ learningSeconds, reviews }),
         comeback: week.comebackToday,
         cameBack: week.cameBackToday,
-        // The ring (ADR-0030): today's reviews now; plan tasks and a weak topic join with the exam planner (P6e).
-        items: [{ kind: 'REVIEWS', done: queue.doneToday, total: queue.doneToday + queue.cards.length }],
+        // The ring (ADR-0030, ADR-0070): today's reviews, today's exam-plan tasks and one weak topic.
+        items: [{ kind: 'REVIEWS', done: queue.doneToday, total: queue.doneToday + queue.cards.length, title: null, topicKey: null }, ...examItems],
       },
       weeksThisTerm: metThisTerm + (week.met ? 1 : 0),
       weeksAllTime: metAllTime + (week.met ? 1 : 0),
       countedDaysAllTime: Number(countedAllTime[0]?.n ?? 0),
       pauses: pauses.filter((p) => p.to >= today).map((p) => ({ ...p, active: p.from <= today })),
       pauseDaysLeft: Math.max(PAUSE_DAYS_PER_TERM - pauseDaysUsed(term, pauses), 0),
+      suggestion: await this.exams.suggestion(userId, plannedDays.length, now),
+      shareRhythm: await this.sharing(userId),
     }
   }
 

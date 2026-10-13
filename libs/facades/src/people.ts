@@ -45,6 +45,8 @@ export interface People {
   contactOf(userId: string): Promise<{ email: string; displayName: string; restrictedMinor: boolean } | null>
   /** When the account was made (ADR-0069: Rhythm misses nothing from before); null for deleted accounts. */
   joinedAt(userId: string): Promise<Date | null>
+  /** The notes topics `userId` chose as interests on their study profile (ADR-0071: recommendations). */
+  interestTopicIds(userId: string): Promise<string[]>
   /** Who `userId` follows, most recent first, at most 2,000 (ADR-0049: the Following feed). */
   followingIds(userId: string): Promise<string[]>
   /** `restricterId` restricts `restrictedId` (ADR-0016): their comments wait for approval and cause no notification. */

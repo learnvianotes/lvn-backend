@@ -31,10 +31,22 @@ type RhythmDay {
 
 "One part of today's ring"
 type RhythmItem {
-  "REVIEWS now; PLAN_TASK and WEAK_TOPIC with the exam planner"
+  "REVIEWS, PLAN_TASK (today's exam-plan tasks) or WEAK_TOPIC (one weak topic, done at 10 minutes on it today)"
   kind: String!
   done: Int!
   total: Int!
+  "The exams of today's tasks, or the weak topic's title (null for a /core topic)"
+  title: String
+  "The weak topic's key"
+  topicKey: String
+}
+
+"Three weeks before an exam, one more planned day a week; nothing changes until the learner sets it"
+type RhythmSuggestion {
+  plannedDays: Int!
+  examId: UUID!
+  examName: String!
+  daysLeft: Int!
 }
 
 type RhythmToday {
@@ -76,6 +88,9 @@ type Rhythm {
   pauses: [RhythmPause!]!
   "Of the 14 a term"
   pauseDaysLeft: Int!
+  suggestion: RhythmSuggestion
+  "Their name and counted days show on their classes' Rhythm ring (ADR-0072); off by default"
+  shareRhythm: Boolean!
 }
 
 input SetRhythmPlanInput {
@@ -88,6 +103,10 @@ input PauseRhythmInput {
   from: String!
   to: String!
   reason: RhythmPauseReason!
+}
+
+input SetRhythmSharingInput {
+  share: Boolean!
 }
 
 input RhythmPauseIdInput {
@@ -105,4 +124,6 @@ extend type Mutation {
   pauseRhythm(input: PauseRhythmInput!): OkPayload!
   "Ends a pause early (or drops one not started); its unused days come back"
   endRhythmPause(input: RhythmPauseIdInput!): OkPayload!
+  "Shows, or stops showing, the viewer's name and counted days on their classes' Rhythm ring"
+  setRhythmSharing(input: SetRhythmSharingInput!): OkPayload!
 }

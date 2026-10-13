@@ -10,6 +10,8 @@ export { FilesService } from './application/files.service'
 export { NoteModerationService } from './application/moderation.service'
 /** Implementation of the NOTE_ACCESS facade (ADR-0047), bound by the composition roots. */
 export { NoteAccessFacade } from './application/note-access.facade'
+/** Implementation of the TOPICS facade (ADR-0070). */
+export { TopicsFacade } from './application/topics.facade'
 /** Implementation of the NOTE_AI facade (ADR-0059), bound by the composition roots. */
 export { NoteAiFacade } from './application/note-ai.facade'
 /** The search indexes, their outbox drainer and queue (§11, ADR-0055), run by apps/worker. */

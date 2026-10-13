@@ -3,7 +3,7 @@ import { Action, can, CardType, LearningEventType } from '@lvn/contracts/domain'
 import { docText, inlineText, parseCardContent, type CardContent } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { NOTE_ACCESS, type NoteAccess } from '@lvn-backend/facades'
+import { NOTE_ACCESS, TOPICS, type NoteAccess, type Topics } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { ClassroomsService } from './classrooms.service'
@@ -55,6 +55,7 @@ export class ClassQuizzesService implements OnModuleInit {
     @Inject(NOTE_ACCESS) private readonly notes: NoteAccess,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     private readonly learning: LearningEventsService,
+    @Inject(TOPICS) private readonly topics: Topics,
   ) {}
 
   onModuleInit(): void {
@@ -166,8 +167,10 @@ export class ClassQuizzesService implements OnModuleInit {
         data: { id: newId(), quizId: quiz.id, userId: viewerId, clientOpId: input.clientOpId, score: answers.filter((a) => a.correct).length, total: rows.length, answers: { create: answers } },
         include: { answers: true },
       })
-      // A learning action (ADR-0030, ADR-0067): its answers count towards the day.
-      await this.learning.record(viewerId, { type: LearningEventType.QUIZ_COMPLETED, entityType: 'CLASS_QUIZ', entityId: quiz.id, metadata: { answered: given.size, correct: attempt.score, total: attempt.total } })
+      // A learning action (ADR-0030, ADR-0067): its answers count towards the day, and towards its source note's topics
+      // (ADR-0070: weak topics, Readiness).
+      const topicIds = quiz.sourceNoteId ? ((await this.topics.ofNotes([quiz.sourceNoteId])).get(quiz.sourceNoteId) ?? []) : []
+      await this.learning.record(viewerId, { type: LearningEventType.QUIZ_COMPLETED, entityType: 'CLASS_QUIZ', entityId: quiz.id, topicKeys: topicIds.slice(0, 10).map((id) => `topic:${id}`), metadata: { answered: given.size, correct: attempt.score, total: attempt.total } })
       return attempt
     } catch (e) {
       // Two tries of the same submission at once: the first one stands.

@@ -5,7 +5,7 @@ import { LearningEventType } from '@lvn/contracts/domain'
 import { REVIEW_LIMITS } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { NOTE_ACCESS, type NoteAccess, type StudyCard } from '@lvn-backend/facades'
+import { NOTE_ACCESS, TOPICS, type NoteAccess, type StudyCard, type Topics } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { dayBounds, learningDay } from '../domain/learning-day'
@@ -43,6 +43,7 @@ export class ReviewsService implements OnModuleInit {
     private readonly learning: LearningEventsService,
     @Inject(NOTE_ACCESS) private readonly notes: NoteAccess,
     @Inject(EVENT_BUS) private readonly events: EventBus,
+    @Inject(TOPICS) private readonly topics: Topics,
   ) {}
 
   onModuleInit(): void {
@@ -96,7 +97,11 @@ export class ReviewsService implements OnModuleInit {
     const durationMs = Math.min(Math.max(input.durationMs ?? 0, 0), 30 * 60_000)
     const logged = await this.db.cardReviewLog.createMany({ data: [{ id: newId(), userId, cardId: input.cardId, rating: RATINGS[input.rating], reviewedAt: at, durationMs, clientOpId: input.clientOpId }], skipDuplicates: true })
     const state = await this.replay(userId, input.cardId, card.noteId)
-    if (logged.count) await this.learning.record(userId, { type: LearningEventType.FLASHCARD_REVIEWED, entityType: 'CARD', entityId: input.cardId, durationMs, metadata: { rating: input.rating }, at })
+    if (logged.count) {
+      // The review's time goes to its note's topics too (ADR-0070: exam tasks, weak topics).
+      const topicIds = (await this.topics.ofNotes([card.noteId])).get(card.noteId) ?? []
+      await this.learning.record(userId, { type: LearningEventType.FLASHCARD_REVIEWED, entityType: 'CARD', entityId: input.cardId, topicKeys: topicIds.slice(0, 10).map((id) => `topic:${id}`), durationMs, metadata: { rating: input.rating }, at })
+    }
     return state
   }
 
