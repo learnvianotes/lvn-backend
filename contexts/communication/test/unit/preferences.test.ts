@@ -25,7 +25,8 @@ describe('push text (ADR-0021)', () => {
     expect(pushBody('COMMENT', { kind: 'REPLY' }, 'Priya')).toBe('Priya replied to your comment')
     expect(pushBody('SHARE', {}, null)).toBe('Someone shared a note with you')
     expect(pushBody('DOUBT', { kind: 'ANSWERED' }, 'Ms Rao')).toBe('Ms Rao answered your doubt')
-    expect(pushBody('QUIZ_PUBLISHED', {}, 'Ms Rao')).toBe('You have something new')
+    expect(pushBody('QUIZ_PUBLISHED', {}, 'Ms Rao')).toBe('Ms Rao published a quiz to your class')
+    expect(pushBody('REVISION_REMINDER', {}, 'Ms Rao')).toBe('You have something new')
   })
 
   it('fits the strict contract: ids, category and an in-app path only', () => {

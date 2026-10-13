@@ -33,6 +33,8 @@ export function pushBody(category: NotificationCategory, data: Record<string, un
       return `${who} invited you to a class`
     case 'CLASSROOM_POST':
       return `${who} posted a class announcement`
+    case 'QUIZ_PUBLISHED':
+      return `${who} published a quiz to your class`
     case 'MENTOR_INVITE':
       return `${who} asked you to mentor a project`
     case 'DOUBT':

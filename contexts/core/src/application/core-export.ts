@@ -14,7 +14,7 @@ export class CoreExport implements DataExportPart {
   constructor(private readonly db: PrismaService) {}
 
   async exportFor(userId: string) {
-    const [progress, marks, reports, appeals, actions, groups, groupPosts, classes, classPosts, comments, reactions] = await Promise.all([
+    const [progress, marks, reports, appeals, actions, groups, groupPosts, classes, classPosts, comments, reactions, quizzes, attempts] = await Promise.all([
       this.db.coreTopicProgress.findMany({ where: { userId }, orderBy: { topicKey: 'asc' } }),
       this.db.coreProblemMark.findMany({ where: { userId }, orderBy: { markedAt: 'asc' } }),
       this.db.report.findMany({ where: { reporterId: userId }, orderBy: { createdAt: 'asc' } }),
@@ -26,6 +26,9 @@ export class CoreExport implements DataExportPart {
       this.db.classroomPost.findMany({ where: { authorId: userId, deletedAt: null }, orderBy: { createdAt: 'asc' } }),
       this.db.comment.findMany({ where: { authorId: userId, deletedAt: null }, orderBy: { createdAt: 'asc' } }),
       this.db.reaction.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } }),
+      // Classroom quizzes (ADR-0064): the ones they published, and their own attempts.
+      this.db.classQuiz.findMany({ where: { authorId: userId, deletedAt: null }, include: { questions: { orderBy: { position: 'asc' } } }, orderBy: { publishedAt: 'asc' } }),
+      this.db.quizAttempt.findMany({ where: { userId }, include: { answers: true }, orderBy: { submittedAt: 'asc' } }),
     ])
     return {
       files: [
@@ -40,8 +43,10 @@ export class CoreExport implements DataExportPart {
         { path: 'data/core/class-announcements.json', bytes: json(classPosts.map((p) => ({ id: p.id, classroomId: p.classroomId, body: p.body, createdAt: p.createdAt }))) },
         { path: 'data/core/comments.json', bytes: json(comments.map((c) => ({ id: c.id, on: c.targetType, targetId: c.targetId, cardId: c.cardId, replyTo: c.parentId, body: c.body, createdAt: c.createdAt, editedAt: c.editedAt }))) },
         { path: 'data/core/reactions.json', bytes: json(reactions.map((r) => ({ on: r.targetType, targetId: r.targetId, kind: r.kind, createdAt: r.createdAt }))) },
+        { path: 'data/core/class-quizzes.json', bytes: json(quizzes.map((q) => ({ id: q.id, classroomId: q.classroomId, title: q.title, publishedAt: q.publishedAt, questions: q.questions.map((x) => x.content) }))) },
+        { path: 'data/core/quiz-attempts.json', bytes: json(attempts.map((a) => ({ id: a.id, quizId: a.quizId, score: a.score, total: a.total, submittedAt: a.submittedAt, answers: a.answers.map((x) => ({ questionId: x.questionId, choiceIds: x.choiceIds, correct: x.correct })) }))) },
       ],
-      counts: { studyProgress: progress.length, problemMarks: marks.length, reports: reports.length, appeals: appeals.length, groups: groups.length, groupPosts: groupPosts.length, classes: classes.length, classAnnouncements: classPosts.length, comments: comments.length, reactions: reactions.length },
+      counts: { studyProgress: progress.length, problemMarks: marks.length, reports: reports.length, appeals: appeals.length, groups: groups.length, groupPosts: groupPosts.length, classes: classes.length, classAnnouncements: classPosts.length, comments: comments.length, reactions: reactions.length, classQuizzes: quizzes.length, quizAttempts: attempts.length },
       omitted: [],
     }
   }

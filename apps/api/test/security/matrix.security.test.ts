@@ -33,7 +33,7 @@ describe('security: the permission matrix, action by action', () => {
     inviteToClassroom: 'InviteToClassroomInput', answerClassroomInvite: 'AnswerClassroomInviteInput', createClassroomPost: 'CreateClassroomPostInput', followUser: 'PersonInput',
     unfollowUser: 'PersonInput', removeFollower: 'PersonInput', blockUser: 'PersonInput', unblockUser: 'PersonInput', restrictUser: 'PersonInput', unrestrictUser: 'PersonInput',
     requestConnection: 'PersonInput', respondToConnectionRequest: 'RespondToConnectionRequestInput', removeConnection: 'PersonInput', updateTeacherProfile: 'UpdateTeacherProfileInput',
-    reportContent: 'ReportContentInput', addComment: 'AddCommentInput', moderateContent: 'ModerateContentInput',
+    reportContent: 'ReportContentInput', addComment: 'AddCommentInput', moderateContent: 'ModerateContentInput', publishClassQuiz: 'PublishClassQuizInput',
   }
   type Outcome = 'allowed' | 'refused'
   /** A mutation's outcome: refused on a GraphQL error (FORBIDDEN, NOT_FOUND, UNAUTHENTICATED) or a user error. */
@@ -206,6 +206,19 @@ describe('security: the permission matrix, action by action', () => {
     ])
   })
 
+  it('classroom quizzes: only the class’s staff publish them (ADR-0064)', async () => {
+    action(Action.CLASSROOM_PUBLISH_QUIZ)
+    const quiz = { classroomId: klass.id, title: 'Cells', questions: [{ question: doc('What makes ATP?'), choices: [{ id: 'c1', content: [{ type: 'text', text: 'Mitochondria' }] }, { id: 'c2', content: [{ type: 'text', text: 'Ribosomes' }] }], correct: ['c1'], multiple: false }] }
+    await expectCases([
+      ['publish a quiz, signed out', 'refused', () => run(null, 'publishClassQuiz', quiz)],
+      ['publish a quiz, someone outside the class', 'refused', () => run(outsider, 'publishClassQuiz', quiz)],
+      ['publish a quiz, another teacher', 'refused', () => run(teacher2, 'publishClassQuiz', quiz)],
+      ['publish a quiz, a student', 'refused', () => run(student, 'publishClassQuiz', quiz)],
+      ['publish a quiz, the TA', 'allowed', () => run(ta, 'publishClassQuiz', quiz)],
+      ['publish a quiz, the teacher', 'allowed', () => run(teacher, 'publishClassQuiz', quiz)],
+    ])
+  })
+
   it('people: follow, remove a follower, block and restrict (ADR-0016, ADR-0020, ADR-0043)', async () => {
     ;[Action.USER_FOLLOW, Action.USER_UNFOLLOW, Action.USER_REMOVE_FOLLOWER, Action.USER_BLOCK, Action.USER_UNBLOCK, Action.USER_RESTRICT, Action.USER_UNRESTRICT, Action.USER_VIEW_FOLLOWERS].forEach(action)
     const fan = await person({ name: 'Fan' })
@@ -301,7 +314,6 @@ describe('security: the permission matrix, action by action', () => {
 
   /** Actions whose channel arrives in a later phase; each stays here until it has cases above. */
   const NOT_YET: Record<string, string> = {
-    [Action.CLASSROOM_PUBLISH_QUIZ]: 'Phase 5: quizzes, with quiz generation (plans/phase-4.md)',
     [Action.CLASSROOM_VIEW_PERFORMANCE]: 'Phase 6: progress, from quiz attempts and learning events (plans/phase-4.md)',
   }
 

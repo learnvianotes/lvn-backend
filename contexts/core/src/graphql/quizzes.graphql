@@ -1,0 +1,108 @@
+# Classroom quizzes (ADR-0064): staff publish a quiz of quiz-card questions to their class; members take it, scored by
+# the server. A member sees the correct answers once they have submitted; their first attempt is their score.
+
+type ClassQuiz {
+  id: UUID!
+  classroomId: UUID!
+  title: String!
+  author: User!
+  publishedAt: DateTime!
+  questionCount: Int!
+  "In order. The correct choices and explanations are null until the viewer has submitted (staff always see them)"
+  questions: [ClassQuizQuestion!]!
+  "The viewer's attempts, newest first; the last is their score"
+  myAttempts: [QuizAttempt!]!
+  "Staff only: how many of the class's students have submitted (per-student results wait for Phase 6)"
+  submittedCount: Int
+  viewerCanDelete: Boolean!
+}
+
+type ClassQuizQuestion {
+  id: UUID!
+  position: Int!
+  "Rich text, as a quiz card's question"
+  question: JSON!
+  choices: [ClassQuizChoice!]!
+  "More than one choice is correct"
+  multiple: Boolean!
+  correct: [String!]
+  "Rich text"
+  explanation: JSON
+}
+
+type ClassQuizChoice {
+  id: String!
+  "Inline rich text"
+  content: JSON!
+}
+
+type QuizAttempt {
+  id: UUID!
+  score: Int!
+  total: Int!
+  submittedAt: DateTime!
+  answers: [QuizAnswer!]!
+}
+
+type QuizAnswer {
+  questionId: UUID!
+  choiceIds: [String!]!
+  correct: Boolean!
+}
+
+extend type Classroom {
+  "Members only: published quizzes, newest first"
+  quizzes(first: Int): [ClassQuiz!]
+}
+
+input PublishClassQuizInput {
+  classroomId: UUID!
+  title: String!
+  "1 to 50 questions, each quiz card content: question, choices, correct, multiple, explanation"
+  questions: [JSON!]!
+  "The note the questions came from; kept when the author can read it"
+  sourceNoteId: UUID
+}
+
+input QuizAnswerInput {
+  questionId: UUID!
+  "Empty leaves the question unanswered (wrong)"
+  choiceIds: [String!]!
+}
+
+input SubmitQuizAttemptInput {
+  quizId: UUID!
+  "The client's id for this submission: sending it again returns the same attempt"
+  clientOpId: UUID!
+  answers: [QuizAnswerInput!]!
+}
+
+input ClassQuizIdInput {
+  quizId: UUID!
+}
+
+type ClassQuizPayload {
+  quiz: ClassQuiz
+  userErrors: [UserError!]!
+}
+
+type QuizAttemptPayload {
+  attempt: QuizAttempt
+  "The quiz again, now with its answers for the viewer"
+  quiz: ClassQuiz
+  userErrors: [UserError!]!
+}
+
+extend type Query {
+  "A quiz of a class the viewer is in; null otherwise"
+  classQuiz(id: UUID!): ClassQuiz
+}
+
+extend type Mutation {
+  "Staff: a quiz every member of the class can take (classroom.publishQuiz)"
+  publishClassQuiz(input: PublishClassQuizInput!): ClassQuizPayload!
+  "Scores the viewer's answers; the same clientOpId returns the same attempt"
+  submitQuizAttempt(input: SubmitQuizAttemptInput!): QuizAttemptPayload!
+  "Staff: moves the quiz to the trash; its attempts stay"
+  deleteClassQuiz(input: ClassQuizIdInput!): OkPayload!
+}

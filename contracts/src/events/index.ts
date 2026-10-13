@@ -192,7 +192,11 @@ export const events = {
       z.object({ kind: z.literal('CLASSROOM'), classroomId: uuid }),
     ]).optional(),
   })),
-  QuizPublished: eventEnvelope('QuizPublished', 1, z.object({ quizId: uuid, classroomId: uuid.optional() })),
+  /**
+   * Staff published a quiz to a class (ADR-0064); memberIds are told (at most 1,000 per event). authorId and memberIds
+   * are optional, additive in v1 (ADR-0045).
+   */
+  QuizPublished: eventEnvelope('QuizPublished', 1, z.object({ quizId: uuid, classroomId: uuid.optional(), authorId: uuid.optional(), memberIds: z.array(uuid).max(1000).optional() })),
   ContentReported: eventEnvelope('ContentReported', 1, z.object({ reportId: uuid, entityType: z.string(), entityId: uuid })),
   /**
    * A moderator's decision about someone's comment, post, announcement, doubt, group or account (ADR-0051, ADR-0053),

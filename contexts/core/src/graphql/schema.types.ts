@@ -86,6 +86,50 @@ export interface AskDoubtInput {
   repoRef?: string | null
 }
 
+export interface ClassQuiz {
+  id: string
+  classroomId: string
+  title: string
+  author: User
+  publishedAt: Date
+  questionCount: number
+  /** In order. The correct choices and explanations are null until the viewer has submitted (staff always see them) */
+  questions: Array<ClassQuizQuestion>
+  /** The viewer's attempts, newest first; the last is their score */
+  myAttempts: Array<QuizAttempt>
+  /** Staff only: how many of the class's students have submitted (per-student results wait for Phase 6) */
+  submittedCount: number | null
+  viewerCanDelete: boolean
+}
+
+export interface ClassQuizChoice {
+  id: string
+  /** Inline rich text */
+  content: unknown
+}
+
+export interface ClassQuizIdInput {
+  quizId: string
+}
+
+export interface ClassQuizPayload {
+  quiz: ClassQuiz | null
+  userErrors: Array<UserError>
+}
+
+export interface ClassQuizQuestion {
+  id: string
+  position: number
+  /** Rich text, as a quiz card's question */
+  question: unknown
+  choices: Array<ClassQuizChoice>
+  /** More than one choice is correct */
+  multiple: boolean
+  correct: Array<string> | null
+  /** Rich text */
+  explanation: unknown | null
+}
+
 export interface Classroom {
   id: string
   name: string
@@ -105,11 +149,17 @@ export interface Classroom {
   joinRequests: Array<ClassroomJoinRequest> | null
   /** Members only: announcements, newest first */
   posts: ClassroomPostConnection | null
+  /** Members only: published quizzes, newest first */
+  quizzes?: Array<ClassQuiz> | null
 }
 
 export interface ClassroomPostsArgs {
   first?: number | null
   after?: string | null
+}
+
+export interface ClassroomQuizzesArgs {
+  first?: number | null
 }
 
 export interface ClassroomActions {
@@ -118,6 +168,8 @@ export interface ClassroomActions {
   /** Teacher and TAs: answer requests, invite, post */
   review: boolean
   post: boolean
+  /** Teacher and TAs: publish quizzes (ADR-0064) */
+  publishQuiz: boolean
   /** The teacher: settings, roles, removing people */
   manage: boolean
   leave: boolean
@@ -828,6 +880,18 @@ export interface MutationPinGroupPostArgs {
   input: PinGroupPostInput
 }
 
+export interface MutationPublishClassQuizArgs {
+  input: PublishClassQuizInput
+}
+
+export interface MutationSubmitQuizAttemptArgs {
+  input: SubmitQuizAttemptInput
+}
+
+export interface MutationDeleteClassQuizArgs {
+  input: ClassQuizIdInput
+}
+
 export interface MutationSetGroupRepositoryArgs {
   input: SetGroupRepositoryInput
 }
@@ -895,6 +959,15 @@ export interface PinGroupPostInput {
 
 export type ProblemMark = 'SOLVED' | 'REVISIT'
 
+export interface PublishClassQuizInput {
+  classroomId: string
+  title: string
+  /** 1 to 50 questions, each quiz card content: question, choices, correct, multiple, explanation */
+  questions: Array<unknown>
+  /** The note the questions came from; kept when the author can read it */
+  sourceNoteId?: string | null
+}
+
 export interface QueryCoreProgressArgs {
   subjectId: string
 }
@@ -935,8 +1008,39 @@ export interface QueryRemovedGroupArgs {
   id: string
 }
 
+export interface QueryClassQuizArgs {
+  id: string
+}
+
 export interface QueryDoubtArgs {
   id: string
+}
+
+export interface QuizAnswer {
+  questionId: string
+  choiceIds: Array<string>
+  correct: boolean
+}
+
+export interface QuizAnswerInput {
+  questionId: string
+  /** Empty leaves the question unanswered (wrong) */
+  choiceIds: Array<string>
+}
+
+export interface QuizAttempt {
+  id: string
+  score: number
+  total: number
+  submittedAt: Date
+  answers: Array<QuizAnswer>
+}
+
+export interface QuizAttemptPayload {
+  attempt: QuizAttempt | null
+  /** The quiz again, now with its answers for the viewer */
+  quiz: ClassQuiz | null
+  userErrors: Array<UserError>
 }
 
 export interface ReactInput {
@@ -1039,6 +1143,13 @@ export interface SetProjectShowcaseInput {
   groupId: string
   /** A PUBLIC project note shared to the workspace; null clears it */
   noteId?: string | null
+}
+
+export interface SubmitQuizAttemptInput {
+  quizId: string
+  /** The client's id for this submission: sending it again returns the same attempt */
+  clientOpId: string
+  answers: Array<QuizAnswerInput>
 }
 
 export interface UpdateClassroomInput {

@@ -26,7 +26,7 @@ export interface ClassroomView {
   pendingRequestId: string | null
   inviteId: string | null
   memberCount: number
-  can: Record<'requestJoin' | 'acceptInvite' | 'review' | 'post' | 'manage' | 'leave', boolean>
+  can: Record<'requestJoin' | 'acceptInvite' | 'review' | 'post' | 'publishQuiz' | 'manage' | 'leave', boolean>
 }
 
 /**
@@ -68,7 +68,8 @@ export class ClassroomsService {
     return { classroom, role, pending, invite, resource }
   }
 
-  private async require(actorId: string, classroomId: string) {
+  /** The class for an action, or NOT_FOUND; also used by its quizzes (ADR-0064). */
+  async require(actorId: string, classroomId: string) {
     const loaded = await this.load(actorId, classroomId)
     if (!loaded) throw Errors.notFound('Class not found.')
     return { ...loaded, actor: await this.actor(actorId) }
@@ -90,6 +91,7 @@ export class ClassroomsService {
         acceptInvite: may(Action.CLASSROOM_ACCEPT_INVITE),
         review: may(Action.CLASSROOM_REVIEW_JOIN_REQUESTS),
         post: may(Action.CLASSROOM_REVIEW_JOIN_REQUESTS),
+        publishQuiz: may(Action.CLASSROOM_PUBLISH_QUIZ),
         manage: loaded.role === 'TEACHER',
         leave: !!loaded.role && loaded.role !== 'TEACHER',
       },

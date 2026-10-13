@@ -293,6 +293,28 @@ if (opt('--vm')) {
   const shareResult = await eventually(async () => !!(await coShare()).shareNote?.note)
   ok(invite?.role === 'TA' && shareResult, 'C accepts A\'s TA invite; A shares with C again, as co-teachers')
 
+  // Classroom quizzes (ADR-0064): A makes a quiz from the lesson plan with the real model (the AI QUIZ task, where AI
+  // answers; by hand otherwise), publishes it to the class and D is told; D takes it, scored by the server, and sees
+  // the answers; A sees that one student submitted.
+  let questions = [{ question: text('Which comes first in the plan?').doc, choices: [{ id: 'c1', content: [{ type: 'text', text: 'Graphs' }] }, { id: 'c2', content: [{ type: 'text', text: 'Trees' }] }], correct: ['c1'], multiple: false }]
+  const quizByAi = (await gql('{ aiStatus { available } }')).aiStatus.available
+  if (quizByAi) {
+    const asked = await gql('mutation ($input: RunAiTaskInput!) { runAiTask(input: $input) { artifact { id } userErrors { message } } }', { input: { noteId: planId, task: 'QUIZ' } }, A.token)
+    let made
+    await eventually(async () => {
+      made = (await gql('query ($id: UUID!) { aiArtifact(id: $id) { status cards { type content } } }', { id: asked.runAiTask.artifact?.id }, A.token)).aiArtifact
+      return made?.status === 'READY' || made?.status === 'FAILED'
+    }, 180_000)
+    if (made?.status === 'READY' && made.cards.length) questions = made.cards.map((c) => c.content)
+  }
+  const published = (await gql('mutation ($input: PublishClassQuizInput!) { publishClassQuiz(input: $input) { quiz { id questionCount } userErrors { message } } }', { input: { classroomId, title: `Lesson quiz ${WORD}`, questions, sourceNoteId: planId } }, A.token)).publishClassQuiz
+  const quizId = published.quiz?.id
+  ok(!!quizId && (await eventually(async () => (await gql('{ notifications(first: 1) { edges { node { category path } } } }', {}, D.token)).notifications.edges[0]?.node.path === `/classes/${classroomId}/quizzes/${quizId}`)), 'A publishes a quiz to the class and D is told', published.userErrors[0]?.message ?? `${published.quiz?.questionCount} questions${quizByAi ? ' made by the real model' : ''}`)
+  const toTake = (await gql('query ($id: UUID!) { classQuiz(id: $id) { questions { id correct choices { id } } } }', { id: quizId }, D.token)).classQuiz
+  const taken = (await gql('mutation ($input: SubmitQuizAttemptInput!) { submitQuizAttempt(input: $input) { attempt { score total } quiz { questions { correct } } userErrors { message } } }', { input: { quizId, clientOpId: newId(), answers: toTake.questions.map((q) => ({ questionId: q.id, choiceIds: [q.choices[0].id] })) } }, D.token)).submitQuizAttempt
+  ok(toTake.questions.every((q) => q.correct === null) && taken.attempt?.total === toTake.questions.length && taken.quiz.questions.every((q) => q.correct?.length), 'D takes it without seeing the answers, is scored by the server, then sees them', taken.userErrors[0]?.message ?? `${taken.attempt?.score}/${taken.attempt?.total}`)
+  ok((await gql('query ($id: UUID!) { classQuiz(id: $id) { submittedCount } }', { id: quizId }, A.token)).classQuiz.submittedCount === 1, 'A sees that one student has submitted')
+
   // Comments and reactions (ADR-0047): D, who reads the lesson plan through the class, comments and reacts; A is told
   // and replies, and D is told; B, who cannot read the note, sees no discussion.
   const planTarget = { type: 'NOTE', id: planId }
