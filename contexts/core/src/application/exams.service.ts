@@ -6,7 +6,7 @@ import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { TOPICS, type TopicRef, type Topics } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { accuracyOf, daysLeft, masteryOf, planSessions, READINESS_TARGET, readinessOf, REVISIT_DAYS, SUGGEST_DAYS, TASK_SECONDS, targetOn, WEAK_ACCURACY } from '../domain/exams'
-import { dayBounds, learningDay } from '../domain/learning-day'
+import { calendarDay, dayBounds, learningDay } from '../domain/learning-day'
 import { addDays } from '../domain/rhythm'
 import { LearningEventsService } from './learning-events.service'
 import { ReviewsService } from './reviews.service'
@@ -52,9 +52,13 @@ export class ExamsService implements OnModuleInit {
     this.events.subscribe('UserDeleted', ({ payload }) => this.erase(payload.userId))
   }
 
+  /**
+   * Today as a learning day (04:00 rollover), which plans and Readiness count in, and as the calendar date, which
+   * countdowns count from: at 01:00 an exam three dates away is three days away (ADR-0070).
+   */
   private async today(userId: string, now = new Date()) {
     const timeZone = await this.learning.timeZoneOf(userId)
-    return { timeZone, today: learningDay(now, timeZone) }
+    return { timeZone, today: learningDay(now, timeZone), calendar: calendarDay(now, timeZone) }
   }
 
   // ── Exams ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -128,18 +132,18 @@ export class ExamsService implements OnModuleInit {
 
   /** The person's exams from a week ago on, soonest first, each with its plan, Readiness and the target today. */
   async list(userId: string, now = new Date()) {
-    const { timeZone, today } = await this.today(userId, now)
+    const { timeZone, today, calendar } = await this.today(userId, now)
     const rows = await this.db.exam.findMany({ where: { userId, date: { gte: date(addDays(today, -EXAM_LIMITS.keptDays)) } }, include: { topics: { orderBy: { position: 'asc' } }, tasks: { orderBy: { day: 'asc' } } }, orderBy: [{ date: 'asc' }, { createdAt: 'asc' }] })
-    return this.shape(userId, rows, today, timeZone, now)
+    return this.shape(userId, rows, today, calendar, timeZone, now)
   }
 
   async one(userId: string, id: string, now = new Date()) {
-    const { timeZone, today } = await this.today(userId, now)
+    const { timeZone, today, calendar } = await this.today(userId, now)
     const row = await this.db.exam.findFirst({ where: { id, userId }, include: { topics: { orderBy: { position: 'asc' } }, tasks: { orderBy: { day: 'asc' } } } })
-    return row ? (await this.shape(userId, [row], today, timeZone, now))[0]! : null
+    return row ? (await this.shape(userId, [row], today, calendar, timeZone, now))[0]! : null
   }
 
-  private async shape(userId: string, rows: ExamRow[], today: string, timeZone: string, now: Date) {
+  private async shape(userId: string, rows: ExamRow[], today: string, calendar: string, timeZone: string, now: Date) {
     if (!rows.length) return []
     const keys = [...new Set(rows.flatMap((e) => e.topics.map((t) => t.topicKey)))]
     const aliases = await this.aliases(userId, keys)
@@ -151,7 +155,7 @@ export class ExamsService implements OnModuleInit {
         id: e.id,
         name: e.name,
         date: examDate,
-        daysLeft: daysLeft(today, examDate),
+        daysLeft: daysLeft(calendar, examDate),
         past: examDate < today,
         topics,
         tasks: e.tasks.map((t) => ({ id: t.id, day: day(t.day), topics: t.topicKeys.map((k) => ({ key: k, title: e.topics.find((x) => x.topicKey === k)?.title ?? k })), done: done.has(t.id), today: day(t.day) === today })),
@@ -253,7 +257,7 @@ export class ExamsService implements OnModuleInit {
    * with no time on it in the last 14. Each says why; an exam's comes first, soonest exam first.
    */
   async weakTopics(userId: string, now = new Date()): Promise<WeakTopic[]> {
-    const { today } = await this.today(userId, now)
+    const { today, calendar } = await this.today(userId, now)
     const out = new Map<string, WeakTopic>()
     // Not revisited before an exam.
     const soon = await this.db.exam.findMany({ where: { userId, date: { gte: date(today), lte: date(addDays(today, REVISIT_DAYS)) } }, include: { topics: { orderBy: { position: 'asc' } } }, orderBy: { date: 'asc' } })
@@ -269,7 +273,7 @@ export class ExamsService implements OnModuleInit {
       for (const t of e.topics) {
         if (out.has(t.topicKey) || (aliases.get(t.topicKey) ?? [t.topicKey]).some((k) => visited.has(k))) continue
         const accuracy = accuracyOf(results.get(t.topicKey) ?? [])
-        out.set(t.topicKey, { key: t.topicKey, title: t.title, topicId: t.topicKey.startsWith('topic:') ? t.topicKey.slice(6) : null, reason: 'NOT_REVISITED', accuracy, examId: e.id, examName: e.name, daysLeft: daysLeft(today, day(e.date)) })
+        out.set(t.topicKey, { key: t.topicKey, title: t.title, topicId: t.topicKey.startsWith('topic:') ? t.topicKey.slice(6) : null, reason: 'NOT_REVISITED', accuracy, examId: e.id, examName: e.name, daysLeft: daysLeft(calendar, day(e.date)) })
       }
     }
     // Low accuracy, lowest first.
@@ -278,7 +282,7 @@ export class ExamsService implements OnModuleInit {
     for (const l of low) {
       if (l.key.startsWith('topic:') && !titles.has(l.key)) continue // a topic the person may no longer use
       const exam = soon.find((e) => e.topics.some((t) => t.topicKey === l.key))
-      out.set(l.key, { key: l.key, title: titles.get(l.key) ?? null, topicId: l.key.startsWith('topic:') ? l.key.slice(6) : null, reason: 'LOW_ACCURACY', accuracy: l.accuracy, examId: exam?.id ?? null, examName: exam?.name ?? null, daysLeft: exam ? daysLeft(today, day(exam.date)) : null })
+      out.set(l.key, { key: l.key, title: titles.get(l.key) ?? null, topicId: l.key.startsWith('topic:') ? l.key.slice(6) : null, reason: 'LOW_ACCURACY', accuracy: l.accuracy, examId: exam?.id ?? null, examName: exam?.name ?? null, daysLeft: exam ? daysLeft(calendar, day(exam.date)) : null })
     }
     return [...out.values()]
   }
@@ -307,9 +311,9 @@ export class ExamsService implements OnModuleInit {
   /** Three weeks before an exam, one more planned day a week (up to 6) is suggested; nothing changes by itself. */
   async suggestion(userId: string, plannedDays: number, now = new Date()) {
     if (plannedDays >= 6) return null
-    const { today } = await this.today(userId, now)
-    const exam = await this.db.exam.findFirst({ where: { userId, date: { gte: date(today), lte: date(addDays(today, SUGGEST_DAYS)) } }, orderBy: { date: 'asc' } })
-    return exam ? { plannedDays: plannedDays + 1, examId: exam.id, examName: exam.name, daysLeft: daysLeft(today, day(exam.date)) } : null
+    const { today, calendar } = await this.today(userId, now)
+    const exam = await this.db.exam.findFirst({ where: { userId, date: { gte: date(today), lte: date(addDays(calendar, SUGGEST_DAYS)) } }, orderBy: { date: 'asc' } })
+    return exam ? { plannedDays: plannedDays + 1, examId: exam.id, examName: exam.name, daysLeft: daysLeft(calendar, day(exam.date)) } : null
   }
 
   // ── Reminders ───────────────────────────────────────────────────────────────────────────────────────────────────

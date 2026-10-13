@@ -1,4 +1,4 @@
-import { contributionOf, dayBounds, learningDay } from '../../src/domain/learning-day'
+import { calendarDay, contributionOf, dayBounds, learningDay } from '../../src/domain/learning-day'
 
 /**
  * Days in a person's time zone, rolling over at 04:00 (ADR-0030, ADR-0067): India (no daylight saving, +05:30), a
@@ -67,5 +67,14 @@ describe('dayBounds', () => {
     expect(learningDay(from, 'Europe/London')).toBe('2026-10-24')
     expect(learningDay(new Date(to.getTime() - 1), 'Europe/London')).toBe('2026-10-24')
     expect(learningDay(to, 'Europe/London')).toBe('2026-10-25')
+  })
+})
+
+describe('calendarDay', () => {
+  it('is the date in the zone with no rollover: a countdown at 01:00 counts from today, the learning day from yesterday', () => {
+    const oneAm = new Date('2026-10-13T19:47:00Z') // 01:17 on 14 October in India
+    expect(learningDay(oneAm, 'Asia/Kolkata')).toBe('2026-10-13')
+    expect(calendarDay(oneAm, 'Asia/Kolkata')).toBe('2026-10-14')
+    expect(calendarDay(new Date('2026-10-14T05:00:00Z'), 'America/New_York')).toBe('2026-10-14')
   })
 })
