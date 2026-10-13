@@ -27,7 +27,7 @@ export class CommunicationEvents implements OnModuleInit {
     this.events.subscribe('VerificationDecided', async ({ payload }) => {
       // Platform admins who review documents are not named (ADR-0019); a teacher who vouched is.
       const actorId = payload.method === 'TEACHER' ? payload.reviewerId : null
-      await this.notifications.notify({ userId: payload.userId, category: 'VERIFICATION', path: '/profile', actorId, data: { kind: 'DECIDED', decision: payload.decision } })
+      await this.notifications.notify({ userId: payload.userId, category: 'VERIFICATION', path: '/profile', actorId, data: { kind: 'DECIDED', decision: payload.decision, purpose: payload.purpose ?? 'ACCOUNT' } })
     })
     this.events.subscribe('DataExportReady', async ({ payload }) => {
       await this.notifications.notify({ userId: payload.userId, category: 'DATA_EXPORT', path: '/profile' })

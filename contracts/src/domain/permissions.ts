@@ -69,7 +69,10 @@ export const Action = {
   CLASSROOM_CREATE: 'classroom.create',
   CLASSROOM_REQUEST_JOIN: 'classroom.requestJoin',
   CLASSROOM_ACCEPT_INVITE: 'classroom.acceptInvite',
+  /** Admit people: approve join requests, invite, see the members. A class's teacher must be a verified teacher (ADR-0073). */
   CLASSROOM_REVIEW_JOIN_REQUESTS: 'classroom.reviewJoinRequests',
+  /** Write and remove announcements: the class's staff (ADR-0073). */
+  CLASSROOM_POST: 'classroom.post',
   CLASSROOM_PUBLISH_QUIZ: 'classroom.publishQuiz',
   CLASSROOM_VIEW_PERFORMANCE: 'classroom.viewPerformance',
   CLASSROOM_MODERATE_REPORTS: 'classroom.moderateReports',
@@ -111,6 +114,11 @@ export interface Actor {
   restrictedMinor?: boolean
   /** Suspended by platform moderators (ADR-0053): nothing that reaches other people until it ends. */
   suspended?: boolean
+  /**
+   * Asked to be a teacher and waiting for review (ADR-0073): may make classes and prepare them, and edit a teacher
+   * profile, but admits no one until a platform admin approves.
+   */
+  teacherApplicant?: boolean
 }
 
 /** What the backend knows about one note relative to the actor. */
@@ -255,6 +263,8 @@ const onTeam = (role: GroupRole | undefined) => atLeast(role, GroupRole.MEMBER) 
 const openToJoin = (group: { privacy?: GroupPrivacy; joinPolicy?: GroupJoinPolicy }) =>
   group.privacy === GroupPrivacy.PUBLIC && group.joinPolicy === GroupJoinPolicy.OPEN
 const isClassStaff = (role?: ClassroomRole) => role === ClassroomRole.TEACHER || role === ClassroomRole.TA
+/** The class's own teacher must hold the TEACHER role to bring students in or see their results (ADR-0073). */
+const admitsAsTeacher = (actor: Actor, role?: ClassroomRole) => role !== ClassroomRole.TEACHER || actor.globalRole === GlobalRole.TEACHER
 
 /**
  * Which permission an AI task needs on its source (ADR-0025): tasks that create a note of one's own from the source
@@ -309,6 +319,7 @@ export const BLOCKED_WHILE_SUSPENDED: ReadonlySet<Action> = new Set<Action>([
   Action.GROUP_MANAGE,
   Action.GROUP_MODERATE_REPORTS,
   Action.CLASSROOM_REVIEW_JOIN_REQUESTS,
+  Action.CLASSROOM_POST,
   Action.CLASSROOM_PUBLISH_QUIZ,
   Action.CLASSROOM_MODERATE_REPORTS,
   Action.TEACHER_EDIT_PROFILE,
@@ -325,8 +336,11 @@ function backToPrivate(action: Action, resource: Resource): boolean {
   return action === Action.NOTE_CHANGE_VISIBILITY && resource.kind === 'note' && resource.targetVisibility === Visibility.PRIVATE
 }
 
+/** A teacher applicant makes a class before their account is verified: a class with no students reaches nobody. */
+const applicantMayDo = (actor: Actor, action: Action) => actor.teacherApplicant === true && action === Action.CLASSROOM_CREATE
+
 export function can(actor: Actor | null, action: Action, resource: Resource = { kind: 'none' }): boolean {
-  if (actor && !actor.institutionVerified && NEEDS_VERIFIED_ACCOUNT.has(action)) return false
+  if (actor && !actor.institutionVerified && NEEDS_VERIFIED_ACCOUNT.has(action) && !applicantMayDo(actor, action)) return false
   if (actor?.suspended && BLOCKED_WHILE_SUSPENDED.has(action) && !backToPrivate(action, resource)) return false
   switch (resource.kind) {
     case 'note': {
@@ -408,11 +422,14 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
         case Action.CLASSROOM_ACCEPT_INVITE:
           return resource.role === undefined && resource.invitedByStaff === true
         case Action.CLASSROOM_REVIEW_JOIN_REQUESTS:
+          // A class's teacher admits people only once verified as a teacher (ADR-0073); TAs were invited by one.
+          return isClassStaff(resource.role) && admitsAsTeacher(actor, resource.role)
+        case Action.CLASSROOM_POST:
         case Action.CLASSROOM_PUBLISH_QUIZ:
         case Action.CLASSROOM_MODERATE_REPORTS:
           return isClassStaff(resource.role)
         case Action.CLASSROOM_VIEW_PERFORMANCE:
-          if (isClassStaff(resource.role)) return true
+          if (isClassStaff(resource.role)) return admitsAsTeacher(actor, resource.role)
           return resource.role === ClassroomRole.STUDENT && resource.targetUserId === actor.id
         default:
           return false
@@ -486,7 +503,7 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           return true
         case Action.CLASSROOM_CREATE:
         case Action.TEACHER_EDIT_PROFILE:
-          return actor.globalRole === GlobalRole.TEACHER
+          return actor.globalRole === GlobalRole.TEACHER || actor.teacherApplicant === true
         case Action.CONTENT_MODERATE:
           return actor.globalRole === GlobalRole.PLATFORM_ADMIN
         default:

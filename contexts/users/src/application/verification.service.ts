@@ -53,6 +53,66 @@ export class VerificationService {
     return request
   }
 
+  /**
+   * An application for the TEACHER role (ADR-0073): where and what they teach, a message and 0–3 proof files. While it
+   * waits, the account is a teacher applicant: it prepares classes but admits no one.
+   */
+  async applyToTeach(userId: string, input: { institution: string; subjects?: string | null; message?: string | null; fileIds?: string[] | null }) {
+    const actor = await this.policy.actor(userId)
+    if (!actor) throw Errors.unauthenticated()
+    if (actor.globalRole !== 'STUDENT') throw Errors.conflict('Your account is already a teacher’s.')
+    if (actor.restrictedMinor) throw Errors.forbidden('Teacher accounts are for adults.')
+    if (actor.suspended) throw Errors.forbidden()
+    const institution = input.institution.trim().slice(0, 200)
+    if (institution.length < 2) throw Errors.validation('Say where you teach.', ['input', 'institution'])
+    const unique = [...new Set(input.fileIds ?? [])]
+    if (unique.length > MAX_DOCUMENTS) throw Errors.validation(`Attach at most ${MAX_DOCUMENTS} files.`, ['input', 'fileIds'])
+    if (await this.db.verificationRequest.count({ where: { userId, purpose: 'TEACHER_ROLE', status: 'PENDING' } })) throw Errors.conflict('Your application is already waiting for review.')
+    const lastWeek = await this.db.verificationRequest.count({ where: { userId, createdAt: { gte: new Date(Date.now() - 7 * DAY_MS) } } })
+    if (lastWeek >= REQUESTS_PER_WEEK) throw Errors.rateLimited(24 * 3600, 'You can send three requests a week. Try again later.')
+    let request
+    try {
+      request = await this.db.verificationRequest.create({
+        data: {
+          id: newId(),
+          userId,
+          purpose: 'TEACHER_ROLE',
+          method: VerificationMethod.DOCUMENTS,
+          institution,
+          subjects: input.subjects?.trim().slice(0, 200) || null,
+          message: input.message?.trim().slice(0, 500) || null,
+          documentIds: unique,
+        },
+      })
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw Errors.conflict('Your application is already waiting for review.')
+      throw e
+    }
+    if (unique.length) {
+      try {
+        await this.files.attach(unique, userId, 'VERIFICATION_DOCUMENT', { type: 'VERIFICATION_REQUEST', id: request.id })
+      } catch (e) {
+        await this.db.verificationRequest.delete({ where: { id: request.id } })
+        throw e
+      }
+    }
+    await this.events.publish('VerificationRequested', { requestId: request.id, userId, method: 'DOCUMENTS', purpose: 'TEACHER_ROLE' })
+    return request
+  }
+
+  /** The person's latest application to teach, if any. */
+  teacherApplication(userId: string) {
+    return this.db.verificationRequest.findFirst({ where: { userId, purpose: 'TEACHER_ROLE' }, orderBy: { createdAt: 'desc' } })
+  }
+
+  /** NONE, PENDING, VERIFIED (the TEACHER role) or DECLINED (the latest application was). */
+  async teacherStatus(userId: string): Promise<'NONE' | 'PENDING' | 'VERIFIED' | 'DECLINED'> {
+    const u = await this.db.user.findUnique({ where: { id: userId }, select: { globalRole: true } })
+    if (u?.globalRole === 'TEACHER') return 'VERIFIED'
+    const latest = await this.teacherApplication(userId)
+    return latest?.status === 'PENDING' ? 'PENDING' : latest?.status === 'REJECTED' ? 'DECLINED' : 'NONE'
+  }
+
   async withdraw(userId: string, requestId: string): Promise<void> {
     const request = await this.db.verificationRequest.findUnique({ where: { id: requestId } })
     if (!request || request.userId !== userId) throw Errors.notFound('Request not found.')
@@ -70,7 +130,8 @@ export class VerificationService {
     if (!can(reviewer, Action.ACCOUNT_REVIEW_VERIFICATION, resource)) throw Errors.forbidden()
     if (request.status !== 'PENDING') throw Errors.conflict('This request was already decided.')
     const trimmed = reason?.trim().slice(0, 500) || null
-    if (!approve && !trimmed) throw Errors.validation('Tell the student why, so they can try again.', ['input', 'reason'])
+    const teacherRole = request.purpose === 'TEACHER_ROLE'
+    if (!approve && !trimmed) throw Errors.validation(teacherRole ? 'Tell them why, so they can apply again.' : 'Tell the student why, so they can try again.', ['input', 'reason'])
 
     const now = new Date()
     let newlyVerified = false
@@ -86,16 +147,16 @@ export class VerificationService {
           await tx.user.update({ where: { id: request.userId }, data: { verifiedAt: now, verificationMethod: request.method } })
           newlyVerified = true
         }
+        // ADR-0073: an approved application to teach grants the TEACHER role.
+        if (teacherRole) await tx.user.update({ where: { id: request.userId }, data: { globalRole: 'TEACHER' } })
       }
-      await this.audit.record(
-        { actorId: reviewerId, action: approve ? 'verification.approved' : 'verification.rejected', targetType: 'VerificationRequest', targetId: requestId, metadata: { method: request.method, userId: request.userId } },
-        tx,
-      )
+      const action = teacherRole ? (approve ? 'teacher.approved' : 'teacher.rejected') : approve ? 'verification.approved' : 'verification.rejected'
+      await this.audit.record({ actorId: reviewerId, action, targetType: 'VerificationRequest', targetId: requestId, metadata: { method: request.method, userId: request.userId, purpose: request.purpose } }, tx)
       return tx.verificationRequest.findUniqueOrThrow({ where: { id: requestId } })
     })
 
     const method = request.method as Method
-    await this.events.publish('VerificationDecided', { requestId, userId: request.userId, method, decision: approve ? 'APPROVED' : 'REJECTED', reviewerId })
+    await this.events.publish('VerificationDecided', { requestId, userId: request.userId, method, decision: approve ? 'APPROVED' : 'REJECTED', reviewerId, purpose: request.purpose })
     if (newlyVerified) await this.events.publish('InstitutionVerified', { userId: request.userId, method })
     return decided
   }
@@ -154,7 +215,7 @@ export class VerificationService {
     const actor = await this.policy.actor(userId)
     if (!actor) throw Errors.unauthenticated()
     if (actor.institutionVerified) throw Errors.conflict('Your account is already verified.')
-    const pendingRequest = (await this.db.verificationRequest.count({ where: { userId, status: 'PENDING' } })) > 0
+    const pendingRequest = (await this.db.verificationRequest.count({ where: { userId, status: 'PENDING', purpose: 'ACCOUNT' } })) > 0
     if (pendingRequest) throw Errors.conflict('You already have a request waiting. Withdraw it to send another.')
     if (method === VerificationMethod.TEACHER && !targetIsVerifiedTeacher) throw Errors.validation('Choose a verified teacher.', ['input', 'teacherId'])
     if (!can(actor, Action.ACCOUNT_REQUEST_VERIFICATION, { kind: 'verification', method, pendingRequest, targetIsVerifiedTeacher })) {

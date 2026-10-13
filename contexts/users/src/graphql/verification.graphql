@@ -2,10 +2,33 @@
 
 enum VerificationRequestStatus { PENDING APPROVED REJECTED WITHDRAWN }
 
+"ACCOUNT: have the account verified (ADR-0019). TEACHER_ROLE: an application to teach (ADR-0073)"
+enum VerificationPurpose { ACCOUNT TEACHER_ROLE }
+
+"Where the viewer stands as a teacher (ADR-0073)"
+enum TeacherStatus {
+  NONE
+  "Applied and waiting: may prepare classes, admits no one yet"
+  PENDING
+  "The TEACHER role"
+  VERIFIED
+  "The latest application was declined; may apply again"
+  DECLINED
+}
+
+extend type User {
+  "Viewer only (ADR-0073)"
+  teacherStatus: TeacherStatus
+}
+
 "Shown to the requester, the addressed teacher and platform admins. Documents are listed for platform admins only."
 type VerificationRequest {
   id: UUID!
+  purpose: VerificationPurpose!
   method: VerificationMethod!
+  "TEACHER_ROLE: where and what they teach"
+  institution: String
+  subjects: String
   status: VerificationRequestStatus!
   message: String
   createdAt: DateTime!
@@ -46,6 +69,17 @@ input RequestDocumentVerificationInput {
   message: String
 }
 
+"""
+An application to teach (ADR-0073). fileIds: 0–3 proof files uploaded with createUploadIntent(purpose:
+VERIFICATION_DOCUMENT), seen by platform admins only, deleted 30 days after the decision
+"""
+input ApplyToTeachInput {
+  institution: String!
+  subjects: String
+  message: String
+  fileIds: [UUID!]
+}
+
 input ReviewVerificationRequestInput {
   requestId: UUID!
   approve: Boolean!
@@ -75,6 +109,8 @@ input SetGlobalRoleInput {
 
 extend type Query {
   myVerificationRequests: [VerificationRequest!]!
+  "Signed in: the viewer's latest application to teach (ADR-0073)"
+  myTeacherApplication: VerificationRequest
   "Teachers: pending requests addressed to them. Platform admins: every pending request. Oldest first; `after` is the last id seen."
   verificationRequestsToReview(first: Int, after: UUID): [VerificationRequest!]!
   "Platform admins only: a 15-minute link to one document; the view is written to the audit log"
@@ -88,6 +124,8 @@ extend type Query {
 extend type Mutation {
   requestTeacherVerification(input: RequestTeacherVerificationInput!): VerificationRequestPayload!
   requestDocumentVerification(input: RequestDocumentVerificationInput!): VerificationRequestPayload!
+  "Signed in, not a teacher yet, not a child account: apply to teach (ADR-0073); a teacher applicant until reviewed"
+  applyToTeach(input: ApplyToTeachInput!): VerificationRequestPayload!
   withdrawVerificationRequest(requestId: UUID!): OkPayload!
   "Teachers: requests addressed to them. Platform admins: all, including documents."
   reviewVerificationRequest(input: ReviewVerificationRequestInput!): VerificationRequestPayload!

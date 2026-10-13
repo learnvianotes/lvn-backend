@@ -58,7 +58,8 @@ export class ClassInsightsService {
   /** Staff only; null for anyone else. */
   async performance(viewerId: string, classroomId: string) {
     const view = await this.classes.view(viewerId, classroomId)
-    if (!view?.can.publishQuiz) return null
+    // Staff who may admit students (ADR-0073: a class's teacher once verified, and TAs).
+    if (!view?.can.review) return null
     const [quizzes, members] = await Promise.all([
       this.db.classQuiz.findMany({ where: { classroomId, deletedAt: null }, orderBy: { publishedAt: 'asc' }, select: { id: true, title: true, sourceNoteId: true } }),
       this.students(classroomId),

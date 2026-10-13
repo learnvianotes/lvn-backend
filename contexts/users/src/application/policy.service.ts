@@ -20,7 +20,16 @@ export class PolicyService implements Policy {
   async actor(userId: string): Promise<Actor | null> {
     const u = await this.db.user.findFirst({
       where: { id: userId, deletedAt: null },
-      select: { id: true, globalRole: true, verifiedAt: true, dateOfBirth: true, suspendedUntil: true, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } },
+      select: {
+        id: true,
+        globalRole: true,
+        verifiedAt: true,
+        dateOfBirth: true,
+        suspendedUntil: true,
+        consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 },
+        // A pending application to teach makes a teacher applicant (ADR-0073).
+        verificationRequests: { where: { purpose: 'TEACHER_ROLE', status: 'PENDING' }, select: { id: true }, take: 1 },
+      },
     })
     if (!u) return null
     return {
@@ -29,6 +38,7 @@ export class PolicyService implements Policy {
       institutionVerified: u.verifiedAt !== null,
       restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.config.digitalConsentAge, u.consents.length > 0),
       suspended: u.suspendedUntil !== null && u.suspendedUntil.getTime() > Date.now(),
+      teacherApplicant: u.globalRole === 'STUDENT' && u.verificationRequests.length > 0,
     }
   }
 

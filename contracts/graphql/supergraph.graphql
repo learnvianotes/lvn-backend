@@ -582,6 +582,19 @@ type ApplyAiChangesPayload
   userErrors: [UserError!]!
 }
 
+"""
+An application to teach (ADR-0073). fileIds: 0–3 proof files uploaded with createUploadIntent(purpose:
+VERIFICATION_DOCUMENT), seen by platform admins only, deleted 30 days after the decision
+"""
+input ApplyToTeachInput
+  @join__type(graph: USERS)
+{
+  institution: String!
+  subjects: String
+  message: String
+  fileIds: [UUID!]
+}
+
 input AskAiInput
   @join__type(graph: AI)
 {
@@ -2984,6 +2997,11 @@ type Mutation
   acceptTerms(input: AcceptTermsInput!): OkPayload! @join__field(graph: USERS)
   requestTeacherVerification(input: RequestTeacherVerificationInput!): VerificationRequestPayload! @join__field(graph: USERS)
   requestDocumentVerification(input: RequestDocumentVerificationInput!): VerificationRequestPayload! @join__field(graph: USERS)
+
+  """
+  Signed in, not a teacher yet, not a child account: apply to teach (ADR-0073); a teacher applicant until reviewed
+  """
+  applyToTeach(input: ApplyToTeachInput!): VerificationRequestPayload! @join__field(graph: USERS)
   withdrawVerificationRequest(requestId: UUID!): OkPayload! @join__field(graph: USERS)
 
   """
@@ -3972,6 +3990,9 @@ type Query
   """Pending connection requests to and from the viewer, newest first"""
   myConnectionRequests: [ConnectionRequestItem!]! @join__field(graph: USERS)
   myVerificationRequests: [VerificationRequest!]! @join__field(graph: USERS)
+
+  """Signed in: the viewer's latest application to teach (ADR-0073)"""
+  myTeacherApplication: VerificationRequest @join__field(graph: USERS)
 
   """
   Teachers: pending requests addressed to them. Platform admins: every pending request. Oldest first; `after` is the last id seen.
@@ -5119,6 +5140,22 @@ enum TeacherSkillSource
   MANUAL @join__enumValue(graph: USERS)
 }
 
+"""Where the viewer stands as a teacher (ADR-0073)"""
+enum TeacherStatus
+  @join__type(graph: USERS)
+{
+  NONE @join__enumValue(graph: USERS)
+
+  """Applied and waiting: may prepare classes, admits no one yet"""
+  PENDING @join__enumValue(graph: USERS)
+
+  """The TEACHER role"""
+  VERIFIED @join__enumValue(graph: USERS)
+
+  """The latest application was declined; may apply again"""
+  DECLINED @join__enumValue(graph: USERS)
+}
+
 """A topic of the notes subgraph"""
 type Topic
   @join__type(graph: CORE, key: "id", resolvable: false)
@@ -5419,6 +5456,9 @@ type User
   The viewer's own: whether they accepted the current version (Query.termsVersion); false means ask again. null for others.
   """
   termsAccepted: Boolean @join__field(graph: USERS)
+
+  """Viewer only (ADR-0073)"""
+  teacherStatus: TeacherStatus @join__field(graph: USERS)
 }
 
 """
@@ -5461,13 +5501,28 @@ enum VerificationMethod
 }
 
 """
+ACCOUNT: have the account verified (ADR-0019). TEACHER_ROLE: an application to teach (ADR-0073)
+"""
+enum VerificationPurpose
+  @join__type(graph: USERS)
+{
+  ACCOUNT @join__enumValue(graph: USERS)
+  TEACHER_ROLE @join__enumValue(graph: USERS)
+}
+
+"""
 Shown to the requester, the addressed teacher and platform admins. Documents are listed for platform admins only.
 """
 type VerificationRequest
   @join__type(graph: USERS)
 {
   id: UUID!
+  purpose: VerificationPurpose!
   method: VerificationMethod!
+
+  """TEACHER_ROLE: where and what they teach"""
+  institution: String
+  subjects: String
   status: VerificationRequestStatus!
   message: String
   createdAt: DateTime!
