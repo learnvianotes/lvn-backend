@@ -1,7 +1,7 @@
 #cloud-config
-# First boot of the local environment's VM (vm.sh up): an `lvn` user reachable only with this machine's VM key,
+# First boot of an environment's VM (vm.sh up): an `lvn` user reachable only with this machine's VM key,
 # Docker, and Terraform from HashiCorp's signed apt repository. cloud-init is switched off once this has run.
-hostname: lvn-local
+hostname: "@HOSTNAME@"
 groups: [docker]
 users:
   - name: lvn

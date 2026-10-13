@@ -3,7 +3,28 @@
 # to the API), so there is no CORS and the session cookie is first-party. A custom domain later is an alias and an ACM
 # certificate on this distribution.
 
+# The AWS stand-in (ADR-0066): Moto has no VPC origins and no cache or origin request policies. There the distribution
+# reaches the ALB as a plain custom origin, and the managed policies are named by their fixed, documented ids.
+locals {
+  vpc_origin = !var.aws_emulator
+  policy_ids = var.aws_emulator ? {
+    disabled   = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+    optimized  = "658327ea-f89d-4fab-a63d-7e88639e58f6"
+    all_viewer = "216adef6-5c7f-47e4-b989-5492eafa07d3"
+    } : {
+    disabled   = data.aws_cloudfront_cache_policy.disabled[0].id
+    optimized  = data.aws_cloudfront_cache_policy.optimized[0].id
+    all_viewer = data.aws_cloudfront_origin_request_policy.all_viewer[0].id
+  }
+}
+
+moved {
+  from = aws_cloudfront_vpc_origin.alb
+  to   = aws_cloudfront_vpc_origin.alb[0]
+}
+
 resource "aws_cloudfront_vpc_origin" "alb" {
+  count = local.vpc_origin ? 1 : 0
   vpc_origin_endpoint_config {
     name                   = var.name
     arn                    = var.alb_arn
@@ -21,15 +42,18 @@ resource "aws_cloudfront_vpc_origin" "alb" {
 }
 
 data "aws_cloudfront_cache_policy" "disabled" {
-  name = "Managed-CachingDisabled"
+  count = var.aws_emulator ? 0 : 1
+  name  = "Managed-CachingDisabled"
 }
 
 data "aws_cloudfront_cache_policy" "optimized" {
-  name = "Managed-CachingOptimized"
+  count = var.aws_emulator ? 0 : 1
+  name  = "Managed-CachingOptimized"
 }
 
 data "aws_cloudfront_origin_request_policy" "all_viewer" {
-  name = "Managed-AllViewer"
+  count = var.aws_emulator ? 0 : 1
+  name  = "Managed-AllViewer"
 }
 
 resource "aws_cloudfront_distribution" "this" {
@@ -42,8 +66,20 @@ resource "aws_cloudfront_distribution" "this" {
   origin {
     origin_id   = "alb"
     domain_name = var.alb_dns_name
-    vpc_origin_config {
-      vpc_origin_id = aws_cloudfront_vpc_origin.alb.id
+    dynamic "vpc_origin_config" {
+      for_each = local.vpc_origin ? [1] : []
+      content {
+        vpc_origin_id = aws_cloudfront_vpc_origin.alb[0].id
+      }
+    }
+    dynamic "custom_origin_config" {
+      for_each = local.vpc_origin ? [] : [1]
+      content {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = "http-only"
+        origin_ssl_protocols   = ["TLSv1.2"]
+      }
     }
   }
 
@@ -54,8 +90,8 @@ resource "aws_cloudfront_distribution" "this" {
     viewer_protocol_policy   = "redirect-to-https"
     allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
     cached_methods           = ["GET", "HEAD"]
-    cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer.id
+    cache_policy_id          = local.policy_ids.disabled
+    origin_request_policy_id = local.policy_ids.all_viewer
     compress                 = true
   }
 
@@ -66,7 +102,7 @@ resource "aws_cloudfront_distribution" "this" {
     viewer_protocol_policy = "redirect-to-https"
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
-    cache_policy_id        = data.aws_cloudfront_cache_policy.optimized.id
+    cache_policy_id        = local.policy_ids.optimized
     compress               = true
   }
 
