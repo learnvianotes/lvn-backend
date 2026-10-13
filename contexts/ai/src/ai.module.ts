@@ -7,6 +7,7 @@ import { AiEmbeddings } from './application/ai-embeddings'
 import { AskService } from './application/ask.service'
 import { PublicPipeline } from './application/public-pipeline'
 import { MediaInput } from './application/media-input'
+import { AiPageVision } from './application/page-vision'
 import { PromptLibrary } from './application/prompts'
 import { AiResolver } from './graphql/ai.resolver'
 import { AiTasksResolver, NoteAiArtifactsResolver } from './graphql/ai-tasks.resolver'
@@ -17,7 +18,7 @@ import { OllamaProvider } from './infrastructure/ollama'
 /**
  * The `ai` bounded context (spec §6.1) — Postgres schema `ai`.
  * Owns: AiGateway, providers, the task → model table, usage and quotas, prompts, AI tasks, RAG answers, the public-note
- * pipeline's AI steps, transcription, moderation scoring.
+ * pipeline's AI steps, transcription, PDF pages read again (PAGE_VISION), moderation scoring.
  * Imported only by the composition roots (apps/api, apps/worker); other contexts reach it through its facade
  * interface in libs/, never by importing this package (enforced by dependency-cruiser).
  * Needs PrismaModule, QueueModule, EventBusModule and the ENTITLEMENTS, FILES, NOTE_AI, NOTE_RETRIEVAL, DOUBTS and LIVE facades.
@@ -34,6 +35,7 @@ export class AiModule {
         AiGateway,
         AiTasksService,
         MediaInput,
+        AiPageVision,
         AskService,
         PublicPipeline,
         AiEmbeddings,
@@ -45,7 +47,7 @@ export class AiModule {
         NoteInsightsResolver,
         InsightsResolver,
       ],
-      exports: [AiGateway, AiTasksService, AskService, PublicPipeline, AiEmbeddings, AiExport],
+      exports: [AiGateway, AiTasksService, AskService, PublicPipeline, AiEmbeddings, AiExport, AiPageVision],
     }
   }
 }

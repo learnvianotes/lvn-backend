@@ -22,6 +22,10 @@ type PdfConversion {
   "Pages without a text layer, read with OCR"
   scannedPages: Int
   cards: Int
+  "Pages the vision model read again where the OCR was unsure or met maths (ADR-0063)"
+  aiPages: Int
+  "Of those, the readings rejected for disagreeing with the OCR (its cards kept)"
+  aiRejected: Int
   "Why it failed, in words for people"
   error: String
   "The PDF"

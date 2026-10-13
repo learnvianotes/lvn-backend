@@ -14,6 +14,7 @@
  *   node scripts/lifecycle-check.mjs <public_url> --token-a <access token of a verified account>
  */
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { crc32, deflateSync } from 'node:zlib'
 
 const base = process.argv[2]?.replace(/\/$/, '')
@@ -408,6 +409,40 @@ const infected = await uploadTo('application/pdf', 'invoice.pdf', EICAR_PDF)
 const before = await mediaOf(infected)
 ok(await eventually(async () => (await mediaOf(infected)) === null, 120_000), 'an infected file is quarantined: its card shows it unavailable')
 ok(before !== null && !(await fetch(before.url)).ok, 'and its old read URL no longer serves it')
+
+// The AI stages of PDF conversion (ADR-0063), where AI answers: a scanned Hindi page the OCR cannot read goes to the
+// vision model, whose reading becomes the converted note's cards; and clean-up mends a note's broken words, which A
+// applies.
+if (aiStatus.available) {
+  const scan = await uploadTo('application/pdf', 'hindi-scan.pdf', readFileSync(new URL('../workers/pdf-engine/tests/fixtures/hindi-scan.pdf', import.meta.url)))
+  let conversion
+  // The file is checked for malware before it can be converted.
+  await eventually(async () => {
+    conversion = (await gql('mutation ($input: ConvertPdfInput!) { convertPdfToNote(input: $input) { conversion { id } userErrors { message } } }', { input: { noteId: id, fileId: scan } }, A.token)).convertPdfToNote.conversion
+    return !!conversion
+  }, 120_000)
+  let converted
+  await eventually(async () => {
+    converted = (await gql('query ($id: UUID!) { pdfConversion(id: $id) { status aiPages aiRejected cards error note { id } } }', { id: conversion?.id }, A.token)).pdfConversion
+    return converted?.status === 'DONE' || converted?.status === 'FAILED'
+  }, 300_000)
+  ok(converted?.status === 'DONE' && converted.aiPages === 1 && converted.aiRejected === 0, 'a scanned Hindi page the OCR cannot read is read again by the vision model', converted?.error ?? `${converted?.aiPages} read, ${converted?.aiRejected} set aside`)
+  const hindi = converted?.note ? (await gql('query ($id: UUID!) { note(id: $id) { cards(first: 20) { edges { node { content } } } } }', { id: converted.note.id }, A.token)).note.cards.edges.map((e) => JSON.stringify(e.node.content)).join(' ') : ''
+  ok(hindi.includes('सूर्य') && hindi.includes('"page":1'), 'its cards hold the Hindi words, anchored to the page')
+
+  const broken = await gql('mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } userErrors { message } } }', { input: { title: `Respiration ${WORD}`, cards: [{ id: newId(), type: 'text', position: 'a0', content: text('Respiration releases the en- ergy stored in glucose.') }, { id: newId(), type: 'text', position: 'a1', content: text('Cells use tbis energy to grow, move 14 Biology Class X and repair themselves.') }] } }, A.token)
+  const brokenId = broken.createNote.note.id
+  const cleanRun = await gql('mutation ($input: RunAiTaskInput!) { runAiTask(input: $input) { artifact { id } userErrors { message } } }', { input: { noteId: brokenId, task: 'CLEAN_UP' } }, A.token)
+  let cleaned
+  await eventually(async () => {
+    cleaned = (await gql('query ($id: UUID!) { aiArtifact(id: $id) { status changes { cardId after } error } }', { id: cleanRun.runAiTask.artifact?.id }, A.token)).aiArtifact
+    return cleaned?.status === 'READY' || cleaned?.status === 'FAILED'
+  }, 180_000)
+  ok(cleaned?.status === 'READY' && cleaned.changes.length > 0, 'clean-up proposes repairs of the broken words with the real model', cleaned?.error ?? cleanRun.runAiTask.userErrors[0]?.message ?? `${cleaned?.changes?.length ?? 0} changes`)
+  const applied = cleaned?.changes?.length ? (await gql('mutation ($input: ApplyAiChangesInput!) { applyAiChanges(input: $input) { applied userErrors { message } } }', { input: { artifactId: cleanRun.runAiTask.artifact.id, cardIds: cleaned.changes.map((c) => c.cardId) } }, A.token)).applyAiChanges : null
+  const mended = (await gql('query ($id: UUID!) { note(id: $id) { cards(first: 10) { edges { node { content } } } } }', { id: brokenId }, A.token)).note.cards.edges.map((e) => JSON.stringify(e.node.content)).join(' ')
+  ok(applied?.applied.length === cleaned?.changes.length && mended.includes('the energy stored') && !mended.includes('en- ergy'), 'A applies them: the note’s cards are mended', applied?.userErrors[0]?.message)
+}
 
 console.log(`1..${n}`)
 if (failed) {

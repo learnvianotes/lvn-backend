@@ -45,3 +45,5 @@ docker build -t lvn-pdf-engine .           # ~4 GB; models baked in by a warm-up
 
 The test PDFs in `tests/fixtures` are made with Chromium from HTML. Add labelled pages as `<name>.pdf` with a
 `<name>.expected.json` (headings, phrases, tables, pictures, ocr).
+`hindi-scan.pdf` is an image of a Hindi page (Pillow with Noto Sans Devanagari) and has no expected file: the `en`
+recogniser cannot read it, so its test checks that it goes to the vision model instead (ADR-0063).

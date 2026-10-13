@@ -36,6 +36,8 @@ enum AiTask {
   TRANSCRIBE
   "The person's own note's rough words and photos, as a structured note (ADR-0062)"
   QUICK_NOTE
+  "Mends what PDF conversion broke in the text, heading and quote cards of a note the person may edit, as changes to apply (ADR-0063)"
+  CLEAN_UP
 }
 
 enum AiLanguage { ENGLISH HINDI TELUGU }
@@ -53,6 +55,16 @@ type AiCard {
   content: JSON!
 }
 
+"A card's words as CLEAN_UP would leave them (ADR-0063)"
+type AiChange {
+  cardId: UUID!
+  "What the card said when the change was made"
+  before: String!
+  after: String!
+  "Applied to the note with applyAiChanges"
+  applied: Boolean!
+}
+
 "What a task made for the viewer from a note (ADR-0059). Only its maker sees it, while they can read the note"
 type AiArtifact {
   id: UUID!
@@ -65,6 +77,8 @@ type AiArtifact {
   title: String
   "Card tasks, once READY: the cards to choose from"
   cards: [AiCard!]
+  "CLEAN_UP, once READY: the changes to choose from (empty when nothing needs mending)"
+  changes: [AiChange!]
   "FAILED: why, in words for the person"
   error: String
   "Made from the published version (the viewer is a reader) rather than the draft"
@@ -99,6 +113,18 @@ input KeepAiCardsInput {
   into: KeepCardsInto!
 }
 
+input ApplyAiChangesInput {
+  artifactId: UUID!
+  "The cards whose changes to apply"
+  cardIds: [UUID!]!
+}
+
+type ApplyAiChangesPayload {
+  "The cards changed; a card edited since the change was made is left as it is"
+  applied: [UUID!]!
+  userErrors: [UserError!]!
+}
+
 type AiArtifactPayload {
   artifact: AiArtifact
   userErrors: [UserError!]!
@@ -119,5 +145,7 @@ type Mutation {
   "Queues a task; poll aiArtifact until it is READY or FAILED. RATE_LIMITED past the day's allowance, UNAVAILABLE when AI is off"
   runAiTask(input: RunAiTaskInput!): AiArtifactPayload!
   keepAiCards(input: KeepAiCardsInput!): KeepAiCardsPayload!
+  "Applies chosen changes of a CLEAN_UP result to the note, through the normal save (ADR-0063)"
+  applyAiChanges(input: ApplyAiChangesInput!): ApplyAiChangesPayload!
   deleteAiArtifact(id: UUID!): OkPayload!
 }

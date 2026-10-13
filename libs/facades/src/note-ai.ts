@@ -52,4 +52,10 @@ export interface NoteAi {
    * needs the fork right on that note. Returns the new note's id.
    */
   createNote(ownerId: string, input: { title: string; cards: NewCard[]; copiedFrom?: string | null }): Promise<string>
+  /**
+   * Replaces the words of text, heading and quote cards of the draft, keeping each card's type and anchor, through the
+   * normal save; FORBIDDEN unless `viewerId` may edit it. A card whose words are no longer `before` (edited since) is
+   * left alone. Returns the ids of the cards changed (ADR-0063).
+   */
+  rewriteText(viewerId: string, noteId: string, changes: { cardId: string; before: string; text: string }[]): Promise<string[]>
 }

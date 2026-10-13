@@ -1,13 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { LimitKey } from '@lvn/contracts/domain'
+import { LimitKey, type CardType } from '@lvn/contracts/domain'
 import { NOTE_LIMITS, positionsBetween } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
-import { ENTITLEMENTS, type Entitlements } from '@lvn-backend/facades'
+import { ENTITLEMENTS, PAGE_VISION, type Entitlements, type PageVision } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
 import { RateLimiter } from '@lvn-backend/redis'
 import { Storage } from '@lvn-backend/storage'
 import { doclingToCards, type DoclingDocument } from '../domain/docling-cards'
+import { acceptReading, pageText, replacePage } from '../domain/escalation'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
 import { FilesService } from './files.service'
 import type { OpenedNote } from './notes.service'
@@ -45,6 +46,8 @@ export interface ParsedMessage {
   pictures: { ref: string; key: string; width: number; height: number }[]
   pages: number
   seconds: number
+  /** Pages the engine chose to read again (stage 4, ADR-0063), each a PNG at `key`; absent from older engines */
+  escalate?: { page: number; reason: string; score: number | null; ocr: number | null; key: string }[]
 }
 export interface FailedMessage {
   conversionId: string
@@ -72,6 +75,7 @@ export class PdfConversionService {
     private readonly limiter: RateLimiter,
     @Inject(ENTITLEMENTS) private readonly entitlements: Entitlements,
     @Inject(NOTES_CONFIG) private readonly config: NotesConfig,
+    @Inject(PAGE_VISION) private readonly vision: PageVision,
   ) {}
 
   async request(viewerId: string, noteId: string, fileId: string): Promise<{ conversion: ConversionRow; note: OpenedNote }> {
@@ -137,18 +141,50 @@ export class PdfConversionService {
         if ('fileId' in stored) pictures.set(picture.ref, stored.fileId)
       }
       const existing = await this.db.card.findMany({ where: { noteId: c.noteId, deletedAt: null }, orderBy: [{ position: 'asc' }, { id: 'asc' }], select: { position: true } })
-      const { cards, warnings } = doclingToCards(doc, { fileId: c.fileId, picture: (ref) => pictures.get(ref) ?? null, maxCards: NOTE_LIMITS.cardsPerNote - existing.length })
-      if (warnings.length) this.log.warn(`${c.id}: ${warnings.join('; ')}`)
+      const room = NOTE_LIMITS.cardsPerNote - existing.length
+      const converted = doclingToCards(doc, { fileId: c.fileId, picture: (ref) => pictures.get(ref) ?? null, maxCards: room })
+      if (converted.warnings.length) this.log.warn(`${c.id}: ${converted.warnings.join('; ')}`)
+      const again = await this.readAgain(c, m, converted.cards)
+      const cards = again.cards.slice(0, room)
       const positions = positionsBetween(existing.at(-1)?.position ?? null, null, cards.length)
       await this.db.$transaction(async (tx) => {
         if (cards.length) await tx.card.createMany({ data: cards.map((card, i) => ({ id: newId(), noteId: c.noteId, type: card.type, position: positions[i]!, content: card.content as Prisma.InputJsonValue })) })
         await tx.note.update({ where: { id: c.noteId }, data: { draftRevision: { increment: 1 }, draftUpdatedAt: new Date() } })
-        await tx.pdfConversion.update({ where: { id: c.id }, data: { status: 'DONE', progress: 100, cards: cards.length, finishedAt: new Date() } })
+        await tx.pdfConversion.update({ where: { id: c.id }, data: { status: 'DONE', progress: 100, cards: cards.length, aiPages: again.aiPages, aiRejected: again.aiRejected, finishedAt: new Date() } })
       })
     } catch (e) {
       this.log.error(`${c.id}: mapping failed: ${(e as Error).message}`)
       await this.fail(c.id, 'The PDF was read but could not be turned into cards. Try again later.')
     }
+  }
+
+  /**
+   * Stage 4 of ADR-0028 (ADR-0063): the pages the engine chose, read again by the vision model. A reading that shares
+   * too little of the OCR's words is rejected; a page that fails, or AI being off, keeps the OCR's cards. Never fails
+   * the conversion.
+   */
+  private async readAgain<T extends { type: CardType; content: unknown }>(c: { id: string; fileId: string }, m: ParsedMessage, cards: T[]) {
+    const pages = m.escalate ?? []
+    if (!pages.length) return { cards: cards as { type: T['type']; content: unknown }[], aiPages: null, aiRejected: null }
+    if (!(await this.vision.available().catch(() => false))) return { cards: cards as { type: T['type']; content: unknown }[], aiPages: 0, aiRejected: 0 }
+    let out: { type: T['type']; content: unknown }[] = cards
+    let read = 0
+    let rejected = 0
+    for (const p of pages) {
+      try {
+        const png = Buffer.from(await this.storage.getBytes(m.bucket, p.key, 20 * 1024 ** 2)).toString('base64')
+        const reading = await this.vision.read(png)
+        read++
+        if (!acceptReading(pageText(out, p.page), reading.text, p.ocr ?? null)) {
+          rejected++
+          continue
+        }
+        out = replacePage(out, p.page, reading.cards, c.fileId)
+      } catch (e) {
+        this.log.warn(`${c.id}: page ${p.page} was not read again: ${(e as Error).message}`)
+      }
+    }
+    return { cards: out, aiPages: read, aiRejected: rejected }
   }
 
   async failed(m: FailedMessage): Promise<void> {

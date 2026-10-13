@@ -76,8 +76,16 @@ def triaged_message(
     }
 
 
-def parsed_message(job: ParseJob, *, pages: int, seconds: float, pictures: list[dict[str, Any]]) -> dict[str, Any]:
-    """The `map` job the notes context runs next."""
+def parsed_message(
+    job: ParseJob,
+    *,
+    pages: int,
+    seconds: float,
+    pictures: list[dict[str, Any]],
+    escalate: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """The `map` job the notes context runs next. `escalate`: the pages to read again with the vision model, each
+    `{page, reason, score, key}` with its PNG at `key` (stage 4, ADR-0063)."""
     return {
         "conversionId": job.conversion_id,
         "documentKey": f"{job.output_prefix}document.json",
@@ -85,6 +93,7 @@ def parsed_message(job: ParseJob, *, pages: int, seconds: float, pictures: list[
         "pictures": pictures,
         "pages": pages,
         "seconds": round(seconds, 2),
+        "escalate": escalate or [],
     }
 
 

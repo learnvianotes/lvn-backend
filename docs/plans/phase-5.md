@@ -58,6 +58,7 @@ repo it touches and checked on the local environment. Nothing is pushed.
 | AI tasks and artifacts (P5b) | Where results live, who sees them, how made cards become one's own | *ADR-0059.* `ai.NoteArtifact`, the requester's own (no requester for P5d's pipeline); card tasks store schema-checked cards until the person keeps some, through a `NOTE_AI` facade in `notes`; the worker runs one task at a time |
 | Ask AI (P5c) | Where chunks live; streaming over the ids-only live channel (ADR-0042) | `NoteChunk` in `notes` beside the read predicate; the `ai` context retrieves through a facade; answers stream to the asker's own socket |
 | Transcription (P5e) | gemma4's audio input or a Whisper service | *ADR-0062.* gemma4's audio input: one model for everything. Measured on the Open Speech Repository's Harvard sentences (33.6 s), near word for word in 15 s; recordings are cut into 30-second pieces, at most 30 minutes |
+| PDF escalation and clean-up (P5f) | ADR-0028 left "low confidence" and "sharp disagreement" unmeasured, and how Hindi is read | *ADR-0063.* A page is unsure below Docling's 0.8 or with a formula; at most 15 % of pages, least sure first. A reading sharing under 30 % of the OCR's words is rejected, judged only where the OCR is fair or better. Hindi: Docling's RapidOCR runs one recogniser per run and its Devanagari model garbles Hindi scans, so the engine stays on `en` and Hindi pages reach gemma4, which read a Hindi page word for word |
 
 ## Needed from the owner (not blocking)
 

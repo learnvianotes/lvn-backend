@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { Action, can, type CardType } from '@lvn/contracts/domain'
+import { Action, can, CardType } from '@lvn/contracts/domain'
 import { cardPlainText, positionsBetween } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import type { NewCard, NoteAi, NoteAiSource } from '@lvn-backend/facades'
@@ -74,6 +74,23 @@ export class NoteAiFacade implements NoteAi {
     }
   }
 
+  async rewriteText(viewerId: string, noteId: string, changes: { cardId: string; before: string; text: string }[]): Promise<string[]> {
+    const opened = await this.notes.open(viewerId, noteId)
+    if (!opened || opened.note.deletedAt) throw Errors.notFound('Note not found.')
+    if (opened.access === 'READER') throw Errors.forbidden('Only people who can edit the note change its cards.')
+    const cards = await this.db.card.findMany({ where: { noteId, id: { in: changes.map((c) => c.cardId) }, deletedAt: null } })
+    const ops = changes.flatMap((change) => {
+      const card = cards.find((c) => c.id === change.cardId)
+      if (!card || !REWRITABLE.has(card.type as CardType) || cardPlainText(card.type as CardType, card.content) !== change.before) return []
+      const content = card.content as Record<string, unknown>
+      const next = card.type === CardType.HEADING ? { ...content, content: inlineOf(change.text) } : { ...content, doc: docOf(change.text) }
+      return [{ kind: 'UPSERT' as const, id: card.id, type: card.type as CardType, position: card.position, content: next, baseRevision: card.revision }]
+    })
+    if (!ops.length) return []
+    const { results } = await this.drafts.update(viewerId, { noteId, ops })
+    return results.filter((r) => r.status === 'APPLIED').map((r) => r.id)
+  }
+
   async appendCards(viewerId: string, noteId: string, cards: NewCard[]): Promise<void> {
     const last = await this.db.card.findFirst({ where: { noteId, deletedAt: null }, orderBy: [{ position: 'desc' }, { id: 'desc' }], select: { position: true } })
     const positions = positionsBetween(last?.position ?? null, null, cards.length)
@@ -96,3 +113,11 @@ export class NoteAiFacade implements NoteAi {
     return created.note.id
   }
 }
+
+/** Cards whose words clean-up may mend (ADR-0063). */
+const REWRITABLE: ReadonlySet<CardType> = new Set([CardType.TEXT, CardType.HEADING, CardType.QUOTE])
+const TEXT_NODE = 10_000
+const textNodes = (text: string) => (text.match(new RegExp(`[\\s\\S]{1,${TEXT_NODE}}`, 'g')) ?? []).map((t) => ({ type: 'text', text: t }))
+/** Plain text as a rich-text document: one paragraph per blank-line-separated block. */
+const docOf = (text: string) => ({ type: 'doc', content: text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean).map((p) => ({ type: 'paragraph', content: textNodes(p) })) })
+const inlineOf = (text: string) => textNodes(text.replace(/\s+/g, ' ').trim())

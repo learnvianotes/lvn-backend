@@ -100,11 +100,18 @@ async def handle(
             key = f"{job.output_prefix}pictures/{index}.png"
             await asyncio.to_thread(storage.upload, job.output_bucket, key, picture.png, "image/png")
             pictures.append({"ref": picture.ref, "key": key, "width": picture.width, "height": picture.height})
+        escalate = []
+        for item in parsed.escalate:
+            key = f"{job.output_prefix}pages/{item.page}.png"
+            await asyncio.to_thread(storage.upload, job.output_bucket, key, parsed.page_images[item.page], "image/png")
+            escalate.append(
+                {"page": item.page, "reason": item.reason, "score": item.score, "ocr": item.ocr, "key": key}
+            )
         body = json.dumps(parsed.document, ensure_ascii=False).encode("utf-8")
         await asyncio.to_thread(
             storage.upload, job.output_bucket, f"{job.output_prefix}document.json", body, "application/json"
         )
-        message = parsed_message(job, pages=parsed.pages, seconds=parsed.seconds, pictures=pictures)
+        message = parsed_message(job, pages=parsed.pages, seconds=parsed.seconds, pictures=pictures, escalate=escalate)
         # Kept beside the document: the same PDF converted again is mapped from it without parsing (the cache).
         result = json.dumps({k: v for k, v in message.items() if k != "conversionId"}).encode("utf-8")
         await asyncio.to_thread(
@@ -112,9 +119,14 @@ async def handle(
         )
         await answer.add("map", message, {"jobId": f"{job.conversion_id}.map"})
         log.info(
-            "parsed %s: %d pages in %.1fs, %d pictures", job.conversion_id, parsed.pages, parsed.seconds, len(pictures)
+            "parsed %s: %d pages in %.1fs, %d pictures, %d to read again",
+            job.conversion_id,
+            parsed.pages,
+            parsed.seconds,
+            len(pictures),
+            len(escalate),
         )
-        return {"pages": parsed.pages, "pictures": len(pictures)}
+        return {"pages": parsed.pages, "pictures": len(pictures), "escalate": len(escalate)}
     except Exception as err:
         log.exception("parse %s failed", job.conversion_id)
         await answer.add(

@@ -590,6 +590,10 @@ export interface PdfConversion {
   /** Pages without a text layer, read with OCR */
   scannedPages: number | null
   cards: number | null
+  /** Pages the vision model read again where the OCR was unsure or met maths (ADR-0063) */
+  aiPages: number | null
+  /** Of those, the readings rejected for disagreeing with the OCR (its cards kept) */
+  aiRejected: number | null
   /** Why it failed, in words for people */
   error: string | null
   /** The PDF */

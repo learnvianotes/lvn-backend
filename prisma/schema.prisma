@@ -1051,6 +1051,9 @@ model PdfConversion {
   /// Pages without a text layer, read with OCR
   scannedPages Int?
   cards        Int?
+  /// Pages the vision model read again (stage 4, ADR-0063), and how many of its readings were rejected
+  aiPages      Int?
+  aiRejected   Int?
   error        String?
   createdAt    DateTime            @default(now()) @db.Timestamptz(3)
   finishedAt   DateTime?           @db.Timestamptz(3)
