@@ -1,4 +1,4 @@
-import { contributionOf, learningDay } from '../../src/domain/learning-day'
+import { contributionOf, dayBounds, learningDay } from '../../src/domain/learning-day'
 
 /**
  * Days in a person's time zone, rolling over at 04:00 (ADR-0030, ADR-0067): India (no daylight saving, +05:30), a
@@ -51,5 +51,21 @@ describe('contributionOf', () => {
     expect(contributionOf({ type: 'QUIZ_COMPLETED', durationMs: 120_000, metadata: { answered: 7 } })).toEqual({ learningSeconds: 120, readingSeconds: 0, reviews: 0, quizAnswers: 7 })
     expect(contributionOf({ type: 'QUIZ_COMPLETED', durationMs: null, metadata: { answered: 'lots' } }).quizAnswers).toBe(0)
     expect(contributionOf({ type: 'NOTE_OPENED', durationMs: 5_000, metadata: null })).toEqual({ learningSeconds: 0, readingSeconds: 0, reviews: 0, quizAnswers: 0 })
+  })
+})
+
+describe('dayBounds', () => {
+  it('runs from 04:00 to 04:00 local, as UTC instants', () => {
+    expect(dayBounds('2026-10-13', 'Asia/Kolkata')).toEqual({ from: new Date('2026-10-12T22:30:00Z'), to: new Date('2026-10-13T22:30:00Z') })
+    expect(dayBounds('2026-10-13', 'UTC')).toEqual({ from: new Date('2026-10-13T04:00:00Z'), to: new Date('2026-10-14T04:00:00Z') })
+  })
+
+  it('is 25 hours long when the clocks go back, and every instant in it belongs to it', () => {
+    const { from, to } = dayBounds('2026-10-24', 'Europe/London')
+    expect(from).toEqual(new Date('2026-10-24T03:00:00Z')) // 04:00 BST
+    expect(to).toEqual(new Date('2026-10-25T04:00:00Z')) // 04:00 GMT
+    expect(learningDay(from, 'Europe/London')).toBe('2026-10-24')
+    expect(learningDay(new Date(to.getTime() - 1), 'Europe/London')).toBe('2026-10-24')
+    expect(learningDay(to, 'Europe/London')).toBe('2026-10-25')
   })
 })

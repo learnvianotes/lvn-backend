@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common'
-import { Args, Context, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql'
+import { Args, Context, Mutation, Parent, Query, ResolveField, Resolver, ResolveReference } from '@nestjs/graphql'
 import { CurrentViewer, SignedInGuard, type RequestContext, type Viewer } from '@lvn-backend/auth-guard'
 import { withUserErrors, type UserError } from '@lvn-backend/errors'
 import { byKeys, requestLoader } from '@lvn-backend/graphql'
@@ -106,6 +106,12 @@ export class SubjectResolver {
 @Resolver('Topic')
 export class TopicResolver {
   constructor(private readonly organise: OrganiseService) {}
+
+  /** Other subgraphs name topics (learning history, ADR-0067); a topic the viewer may not see resolves to null. */
+  @ResolveReference()
+  resolveReference(reference: { id: string }, context: RequestContext) {
+    return this.organise.topicFor(reference.id, context.viewer?.userId ?? null)
+  }
 
   @ResolveField('subject')
   subject(@Parent() t: TopicRow, @Context() context: RequestContext) {

@@ -181,6 +181,11 @@ export class OrganiseService {
     return viewerId ? { OR: [{ origin: 'CURATED' }, { proposedById: viewerId }] } : { origin: 'CURATED' }
   }
 
+  /** One topic a viewer may see (a federation reference, ADR-0067's history): curated, or proposed by them. */
+  topicFor(id: string, viewerId: string | null) {
+    return this.db.topic.findFirst({ where: { id, ...this.usableWhere(viewerId) } })
+  }
+
   topicsOf(subjectId: string, parentId: string | null, viewerId: string | null) {
     return this.db.topic.findMany({ where: { subjectId, parentId, ...this.usableWhere(viewerId) }, orderBy: [{ position: 'asc' }, { title: 'asc' }] })
   }

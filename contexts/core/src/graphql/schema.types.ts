@@ -86,6 +86,17 @@ export interface AskDoubtInput {
   repoRef?: string | null
 }
 
+export interface CardIdInput {
+  cardId: string
+}
+
+export interface CardReviewResult {
+  cardId: string
+  due: Date
+  state: ReviewState
+  intervalDays: number
+}
+
 export interface ClassQuiz {
   id: string
   classroomId: string
@@ -654,6 +665,40 @@ export interface LearningEventInput {
 /** §14.1's event types. Some are recorded by the server only: notes created, published or forked; exams; AI requests */
 export type LearningEventType = 'NOTE_OPENED' | 'NOTE_CREATED' | 'NOTE_PUBLISHED' | 'NOTE_FORKED' | 'CARD_VIEWED' | 'TOPIC_VIEWED' | 'VIDEO_STARTED' | 'VIDEO_COMPLETED' | 'QUIZ_STARTED' | 'QUIZ_COMPLETED' | 'FLASHCARD_REVIEWED' | 'TIME_SPENT' | 'NOTE_SAVED' | 'TOPIC_REVISITED' | 'EXAM_CREATED' | 'RESOURCE_VIEWED' | 'RESOURCE_SAVED' | 'AI_REQUESTED' | 'SEARCH_PERFORMED' | 'TOPIC_COMPLETED' | 'PROBLEM_MARKED'
 
+export interface LearningHistory {
+  /** The time zone days are counted in */
+  timeZone: string
+  /** Days with something in them, newest first */
+  days: Array<LearningHistoryDay>
+  /** Pass as `before` for older days; null when there are none */
+  nextBefore: string | null
+}
+
+export interface LearningHistoryDay {
+  /** The learning day, YYYY-MM-DD, in the person's time zone (it rolls over at 04:00) */
+  day: string
+  /** Focus sessions, reviews and quizzes */
+  learningSeconds: number
+  /** Notes and /core topics open */
+  readingSeconds: number
+  reviews: number
+  quizAnswers: number
+  /** Counts towards Rhythm: 10 learning minutes or 10 reviews (ADR-0030) */
+  counted: boolean
+  /** Most time first */
+  topics: Array<LearningHistoryTopic>
+  /** Notes opened that day that the viewer can still read, newest first */
+  notes: Array<Note | null>
+}
+
+export interface LearningHistoryTopic {
+  /** topic:<id> or core:<subject>/<topic> */
+  key: string
+  /** The notes topic, when the key is one the viewer may see; null for /core topics */
+  topic: Topic | null
+  seconds: number
+}
+
 export interface MentorInviteItem {
   id: string
   group: Group
@@ -902,6 +947,10 @@ export interface MutationPinGroupPostArgs {
   input: PinGroupPostInput
 }
 
+export interface MutationSetLearningTimeZoneArgs {
+  input: SetLearningTimeZoneInput
+}
+
 export interface MutationTrackEventsArgs {
   input: TrackEventsInput
 }
@@ -916,6 +965,22 @@ export interface MutationSubmitQuizAttemptArgs {
 
 export interface MutationDeleteClassQuizArgs {
   input: ClassQuizIdInput
+}
+
+export interface MutationReviewCardArgs {
+  input: ReviewCardInput
+}
+
+export interface MutationStudyNoteCardsArgs {
+  input: StudyNoteInput
+}
+
+export interface MutationStopStudyingNoteCardsArgs {
+  input: StudyNoteInput
+}
+
+export interface MutationResetCardReviewArgs {
+  input: CardIdInput
 }
 
 export interface MutationSetGroupRepositoryArgs {
@@ -966,6 +1031,8 @@ export interface Note {
   id: string
   /** Signed-in readers of the note: its comments and reactions. Null for anonymous visitors */
   discussion: Discussion | null
+  /** Signed in: whether the viewer studies this note's flashcards (their own notes' always count) */
+  viewerStudying?: boolean | null
 }
 
 export interface OkPayload {
@@ -1024,6 +1091,11 @@ export interface QueryGroupArgs {
 export interface QueryDiscoverGroupsArgs {
   query?: string | null
   first?: number | null
+}
+
+export interface QueryLearningHistoryArgs {
+  before?: string | null
+  days?: number | null
 }
 
 export interface QueryModerationQueueArgs {
@@ -1143,6 +1215,35 @@ export interface RequestToJoinGroupInput {
   message?: string | null
 }
 
+/** A flashcard to review, as the person reads its note now */
+export interface ReviewCard {
+  cardId: string
+  noteId: string
+  noteTitle: string
+  /** Rich text */
+  front: unknown
+  /** Rich text */
+  back: unknown
+  state: ReviewState
+  /** null for a new card */
+  due: Date | null
+}
+
+export interface ReviewCardInput {
+  cardId: string
+  rating: ReviewRating
+  /** When it was graded on the device; now when absent; believed back at most 30 days */
+  reviewedAt?: Date | null
+  durationMs?: number | null
+  /** The device's id for this grade: sent twice, it counts once */
+  clientOpId: string
+}
+
+export interface ReviewCardPayload {
+  review: CardReviewResult | null
+  userErrors: Array<UserError>
+}
+
 export interface ReviewClassroomJoinRequestInput {
   requestId: string
   decision: JoinDecision
@@ -1152,6 +1253,22 @@ export interface ReviewGroupJoinRequestInput {
   requestId: string
   decision: JoinDecision
 }
+
+export interface ReviewQueue {
+  /** Today's cards: due first (most overdue first), then new; 20 a day, at most 10 new */
+  cards: Array<ReviewCard>
+  /** Cards due by the end of today, in the whole deck */
+  due: number
+  /** Cards never reviewed, in the whole deck */
+  new: number
+  doneToday: number
+  /** Cards past today's cap: they wait for the next days */
+  waiting: number
+}
+
+export type ReviewRating = 'AGAIN' | 'HARD' | 'GOOD' | 'EASY'
+
+export type ReviewState = 'NEW' | 'LEARNING' | 'REVIEW' | 'RELEARNING'
 
 export interface SetClassroomRoleInput {
   classroomId: string
@@ -1173,10 +1290,19 @@ export interface SetGroupRoleInput {
   role: GroupRole
 }
 
+export interface SetLearningTimeZoneInput {
+  /** An IANA time zone, e.g. Asia/Kolkata */
+  timeZone: string
+}
+
 export interface SetProjectShowcaseInput {
   groupId: string
   /** A PUBLIC project note shared to the workspace; null clears it */
   noteId?: string | null
+}
+
+export interface StudyNoteInput {
+  noteId: string
 }
 
 export interface SubmitQuizAttemptInput {
@@ -1184,6 +1310,11 @@ export interface SubmitQuizAttemptInput {
   /** The client's id for this submission: sending it again returns the same attempt */
   clientOpId: string
   answers: Array<QuizAnswerInput>
+}
+
+/** A topic of the notes subgraph */
+export interface Topic {
+  id: string
 }
 
 export interface TrackEventsInput {

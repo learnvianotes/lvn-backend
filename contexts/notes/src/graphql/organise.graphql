@@ -27,7 +27,7 @@ type Subject {
 enum TopicOrigin { CURATED PROPOSED }
 
 "A topic within a subject; curated by LVN or proposed by a user (usable by its proposer until curated)"
-type Topic {
+type Topic @key(fields: "id") {
   id: UUID!
   slug: String!
   title: String!

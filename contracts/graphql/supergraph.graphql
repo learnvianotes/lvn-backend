@@ -666,6 +666,12 @@ type CardEdge
   node: Card!
 }
 
+input CardIdInput
+  @join__type(graph: CORE)
+{
+  cardId: UUID!
+}
+
 """
 A card as the client has it. Ids are UUIDs the client makes, so cards created offline keep their id.
 """
@@ -729,6 +735,15 @@ enum CardOpStatus
   Not applied: the card was deleted, or changed elsewhere before this delete
   """
   REJECTED @join__enumValue(graph: NOTES)
+}
+
+type CardReviewResult
+  @join__type(graph: CORE)
+{
+  cardId: UUID!
+  due: DateTime!
+  state: ReviewState!
+  intervalDays: Int!
 }
 
 """
@@ -2006,6 +2021,58 @@ enum LearningEventType
   PROBLEM_MARKED @join__enumValue(graph: CORE)
 }
 
+type LearningHistory
+  @join__type(graph: CORE)
+{
+  """The time zone days are counted in"""
+  timeZone: String!
+
+  """Days with something in them, newest first"""
+  days: [LearningHistoryDay!]!
+
+  """Pass as `before` for older days; null when there are none"""
+  nextBefore: String
+}
+
+type LearningHistoryDay
+  @join__type(graph: CORE)
+{
+  """
+  The learning day, YYYY-MM-DD, in the person's time zone (it rolls over at 04:00)
+  """
+  day: String!
+
+  """Focus sessions, reviews and quizzes"""
+  learningSeconds: Int!
+
+  """Notes and /core topics open"""
+  readingSeconds: Int!
+  reviews: Int!
+  quizAnswers: Int!
+
+  """Counts towards Rhythm: 10 learning minutes or 10 reviews (ADR-0030)"""
+  counted: Boolean!
+
+  """Most time first"""
+  topics: [LearningHistoryTopic!]!
+
+  """Notes opened that day that the viewer can still read, newest first"""
+  notes: [Note]!
+}
+
+type LearningHistoryTopic
+  @join__type(graph: CORE)
+{
+  """topic:<id> or core:<subject>/<topic>"""
+  key: String!
+
+  """
+  The notes topic, when the key is one the viewer may see; null for /core topics
+  """
+  topic: Topic
+  seconds: Int!
+}
+
 type LegacyCounts
   @join__type(graph: USERS)
 {
@@ -2420,6 +2487,11 @@ type Mutation
   pinGroupPost(input: PinGroupPostInput!): GroupPostPayload! @join__field(graph: CORE)
 
   """
+  Signed in only. The apps send the device's zone with events; this sets it by hand
+  """
+  setLearningTimeZone(input: SetLearningTimeZoneInput!): OkPayload! @join__field(graph: CORE)
+
+  """
   Signed in only. Clients send every 10 s or 20 events, and keep what they could not send
   """
   trackEvents(input: TrackEventsInput!): TrackEventsPayload! @join__field(graph: CORE)
@@ -2436,6 +2508,16 @@ type Mutation
 
   """Staff: moves the quiz to the trash; its attempts stay"""
   deleteClassQuiz(input: ClassQuizIdInput!): OkPayload! @join__field(graph: CORE)
+
+  """Signed in only, as every mutation below"""
+  reviewCard(input: ReviewCardInput!): ReviewCardPayload! @join__field(graph: CORE)
+
+  """Adds a readable note's flashcards to the viewer's reviews"""
+  studyNoteCards(input: StudyNoteInput!): OkPayload! @join__field(graph: CORE)
+  stopStudyingNoteCards(input: StudyNoteInput!): OkPayload! @join__field(graph: CORE)
+
+  """The card starts again as new"""
+  resetCardReview(input: CardIdInput!): OkPayload! @join__field(graph: CORE)
 
   """Admins and the Owner"""
   setGroupRepository(input: SetGroupRepositoryInput!): GroupPayload! @join__field(graph: CORE)
@@ -2674,6 +2756,11 @@ type Note
   Signed-in readers of the note: its comments and reactions. Null for anonymous visitors
   """
   discussion: Discussion @join__field(graph: CORE)
+
+  """
+  Signed in: whether the viewer studies this note's flashcards (their own notes' always count)
+  """
+  viewerStudying: Boolean @join__field(graph: CORE)
   kind: NoteKind! @join__field(graph: NOTES)
 
   """Empty when untitled"""
@@ -3453,6 +3540,11 @@ type Query
   discoverGroups(query: String, first: Int): [Group!]! @join__field(graph: CORE)
 
   """
+  Signed in only: days before `before` (YYYY-MM-DD), `days` at a time (at most 60)
+  """
+  learningHistory(before: String, days: Int): LearningHistory! @join__field(graph: CORE)
+
+  """
   Open cases, oldest first: a group's (its moderators and mentor) or a class's (its staff), or every case (PLATFORM_ADMIN)
   """
   moderationQueue(first: Int, after: String, scope: ModerationScopeInput): ModerationCaseConnection! @join__field(graph: CORE)
@@ -3469,6 +3561,9 @@ type Query
 
   """A quiz of a class the viewer is in; null otherwise"""
   classQuiz(id: UUID!): ClassQuiz @join__field(graph: CORE)
+
+  """Signed in only"""
+  reviewQueue: ReviewQueue! @join__field(graph: CORE)
 
   """A doubt the viewer's workspace holds"""
   doubt(id: UUID!): Doubt @join__field(graph: CORE)
@@ -3859,6 +3954,48 @@ input RestoreNoteVersionInput
   versionId: UUID!
 }
 
+"""A flashcard to review, as the person reads its note now"""
+type ReviewCard
+  @join__type(graph: CORE)
+{
+  cardId: UUID!
+  noteId: UUID!
+  noteTitle: String!
+
+  """Rich text"""
+  front: JSON!
+
+  """Rich text"""
+  back: JSON!
+  state: ReviewState!
+
+  """null for a new card"""
+  due: DateTime
+}
+
+input ReviewCardInput
+  @join__type(graph: CORE)
+{
+  cardId: UUID!
+  rating: ReviewRating!
+
+  """
+  When it was graded on the device; now when absent; believed back at most 30 days
+  """
+  reviewedAt: DateTime
+  durationMs: Int
+
+  """The device's id for this grade: sent twice, it counts once"""
+  clientOpId: UUID!
+}
+
+type ReviewCardPayload
+  @join__type(graph: CORE)
+{
+  review: CardReviewResult
+  userErrors: [UserError!]!
+}
+
 input ReviewClassroomJoinRequestInput
   @join__type(graph: CORE)
 {
@@ -3871,6 +4008,43 @@ input ReviewGroupJoinRequestInput
 {
   requestId: UUID!
   decision: JoinDecision!
+}
+
+type ReviewQueue
+  @join__type(graph: CORE)
+{
+  """
+  Today's cards: due first (most overdue first), then new; 20 a day, at most 10 new
+  """
+  cards: [ReviewCard!]!
+
+  """Cards due by the end of today, in the whole deck"""
+  due: Int!
+
+  """Cards never reviewed, in the whole deck"""
+  new: Int!
+  doneToday: Int!
+
+  """Cards past today's cap: they wait for the next days"""
+  waiting: Int!
+}
+
+enum ReviewRating
+  @join__type(graph: CORE)
+{
+  AGAIN @join__enumValue(graph: CORE)
+  HARD @join__enumValue(graph: CORE)
+  GOOD @join__enumValue(graph: CORE)
+  EASY @join__enumValue(graph: CORE)
+}
+
+enum ReviewState
+  @join__type(graph: CORE)
+{
+  NEW @join__enumValue(graph: CORE)
+  LEARNING @join__enumValue(graph: CORE)
+  REVIEW @join__enumValue(graph: CORE)
+  RELEARNING @join__enumValue(graph: CORE)
 }
 
 input ReviewVerificationRequestInput
@@ -4060,6 +4234,13 @@ input SetInstitutionalEmailInput
   email: String!
 }
 
+input SetLearningTimeZoneInput
+  @join__type(graph: CORE)
+{
+  """An IANA time zone, e.g. Asia/Kolkata"""
+  timeZone: String!
+}
+
 input SetNoteForkingInput
   @join__type(graph: NOTES)
 {
@@ -4155,6 +4336,12 @@ type StudentProfile
   """
   interestTopicIds: [UUID!]
   showOnProfile: Boolean!
+}
+
+input StudyNoteInput
+  @join__type(graph: CORE)
+{
+  noteId: UUID!
 }
 
 input StudyPdfInput
@@ -4356,19 +4543,18 @@ enum TeacherSkillSource
   MANUAL @join__enumValue(graph: USERS)
 }
 
-"""
-A topic within a subject; curated by LVN or proposed by a user (usable by its proposer until curated)
-"""
+"""A topic of the notes subgraph"""
 type Topic
-  @join__type(graph: NOTES)
+  @join__type(graph: CORE, key: "id", resolvable: false)
+  @join__type(graph: NOTES, key: "id")
 {
   id: UUID!
-  slug: String!
-  title: String!
-  origin: TopicOrigin!
-  subject: Subject!
-  parentId: UUID
-  children: [Topic!]!
+  slug: String! @join__field(graph: NOTES)
+  title: String! @join__field(graph: NOTES)
+  origin: TopicOrigin! @join__field(graph: NOTES)
+  subject: Subject! @join__field(graph: NOTES)
+  parentId: UUID @join__field(graph: NOTES)
+  children: [Topic!]! @join__field(graph: NOTES)
 }
 
 enum TopicOrigin

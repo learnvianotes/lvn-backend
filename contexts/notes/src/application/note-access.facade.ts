@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { Action, can } from '@lvn/contracts/domain'
-import type { NoteAccess, NoteReach, PlaceShare } from '@lvn-backend/facades'
+import type { NoteAccess, NoteReach, PlaceShare, StudyCard } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { noteFacts, visibleNotesWhere, type NoteAccessRow } from '../domain/note-access'
 import { NotesService } from './notes.service'
@@ -24,6 +24,34 @@ export class NoteAccessFacade implements NoteAccess {
       access,
       canComment: can(actor, Action.NOTE_COMMENT, { kind: 'note', note: noteFacts(note as NoteAccessRow, shareRole, reach) }),
     }
+  }
+
+  async studyCards(viewerId: string, chosenNoteIds: string[]): Promise<StudyCard[]> {
+    // Owners and editors study the draft.
+    const editing = await this.db.note.findMany({
+      where: { deletedAt: null, OR: [{ ownerId: viewerId }, { shares: { some: { userId: viewerId, role: 'EDITOR' } } }] },
+      select: { id: true, title: true },
+    })
+    const mine = new Set(editing.map((n) => n.id))
+    const titles = new Map(editing.map((n) => [n.id, n.title]))
+    const drafts = await this.db.card.findMany({ where: { noteId: { in: [...mine] }, type: 'flashcard' }, orderBy: [{ noteId: 'asc' }, { position: 'asc' }] })
+    const out: StudyCard[] = drafts.map((c) => {
+      const content = c.content as { front?: unknown; back?: unknown }
+      return { noteId: c.noteId, noteTitle: titles.get(c.noteId) ?? '', cardId: c.id, front: content.front, back: content.back }
+    })
+    // Readers study the published version of a note they can read.
+    const others = chosenNoteIds.filter((id) => !mine.has(id))
+    if (others.length) {
+      const readable = await this.db.note.findMany({
+        where: { AND: [visibleNotesWhere(viewerId), { id: { in: others }, deletedAt: null, publishedVersionId: { not: null } }] },
+        select: { id: true, publishedVersion: { select: { title: true, cards: true } } },
+      })
+      for (const n of readable) {
+        const cards = (n.publishedVersion!.cards as { id: string; type: string; content: { front?: unknown; back?: unknown } }[]).filter((c) => c.type === 'flashcard')
+        for (const c of cards) out.push({ noteId: n.id, noteTitle: n.publishedVersion!.title, cardId: c.id, front: c.content.front, back: c.content.back })
+      }
+    }
+    return out
   }
 
   async showcaseProblem(noteId: string, groupId: string): Promise<string | null> {

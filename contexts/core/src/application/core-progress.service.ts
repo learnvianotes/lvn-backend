@@ -4,6 +4,7 @@ import { LegacySnapshots, type LegacyUserSnapshot } from '@lvn-backend/legacy'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { Storage } from '@lvn-backend/storage'
 import { CORE_CONFIG, type CoreConfig } from '../core.config'
+import { LearningHistoryService } from './learning-history.service'
 
 /** The old site had one problem sheet; its problem marks are keyed by problem id alone. */
 export const LEGACY_PROBLEM_SUBJECT = 'sheet-150'
@@ -39,6 +40,7 @@ export class CoreProgressService implements OnModuleInit {
     storage: Storage,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(CORE_CONFIG) config: CoreConfig,
+    private readonly history: LearningHistoryService,
   ) {
     this.snapshots = new LegacySnapshots(storage, config.legacy.bucket, config.legacy.env)
   }
@@ -95,6 +97,8 @@ export class CoreProgressService implements OnModuleInit {
         data: problems.map((p) => ({ ...p, userId, subjectId: LEGACY_PROBLEM_SUBJECT, origin: 'LEGACY' as const, markedAt: new Date(0) })),
       }),
     ])
+    // The old site's study days join the learning history (ADR-0023, ADR-0067).
+    await this.history.importLegacyDays(userId, snapshot.days)
     await this.events.publish('LegacyImportPartDone', { userId, context: 'core', items: topics.length + problems.length })
     return topics.length + problems.length
   }
@@ -104,6 +108,7 @@ export class CoreProgressService implements OnModuleInit {
       this.db.coreTopicProgress.deleteMany({ where: { userId, origin: 'LEGACY' } }),
       this.db.coreProblemMark.deleteMany({ where: { userId, origin: 'LEGACY' } }),
     ])
+    await this.history.removeLegacyDays(userId)
   }
 }
 
