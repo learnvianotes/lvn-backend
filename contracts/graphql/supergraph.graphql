@@ -1233,6 +1233,7 @@ enum CommentTargetType
   NOTE @join__enumValue(graph: CORE)
   GROUP_POST @join__enumValue(graph: CORE)
   CLASSROOM_POST @join__enumValue(graph: CORE)
+  RESOURCE @join__enumValue(graph: CORE)
 }
 
 """
@@ -2799,6 +2800,14 @@ type Mutation
   submitResource(input: SubmitResourceInput!): ResourcePayload! @join__field(graph: CORE)
   updateResource(input: UpdateResourceInput!): ResourcePayload! @join__field(graph: CORE)
   deleteResource(input: ResourceIdInput!): OkPayload! @join__field(graph: CORE)
+  saveResource(input: ResourceIdInput!): ResourcePayload! @join__field(graph: CORE)
+  unsaveResource(input: ResourceIdInput!): ResourcePayload! @join__field(graph: CORE)
+
+  """
+  Sends an approved resource with a reason to a person, a group or a class (30 an hour)
+  """
+  recommendResource(input: RecommendResourceInput!): OkPayload! @join__field(graph: CORE)
+  removeResourceRecommendation(input: ResourceRecommendationIdInput!): OkPayload! @join__field(graph: CORE)
 
   """Signed in only, as every mutation below"""
   reviewCard(input: ReviewCardInput!): ReviewCardPayload! @join__field(graph: CORE)
@@ -3492,7 +3501,7 @@ enum NotificationCategory
   RHYTHM_BUDDY @join__enumValue(graph: COMMUNICATION)
 
   """
-  Moderators approved or rejected a resource the person submitted (ADR-0074)
+  Moderators approved or rejected a resource the person submitted (ADR-0074), or someone recommended one to them (ADR-0075)
   """
   RESOURCE @join__enumValue(graph: COMMUNICATION)
 }
@@ -3926,6 +3935,17 @@ type Query
   """Reads a link's page or looks a book up by ISBN (30 an hour)"""
   resourcePreview(input: ResourcePreviewInput!): ResourcePreview! @join__field(graph: CORE)
 
+  """Approved resources, guests included"""
+  resources(filter: ResourceFilter, sort: ResourceSort = POPULAR, first: Int, after: String): ResourceConnection! @join__field(graph: CORE)
+
+  """The viewer's Saved list, newest first"""
+  savedResources(first: Int, after: String): ResourceConnection! @join__field(graph: CORE)
+
+  """
+  Recommended to a group or class the viewer is in, or to the viewer (userId: their own id)
+  """
+  resourceRecommendations(to: RecommendationPlaceInput!, first: Int, after: String): ResourceRecommendationConnection! @join__field(graph: CORE)
+
   """Signed in only"""
   reviewQueue: ReviewQueue! @join__field(graph: CORE)
 
@@ -4163,6 +4183,9 @@ type Recommendation
   topicKey: String
   topic: Topic
   topicTitle: String
+
+  """The resource, for RESOURCE"""
+  resource: Resource
 }
 
 enum RecommendationKind
@@ -4182,6 +4205,30 @@ enum RecommendationKind
 
   """A public note on the learner's topics that many people read"""
   POPULAR_NOTE @join__enumValue(graph: CORE)
+
+  """
+  An approved resource on an exam or weak topic, most saved first (ADR-0075)
+  """
+  RESOURCE @join__enumValue(graph: CORE)
+}
+
+"""Where a recommendation goes: one of a person, a group or a class"""
+input RecommendationPlaceInput
+  @join__type(graph: CORE)
+{
+  userId: UUID
+  groupId: UUID
+  classroomId: UUID
+}
+
+input RecommendResourceInput
+  @join__type(graph: CORE)
+{
+  resourceId: UUID!
+  to: RecommendationPlaceInput!
+
+  """Why, in a sentence or two (at most 280 characters)"""
+  reason: String
 }
 
 input RefreshSessionInput
@@ -4358,41 +4405,51 @@ A resource of the catalogue: approved ones are everyone's, guests included
 """
 type Resource
   @join__type(graph: CORE, key: "id")
+  @join__type(graph: NOTES, key: "id", resolvable: false)
 {
   id: UUID!
-  type: ResourceType!
-  title: String!
-  description: String
+  type: ResourceType! @join__field(graph: CORE)
+  title: String! @join__field(graph: CORE)
+  description: String @join__field(graph: CORE)
 
   """
   The link without tracking or affiliate parameters; the apps show it with rel="ugc nofollow noopener"
   """
-  url: String!
+  url: String! @join__field(graph: CORE)
 
   """The link's site without www., e.g. nptel.ac.in"""
-  host: String!
+  host: String! @join__field(graph: CORE)
 
   """ISBN-13, for books"""
-  isbn: String
+  isbn: String @join__field(graph: CORE)
 
   """By: the author or maker"""
-  author: String
+  author: String @join__field(graph: CORE)
 
   """A read URL for its cover picture, valid for 15 minutes"""
-  coverUrl: String
+  coverUrl: String @join__field(graph: CORE)
 
   """Curated topics; null for one the viewer may no longer see"""
-  topics: [Topic]!
-  submittedBy: User!
-  status: ResourceStatus!
+  topics: [Topic]! @join__field(graph: CORE)
+  submittedBy: User! @join__field(graph: CORE)
+  status: ResourceStatus! @join__field(graph: CORE)
 
   """
   Why moderators rejected or removed it: its submitter and moderators only
   """
-  reason: String
-  decidedAt: DateTime
-  createdAt: DateTime!
-  viewerCan: ResourceActions!
+  reason: String @join__field(graph: CORE)
+  decidedAt: DateTime @join__field(graph: CORE)
+  createdAt: DateTime! @join__field(graph: CORE)
+  viewerCan: ResourceActions! @join__field(graph: CORE)
+
+  """How many people saved it; who saved what is private"""
+  saveCount: Int! @join__field(graph: CORE)
+  viewerSaved: Boolean! @join__field(graph: CORE)
+
+  """
+  Search engines may index its page: approved and saved by at least three people
+  """
+  indexable: Boolean! @join__field(graph: CORE)
 }
 
 type ResourceActions
@@ -4404,6 +4461,30 @@ type ResourceActions
   edit: Boolean!
   delete: Boolean!
   report: Boolean!
+}
+
+type ResourceConnection
+  @join__type(graph: CORE)
+{
+  edges: [ResourceEdge!]!
+  pageInfo: PageInfo!
+}
+
+type ResourceEdge
+  @join__type(graph: CORE)
+{
+  cursor: String!
+  node: Resource!
+}
+
+input ResourceFilter
+  @join__type(graph: CORE)
+{
+  type: ResourceType
+  topicId: UUID
+
+  """Words in the title, the author or the description"""
+  query: String
 }
 
 input ResourceIdInput
@@ -4455,6 +4536,48 @@ input ResourcePreviewInput
 
   """Looked up on Open Library instead of the link"""
   isbn: String
+}
+
+"""A resource someone recommended, with their reason"""
+type ResourceRecommendation
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  resource: Resource!
+  from: User!
+  reason: String
+  createdAt: DateTime!
+
+  """Its sender, its recipient, the group's moderators or the class's staff"""
+  viewerCanRemove: Boolean!
+}
+
+type ResourceRecommendationConnection
+  @join__type(graph: CORE)
+{
+  edges: [ResourceRecommendationEdge!]!
+  pageInfo: PageInfo!
+}
+
+type ResourceRecommendationEdge
+  @join__type(graph: CORE)
+{
+  cursor: String!
+  node: ResourceRecommendation!
+}
+
+input ResourceRecommendationIdInput
+  @join__type(graph: CORE)
+{
+  id: UUID!
+}
+
+enum ResourceSort
+  @join__type(graph: CORE)
+{
+  """Most saved first, then newest"""
+  POPULAR @join__enumValue(graph: CORE)
+  NEWEST @join__enumValue(graph: CORE)
 }
 
 """
@@ -4873,6 +4996,9 @@ type SearchResults
 
   """Classes the viewer is in"""
   classrooms: [Classroom!]!
+
+  """Approved resources, most saved first among equal matches (ADR-0075)"""
+  resources: [Resource!]!
 }
 
 enum SearchScope
@@ -4883,6 +5009,7 @@ enum SearchScope
   TOPICS @join__enumValue(graph: NOTES)
   GROUPS @join__enumValue(graph: NOTES)
   CLASSROOMS @join__enumValue(graph: NOTES)
+  RESOURCES @join__enumValue(graph: NOTES)
 }
 
 type Session

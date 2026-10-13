@@ -10,9 +10,11 @@ import { ClassroomsService } from './classrooms.service'
 import { GroupsService } from './groups.service'
 import { MentionsService } from './mentions.service'
 import { ModerationService } from './moderation.service'
+import { ResourcesService } from './resources.service'
 
-export type CommentTargetKind = 'NOTE' | 'GROUP_POST' | 'CLASSROOM_POST'
-export type ReactionTargetKind = CommentTargetKind | 'COMMENT'
+export type CommentTargetKind = 'NOTE' | 'GROUP_POST' | 'CLASSROOM_POST' | 'RESOURCE'
+/** Resources take comments, not reactions: people save them instead (ADR-0075). */
+export type ReactionTargetKind = Exclude<CommentTargetKind, 'RESOURCE'> | 'COMMENT'
 export type ReactionKindName = 'LIKE' | 'HELPFUL' | 'CELEBRATE'
 export interface CommentTarget {
   type: CommentTargetKind
@@ -38,7 +40,7 @@ export interface Place {
   staff: boolean
   /** Reaction counts are milestones for everyone but the owner (ADR-0027) */
   publicNote: boolean
-  link: { kind: 'NOTE'; noteId: string } | { kind: 'GROUP'; groupId: string } | { kind: 'CLASSROOM'; classroomId: string }
+  link: { kind: 'NOTE'; noteId: string } | { kind: 'GROUP'; groupId: string } | { kind: 'CLASSROOM'; classroomId: string } | { kind: 'RESOURCE'; resourceId: string }
 }
 
 export interface ReactionSummary {
@@ -59,6 +61,7 @@ export class CommentsService {
     private readonly classrooms: ClassroomsService,
     private readonly moderation: ModerationService,
     private readonly mentions: MentionsService,
+    private readonly resources: ResourcesService,
     @Inject(NOTE_ACCESS) private readonly notes: NoteAccess,
     @Inject(PEOPLE) private readonly people: People,
     @Inject(POLICY) private readonly policy: Policy,
@@ -78,6 +81,13 @@ export class CommentsService {
       const p = await this.groups.postPlace(viewerId, target.id)
       if (!p) return null
       place = { ...base, ownerId: p.authorId, canComment: p.canComment, whyNot: p.canComment ? null : await this.whyNot(viewerId, false, 'You are muted in this group for now.'), canModerate: p.canModerate, link: { kind: 'GROUP', groupId: p.groupId } }
+    } else if (target.type === 'RESOURCE') {
+      // An approved resource's discussion is public, as a public note's (ADR-0075); moderators of the platform moderate it.
+      const r = await this.resources.one(viewerId, target.id)
+      if (!r || r.status !== 'APPROVED') return null
+      const actor = await this.policy.actor(viewerId)
+      const canComment = !!actor?.institutionVerified && !actor.suspended && !actor.restrictedMinor
+      place = { ...base, ownerId: r.submittedById, canComment, whyNot: canComment ? null : await this.whyNot(viewerId, true, undefined, 'resources'), canModerate: false, publicNote: true, link: { kind: 'RESOURCE', resourceId: target.id } }
     } else {
       const p = await this.classrooms.postPlace(viewerId, target.id)
       if (!p) return null
@@ -90,10 +100,10 @@ export class CommentsService {
     return place
   }
 
-  private async whyNot(viewerId: string, publicNote: boolean, otherwise = "You can't comment here."): Promise<string> {
+  private async whyNot(viewerId: string, publicNote: boolean, otherwise = "You can't comment here.", publicWhat = 'public notes'): Promise<string> {
     const actor = await this.policy.actor(viewerId)
     if (!actor?.institutionVerified) return 'Verify your account to comment.'
-    if (publicNote && actor.restrictedMinor) return 'Comments on public notes are not open to your account yet.'
+    if (publicNote && actor.restrictedMinor) return `Comments on ${publicWhat} are not open to your account yet.`
     return otherwise
   }
 

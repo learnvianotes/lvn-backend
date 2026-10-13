@@ -82,6 +82,10 @@ export class CommunicationEvents implements OnModuleInit {
     this.events.subscribe('RhythmBuddyChanged', async ({ payload }) => {
       await this.notifications.notify({ userId: payload.userId, category: 'RHYTHM_BUDDY', path: '/rhythm', actorId: payload.otherId, data: { kind: payload.kind } })
     })
+    // A resource recommended to the person (ADR-0075), by someone; the notification opens it.
+    this.events.subscribe('ResourceRecommended', async ({ payload }) => {
+      await this.notifications.notify({ userId: payload.toUserId, category: 'RESOURCE', path: `/resources/${payload.resourceId}`, actorId: payload.fromUserId, data: { kind: 'RECOMMENDED' } })
+    })
     // A resource moderators approved or rejected (ADR-0074): the submitter is told, and the notification opens it.
     this.events.subscribe('ResourceDecided', async ({ payload }) => {
       await this.notifications.notify({ userId: payload.submittedById, category: 'RESOURCE', path: `/resources/${payload.resourceId}`, data: { decision: payload.decision } })
@@ -96,7 +100,7 @@ export class CommunicationEvents implements OnModuleInit {
       const place = payload.place
       if (!place) return
       const where =
-        place.kind === 'NOTE' ? { path: `/notes/${place.noteId}`, noteId: place.noteId } : place.kind === 'GROUP' ? { path: `/groups/${place.groupId}`, groupId: place.groupId } : { path: `/classes/${place.classroomId}`, classroomId: place.classroomId }
+        whereOf(place)
       for (const r of payload.recipients ?? []) {
         await this.notifications.notify({ userId: r.userId, category: 'COMMENT', actorId: payload.authorId, data: { kind: r.kind }, ...where })
       }
@@ -105,7 +109,7 @@ export class CommunicationEvents implements OnModuleInit {
     this.events.subscribe('PeopleMentioned', async ({ payload }) => {
       const place = payload.place
       const where =
-        place.kind === 'NOTE' ? { path: `/notes/${place.noteId}`, noteId: place.noteId } : place.kind === 'GROUP' ? { path: `/groups/${place.groupId}`, groupId: place.groupId } : { path: `/classes/${place.classroomId}`, classroomId: place.classroomId }
+        whereOf(place)
       for (const userId of payload.mentionedIds) {
         await this.notifications.notify({ userId, category: 'MENTION', actorId: payload.authorId, data: { entityType: payload.entityType }, ...where })
       }
@@ -147,5 +151,21 @@ export class CommunicationEvents implements OnModuleInit {
     this.events.subscribe('UserDeleted', async ({ payload }) => {
       await this.notifications.forget(payload.userId)
     })
+  }
+}
+
+type Place = { kind: 'NOTE'; noteId: string } | { kind: 'GROUP'; groupId: string } | { kind: 'CLASSROOM'; classroomId: string } | { kind: 'RESOURCE'; resourceId: string }
+
+/** Where a comment or a mention is, as a notification opens it. */
+function whereOf(place: Place): { path: string; noteId?: string; groupId?: string; classroomId?: string } {
+  switch (place.kind) {
+    case 'NOTE':
+      return { path: `/notes/${place.noteId}`, noteId: place.noteId }
+    case 'GROUP':
+      return { path: `/groups/${place.groupId}`, groupId: place.groupId }
+    case 'CLASSROOM':
+      return { path: `/classes/${place.classroomId}`, classroomId: place.classroomId }
+    case 'RESOURCE':
+      return { path: `/resources/${place.resourceId}` }
   }
 }

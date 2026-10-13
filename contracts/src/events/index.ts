@@ -194,6 +194,7 @@ export const events = {
       z.object({ kind: z.literal('NOTE'), noteId: uuid }),
       z.object({ kind: z.literal('GROUP'), groupId: uuid }),
       z.object({ kind: z.literal('CLASSROOM'), classroomId: uuid }),
+      z.object({ kind: z.literal('RESOURCE'), resourceId: uuid }),
     ]).optional(),
   })),
   /**
@@ -233,6 +234,14 @@ export const events = {
     decision: z.enum(['APPROVED', 'REJECTED']),
     moderatorId: uuid,
   })),
+  /** A resource changed in a way search sees (ADR-0075): its state, its words, its saves, or it is gone. */
+  ResourceChanged: eventEnvelope('ResourceChanged', 1, z.object({ resourceId: uuid })),
+  /** Someone recommended an approved resource to a person (ADR-0075); recommendations to groups and classes are not events. */
+  ResourceRecommended: eventEnvelope('ResourceRecommended', 1, z.object({
+    resourceId: uuid,
+    fromUserId: uuid,
+    toUserId: uuid,
+  })),
   /**
    * Someone named people with @handle in a comment or a post (ADR-0054). Only people who can read it and have nothing
    * between them and the author are listed; where it is, never what it says.
@@ -246,6 +255,7 @@ export const events = {
       z.object({ kind: z.literal('NOTE'), noteId: uuid }),
       z.object({ kind: z.literal('GROUP'), groupId: uuid }),
       z.object({ kind: z.literal('CLASSROOM'), classroomId: uuid }),
+      z.object({ kind: z.literal('RESOURCE'), resourceId: uuid }),
     ]),
   })),
   LearningEventRecorded: eventEnvelope('LearningEventRecorded', 1, z.object({ userId: uuid, eventIds: z.array(uuid).min(1) })),

@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { PEOPLE, PLACES, type People, type Places } from '@lvn-backend/facades'
+import { PEOPLE, PLACES, RESOURCE_SEARCH, type People, type Places, type ResourceSearch } from '@lvn-backend/facades'
 import { PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import type { Typesense } from '../infrastructure/typesense'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
 import { aliasName, COLLECTIONS, ENGLISH_STOPWORDS, schemaOf, STOPWORDS_SET, versionName, versionsOf, type CollectionDef, type SearchEntityName } from './search-collections'
-import { classroomDocument, forTypesense, groupDocument, noteDocuments, personDocument, topicDocuments, type NoteDocument } from './search-documents'
+import { classroomDocument, forTypesense, groupDocument, noteDocuments, personDocument, resourceDocument, topicDocuments, type NoteDocument } from './search-documents'
 
 /** The notes context's search queue (§9.1 `search`): the nightly reindex-all; run by apps/worker. */
 export const NOTES_SEARCH_QUEUE = 'notes.search'
@@ -18,7 +18,7 @@ const TURN = 500
 const LAG_WARNING_MS = 60_000
 /** One drainer at a time, across workers: a transaction-scoped advisory lock on this key. */
 const DRAIN_LOCK = 4_055_055
-const ENTITIES: SearchEntityName[] = ['NOTE', 'USER', 'TOPIC', 'GROUP', 'CLASSROOM']
+const ENTITIES: SearchEntityName[] = ['NOTE', 'USER', 'TOPIC', 'GROUP', 'CLASSROOM', 'RESOURCE']
 
 /**
  * Keeps search's indexes in step with Postgres (ADR-0055): the Postgres provider's `NoteSearchDocument` and, when
@@ -38,6 +38,7 @@ export class SearchIndex implements OnModuleInit {
     @Inject(TYPESENSE) private readonly typesense: Typesense | null,
     @Inject(PEOPLE) private readonly people: People,
     @Inject(PLACES) private readonly places: Places,
+    @Inject(RESOURCE_SEARCH) private readonly resources: ResourceSearch,
     @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
 
@@ -53,6 +54,8 @@ export class SearchIndex implements OnModuleInit {
     for (const name of ['GroupCreated', 'GroupUpdated', 'GroupDeleted', 'GroupRestored', 'GroupMembershipChanged'] as const) this.events.subscribe(name, group)
     const classroom = ({ payload }: { payload: { classroomId: string } }) => this.touch('CLASSROOM', [payload.classroomId])
     for (const name of ['ClassroomCreated', 'ClassroomUpdated', 'ClassroomDeleted', 'ClassroomMembershipChanged'] as const) this.events.subscribe(name, classroom)
+    // Resources live in `core` too (ADR-0075): approved ones are found, anything else leaves the index.
+    this.events.subscribe('ResourceChanged', ({ payload }) => this.touch('RESOURCE', [payload.resourceId]))
   }
 
   private get prefix(): string {
@@ -75,7 +78,7 @@ export class SearchIndex implements OnModuleInit {
     } else if (entity === 'TOPIC') {
       await this.db.$executeRaw`INSERT INTO "notes"."SearchChange" ("entity", "entityId") SELECT 'TOPIC', "id" FROM "notes"."Topic"`
     } else {
-      const page = (after: string | null) => (entity === 'USER' ? this.people.personIdsAfter(after, TURN) : this.places.placeIdsAfter(entity, after, TURN))
+      const page = (after: string | null) => (entity === 'USER' ? this.people.personIdsAfter(after, TURN) : entity === 'RESOURCE' ? this.resources.idsAfter(after, TURN) : this.places.placeIdsAfter(entity, after, TURN))
       for (let after: string | null = null; ; ) {
         const ids = await page(after)
         if (!ids.length) break
@@ -242,6 +245,7 @@ export class SearchIndex implements OnModuleInit {
       if (entity === 'USER') for (const p of await this.people.searchProfiles(ids)) docs.set(p.id, personDocument(p))
       if (entity === 'GROUP') for (const g of await this.places.groupsForSearch(ids)) docs.set(g.id, groupDocument(g))
       if (entity === 'CLASSROOM') for (const c of await this.places.classroomsForSearch(ids)) docs.set(c.id, classroomDocument(c))
+      if (entity === 'RESOURCE') for (const r of await this.resources.forSearch(ids)) docs.set(r.id, resourceDocument(r))
     }
     await this.writeCollection(COLLECTIONS[entity], docs)
   }

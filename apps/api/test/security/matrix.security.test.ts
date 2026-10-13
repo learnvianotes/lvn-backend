@@ -34,7 +34,7 @@ describe('security: the permission matrix, action by action', () => {
     unfollowUser: 'PersonInput', removeFollower: 'PersonInput', blockUser: 'PersonInput', unblockUser: 'PersonInput', restrictUser: 'PersonInput', unrestrictUser: 'PersonInput',
     requestConnection: 'PersonInput', respondToConnectionRequest: 'RespondToConnectionRequestInput', removeConnection: 'PersonInput', updateTeacherProfile: 'UpdateTeacherProfileInput',
     reportContent: 'ReportContentInput', addComment: 'AddCommentInput', moderateContent: 'ModerateContentInput', publishClassQuiz: 'PublishClassQuizInput',
-    submitResource: 'SubmitResourceInput', updateResource: 'UpdateResourceInput', deleteResource: 'ResourceIdInput',
+    submitResource: 'SubmitResourceInput', updateResource: 'UpdateResourceInput', deleteResource: 'ResourceIdInput', recommendResource: 'RecommendResourceInput',
   }
   type Outcome = 'allowed' | 'refused'
   /** A mutation's outcome: refused on a GraphQL error (FORBIDDEN, NOT_FOUND, UNAUTHENTICATED) or a user error. */
@@ -321,7 +321,7 @@ describe('security: the permission matrix, action by action', () => {
   })
 
   it('resources (ADR-0074): verified adults submit; a waiting one is its submitter’s and the moderators’ alone; moderators decide', async () => {
-    ;[Action.RESOURCE_SUBMIT, Action.RESOURCE_READ, Action.RESOURCE_EDIT, Action.RESOURCE_DELETE].forEach(action)
+    ;[Action.RESOURCE_SUBMIT, Action.RESOURCE_READ, Action.RESOURCE_EDIT, Action.RESOURCE_DELETE, Action.RESOURCE_RECOMMEND].forEach(action)
     const topicId = (await db.topic.findFirstOrThrow({ where: { origin: 'CURATED', children: { none: {} } }, select: { id: true } })).id
     const fields = () => ({ type: 'COURSE', title: 'Operating Systems, NPTEL', url: `https://nptel.ac.in/courses/${newId()}`, topicIds: [topicId] })
     const made = async (who: Person) => (await t.gql<{ submitResource: { resource: { id: string } } }>('mutation ($input: SubmitResourceInput!) { submitResource(input: $input) { resource { id } } }', { input: fields() }, who.token)).data!.submitResource.resource.id
@@ -350,6 +350,11 @@ describe('security: the permission matrix, action by action', () => {
       ['read an approved one, a guest', 'allowed', () => read(null, waiting)],
       ['edit an approved one, its submitter', 'refused', () => run(member, 'updateResource', { id: waiting, ...fields() })],
       ['delete, someone else', 'refused', () => run(outsider, 'deleteResource', { id: waiting })],
+      ['recommend to a group one is not in', 'refused', () => run(outsider, 'recommendResource', { resourceId: waiting, to: { groupId: group } })],
+      ['recommend to one’s group', 'allowed', () => run(member, 'recommendResource', { resourceId: waiting, to: { groupId: group } })],
+      ['recommend to a class, a student in it', 'refused', () => run(student, 'recommendResource', { resourceId: waiting, to: { classroomId: klass.id } })],
+      ['recommend to a class, its teacher', 'allowed', () => run(teacher, 'recommendResource', { resourceId: waiting, to: { classroomId: klass.id } })],
+      ['recommend, unverified', 'refused', () => run(unverified, 'recommendResource', { resourceId: waiting, to: { groupId: group } })],
       ['delete, its submitter', 'allowed', () => run(member, 'deleteResource', { id: waiting })],
       ['delete someone’s, a platform admin', 'allowed', () => run(platformAdmin, 'deleteResource', { id: doomed })],
     ])

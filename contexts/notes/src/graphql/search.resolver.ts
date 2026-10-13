@@ -29,6 +29,7 @@ export class SearchResolver {
       topics: found.topics,
       groups: found.groups.map((id) => ({ __typename: 'Group', id })),
       classrooms: found.classrooms.map((id) => ({ __typename: 'Classroom', id })),
+      resources: found.resources.map((id) => ({ __typename: 'Resource', id })),
     }
   }
 }

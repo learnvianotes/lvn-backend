@@ -386,7 +386,7 @@ export interface CommentTargetInput {
   id: string
 }
 
-export type CommentTargetType = 'NOTE' | 'GROUP_POST' | 'CLASSROOM_POST'
+export type CommentTargetType = 'NOTE' | 'GROUP_POST' | 'CLASSROOM_POST' | 'RESOURCE'
 
 export interface CoreProblemMark {
   problemId: string
@@ -1192,6 +1192,22 @@ export interface MutationDeleteResourceArgs {
   input: ResourceIdInput
 }
 
+export interface MutationSaveResourceArgs {
+  input: ResourceIdInput
+}
+
+export interface MutationUnsaveResourceArgs {
+  input: ResourceIdInput
+}
+
+export interface MutationRecommendResourceArgs {
+  input: RecommendResourceInput
+}
+
+export interface MutationRemoveResourceRecommendationArgs {
+  input: ResourceRecommendationIdInput
+}
+
 export interface MutationReviewCardArgs {
   input: ReviewCardInput
 }
@@ -1384,6 +1400,24 @@ export interface QueryResourcePreviewArgs {
   input: ResourcePreviewInput
 }
 
+export interface QueryResourcesArgs {
+  filter?: ResourceFilter | null
+  sort?: ResourceSort | null
+  first?: number | null
+  after?: string | null
+}
+
+export interface QuerySavedResourcesArgs {
+  first?: number | null
+  after?: string | null
+}
+
+export interface QueryResourceRecommendationsArgs {
+  to: RecommendationPlaceInput
+  first?: number | null
+  after?: string | null
+}
+
 export interface QueryDoubtArgs {
   id: string
 }
@@ -1461,9 +1495,25 @@ export interface Recommendation {
   topicKey: string | null
   topic: Topic | null
   topicTitle: string | null
+  /** The resource, for RESOURCE */
+  resource: Resource | null
 }
 
-export type RecommendationKind = 'EXAM_TOPIC' | 'REVISE_TOPIC' | 'CONTINUE_NOTE' | 'QUIZ_ON_TOPIC' | 'POPULAR_NOTE'
+export type RecommendationKind = 'EXAM_TOPIC' | 'REVISE_TOPIC' | 'CONTINUE_NOTE' | 'QUIZ_ON_TOPIC' | 'POPULAR_NOTE' | 'RESOURCE'
+
+/** Where a recommendation goes: one of a person, a group or a class */
+export interface RecommendationPlaceInput {
+  userId?: string | null
+  groupId?: string | null
+  classroomId?: string | null
+}
+
+export interface RecommendResourceInput {
+  resourceId: string
+  to: RecommendationPlaceInput
+  /** Why, in a sentence or two (at most 280 characters) */
+  reason?: string | null
+}
 
 export interface RejectedLearningEvent {
   /** Its place in the batch */
@@ -1530,6 +1580,11 @@ export interface Resource {
   decidedAt: Date | null
   createdAt: Date
   viewerCan: ResourceActions
+  /** How many people saved it; who saved what is private */
+  saveCount?: number
+  viewerSaved?: boolean
+  /** Search engines may index its page: approved and saved by at least three people */
+  indexable?: boolean
 }
 
 export interface ResourceActions {
@@ -1537,6 +1592,23 @@ export interface ResourceActions {
   edit: boolean
   delete: boolean
   report: boolean
+}
+
+export interface ResourceConnection {
+  edges: Array<ResourceEdge>
+  pageInfo: PageInfo
+}
+
+export interface ResourceEdge {
+  cursor: string
+  node: Resource
+}
+
+export interface ResourceFilter {
+  type?: ResourceType | null
+  topicId?: string | null
+  /** Words in the title, the author or the description */
+  query?: string | null
 }
 
 export interface ResourceIdInput {
@@ -1572,6 +1644,33 @@ export interface ResourcePreviewInput {
   /** Looked up on Open Library instead of the link */
   isbn?: string | null
 }
+
+/** A resource someone recommended, with their reason */
+export interface ResourceRecommendation {
+  id: string
+  resource: Resource
+  from: User
+  reason: string | null
+  createdAt: Date
+  /** Its sender, its recipient, the group's moderators or the class's staff */
+  viewerCanRemove: boolean
+}
+
+export interface ResourceRecommendationConnection {
+  edges: Array<ResourceRecommendationEdge>
+  pageInfo: PageInfo
+}
+
+export interface ResourceRecommendationEdge {
+  cursor: string
+  node: ResourceRecommendation
+}
+
+export interface ResourceRecommendationIdInput {
+  id: string
+}
+
+export type ResourceSort = 'POPULAR' | 'NEWEST'
 
 /** PENDING: waiting for moderators (its submitter and moderators see it); APPROVED: public; REJECTED: rejected or removed, with a reason */
 export type ResourceStatus = 'PENDING' | 'APPROVED' | 'REJECTED'

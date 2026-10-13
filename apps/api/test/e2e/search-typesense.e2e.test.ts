@@ -110,6 +110,7 @@ describe('search on Typesense', () => {
     expect(await typesense(`/aliases/${prefix}notes`)).toMatchObject({ collection_name: `${prefix}notes_v1` })
     expect(await typesense(`/aliases/${prefix}users`)).toMatchObject({ collection_name: `${prefix}users_v1` })
     expect(await typesense(`/aliases/${prefix}topics`)).toMatchObject({ collection_name: `${prefix}topics_v1` })
+    expect(await typesense(`/aliases/${prefix}resources`)).toMatchObject({ collection_name: `${prefix}resources_v1` })
     expect(await db.searchCollection.findMany({ where: { marker: { not: null } } })).toEqual([])
     await expectParity()
   })
@@ -205,6 +206,33 @@ describe('search on Typesense', () => {
     const classroomId = made.data!.createClassroom.classroom.id
     await settle()
     expect(await doc('classrooms', classroomId)).toMatchObject({ name: 'Compilers, section A', memberCount: 1 })
+  })
+
+  it('keeps resources in step with core: approved ones found, a removed one gone, saves ranking them (ADR-0075)', async () => {
+    const settle = async () => {
+      await t.app.get(InProcessEventBus).drain()
+      await index.drainAll()
+    }
+    const doc = async (id: string) => {
+      const res = await fetch(`${ts.url}/collections/${prefix}resources/documents/${id}`, { headers: { 'X-TYPESENSE-API-KEY': ts.apiKey } })
+      return res.ok ? ((await res.json()) as Record<string, unknown>) : null
+    }
+    const admin = await seedUser(t.app, { verified: true, globalRole: 'PLATFORM_ADMIN' })
+    const adminToken = tokenFor(t.config, admin.id, undefined, ['PLATFORM_ADMIN'])
+    const topic = await db.topic.findFirstOrThrow({ where: { origin: 'CURATED', children: { none: {} } } })
+    const sent = await t.gql<{ submitResource: { resource: { id: string } } }>('mutation ($input: SubmitResourceInput!) { submitResource(input: $input) { resource { id } } }', { input: { type: 'BOOK', title: 'Engineering a Compiler', author: 'Cooper and Torczon', url: `https://example.com/eac-${Date.now()}`, topicIds: [topic.id] } }, owner.token)
+    const id = sent.data!.submitResource.resource.id
+    await settle()
+    expect(await doc(id)).toBeNull()
+    await t.gql('mutation ($input: ModerateContentInput!) { moderateContent(input: $input) { ok } }', { input: { entityType: 'RESOURCE', entityId: id, action: 'APPROVE' } }, adminToken)
+    await t.gql('mutation ($input: ResourceIdInput!) { saveResource(input: $input) { resource { id } } }', { input: { id } }, friend.token)
+    await settle()
+    expect(await doc(id)).toMatchObject({ title: 'Engineering a Compiler', author: 'Cooper and Torczon', type: 'BOOK', topics: [topic.title], saveCount: 1 })
+    const found = await t.gql<{ search: { resources: { id: string }[] } }>('{ search(query: "torczon compiler", scopes: [RESOURCES]) { resources { id } } }', {}, friend.token)
+    expect(found.data!.search.resources).toEqual([{ id }])
+    await t.gql('mutation ($input: ModerateContentInput!) { moderateContent(input: $input) { ok } }', { input: { entityType: 'RESOURCE', entityId: id, action: 'REMOVE', reason: 'A shop page.' } }, adminToken)
+    await settle()
+    expect(await doc(id)).toBeNull()
   })
 
   it('finds people past the consent age by name or handle, never minors or across a block', async () => {

@@ -1,12 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { PEOPLE, PLACES, type People, type Places } from '@lvn-backend/facades'
+import { PEOPLE, PLACES, RESOURCE_SEARCH, type People, type Places, type ResourceSearch } from '@lvn-backend/facades'
 import { PrismaService, type Prisma, type Topic } from '@lvn-backend/prisma-base'
 import type { Typesense } from '../infrastructure/typesense'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
 import { visibleNotesWhere } from '../domain/note-access'
 import { aliasName, COLLECTIONS, STOPWORDS_SET } from './search-collections'
 import { todayDays } from './search-documents'
-import { classroomsFilter, groupsFilter, noteFiltersFilter, peopleFilter, topicsFilter, visibleNotesFilter, type NoteFilters } from './search-filters'
+import { classroomsFilter, groupsFilter, noteFiltersFilter, peopleFilter, resourcesFilter, topicsFilter, visibleNotesFilter, type NoteFilters } from './search-filters'
 import { TYPESENSE } from './search-index'
 import { OrganiseService } from './organise.service'
 
@@ -16,7 +16,7 @@ export const MATCH_END = '\uE001'
 /** Notes one search reaches, page after page, on either provider (ADR-0056). */
 export const MAX_NOTES = 200
 
-export type SearchScope = 'NOTES' | 'PEOPLE' | 'TOPICS' | 'GROUPS' | 'CLASSROOMS'
+export type SearchScope = 'NOTES' | 'PEOPLE' | 'TOPICS' | 'GROUPS' | 'CLASSROOMS' | 'RESOURCES'
 
 /** One search, as every provider receives it. */
 export interface SearchQuery {
@@ -52,6 +52,8 @@ export interface Found {
   topics: Topic[]
   groups: string[]
   classrooms: string[]
+  /** Approved resources' ids, best first (ADR-0075) */
+  resources: string[]
 }
 
 /** §11: clients call one `search` field and never know which provider answered. */
@@ -103,19 +105,21 @@ export class PostgresSearchProvider implements SearchProvider {
     private readonly organise: OrganiseService,
     @Inject(PEOPLE) private readonly people: People,
     @Inject(PLACES) private readonly places: Places,
+    @Inject(RESOURCE_SEARCH) private readonly resources: ResourceSearch,
   ) {}
 
   async find(q: SearchQuery): Promise<Found> {
     const words = q.terms.length > 0
     const first = q.offset === 0
-    const [notes, people, topics, groups, classrooms] = await Promise.all([
+    const [notes, people, topics, groups, classrooms, resources] = await Promise.all([
       q.scopes.has('NOTES') ? this.notes(q) : { hits: [], total: 0 },
       first && words && q.scopes.has('PEOPLE') ? this.people.search(q.text, q.size, q.viewerId).then((p) => p.map((x) => x.id)) : [],
       first && words && q.scopes.has('TOPICS') ? this.organise.findTopics(q.text, q.filters.subjectId, q.viewerId).then((t) => t.slice(0, q.size)) : [],
       first && words && q.scopes.has('GROUPS') ? this.places.findGroups(q.terms, q.groupIds, q.size) : [],
       first && words && q.scopes.has('CLASSROOMS') ? this.places.findClassrooms(q.terms, q.classroomIds, q.size) : [],
+      first && words && q.scopes.has('RESOURCES') ? this.resources.find(q.terms, q.blockedIds, q.size) : [],
     ])
-    return { notes: notes.hits, notesTotal: notes.total, people, topics, groups, classrooms }
+    return { notes: notes.hits, notesTotal: notes.total, people, topics, groups, classrooms, resources }
   }
 
   private async notes(q: SearchQuery): Promise<{ hits: NoteHit[]; total: number }> {
@@ -208,6 +212,10 @@ export class TypesenseSearchProvider implements SearchProvider {
     if (first && words && q.scopes.has('CLASSROOMS') && ownClasses) {
       searches.push({ scope: 'CLASSROOMS', params: { collection: aliasName(prefix, COLLECTIONS.CLASSROOM), q: q.text, query_by: 'name,description', query_by_weights: '3,1', filter_by: ownClasses, ...firstOnes, stopwords } })
     }
+    if (first && words && q.scopes.has('RESOURCES')) {
+      const filter = resourcesFilter(q.blockedIds)
+      searches.push({ scope: 'RESOURCES', params: { collection: aliasName(prefix, COLLECTIONS.RESOURCE), q: q.text, query_by: 'title,author,topics,description', query_by_weights: '4,2,2,1', ...(filter ? { filter_by: filter } : {}), ...firstOnes, stopwords } })
+    }
     const results = searches.length ? await ts.multiSearch<{ id: string; lead?: string }>(searches.map((s) => s.params), this.config.search.timeoutMs) : []
     const of = (scope: SearchScope) => results[searches.findIndex((s) => s.scope === scope)]
     const ids = (scope: SearchScope) => of(scope)?.hits.map((h) => h.document.id) ?? []
@@ -225,6 +233,7 @@ export class TypesenseSearchProvider implements SearchProvider {
       topics: topicIds.map((id) => byId.get(id)).filter((t): t is Topic => !!t),
       groups: ids('GROUPS'),
       classrooms: ids('CLASSROOMS'),
+      resources: ids('RESOURCES'),
     }
   }
 }

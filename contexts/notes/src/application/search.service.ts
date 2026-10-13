@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { metrics, SpanStatusCode, trace } from '@opentelemetry/api'
 import { Errors } from '@lvn-backend/errors'
-import { PEOPLE, PLACES, type People, type Places } from '@lvn-backend/facades'
+import { PEOPLE, PLACES, RESOURCE_SEARCH, type People, type Places, type ResourceSearch } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { visibleNotesWhere } from '../domain/note-access'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
@@ -14,7 +14,7 @@ export { MATCH_END, MATCH_START, type SearchScope } from './search-providers'
 
 /** How often a fallback is logged while Typesense stays unreachable. */
 const FALLBACK_LOG_MS = 30_000
-const ALL_SCOPES: SearchScope[] = ['NOTES', 'PEOPLE', 'TOPICS', 'GROUPS', 'CLASSROOMS']
+const ALL_SCOPES: SearchScope[] = ['NOTES', 'PEOPLE', 'TOPICS', 'GROUPS', 'CLASSROOMS', 'RESOURCES']
 const tracer = trace.getTracer('lvn-notes')
 const duration = metrics.getMeter('lvn-notes').createHistogram('lvn.search.duration', { unit: 'ms', description: 'Time to answer a search, by provider (ADR-0057)' })
 
@@ -59,6 +59,7 @@ export class SearchService {
     @Inject(NOTES_CONFIG) private readonly config: NotesConfig,
     @Inject(PEOPLE) private readonly people: People,
     @Inject(PLACES) private readonly places: Places,
+    @Inject(RESOURCE_SEARCH) private readonly resources: ResourceSearch,
     @Inject(SEMANTIC_SEARCH) private readonly semantic: SemanticSearch | null,
   ) {}
 
@@ -119,7 +120,7 @@ export class SearchService {
     const f = filters ?? {}
     const terms = queryTerms(text)
     const filtered = !!(f.kinds?.length || f.subjectId || f.topicId || f.authorId || f.sources?.length)
-    const empty = { notes: [], notesTotal: 0, people: [], topics: [], groups: [], classrooms: [], notesCursor: null }
+    const empty = { notes: [], notesTotal: 0, people: [], topics: [], groups: [], classrooms: [], resources: [], notesCursor: null }
     if (!terms.length && !filtered) return empty
     const key = searchKey(terms, f)
     const offset = after ? decodeCursor(after, key) : 0
@@ -188,6 +189,7 @@ export class SearchService {
       topics: first ? found.topics.slice(0, q.size) : [],
       groups: first ? found.groups.slice(0, q.size) : [],
       classrooms: first ? found.classrooms.slice(0, q.size) : [],
+      resources: first ? found.resources.slice(0, q.size) : [],
     }
   }
 
@@ -195,11 +197,13 @@ export class SearchService {
    * Groups and classes as they stand now (an index can be a moment behind): gone ones dropped, private groups and
    * classes kept only for their members. What remains always resolves for the viewer in `core`.
    */
-  private async live(found: Found, q: { groupIds: string[]; classroomIds: string[] }): Promise<Pick<Found, 'groups' | 'classrooms'>> {
-    const [groups, classes] = await Promise.all([this.places.groupsForSearch(found.groups), this.places.classroomsForSearch(found.classrooms)])
+  private async live(found: Found, q: { groupIds: string[]; classroomIds: string[] }): Promise<Pick<Found, 'groups' | 'classrooms' | 'resources'>> {
+    const [groups, classes, resources] = await Promise.all([this.places.groupsForSearch(found.groups), this.places.classroomsForSearch(found.classrooms), this.resources.forSearch(found.resources)])
     const groupOk = new Set(groups.filter((g) => g.privacy === 'PUBLIC' || q.groupIds.includes(g.id)).map((g) => g.id))
     const classOk = new Set(classes.filter((c) => q.classroomIds.includes(c.id)).map((c) => c.id))
-    return { groups: found.groups.filter((id) => groupOk.has(id)), classrooms: found.classrooms.filter((id) => classOk.has(id)) }
+    // A resource rejected a moment ago may still be in the index: only approved ones come back (ADR-0075).
+    const resourceOk = new Set(resources.map((r) => r.id))
+    return { groups: found.groups.filter((id) => groupOk.has(id)), classrooms: found.classrooms.filter((id) => classOk.has(id)), resources: found.resources.filter((id) => resourceOk.has(id)) }
   }
 
   private fellBack(e: Error): void {

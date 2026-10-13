@@ -127,3 +127,92 @@ extend type ModerationCase {
   "Set for RESOURCE cases"
   resource: Resource
 }
+
+# Finding resources (ADR-0075): the catalogue, saves and recommendations.
+
+enum ResourceSort {
+  "Most saved first, then newest"
+  POPULAR
+  NEWEST
+}
+
+input ResourceFilter {
+  type: ResourceType
+  topicId: UUID
+  "Words in the title, the author or the description"
+  query: String
+}
+
+type ResourceEdge {
+  cursor: String!
+  node: Resource!
+}
+
+type ResourceConnection {
+  edges: [ResourceEdge!]!
+  pageInfo: PageInfo!
+}
+
+extend type Resource {
+  "How many people saved it; who saved what is private"
+  saveCount: Int!
+  viewerSaved: Boolean!
+  "Search engines may index its page: approved and saved by at least three people"
+  indexable: Boolean!
+}
+
+"Where a recommendation goes: one of a person, a group or a class"
+input RecommendationPlaceInput {
+  userId: UUID
+  groupId: UUID
+  classroomId: UUID
+}
+
+input RecommendResourceInput {
+  resourceId: UUID!
+  to: RecommendationPlaceInput!
+  "Why, in a sentence or two (at most 280 characters)"
+  reason: String
+}
+
+input ResourceRecommendationIdInput {
+  id: UUID!
+}
+
+"A resource someone recommended, with their reason"
+type ResourceRecommendation {
+  id: UUID!
+  resource: Resource!
+  from: User!
+  reason: String
+  createdAt: DateTime!
+  "Its sender, its recipient, the group's moderators or the class's staff"
+  viewerCanRemove: Boolean!
+}
+
+type ResourceRecommendationEdge {
+  cursor: String!
+  node: ResourceRecommendation!
+}
+
+type ResourceRecommendationConnection {
+  edges: [ResourceRecommendationEdge!]!
+  pageInfo: PageInfo!
+}
+
+extend type Query {
+  "Approved resources, guests included"
+  resources(filter: ResourceFilter, sort: ResourceSort = POPULAR, first: Int, after: String): ResourceConnection!
+  "The viewer's Saved list, newest first"
+  savedResources(first: Int, after: String): ResourceConnection!
+  "Recommended to a group or class the viewer is in, or to the viewer (userId: their own id)"
+  resourceRecommendations(to: RecommendationPlaceInput!, first: Int, after: String): ResourceRecommendationConnection!
+}
+
+extend type Mutation {
+  saveResource(input: ResourceIdInput!): ResourcePayload!
+  unsaveResource(input: ResourceIdInput!): ResourcePayload!
+  "Sends an approved resource with a reason to a person, a group or a class (30 an hour)"
+  recommendResource(input: RecommendResourceInput!): OkPayload!
+  removeResourceRecommendation(input: ResourceRecommendationIdInput!): OkPayload!
+}

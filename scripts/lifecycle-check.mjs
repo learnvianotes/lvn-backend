@@ -615,6 +615,17 @@ if (opt('--vm')) {
   const seen = (await gql('query ($id: UUID!) { resource(id: $id) { status title coverUrl submittedBy { id } } }', { id })).resource
   const cover = seen?.coverUrl ? await fetch(seen.coverUrl) : null
   ok(queued && decided.ok && seen?.status === 'APPROVED' && cover?.ok && /^image\//.test(cover.headers.get('content-type') ?? ''), 'a platform admin approves it from the queue; a guest reads it, with its cover from storage', JSON.stringify([queued, decided, seen, cover?.status]))
+  // ADR-0075: search (the environment's Typesense) finds it once indexed; a save and a comment.
+  let found = []
+  for (let i = 0; i < 20 && !found.some((r) => r.id === id); i++) {
+    found = (await gql('{ search(query: "clean code", scopes: [RESOURCES], first: 20) { resources { id } } }')).search.resources
+    if (!found.some((r) => r.id === id)) await new Promise((r) => setTimeout(r, 1000))
+  }
+  const saved = (await gql('mutation ($input: ResourceIdInput!) { saveResource(input: $input) { resource { saveCount viewerSaved } userErrors { message } } }', { input: { id } }, moderator.token)).saveResource
+  const body = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `Chapter 3 on functions, run ${WORD}` }] }] }
+  const commented = (await gql('mutation ($input: AddCommentInput!) { addComment(input: $input) { comment { id } userErrors { message } } }', { input: { target: { type: 'RESOURCE', id }, body } }, moderator.token)).addComment
+  const talk = (await gql('query ($target: CommentTargetInput!) { discussion(target: $target) { commentCount } }', { target: { type: 'RESOURCE', id } }, G.token)).discussion
+  ok(found.some((r) => r.id === id) && saved.resource?.saveCount === 1 && saved.resource.viewerSaved && !!commented.comment && talk?.commentCount === 1, 'search finds the approved book; it is saved once and discussed', JSON.stringify([found.length, saved, commented.userErrors, talk]))
   const removed = (await gql('mutation ($input: ResourceIdInput!) { deleteResource(input: $input) { ok } }', { input: { id } }, G.token)).deleteResource
   const gone = (await gql('query ($id: UUID!) { resource(id: $id) { id } }', { id })).resource
   ok(removed.ok && gone === null, 'G deletes it, and it is gone for everyone', JSON.stringify([removed, gone]))

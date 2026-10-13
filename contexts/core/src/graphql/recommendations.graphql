@@ -11,6 +11,8 @@ enum RecommendationKind {
   QUIZ_ON_TOPIC
   "A public note on the learner's topics that many people read"
   POPULAR_NOTE
+  "An approved resource on an exam or weak topic, most saved first (ADR-0075)"
+  RESOURCE
 }
 
 type Recommendation {
@@ -27,6 +29,8 @@ type Recommendation {
   topicKey: String
   topic: Topic
   topicTitle: String
+  "The resource, for RESOURCE"
+  resource: Resource
 }
 
 input DismissRecommendationInput {

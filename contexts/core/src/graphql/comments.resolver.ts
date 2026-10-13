@@ -102,7 +102,10 @@ export class DiscussionResolver {
 
   @ResolveField('reactions')
   reactions(@Parent() d: DiscussionParent, @CurrentViewer() viewer: Viewer) {
-    return this.comments.reactions(viewer.userId, d.place.target, d.place, d.place.ownerId)
+    // A resource takes comments but no reactions: people save it instead (ADR-0075).
+    const { target } = d.place
+    if (target.type === 'RESOURCE') return { counts: [], viewerReaction: null }
+    return this.comments.reactions(viewer.userId, { type: target.type, id: target.id }, d.place, d.place.ownerId)
   }
 
   @ResolveField('viewerCanComment')

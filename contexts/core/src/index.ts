@@ -32,3 +32,4 @@ export { FocusService } from './application/focus.service'
 export const coreSubgraph = { name: 'core', typeDefs: coreTypeDefs, modules: [CoreModule] }
 export { COMMERCE_WORDS } from './domain/resources'
 export { ResourcesService } from './application/resources.service'
+export { ResourceSearchFacade } from './application/resource-search.facade'

@@ -321,6 +321,7 @@ export class ResourcesService implements OnModuleInit {
     await this.db.resource.delete({ where: { id } })
     if (row.coverFileId) await this.files.delete([row.coverFileId]).catch(() => undefined)
     await this.moderation.closeCases('RESOURCE', [id], viewerId)
+    await this.events.publish('ResourceChanged', { resourceId: id })
     if (row.submittedById !== viewerId) await this.audit.record({ actorId: viewerId, action: 'resource.deleted', targetType: 'RESOURCE', targetId: id, metadata: { submittedById: row.submittedById } })
   }
 
@@ -338,5 +339,6 @@ export class ResourcesService implements OnModuleInit {
     if (!rows.length) return
     await this.db.resource.deleteMany({ where: { submittedById: userId } })
     await this.moderation.closeCases('RESOURCE', rows.map((r) => r.id), null)
+    for (const r of rows) await this.events.publish('ResourceChanged', { resourceId: r.id })
   }
 }
