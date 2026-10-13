@@ -10,3 +10,8 @@
 infra/terraform
 docs
 **/test
+# The PDF engine's Python environment and caches (its own image builds from workers/pdf-engine)
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache

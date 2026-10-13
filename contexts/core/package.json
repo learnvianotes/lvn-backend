@@ -18,6 +18,7 @@
     "@lvn-backend/graphql": "workspace:*",
     "@lvn-backend/legacy": "workspace:*",
     "@lvn-backend/prisma-base": "workspace:*",
+    "@lvn-backend/queue": "workspace:*",
     "@lvn-backend/redis": "workspace:*",
     "@lvn-backend/storage": "workspace:*",
     "@lvn/contracts": "workspace:@learnvianotes/contracts@*",

@@ -65,6 +65,8 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `AI_MONTHLY_BUDGET_MICRO_USD` | api, worker | no | — (no cap) | The environment's monthly AI budget in millionths of a dollar: at it, the breaker pauses AI until next month (§10.1) |
 | `AI_KEYS_SECRET` | api, worker | no | — (keys cannot be saved) | Encrypts the provider keys platform admins save on the web's AI providers page (AES-256-GCM, ADR-0065); at least 32 characters. Changing it makes saved keys unreadable: enter them again |
 | `AI_PUBLIC_PIPELINE` | api, worker | no | `true` | Study aids (summary, key concepts, questions, quiz, flashcards) made when a note is published PUBLIC: five model calls per version, as the platform's work (ADR-0061) |
+| `POSTHOG_HOST` | api, worker | with the key | — (off) | A self-hosted PostHog that gets a pseudonymous copy of learning events from the worker (type, platform, duration; an HMAC of the user id), ADR-0067 |
+| `POSTHOG_API_KEY` | api, worker | with the host | — (off) | The PostHog project's key |
 | `CLAMAV_URL` | worker | no | — (uploads not scanned) | ClamAV's clamd, `tcp://host:3310`: uploads are scanned and infected ones quarantined (ADR-0041) |
 | `API_HOST` | api | no | `0.0.0.0` | Bind address |
 | `API_PORT` | api | no | `4000` | HTTP + WebSocket port |

@@ -1949,6 +1949,63 @@ enum KeepCardsInto
   NEW_NOTE @join__enumValue(graph: AI)
 }
 
+input LearningEventInput
+  @join__type(graph: CORE)
+{
+  """The client's UUIDv7: an event sent twice counts once"""
+  id: UUID!
+  type: LearningEventType!
+
+  """NOTE, CARD, CORE_TOPIC, QUIZ…"""
+  entityType: String
+  entityId: String
+
+  """topic:<id> or core:<subject>/<topic>; at most 10"""
+  topicKeys: [String!]
+
+  """At most 4 hours"""
+  durationMs: Int
+
+  """
+  At most 2 KB; TIME_SPENT takes { activity: FOCUS | REVIEW | QUIZ | READING }, QUIZ_COMPLETED { answered }
+  """
+  metadata: JSON
+
+  """When it happened on the device; believed back at most 30 days"""
+  clientTs: DateTime!
+  sessionId: String
+  platform: Platform!
+}
+
+"""
+§14.1's event types. Some are recorded by the server only: notes created, published or forked; exams; AI requests
+"""
+enum LearningEventType
+  @join__type(graph: CORE)
+{
+  NOTE_OPENED @join__enumValue(graph: CORE)
+  NOTE_CREATED @join__enumValue(graph: CORE)
+  NOTE_PUBLISHED @join__enumValue(graph: CORE)
+  NOTE_FORKED @join__enumValue(graph: CORE)
+  CARD_VIEWED @join__enumValue(graph: CORE)
+  TOPIC_VIEWED @join__enumValue(graph: CORE)
+  VIDEO_STARTED @join__enumValue(graph: CORE)
+  VIDEO_COMPLETED @join__enumValue(graph: CORE)
+  QUIZ_STARTED @join__enumValue(graph: CORE)
+  QUIZ_COMPLETED @join__enumValue(graph: CORE)
+  FLASHCARD_REVIEWED @join__enumValue(graph: CORE)
+  TIME_SPENT @join__enumValue(graph: CORE)
+  NOTE_SAVED @join__enumValue(graph: CORE)
+  TOPIC_REVISITED @join__enumValue(graph: CORE)
+  EXAM_CREATED @join__enumValue(graph: CORE)
+  RESOURCE_VIEWED @join__enumValue(graph: CORE)
+  RESOURCE_SAVED @join__enumValue(graph: CORE)
+  AI_REQUESTED @join__enumValue(graph: CORE)
+  SEARCH_PERFORMED @join__enumValue(graph: CORE)
+  TOPIC_COMPLETED @join__enumValue(graph: CORE)
+  PROBLEM_MARKED @join__enumValue(graph: CORE)
+}
+
 type LegacyCounts
   @join__type(graph: USERS)
 {
@@ -2361,6 +2418,11 @@ type Mutation
   """Its author, or a moderator"""
   deleteGroupPost(input: GroupPostIdInput!): GroupPayload! @join__field(graph: CORE)
   pinGroupPost(input: PinGroupPostInput!): GroupPostPayload! @join__field(graph: CORE)
+
+  """
+  Signed in only. Clients send every 10 s or 20 events, and keep what they could not send
+  """
+  trackEvents(input: TrackEventsInput!): TrackEventsPayload! @join__field(graph: CORE)
 
   """
   Staff: a quiz every member of the class can take (classroom.publishQuiz)
@@ -3278,6 +3340,14 @@ input PinGroupPostInput
   pinned: Boolean!
 }
 
+enum Platform
+  @join__type(graph: CORE)
+{
+  WEB @join__enumValue(graph: CORE)
+  ANDROID @join__enumValue(graph: CORE)
+  IOS @join__enumValue(graph: CORE)
+}
+
 enum ProblemMark
   @join__type(graph: CORE)
 {
@@ -3620,6 +3690,14 @@ input RegisterDeviceInput
   """The native FCM (or APNs) token"""
   token: String!
   platform: DevicePlatform!
+}
+
+type RejectedLearningEvent
+  @join__type(graph: CORE)
+{
+  """Its place in the batch"""
+  index: Int!
+  message: String!
 }
 
 """How the viewer stands with a person"""
@@ -4304,6 +4382,32 @@ type TopicPayload
   @join__type(graph: NOTES)
 {
   topic: Topic
+  userErrors: [UserError!]!
+}
+
+input TrackEventsInput
+  @join__type(graph: CORE)
+{
+  """At most 100"""
+  events: [LearningEventInput!]!
+
+  """
+  The device's IANA time zone (Asia/Kolkata): days are counted in it, rolling over at 04:00
+  """
+  timeZone: String
+}
+
+type TrackEventsPayload
+  @join__type(graph: CORE)
+{
+  """New events stored"""
+  accepted: Int!
+
+  """Events already received (a batch sent again)"""
+  duplicates: Int!
+
+  """Events refused one by one; the rest of the batch is kept"""
+  rejected: [RejectedLearningEvent!]!
   userErrors: [UserError!]!
 }
 

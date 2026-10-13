@@ -1167,6 +1167,52 @@ model CoreProblemMark {
   @@schema("core")
 }
 
+/// A learner's settings for learning (ADR-0067, ADR-0030): the time zone their days are counted in, taken from their
+/// device and changeable in settings.
+model LearnerSettings {
+  /// Cross-context reference to users.User
+  userId    String   @id @db.Uuid
+  timeZone  String   @default("UTC")
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@schema("core")
+}
+
+/// One person's learning on one local day, summed from learning events as they arrive (ADR-0067): what history and
+/// Rhythm read. The day rolls over at 04:00 in their time zone (ADR-0030) and is the day the event happened, so events
+/// sent late count where they belong.
+model LearningDay {
+  /// Cross-context reference to users.User
+  userId          String   @db.Uuid
+  day             DateTime @db.Date
+  /// Learning actions only (ADR-0030): focus sessions, reviews, quizzes
+  learningSeconds Int      @default(0)
+  /// Notes and /core topics open: history shows it, Rhythm does not count it
+  readingSeconds  Int      @default(0)
+  reviews         Int      @default(0)
+  quizAnswers     Int      @default(0)
+  events          Int      @default(0)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  @@id([userId, day])
+  @@schema("core")
+}
+
+/// Time and events per topic per local day (ADR-0067): history by topic, weak topics and recommendations read it.
+model LearningDayTopic {
+  /// Cross-context reference to users.User
+  userId   String   @db.Uuid
+  day      DateTime @db.Date
+  /// topic:<uuid> or core:<subject>/<topic>
+  topicKey String
+  seconds  Int      @default(0)
+  events   Int      @default(0)
+
+  @@id([userId, day, topicKey])
+  @@index([userId, topicKey])
+  @@schema("core")
+}
+
 // ── Moderation (§15.1, ADR-0037) ─────────────────────────────────────────────────────────────────────────────
 
 enum ReportEntityType {

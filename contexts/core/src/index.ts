@@ -14,6 +14,8 @@ export { PlacesService } from './application/places.service'
 export { WorkspacesService, parseRepository } from './application/workspaces.service'
 /** The core part of a data export (ADR-0018), bound to CORE_DATA_EXPORT by the composition roots. */
 export { CoreExport } from './application/core-export'
+/** Learning events (ADR-0067): the LEARNING facade, and the worker's nightly partition care. */
+export { LEARNING_ANALYTICS_QUEUE, LearningEventsService } from './application/learning-events.service'
 
 /** This context's federation subgraph, composed by apps/api's gateway (ADR-0033). */
 export const coreSubgraph = { name: 'core', typeDefs: coreTypeDefs, modules: [CoreModule] }

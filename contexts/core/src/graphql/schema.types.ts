@@ -632,6 +632,28 @@ export interface JoinRequestIdInput {
 
 export type JoinVia = 'CODE' | 'LINK'
 
+export interface LearningEventInput {
+  /** The client's UUIDv7: an event sent twice counts once */
+  id: string
+  type: LearningEventType
+  /** NOTE, CARD, CORE_TOPIC, QUIZ… */
+  entityType?: string | null
+  entityId?: string | null
+  /** topic:<id> or core:<subject>/<topic>; at most 10 */
+  topicKeys?: Array<string> | null
+  /** At most 4 hours */
+  durationMs?: number | null
+  /** At most 2 KB; TIME_SPENT takes { activity: FOCUS | REVIEW | QUIZ | READING }, QUIZ_COMPLETED { answered } */
+  metadata?: unknown | null
+  /** When it happened on the device; believed back at most 30 days */
+  clientTs: Date
+  sessionId?: string | null
+  platform: Platform
+}
+
+/** §14.1's event types. Some are recorded by the server only: notes created, published or forked; exams; AI requests */
+export type LearningEventType = 'NOTE_OPENED' | 'NOTE_CREATED' | 'NOTE_PUBLISHED' | 'NOTE_FORKED' | 'CARD_VIEWED' | 'TOPIC_VIEWED' | 'VIDEO_STARTED' | 'VIDEO_COMPLETED' | 'QUIZ_STARTED' | 'QUIZ_COMPLETED' | 'FLASHCARD_REVIEWED' | 'TIME_SPENT' | 'NOTE_SAVED' | 'TOPIC_REVISITED' | 'EXAM_CREATED' | 'RESOURCE_VIEWED' | 'RESOURCE_SAVED' | 'AI_REQUESTED' | 'SEARCH_PERFORMED' | 'TOPIC_COMPLETED' | 'PROBLEM_MARKED'
+
 export interface MentorInviteItem {
   id: string
   group: Group
@@ -880,6 +902,10 @@ export interface MutationPinGroupPostArgs {
   input: PinGroupPostInput
 }
 
+export interface MutationTrackEventsArgs {
+  input: TrackEventsInput
+}
+
 export interface MutationPublishClassQuizArgs {
   input: PublishClassQuizInput
 }
@@ -956,6 +982,8 @@ export interface PinGroupPostInput {
   postId: string
   pinned: boolean
 }
+
+export type Platform = 'WEB' | 'ANDROID' | 'IOS'
 
 export type ProblemMark = 'SOLVED' | 'REVISIT'
 
@@ -1075,6 +1103,12 @@ export interface ReactPayload {
   userErrors: Array<UserError>
 }
 
+export interface RejectedLearningEvent {
+  /** Its place in the batch */
+  index: number
+  message: string
+}
+
 /** A group platform moderators removed (ADR-0053): its owner reads why and may appeal once */
 export interface RemovedGroup {
   id: string
@@ -1150,6 +1184,23 @@ export interface SubmitQuizAttemptInput {
   /** The client's id for this submission: sending it again returns the same attempt */
   clientOpId: string
   answers: Array<QuizAnswerInput>
+}
+
+export interface TrackEventsInput {
+  /** At most 100 */
+  events: Array<LearningEventInput>
+  /** The device's IANA time zone (Asia/Kolkata): days are counted in it, rolling over at 04:00 */
+  timeZone?: string | null
+}
+
+export interface TrackEventsPayload {
+  /** New events stored */
+  accepted: number
+  /** Events already received (a batch sent again) */
+  duplicates: number
+  /** Events refused one by one; the rest of the batch is kept */
+  rejected: Array<RejectedLearningEvent>
+  userErrors: Array<UserError>
 }
 
 export interface UpdateClassroomInput {

@@ -1,5 +1,5 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common'
-import { Action, can, CardType } from '@lvn/contracts/domain'
+import { Action, can, CardType, LearningEventType } from '@lvn/contracts/domain'
 import { docText, inlineText, parseCardContent, type CardContent } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
@@ -7,6 +7,7 @@ import { NOTE_ACCESS, type NoteAccess } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { ClassroomsService } from './classrooms.service'
+import { LearningEventsService } from './learning-events.service'
 
 export const QUIZ_LIMITS = { title: 120, questions: 50, quizzesPerHour: 30, attemptsPerHour: 60 } as const
 
@@ -53,6 +54,7 @@ export class ClassQuizzesService implements OnModuleInit {
     private readonly classes: ClassroomsService,
     @Inject(NOTE_ACCESS) private readonly notes: NoteAccess,
     @Inject(EVENT_BUS) private readonly events: EventBus,
+    private readonly learning: LearningEventsService,
   ) {}
 
   onModuleInit(): void {
@@ -160,10 +162,13 @@ export class ClassQuizzesService implements OnModuleInit {
       return { questionId: r.id, choiceIds: chosen, correct: chosen.length > 0 && sameSet(chosen, (r.content as unknown as QuizContent).correct) }
     })
     try {
-      return await this.db.quizAttempt.create({
+      const attempt = await this.db.quizAttempt.create({
         data: { id: newId(), quizId: quiz.id, userId: viewerId, clientOpId: input.clientOpId, score: answers.filter((a) => a.correct).length, total: rows.length, answers: { create: answers } },
         include: { answers: true },
       })
+      // A learning action (ADR-0030, ADR-0067): its answers count towards the day.
+      await this.learning.record(viewerId, { type: LearningEventType.QUIZ_COMPLETED, entityType: 'CLASS_QUIZ', entityId: quiz.id, metadata: { answered: given.size, correct: attempt.score, total: attempt.total } })
+      return attempt
     } catch (e) {
       // Two tries of the same submission at once: the first one stands.
       if ((e as { code?: string }).code === 'P2002') return this.db.quizAttempt.findUniqueOrThrow({ where: { clientOpId: input.clientOpId }, include: { answers: true } })

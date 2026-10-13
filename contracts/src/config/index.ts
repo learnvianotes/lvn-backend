@@ -185,6 +185,21 @@ const ai = z.object({
   AI_KEYS_SECRET: z.string().min(32).optional(),
 })
 
+/**
+ * Product analytics (§14.1, ADR-0067): the worker sends a pseudonymous copy of learning events (type, platform,
+ * duration; an HMAC of the user id) to a self-hosted PostHog. Off unless both are set; clients never send analytics.
+ */
+const analytics = z.object({
+  /** e.g. https://posthog.example.org */
+  POSTHOG_HOST: httpUrl.optional(),
+  /** The PostHog project's API key */
+  POSTHOG_API_KEY: z.string().min(1).optional(),
+})
+
+const analyticsConfigured = <T extends { POSTHOG_HOST?: string; POSTHOG_API_KEY?: string }>(c: T, ctx: z.RefinementCtx) => {
+  if (!!c.POSTHOG_HOST !== !!c.POSTHOG_API_KEY) ctx.addIssue({ code: 'custom', path: [c.POSTHOG_HOST ? 'POSTHOG_API_KEY' : 'POSTHOG_HOST'], message: 'POSTHOG_HOST and POSTHOG_API_KEY go together' })
+}
+
 const aiConfigured = <T extends { AI_PROVIDER: 'none' | 'ollama'; OLLAMA_URL?: string; AI_CHAT_MODEL?: string; AI_EMBED_MODEL?: string }>(c: T, ctx: z.RefinementCtx) => {
   if (c.AI_PROVIDER !== 'ollama') return
   for (const key of ['OLLAMA_URL', 'AI_CHAT_MODEL', 'AI_EMBED_MODEL'] as const) if (!c[key]) ctx.addIssue({ code: 'custom', path: [key], message: 'required when AI_PROVIDER=ollama' })
@@ -212,8 +227,9 @@ const apiShape = backendBase
   .extend(auth.shape)
   .extend(search.shape)
   .extend(ai.shape)
+  .extend(analytics.shape)
 
-export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(searchConfigured).superRefine(aiConfigured)
+export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(searchConfigured).superRefine(aiConfigured).superRefine(analyticsConfigured)
 export type ApiConfig = z.infer<typeof apiConfigSchema>
 
 /**
@@ -230,6 +246,7 @@ export const workerConfigSchema = apiShape
   .superRefine(providersConfigured)
   .superRefine(searchConfigured)
   .superRefine(aiConfigured)
+  .superRefine(analyticsConfigured)
 export type WorkerConfig = z.infer<typeof workerConfigSchema>
 
 const publicId = z.string().min(1).optional()

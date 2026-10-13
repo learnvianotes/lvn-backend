@@ -1,8 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { AskAiScope } from '@lvn/contracts/domain'
+import { AskAiScope, LearningEventType } from '@lvn/contracts/domain'
 import { LiveEventKind } from '@lvn/contracts/notifications'
 import { AppError, Errors } from '@lvn-backend/errors'
-import { DOUBTS, LIVE, NOTE_AI, NOTE_RETRIEVAL, type Doubts, type Live, type NoteAi, type NoteRetrieval, type RetrievalScope } from '@lvn-backend/facades'
+import { DOUBTS, LEARNING, LIVE, NOTE_AI, NOTE_RETRIEVAL, type Doubts, type Learning, type Live, type NoteAi, type NoteRetrieval, type RetrievalScope } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
 import { ASK_CANDIDATES, citedSources, passagesOf, QUESTION_CHARS, rerank, sourcesBlock, type AnswerSource, type Passage } from '../domain/ask'
@@ -41,6 +41,7 @@ export class AskService {
     @Inject(NOTE_RETRIEVAL) private readonly retrieval: NoteRetrieval,
     @Inject(DOUBTS) private readonly doubts: Doubts,
     @Inject(LIVE) private readonly live: Live,
+    @Inject(LEARNING) private readonly learning: Learning,
   ) {}
 
   async ask(viewerId: string, input: { question: string; scope: AskAiScope; noteId?: string | null }): Promise<AnswerRow> {
@@ -54,7 +55,9 @@ export class AskService {
       if (!source?.mayAskAi) throw Errors.notFound('Note not found.')
       noteId = input.noteId
     }
-    return this.queue({ askerId: viewerId, question, scope: input.scope, noteId })
+    const answer = await this.queue({ askerId: viewerId, question, scope: input.scope, noteId })
+    await this.learning.record(viewerId, { type: LearningEventType.AI_REQUESTED, entityType: 'AI_ANSWER', entityId: answer.id, metadata: { task: 'ASK', scope: input.scope } })
+    return answer
   }
 
   /** Ask AI on a workspace doubt (ADR-0015): the doubt and its thread as the question, over the workspace's notes. */
@@ -63,7 +66,9 @@ export class AskService {
     const doubt = await this.doubts.forAi(viewerId, doubtId)
     if (!doubt) throw Errors.notFound('Doubt not found.')
     const question = `${doubt.title}\n\n${doubt.text}`.trim().slice(0, QUESTION_CHARS * 2)
-    return this.queue({ askerId: viewerId, question, scope: AskAiScope.WORKSPACE, groupId: doubt.groupId, doubtId })
+    const answer = await this.queue({ askerId: viewerId, question, scope: AskAiScope.WORKSPACE, groupId: doubt.groupId, doubtId })
+    await this.learning.record(viewerId, { type: LearningEventType.AI_REQUESTED, entityType: 'AI_ANSWER', entityId: answer.id, metadata: { task: 'ASK', scope: AskAiScope.WORKSPACE } })
+    return answer
   }
 
   /** The worker's side: one queued question, start to finish. Failures end in FAILED with words for the asker. */
