@@ -105,6 +105,16 @@ Sources gathered 2026-10-13.
 | **P7d Repository activity** | A new ADR for the GitHub App: permissions, installation per workspace, and webhooks. `POST /webhooks/github` checks the signature, records each delivery once and answers in under 10 s; the worker turns pushes, pull requests and issues into workspace activity. Installation is confirmed with the user's token. Off until the owner creates the App (app id, private key, webhook secret). Tested with payloads signed locally; on the VM, a script replays signed deliveries | all three |
 | **P7e Exit** | Moderation on submissions in the security suite (a pending resource is visible only to its submitter and moderators; a rejected one to its submitter only); no commerce surface (schema and UI checks); SSRF tests for the fetcher; live web and Maestro on the local environment; `docs/releases/phase-7.md` | all three |
 
+## Between P7b and P7c: the apps as board A draws them (owner's ask)
+
+On 2026-10-13 the owner sent UI board A again and chose to bring both apps in line with it right after P7b (ADR-0076).
+It is built in five slices, each checked on the local environment like a phase slice:
+- **UI-a:** the web shell (sidebar, top bar), the theme-aware landing, and web Home.
+- **UI-b:** the web note view.
+- **UI-c:** the phone's Home, Profile and focus screen.
+- **UI-d:** saved notes, and Community's For You and Trending.
+- **UI-e:** quiz paging, Exams tabs, search tabs, and the group page's floating ＋.
+
 ## Decisions to record before the slice that needs them
 
 | ADR | Question | Leaning |
