@@ -5,6 +5,7 @@
  */
 export const NOTES_DATA_EXPORT = Symbol('NOTES_DATA_EXPORT')
 export const CORE_DATA_EXPORT = Symbol('CORE_DATA_EXPORT')
+export const AI_DATA_EXPORT = Symbol('AI_DATA_EXPORT')
 
 export interface ExportFile {
   /** Path inside the archive, e.g. notes/NOTE/graphs-01a2b3c4/index.md */

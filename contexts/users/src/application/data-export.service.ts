@@ -3,7 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { Action, can } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { CORE_DATA_EXPORT, FILES, MAILER, NOTES_DATA_EXPORT, type DataExportPart, type ExportFile, type Files, type Mailer } from '@lvn-backend/facades'
+import { AI_DATA_EXPORT, CORE_DATA_EXPORT, FILES, MAILER, NOTES_DATA_EXPORT, type DataExportPart, type ExportFile, type Files, type Mailer } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
 import { zipSync, type Zippable } from 'fflate'
@@ -38,6 +38,7 @@ export class DataExportService {
     @Inject(MAILER) private readonly mailer: Mailer,
     @Inject(NOTES_DATA_EXPORT) private readonly notes: DataExportPart,
     @Inject(CORE_DATA_EXPORT) private readonly core: DataExportPart,
+    @Inject(AI_DATA_EXPORT) private readonly ai: DataExportPart,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
   ) {}
@@ -69,7 +70,7 @@ export class DataExportService {
     const row = await this.db.dataExport.findUnique({ where: { id: exportId }, include: { user: true } })
     if (!row || row.status !== 'PENDING') return
     try {
-      const parts = await Promise.all([this.usersPart(row.userId), this.notes.exportFor(row.userId, MEDIA_BUDGET_BYTES), this.core.exportFor(row.userId, 0)])
+      const parts = await Promise.all([this.usersPart(row.userId), this.notes.exportFor(row.userId, MEDIA_BUDGET_BYTES), this.core.exportFor(row.userId, 0), this.ai.exportFor(row.userId, 0)])
       const files = parts.flatMap((p) => p.files)
       const counts = Object.assign({}, ...parts.map((p) => p.counts)) as Record<string, number>
       const omitted = parts.flatMap((p) => p.omitted)

@@ -41,7 +41,7 @@ export const toUserError = (e: AppError): UserError => ({ code: e.code, message:
 type Body<P> = Omit<P, 'userErrors'>
 
 /**
- * Runs a mutation body and turns expected failures (VALIDATION, CONFLICT, NOT_FOUND, RATE_LIMITED) into the payload's
+ * Runs a mutation body and turns expected failures (VALIDATION, CONFLICT, NOT_FOUND, RATE_LIMITED, UNAVAILABLE) into the payload's
  * `userErrors`; UNAUTHENTICATED, FORBIDDEN and anything unexpected still throw, so clients handle them in one place.
  * `P` is the payload type, e.g. `withUserErrors<AuthPayload>(…)`.
  */
@@ -49,7 +49,7 @@ export async function withUserErrors<P extends { userErrors: UserError[] }>(run:
   try {
     return { ...(await run()), userErrors: [] } as unknown as P
   } catch (e) {
-    if (e instanceof AppError && (e.code === ErrorCode.VALIDATION || e.code === ErrorCode.CONFLICT || e.code === ErrorCode.NOT_FOUND || e.code === ErrorCode.RATE_LIMITED)) {
+    if (e instanceof AppError && (e.code === ErrorCode.VALIDATION || e.code === ErrorCode.CONFLICT || e.code === ErrorCode.NOT_FOUND || e.code === ErrorCode.RATE_LIMITED || e.code === ErrorCode.UNAVAILABLE)) {
       return { ...empty, userErrors: [toUserError(e)] } as unknown as P
     }
     throw e

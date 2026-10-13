@@ -151,11 +151,103 @@ type AiAllowance
   resetsAt: DateTime!
 }
 
+"""
+What a task made for the viewer from a note (ADR-0059). Only its maker sees it, while they can read the note
+"""
+type AiArtifact
+  @join__type(graph: AI)
+{
+  id: UUID!
+  task: AiTask!
+  status: AiArtifactStatus!
+  language: AiLanguage!
+
+  """Text tasks, once READY: the result as Markdown"""
+  markdown: String
+
+  """Card tasks, once READY: the title a new note would take"""
+  title: String
+
+  """Card tasks, once READY: the cards to choose from"""
+  cards: [AiCard!]
+
+  """FAILED: why, in words for the person"""
+  error: String
+
+  """
+  Made from the published version (the viewer is a reader) rather than the draft
+  """
+  fromPublishedVersion: Boolean!
+
+  """The note was longer than a task reads; its start was used"""
+  truncated: Boolean!
+  keptAt: DateTime
+  createdAt: DateTime!
+  note: Note!
+}
+
+type AiArtifactPayload
+  @join__type(graph: AI)
+{
+  artifact: AiArtifact
+  userErrors: [UserError!]!
+}
+
+enum AiArtifactStatus
+  @join__type(graph: AI)
+{
+  QUEUED @join__enumValue(graph: AI)
+  RUNNING @join__enumValue(graph: AI)
+  READY @join__enumValue(graph: AI)
+  FAILED @join__enumValue(graph: AI)
+}
+
+"""
+A card a task made, exactly as it would be kept: `type` and `content` as in the notes subgraph's Card
+"""
+type AiCard
+  @join__type(graph: AI)
+{
+  type: String!
+  content: JSON!
+}
+
+enum AiLanguage
+  @join__type(graph: AI)
+{
+  ENGLISH @join__enumValue(graph: AI)
+  HINDI @join__enumValue(graph: AI)
+  TELUGU @join__enumValue(graph: AI)
+}
+
 type AiStatus
   @join__type(graph: AI)
 {
   available: Boolean!
   reason: AiUnavailableReason
+}
+
+enum AiTask
+  @join__type(graph: AI)
+{
+  SUMMARIZE @join__enumValue(graph: AI)
+  KEY_CONCEPTS @join__enumValue(graph: AI)
+  EXPLAIN_SIMPLY @join__enumValue(graph: AI)
+  PRACTICE_QUESTIONS @join__enumValue(graph: AI)
+  TRANSLATE @join__enumValue(graph: AI)
+  FIND_MISTAKES @join__enumValue(graph: AI)
+
+  """On the note's code cards"""
+  EXPLAIN_CODE @join__enumValue(graph: AI)
+  FLASHCARDS @join__enumValue(graph: AI)
+  QUIZ @join__enumValue(graph: AI)
+  REVISION_SHEET @join__enumValue(graph: AI)
+
+  """Needs the right to copy the note (ADR-0025)"""
+  CREATE_NOTES @join__enumValue(graph: AI)
+
+  """Needs the right to copy the note (ADR-0025)"""
+  OUTLINE_TO_NOTE @join__enumValue(graph: AI)
 }
 
 """Why AI is not answering"""
@@ -994,18 +1086,20 @@ enum EmailKind
 
 """Fixed error vocabulary (§6.2)"""
 enum ErrorCode
+  @join__type(graph: AI)
   @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
-  UNAUTHENTICATED @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  FORBIDDEN @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  NOT_FOUND @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  VALIDATION @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  CONFLICT @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  RATE_LIMITED @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
-  INTERNAL @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  UNAUTHENTICATED @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  FORBIDDEN @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  NOT_FOUND @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  VALIDATION @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  CONFLICT @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  RATE_LIMITED @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  INTERNAL @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  UNAVAILABLE @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
 }
 
 """
@@ -1434,9 +1528,38 @@ enum JoinVia
 }
 
 scalar JSON
+  @join__type(graph: AI)
   @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
+
+input KeepAiCardsInput
+  @join__type(graph: AI)
+{
+  artifactId: UUID!
+
+  """Indexes into the artifact's cards"""
+  cardIndexes: [Int!]!
+  into: KeepCardsInto!
+}
+
+type KeepAiCardsPayload
+  @join__type(graph: AI)
+{
+  """The note the cards went into"""
+  noteId: UUID
+  userErrors: [UserError!]!
+}
+
+enum KeepCardsInto
+  @join__type(graph: AI)
+{
+  """The note itself (only for people who can edit it)"""
+  NOTE @join__enumValue(graph: AI)
+
+  """A new private note of the viewer's"""
+  NEW_NOTE @join__enumValue(graph: AI)
+}
 
 type LegacyCounts
   @join__type(graph: USERS)
@@ -1720,11 +1843,18 @@ enum ModerationState
 }
 
 type Mutation
+  @join__type(graph: AI)
   @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
+  """
+  Queues a task; poll aiArtifact until it is READY or FAILED. RATE_LIMITED past the day's allowance, UNAVAILABLE when AI is off
+  """
+  runAiTask(input: RunAiTaskInput!): AiArtifactPayload! @join__field(graph: AI)
+  keepAiCards(input: KeepAiCardsInput!): KeepAiCardsPayload! @join__field(graph: AI)
+  deleteAiArtifact(id: UUID!): OkPayload! @join__field(graph: AI)
   markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload! @join__field(graph: COMMUNICATION)
   updateNotificationSettings(input: UpdateNotificationSettingsInput!): NotificationSettingsPayload! @join__field(graph: COMMUNICATION)
 
@@ -2024,15 +2154,19 @@ input MuteGroupMemberInput
   until: DateTime
 }
 
-"""
-A note, owned by the notes subgraph: null when the viewer can no longer read it
-"""
+"""A note, owned by the notes subgraph; ai adds the viewer's AI results"""
 type Note
+  @join__type(graph: AI, key: "id")
   @join__type(graph: COMMUNICATION, key: "id", resolvable: false)
   @join__type(graph: CORE, key: "id")
   @join__type(graph: NOTES, key: "id")
 {
   id: UUID!
+
+  """
+  Signed-in: the viewer's own AI results for this note, newest first; empty signed out
+  """
+  aiArtifacts: [AiArtifact!]! @join__field(graph: AI)
 
   """
   Signed-in readers of the note: its comments and reactions. Null for anonymous visitors
@@ -2502,6 +2636,7 @@ enum OAuthProvider
 }
 
 type OkPayload
+  @join__type(graph: AI)
   @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
@@ -2704,6 +2839,11 @@ type Query
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
+  """
+  One of the viewer's AI results; null when it is not theirs or they can no longer read the note
+  """
+  aiArtifact(id: UUID!): AiArtifact @join__field(graph: AI)
+
   """Whether AI answers now; works signed out"""
   aiStatus: AiStatus! @join__field(graph: AI)
 
@@ -3130,6 +3270,19 @@ input ReviewVerificationRequestInput
 
   """Required when rejecting"""
   reason: String
+}
+
+input RunAiTaskInput
+  @join__type(graph: AI)
+{
+  noteId: UUID!
+  task: AiTask!
+
+  """Default ENGLISH; TRANSLATE translates into it"""
+  language: AiLanguage
+
+  """Only these cards (default: the whole note)"""
+  cardIds: [UUID!]
 }
 
 """
@@ -3810,6 +3963,7 @@ type User
 An expected failure of a mutation; `field` is the dotted input path, e.g. ["input", "email"]
 """
 type UserError
+  @join__type(graph: AI)
   @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
@@ -3821,6 +3975,7 @@ type UserError
 }
 
 scalar UUID
+  @join__type(graph: AI)
   @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)

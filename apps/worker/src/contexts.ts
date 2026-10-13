@@ -1,10 +1,10 @@
 import type { DynamicModule } from '@nestjs/common'
 import type { WorkerConfig } from '@lvn-backend/config'
-import { AiModule, aiConfigFrom } from '@lvn-backend/ai'
+import { AiExport, AiModule, aiConfigFrom } from '@lvn-backend/ai'
 import { CommunicationModule, communicationConfigFrom, MailService } from '@lvn-backend/communication'
 import { CoreExport, CoreModule, coreConfigFrom, ModerationService, PlacesService } from '@lvn-backend/core'
-import { AUDIT, CORE_DATA_EXPORT, ENTITLEMENTS, FacadesModule, FILES, MAILER, MODERATION, NOTE_ACCESS, PLACES, NOTE_MODERATION, NOTES_DATA_EXPORT, PEOPLE, POLICY } from '@lvn-backend/facades'
-import { FilesService, NoteAccessFacade, NoteModerationService, NotesExport, NotesModule, notesConfigFrom } from '@lvn-backend/notes'
+import { AI_DATA_EXPORT, AUDIT, CORE_DATA_EXPORT, ENTITLEMENTS, FacadesModule, FILES, MAILER, MODERATION, NOTE_ACCESS, NOTE_AI, PLACES, NOTE_MODERATION, NOTES_DATA_EXPORT, PEOPLE, POLICY } from '@lvn-backend/facades'
+import { FilesService, NoteAccessFacade, NoteAiFacade, NoteModerationService, NotesExport, NotesModule, notesConfigFrom } from '@lvn-backend/notes'
 import { AuditService, EntitlementService, PolicyService, UsersModule, usersConfigFrom, UsersService } from '@lvn-backend/users'
 
 /**
@@ -33,7 +33,9 @@ export const facades = () =>
     [MODERATION, ModerationService],
     [NOTE_MODERATION, NoteModerationService],
     [NOTE_ACCESS, NoteAccessFacade],
+    [NOTE_AI, NoteAiFacade],
     [PLACES, PlacesService],
     [NOTES_DATA_EXPORT, NotesExport],
     [CORE_DATA_EXPORT, CoreExport],
+    [AI_DATA_EXPORT, AiExport],
   ])

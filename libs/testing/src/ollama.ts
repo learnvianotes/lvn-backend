@@ -68,5 +68,5 @@ export async function startFakeOllama(): Promise<FakeOllama> {
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const { port } = server.address() as AddressInfo
-  return Object.assign(fake, { url: `http://127.0.0.1:${port}`, stop: () => new Promise<void>((resolve) => server.close(() => resolve())) }) as FakeOllama
+  return Object.assign(fake, { url: `http://127.0.0.1:${port}`, stop: () => new Promise<void>((resolve) => (server.close(() => resolve()), server.closeAllConnections())) }) as FakeOllama
 }

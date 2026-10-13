@@ -152,6 +152,10 @@ export const AiTaskType = {
   SUMMARIZE: 'SUMMARIZE', KEY_CONCEPTS: 'KEY_CONCEPTS', EXPLAIN_SIMPLY: 'EXPLAIN_SIMPLY', FLASHCARDS: 'FLASHCARDS',
   QUIZ: 'QUIZ', PRACTICE_QUESTIONS: 'PRACTICE_QUESTIONS', TRANSLATE: 'TRANSLATE', FIND_MISTAKES: 'FIND_MISTAKES',
   CREATE_NOTES: 'CREATE_NOTES', OUTLINE_TO_NOTE: 'OUTLINE_TO_NOTE',
+  /** On code cards (§18 "code explanation", ADR-0059) */
+  EXPLAIN_CODE: 'EXPLAIN_CODE',
+  /** One short page of key points, definitions and formulas (owner, 2026-10-09; ADR-0025) */
+  REVISION_SHEET: 'REVISION_SHEET',
 } as const
 export type AiTaskType = (typeof AiTaskType)[keyof typeof AiTaskType]
 export const DERIVATIVE_AI_TASKS: ReadonlySet<AiTaskType> = new Set([AiTaskType.CREATE_NOTES, AiTaskType.OUTLINE_TO_NOTE])

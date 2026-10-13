@@ -22,7 +22,7 @@ export type DevicePlatform = 'ANDROID' | 'IOS'
 
 export type EmailKind = 'CLASSROOM_POST' | 'DIGEST'
 
-export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL'
+export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE'
 
 /** A group, owned by the core subgraph: null when the viewer may no longer see it */
 export interface Group {

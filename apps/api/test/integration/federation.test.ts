@@ -8,7 +8,7 @@ import { EventBusModule } from '@lvn-backend/event-bus'
 import { QueueModule } from '@lvn-backend/queue'
 import { RedisModule, SessionRevocations } from '@lvn-backend/redis'
 import { StorageModule } from '@lvn-backend/storage'
-import { CORE_DATA_EXPORT, FILES, MAILER, NOTES_DATA_EXPORT } from '@lvn-backend/facades'
+import { AI_DATA_EXPORT, CORE_DATA_EXPORT, FILES, MAILER, NOTES_DATA_EXPORT } from '@lvn-backend/facades'
 import { Global } from '@nestjs/common'
 import { AccessTokenVerifier } from '@lvn-backend/auth-guard'
 import { resetDatabase } from '@lvn-backend/testing'
@@ -70,8 +70,9 @@ class ProbeModule {}
     },
     { provide: NOTES_DATA_EXPORT, useValue: { exportFor: async () => ({ files: [], counts: {}, omitted: [] }) } },
     { provide: CORE_DATA_EXPORT, useValue: { exportFor: async () => ({ files: [], counts: {}, omitted: [] }) } },
+    { provide: AI_DATA_EXPORT, useValue: { exportFor: async () => ({ files: [], counts: {}, omitted: [] }) } },
   ],
-  exports: [MAILER, FILES, NOTES_DATA_EXPORT, CORE_DATA_EXPORT],
+  exports: [MAILER, FILES, NOTES_DATA_EXPORT, CORE_DATA_EXPORT, AI_DATA_EXPORT],
 })
 class NoMailModule {}
 

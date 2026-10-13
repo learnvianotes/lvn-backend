@@ -8,6 +8,7 @@ import { StorageModule } from '@lvn-backend/storage'
 import { contextModules, facades } from './contexts'
 import { MaintenanceJobs } from './maintenance.jobs'
 import { SearchJobs } from './search.jobs'
+import { AiJobs } from './ai.jobs'
 import { DataJobs } from './data.jobs'
 import { PdfJobs } from './pdf.jobs'
 import { MediaJobs } from './media.jobs'
@@ -33,7 +34,7 @@ export class WorkerModule {
         facades(),
         ...contextModules(config),
       ],
-      providers: options.jobs === false ? [] : [MaintenanceJobs, SearchJobs, DataJobs, PdfJobs, MediaJobs],
+      providers: options.jobs === false ? [] : [MaintenanceJobs, SearchJobs, AiJobs, DataJobs, PdfJobs, MediaJobs],
     }
   }
 }
