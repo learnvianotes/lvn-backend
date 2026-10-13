@@ -126,6 +126,11 @@ ok(latest?.category === 'SHARE' && latest.note?.id === id && latest.actor?.id ==
 const vis = await gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { visibility slug moderation { state } } userErrors { message } } }', { input: { noteId: id, visibility: 'PUBLIC' } }, A.token)
 const slug = vis.changeNoteVisibility.note?.slug
 ok(vis.changeNoteVisibility.note?.visibility === 'PUBLIC', 'A makes it public', vis.changeNoteVisibility.userErrors[0]?.message ?? vis.changeNoteVisibility.note?.moderation?.state)
+// Saved notes (ADR-0076): B saves it to come back to; only B's list has it, and A cannot tell.
+const savedNoteIds = async (token) => (await gql('{ savedNotes { edges { node { id } } } }', {}, token)).savedNotes.edges.map((e) => e.node.id)
+const kept = (await gql('mutation ($input: NoteIdInput!) { saveNote(input: $input) { note { viewerSaved } userErrors { message } } }', { input: { noteId: id } }, B.token)).saveNote
+const seenByA = (await gql('query ($id: UUID!) { note(id: $id) { viewerSaved } }', { id }, A.token)).note?.viewerSaved
+ok(kept.note?.viewerSaved === true && (await savedNoteIds(B.token)).includes(id) && !(await savedNoteIds(A.token)).includes(id) && seenByA === false, 'B saves it; it is in B\'s Saved alone, and A cannot tell', JSON.stringify([kept.userErrors, seenByA]))
 const path = `/n/${slug}-${id}`
 ok(await eventually(async () => (await page(path)).body.includes(WORD)), 'anonymous visitors read its page', path)
 ok(await eventually(async () => (await page('/sitemap.xml')).body.includes(id)), 'the sitemap lists it')
@@ -198,6 +203,7 @@ ok(await eventually(async () => [301, 308].includes((await page(path)).status)),
 
 // Private again.
 await gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { visibility } } }', { input: { noteId: id, visibility: 'PRIVATE' } }, A.token)
+ok(!(await savedNoteIds(B.token)).includes(id), 'made private, it leaves B\'s Saved')
 ok(await eventually(async () => (await page(path2)).status === 404), 'made private, its page is gone')
 ok(!(await found()), 'and search no longer finds it')
 ok(await eventually(async () => !(await page('/sitemap.xml')).body.includes(id)), 'and the sitemap no longer lists it')
@@ -610,7 +616,14 @@ if (opt('--vm')) {
   const id = sent.resource?.id
   const unseen = id ? (await gql('query ($id: UUID!) { resource(id: $id) { id } }', { id })).resource : 'no resource'
   ok(sent.resource?.status === 'PENDING' && unseen === null, 'G sends it: it waits for moderators, and a guest cannot see it', JSON.stringify([sent.userErrors, unseen]))
-  const queued = (await gql('{ moderationQueue(first: 50) { edges { node { entityType resource { id } } } } }', {}, moderator.token)).moderationQueue.edges.some((e) => e.node.resource?.id === id)
+  // The queue holds what earlier runs left open too: look through it page by page.
+  let queued = false
+  for (let after = null, pages = 0; !queued && pages < 20; pages++) {
+    const q = (await gql('query ($after: String) { moderationQueue(first: 50, after: $after) { edges { node { resource { id } } } pageInfo { hasNextPage endCursor } } }', { after }, moderator.token)).moderationQueue
+    queued = q.edges.some((e) => e.node.resource?.id === id)
+    if (!q.pageInfo.hasNextPage) break
+    after = q.pageInfo.endCursor
+  }
   const decided = (await gql('mutation ($input: ModerateContentInput!) { moderateContent(input: $input) { ok userErrors { message } } }', { input: { entityType: 'RESOURCE', entityId: id, action: 'APPROVE' } }, moderator.token)).moderateContent
   const seen = (await gql('query ($id: UUID!) { resource(id: $id) { status title coverUrl submittedBy { id } } }', { id })).resource
   const cover = seen?.coverUrl ? await fetch(seen.coverUrl) : null
