@@ -779,6 +779,7 @@ model Note {
   pdfConversions   PdfConversion[]
   tags             NoteTag[]
   topics           NoteTopic[]
+  chunks           NoteChunk[]
 
   @@index([ownerId, deletedAt, draftUpdatedAt(sort: Desc)])
   @@index([folderId])
@@ -819,11 +820,41 @@ model NoteVersion {
   createdById String          @db.Uuid
   createdAt   DateTime        @default(now()) @db.Timestamptz(3)
 
-  note        Note  @relation("NoteVersions", fields: [noteId], references: [id], onDelete: Cascade)
-  publishedOf Note? @relation("PublishedVersion")
+  note        Note        @relation("NoteVersions", fields: [noteId], references: [id], onDelete: Cascade)
+  publishedOf Note?       @relation("PublishedVersion")
+  chunks      NoteChunk[]
 
   @@unique([noteId, number])
   @@index([noteId, kind, createdAt])
+  @@schema("notes")
+}
+
+/// A piece of a published version, embedded for Ask AI and semantic search (§10.2, ADR-0060): about 500 tokens of the
+/// cards' plain text with 50 of overlap. Who may read it is decided when it is retrieved, by the read predicate; it goes
+/// with its note and is replaced when a new version is published. `embedding` is written and read with SQL.
+model NoteChunk {
+  id        String                     @id @db.Uuid
+  noteId    String                     @db.Uuid
+  versionId String                     @db.Uuid
+  /// Its order in the version
+  position  Int
+  /// The cards it covers, in order
+  cardIds   String[]                   @db.Uuid
+  text      String
+  /// About text length / 4
+  tokens    Int
+  /// The embedding model: a different one means embedding again
+  model     String
+  embedding Unsupported("vector(768)")
+  createdAt DateTime                   @default(now()) @db.Timestamptz(3)
+
+  note    Note        @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  version NoteVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([noteId, position])
+  @@index([versionId])
+  /// HNSW with vector_cosine_ops, made by the migration: Prisma has no HNSW type, so it is named here only
+  @@index([embedding], map: "NoteChunk_embedding_idx")
   @@schema("notes")
 }
 
@@ -2029,5 +2060,31 @@ model NoteArtifact {
 
   @@index([ownerId, noteId, createdAt(sort: Desc)])
   @@index([noteId, task])
+  @@schema("ai")
+}
+
+/// An Ask AI answer (ADR-0060): the asker's own. Its text grows while the model answers; its sources are the chunks
+/// it cites (note, title, version, cards, snippet), all of notes the asker could read when it was asked.
+model AiAnswer {
+  id        String           @id @db.Uuid
+  askerId   String           @db.Uuid
+  question  String
+  /// THIS_NOTE, MY_NOTES, MY_PLACES, PUBLIC, WORKSPACE
+  scope     String
+  noteId    String?          @db.Uuid
+  /// WORKSPACE: the workspace, and the doubt asked about
+  groupId   String?          @db.Uuid
+  doubtId   String?          @db.Uuid
+  status    AiArtifactStatus
+  text      String           @default("")
+  /// [{ n, noteId, title, versionId, cardIds, snippet }]
+  sources   Json             @default("[]")
+  error     String?
+  createdAt DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime         @updatedAt @db.Timestamptz(3)
+
+  @@index([askerId, createdAt(sort: Desc)])
+  @@index([askerId, noteId])
+  @@index([askerId, doubtId])
   @@schema("ai")
 }

@@ -138,11 +138,20 @@ export class AiGateway {
     }
   }
 
-  /** Vectors for texts, in order (the embedding model of the `EMBED` task). */
+  /** The model embeddings come from now (the `EMBED` route, else the environment's), or null when AI does not answer. */
+  async embedModel(): Promise<string | null> {
+    if (!(await this.status()).available) return null
+    return this.route('EMBED', this.config.embedModel).then((r) => r.model).catch(() => null)
+  }
+
+  /**
+   * Vectors for texts, in order. Every embedding comes from the `EMBED` route's model, so a question and the chunks it
+   * is compared with always share one model; `task` only labels the usage (EMBED, EMBED_QUERY).
+   */
   async embed(texts: string[], who: { userId: string | null; private: boolean; task?: string }): Promise<number[][]> {
     if (!texts.length) return []
     const adapter = await this.ready(who.userId, who.private)
-    const route = await this.route(who.task ?? 'EMBED', this.config.embedModel)
+    const route = await this.route('EMBED', this.config.embedModel)
     const started = Date.now()
     try {
       const res = await this.withRetries(() => adapter.embed(route.model, texts, this.config.timeoutMs))

@@ -16,6 +16,8 @@ export { unsubscribeToken, readUnsubscribeToken } from './email/unsubscribe'
 export { inQuietHours, localTime } from './preferences/preferences.service'
 /** Live updates (ADR-0042): the endpoint's path, its schema and the close code for a refused token. */
 export { LIVE_PATH, LIVE_SDL, LIVE_FORBIDDEN } from './live/live-server'
+/** The LIVE facade (ADR-0060), bound by the composition roots. */
+export { LiveNotifier } from './live/live-notifier'
 
 /** This context's federation subgraph, composed by apps/api's gateway (ADR-0033). */
 export const communicationSubgraph = { name: 'communication', typeDefs: communicationTypeDefs, modules: [CommunicationModule] }

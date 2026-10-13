@@ -3,9 +3,12 @@ import { AI_CONFIG, type AiConfig } from './ai.config'
 import { AI_PROVIDER_ADAPTER, AiGateway } from './application/ai-gateway'
 import { AiExport } from './application/ai-export'
 import { AiTasksService } from './application/ai-tasks.service'
+import { AiEmbeddings } from './application/ai-embeddings'
+import { AskService } from './application/ask.service'
 import { PromptLibrary } from './application/prompts'
 import { AiResolver } from './graphql/ai.resolver'
 import { AiTasksResolver, NoteAiArtifactsResolver } from './graphql/ai-tasks.resolver'
+import { AskResolver } from './graphql/ai-ask.resolver'
 import { OllamaProvider } from './infrastructure/ollama'
 
 /**
@@ -14,7 +17,7 @@ import { OllamaProvider } from './infrastructure/ollama'
  * pipeline's AI steps, transcription, moderation scoring.
  * Imported only by the composition roots (apps/api, apps/worker); other contexts reach it through its facade
  * interface in libs/, never by importing this package (enforced by dependency-cruiser).
- * Needs PrismaModule, QueueModule, EventBusModule and the ENTITLEMENTS and NOTE_AI facades.
+ * Needs PrismaModule, QueueModule, EventBusModule and the ENTITLEMENTS, NOTE_AI, NOTE_RETRIEVAL, DOUBTS and LIVE facades.
  */
 @Module({})
 export class AiModule {
@@ -27,12 +30,15 @@ export class AiModule {
         { provide: PromptLibrary, useValue: new PromptLibrary() },
         AiGateway,
         AiTasksService,
+        AskService,
+        AiEmbeddings,
         AiExport,
         AiResolver,
         AiTasksResolver,
         NoteAiArtifactsResolver,
+        AskResolver,
       ],
-      exports: [AiGateway, AiTasksService, AiExport],
+      exports: [AiGateway, AiTasksService, AskService, AiEmbeddings, AiExport],
     }
   }
 }

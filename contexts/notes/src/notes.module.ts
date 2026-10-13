@@ -16,6 +16,7 @@ import { PublicPages } from './application/public-pages'
 import { SearchIndex, TYPESENSE } from './application/search-index'
 import { PostgresSearchProvider, TypesenseSearchProvider } from './application/search-providers'
 import { SEMANTIC_SEARCH } from './application/search-ranking'
+import { NoteChunks, NoteRetrievalFacade, PgvectorSemanticSearch } from './application/note-chunks'
 import { SearchService } from './application/search.service'
 import { Typesense } from './infrastructure/typesense'
 import { SyncService } from './application/sync.service'
@@ -78,8 +79,11 @@ export class NotesModule {
           inject: [NOTES_CONFIG],
         },
         SearchIndex,
-        // Phase 5 binds pgvector here (ADR-0057); until then hybrid ranking has nothing to fuse.
-        { provide: SEMANTIC_SEARCH, useValue: null },
+        // Ask AI's chunks and their embeddings (ADR-0060), which hybrid ranking's semantic side reads (ADR-0057).
+        NoteChunks,
+        NoteRetrievalFacade,
+        PgvectorSemanticSearch,
+        { provide: SEMANTIC_SEARCH, useExisting: PgvectorSemanticSearch },
         PostgresSearchProvider,
         TypesenseSearchProvider,
         SearchService,
@@ -114,7 +118,7 @@ export class NotesModule {
         ConversionResolver,
         NoteConversionResolver,
       ],
-      exports: [FilesService, NotesMaintenance, NoteModerationService, NoteAccessFacade, NoteAiFacade, SearchIndex, NoteImportService, PdfConversionService, MediaProcessingService],
+      exports: [FilesService, NotesMaintenance, NoteModerationService, NoteAccessFacade, NoteAiFacade, NoteChunks, NoteRetrievalFacade, SearchIndex, NoteImportService, PdfConversionService, MediaProcessingService],
     }
   }
 }

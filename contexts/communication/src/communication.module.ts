@@ -8,6 +8,7 @@ import { PreferencesService } from './preferences/preferences.service'
 import { DevicesService } from './push/devices.service'
 import { PushService } from './push/push.service'
 import { LiveHub } from './live/live-hub'
+import { LiveNotifier } from './live/live-notifier'
 import { LiveServer } from './live/live-server'
 import { MailService } from './mail/mail.service'
 import { ResendTransport, SesTransport, SmtpTransport, type MailTransport } from './mail/transport'
@@ -37,6 +38,7 @@ export class CommunicationModule {
         { provide: COMMUNICATION_CONFIG, useValue: config },
         { provide: MailService, useValue: new MailService(transport, config.mailFrom) },
         LiveHub,
+        LiveNotifier,
         NotificationService,
         CommunicationEvents,
         NotificationsResolver,
@@ -48,7 +50,7 @@ export class CommunicationModule {
         JsonScalar,
         ...(options.serveLive ? [LiveServer] : []),
       ],
-      exports: [MailService, NotificationService, LiveHub, PushService, DevicesService, EmailNotificationsService],
+      exports: [MailService, NotificationService, LiveHub, LiveNotifier, PushService, DevicesService, EmailNotificationsService],
     }
   }
 }

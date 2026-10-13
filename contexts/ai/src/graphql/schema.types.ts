@@ -8,6 +8,22 @@ export interface AiAllowance {
   resetsAt: Date
 }
 
+/** An Ask AI answer: the asker's own. Its text grows while it is RUNNING (live AI_ANSWER events say when) */
+export interface AiAnswer {
+  id: string
+  question: string
+  scope: AskAiScope
+  status: AiArtifactStatus
+  /** Markdown citing sources as [n] */
+  text: string
+  sources: Array<AiSource>
+  /** FAILED: why, in words for the asker */
+  error: string | null
+  noteId: string | null
+  doubtId: string | null
+  createdAt: Date
+}
+
 /** What a task made for the viewer from a note (ADR-0059). Only its maker sees it, while they can read the note */
 export interface AiArtifact {
   id: string
@@ -46,6 +62,17 @@ export interface AiCard {
 
 export type AiLanguage = 'ENGLISH' | 'HINDI' | 'TELUGU'
 
+/** A passage an answer cites, by its number in the answer ([1], [2] …) */
+export interface AiSource {
+  n: number
+  noteId: string
+  title: string
+  /** The published version it came from; null for a draft (this note, asked by its owner or an editor) */
+  versionId: string | null
+  cardIds: Array<string>
+  snippet: string
+}
+
 export interface AiStatus {
   available: boolean
   reason: AiUnavailableReason | null
@@ -55,6 +82,21 @@ export type AiTask = 'SUMMARIZE' | 'KEY_CONCEPTS' | 'EXPLAIN_SIMPLY' | 'PRACTICE
 
 /** Why AI is not answering */
 export type AiUnavailableReason = 'NOT_CONFIGURED' | 'BUDGET' | 'PROVIDER_DOWN'
+
+export interface AskAiInput {
+  question: string
+  scope: AskAiScope
+  /** THIS_NOTE: the note */
+  noteId?: string | null
+}
+
+export interface AskAiPayload {
+  answer: AiAnswer | null
+  userErrors: Array<UserError>
+}
+
+/** Where Ask AI looks, always within what the asker may read */
+export type AskAiScope = 'THIS_NOTE' | 'MY_NOTES' | 'MY_PLACES' | 'PUBLIC' | 'WORKSPACE'
 
 export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE'
 
@@ -85,6 +127,18 @@ export interface MutationDeleteAiArtifactArgs {
   id: string
 }
 
+export interface MutationAskAiArgs {
+  input: AskAiInput
+}
+
+export interface MutationAskAiAboutDoubtArgs {
+  doubtId: string
+}
+
+export interface MutationDeleteAiAnswerArgs {
+  id: string
+}
+
 /** A note, owned by the notes subgraph; ai adds the viewer's AI results */
 export interface Note {
   id: string
@@ -95,6 +149,16 @@ export interface Note {
 export interface OkPayload {
   ok: boolean
   userErrors: Array<UserError>
+}
+
+export interface QueryAiAnswerArgs {
+  id: string
+}
+
+export interface QueryMyAiAnswersArgs {
+  first?: number | null
+  noteId?: string | null
+  doubtId?: string | null
 }
 
 export interface QueryAiArtifactArgs {
