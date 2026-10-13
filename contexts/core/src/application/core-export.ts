@@ -4,6 +4,7 @@ import { PrismaService } from '@lvn-backend/prisma-base'
 import { LearningEventsService } from './learning-events.service'
 import { ReviewsService } from './reviews.service'
 import { ExamsService } from './exams.service'
+import { RecommendationsService } from './recommendations.service'
 import { RhythmService } from './rhythm.service'
 
 const json = (v: unknown) => new TextEncoder().encode(JSON.stringify(v, null, 2))
@@ -21,10 +22,11 @@ export class CoreExport implements DataExportPart {
     private readonly reviews: ReviewsService,
     private readonly rhythm: RhythmService,
     private readonly exams: ExamsService,
+    private readonly recommendations: RecommendationsService,
   ) {}
 
   async exportFor(userId: string) {
-    const [progress, marks, reports, appeals, actions, groups, groupPosts, classes, classPosts, comments, reactions, quizzes, attempts, learning, reviews, rhythm, exams] = await Promise.all([
+    const [progress, marks, reports, appeals, actions, groups, groupPosts, classes, classPosts, comments, reactions, quizzes, attempts, learning, reviews, rhythm, exams, recommendations] = await Promise.all([
       this.db.coreTopicProgress.findMany({ where: { userId }, orderBy: { topicKey: 'asc' } }),
       this.db.coreProblemMark.findMany({ where: { userId }, orderBy: { markedAt: 'asc' } }),
       this.db.report.findMany({ where: { reporterId: userId }, orderBy: { createdAt: 'asc' } }),
@@ -46,6 +48,7 @@ export class CoreExport implements DataExportPart {
       // Rhythm (ADR-0069): the plan, closed weeks and pauses.
       this.rhythm.exportFor(userId),
       this.exams.exportFor(userId),
+      this.recommendations.exportFor(userId),
     ])
     return {
       files: [
@@ -55,6 +58,7 @@ export class CoreExport implements DataExportPart {
         { path: 'data/learning/flashcard-reviews.json', bytes: json(reviews) },
         { path: 'data/learning/rhythm.json', bytes: json(rhythm) },
         { path: 'data/learning/exams.json', bytes: json(exams) },
+        { path: 'data/learning/recommendations.json', bytes: json(recommendations) },
         { path: 'data/core/problem-marks.json', bytes: json(marks.map(({ userId: _u, ...m }) => m)) },
         { path: 'data/core/reports-you-filed.json', bytes: json(reports.map((r) => ({ entityType: r.entityType, entityId: r.entityId, reason: r.reason, details: r.details, status: r.status, createdAt: r.createdAt }))) },
         { path: 'data/core/your-appeals.json', bytes: json(appeals.map((a) => ({ entityType: a.entityType, entityId: a.entityId, message: a.message, status: a.status, createdAt: a.createdAt, decidedAt: a.decidedAt }))) },

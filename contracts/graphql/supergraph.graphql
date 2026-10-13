@@ -1374,6 +1374,15 @@ type Discussion
   whyNot: String
 }
 
+input DismissRecommendationInput
+  @join__type(graph: CORE)
+{
+  kind: RecommendationKind!
+
+  """The note id or the topic key"""
+  entityId: String!
+}
+
 type DomainReview
   @join__type(graph: USERS)
 {
@@ -2623,6 +2632,9 @@ type Mutation
   """Staff: moves the quiz to the trash; its attempts stay"""
   deleteClassQuiz(input: ClassQuizIdInput!): OkPayload! @join__field(graph: CORE)
 
+  """Signed in only: not shown again for 30 days"""
+  dismissRecommendation(input: DismissRecommendationInput!): OkPayload! @join__field(graph: CORE)
+
   """Signed in only, as every mutation below"""
   reviewCard(input: ReviewCardInput!): ReviewCardPayload! @join__field(graph: CORE)
 
@@ -3706,6 +3718,9 @@ type Query
   """A quiz of a class the viewer is in; null otherwise"""
   classQuiz(id: UUID!): ClassQuiz @join__field(graph: CORE)
 
+  """Signed in only: best first, at most 20 (default 10)"""
+  recommendations(limit: Int): [Recommendation!]! @join__field(graph: CORE)
+
   """Signed in only"""
   reviewQueue: ReviewQueue! @join__field(graph: CORE)
 
@@ -3917,6 +3932,48 @@ type ReactPayload
 {
   reactions: Reactions
   userErrors: [UserError!]!
+}
+
+type Recommendation
+  @join__type(graph: CORE)
+{
+  kind: RecommendationKind!
+
+  """Why, in words"""
+  reason: String!
+
+  """Higher first; each kind has its band"""
+  score: Float!
+
+  """The note, for CONTINUE_NOTE, QUIZ_ON_TOPIC and POPULAR_NOTE"""
+  note: Note
+
+  """Its title as the viewer sees it"""
+  noteTitle: String
+
+  """The topic key, for EXAM_TOPIC and REVISE_TOPIC"""
+  topicKey: String
+  topic: Topic
+  topicTitle: String
+}
+
+enum RecommendationKind
+  @join__type(graph: CORE)
+{
+  """A topic of an exam in the next 14 days"""
+  EXAM_TOPIC @join__enumValue(graph: CORE)
+
+  """A weak topic"""
+  REVISE_TOPIC @join__enumValue(graph: CORE)
+
+  """A note opened in the last 14 days, not today"""
+  CONTINUE_NOTE @join__enumValue(graph: CORE)
+
+  """A public note with a quiz on a topic read this week"""
+  QUIZ_ON_TOPIC @join__enumValue(graph: CORE)
+
+  """A public note on the learner's topics that many people read"""
+  POPULAR_NOTE @join__enumValue(graph: CORE)
 }
 
 input RefreshSessionInput

@@ -23,6 +23,8 @@ export { ReviewsService } from './application/reviews.service'
 export { RhythmService } from './application/rhythm.service'
 /** Exams (ADR-0070): the worker sends the evening reminders of revision tasks left. */
 export { ExamsService } from './application/exams.service'
+/** Recommendations (ADR-0071): the worker recomputes them hourly for active people. */
+export { RecommendationsService } from './application/recommendations.service'
 
 /** This context's federation subgraph, composed by apps/api's gateway (ADR-0033). */
 export const coreSubgraph = { name: 'core', typeDefs: coreTypeDefs, modules: [CoreModule] }

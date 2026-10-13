@@ -36,6 +36,29 @@ export interface NoteAccess {
    * notes they can read, as they read each note now. Trashed notes and notes they cannot read give none.
    */
   studyCards(viewerId: string, chosenNoteIds: string[]): Promise<StudyCard[]>
+  /**
+   * Of these notes, the ones `viewerId` may read now, in the order given, titled as they see them (ADR-0071: every
+   * recommendation passes through this when read).
+   */
+  readable(viewerId: string, noteIds: string[]): Promise<ReadableNote[]>
+  /**
+   * Public notes on any of these topics, published and not held back, that are not `viewerId`'s own; newest published
+   * first, at most `take`. `withQuiz` keeps those whose published version has a quiz card (ADR-0071).
+   */
+  publicOnTopics(viewerId: string, topicIds: string[], options: { withQuiz?: boolean; take: number }): Promise<PublicTopicNote[]>
+}
+
+export interface ReadableNote {
+  noteId: string
+  title: string
+  ownerId: string
+  visibility: Visibility
+}
+
+export interface PublicTopicNote {
+  noteId: string
+  title: string
+  topicIds: string[]
 }
 
 /** A flashcard as its studier reads it (ADR-0068): from the draft for owners and editors, the published version else. */

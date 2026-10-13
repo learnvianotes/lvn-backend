@@ -13,6 +13,8 @@ import { RhythmService } from './application/rhythm.service'
 import { RhythmResolver } from './graphql/rhythm.resolver'
 import { ExamsService } from './application/exams.service'
 import { ExamsResolver } from './graphql/exams.resolver'
+import { RecommendationsService } from './application/recommendations.service'
+import { RecommendationsResolver } from './graphql/recommendations.resolver'
 import { ClassQuizzesService } from './application/class-quizzes.service'
 import { ClassroomsService } from './application/classrooms.service'
 import { PlacesService } from './application/places.service'
@@ -44,8 +46,8 @@ export class CoreModule {
   static forRoot(config: CoreConfig): DynamicModule {
     return {
       module: CoreModule,
-      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, LearningEventsService, LearningResolver, LearningHistoryService, LearningHistoryResolver, ReviewsService, ReviewsResolver, NoteStudyResolver, RhythmService, RhythmResolver, ExamsService, ExamsResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver, ModeratedContentResolver, GroupModerationResolver, ScopedReportsService, MentionsService, GroupsService, GroupsResolver, GroupReferenceResolver, ClassroomsService, PlacesService, ClassroomsResolver, ClassroomReferenceResolver, ClassQuizzesService, ClassQuizzesResolver, ClassroomQuizzesResolver, CommentsService, NoteDiscussionResolver, GroupPostDiscussionResolver, ClassroomPostDiscussionResolver, DiscussionResolver, CommentResolver, WorkspacesService, WorkspaceGroupResolver, DoubtResolver, ActivityService, ActivityResolver, JsonScalar],
-      exports: [CoreProgressService, ModerationService, GroupsService, ClassroomsService, PlacesService, WorkspacesService, LearningEventsService, LearningHistoryService, ReviewsService, RhythmService, ExamsService],
+      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, LearningEventsService, LearningResolver, LearningHistoryService, LearningHistoryResolver, ReviewsService, ReviewsResolver, NoteStudyResolver, RhythmService, RhythmResolver, ExamsService, ExamsResolver, RecommendationsService, RecommendationsResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver, ModeratedContentResolver, GroupModerationResolver, ScopedReportsService, MentionsService, GroupsService, GroupsResolver, GroupReferenceResolver, ClassroomsService, PlacesService, ClassroomsResolver, ClassroomReferenceResolver, ClassQuizzesService, ClassQuizzesResolver, ClassroomQuizzesResolver, CommentsService, NoteDiscussionResolver, GroupPostDiscussionResolver, ClassroomPostDiscussionResolver, DiscussionResolver, CommentResolver, WorkspacesService, WorkspaceGroupResolver, DoubtResolver, ActivityService, ActivityResolver, JsonScalar],
+      exports: [CoreProgressService, ModerationService, GroupsService, ClassroomsService, PlacesService, WorkspacesService, LearningEventsService, LearningHistoryService, ReviewsService, RhythmService, ExamsService, RecommendationsService],
     }
   }
 }

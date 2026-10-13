@@ -398,6 +398,12 @@ export interface DiscussionCommentsArgs {
   cardId?: string | null
 }
 
+export interface DismissRecommendationInput {
+  kind: RecommendationKind
+  /** The note id or the topic key */
+  entityId: string
+}
+
 export interface Doubt {
   id: string
   title: string
@@ -1054,6 +1060,10 @@ export interface MutationDeleteClassQuizArgs {
   input: ClassQuizIdInput
 }
 
+export interface MutationDismissRecommendationArgs {
+  input: DismissRecommendationInput
+}
+
 export interface MutationReviewCardArgs {
   input: ReviewCardInput
 }
@@ -1226,6 +1236,10 @@ export interface QueryClassQuizArgs {
   id: string
 }
 
+export interface QueryRecommendationsArgs {
+  limit?: number | null
+}
+
 export interface QueryDoubtArgs {
   id: string
 }
@@ -1288,6 +1302,24 @@ export interface ReactPayload {
   reactions: Reactions | null
   userErrors: Array<UserError>
 }
+
+export interface Recommendation {
+  kind: RecommendationKind
+  /** Why, in words */
+  reason: string
+  /** Higher first; each kind has its band */
+  score: number
+  /** The note, for CONTINUE_NOTE, QUIZ_ON_TOPIC and POPULAR_NOTE */
+  note: Note | null
+  /** Its title as the viewer sees it */
+  noteTitle: string | null
+  /** The topic key, for EXAM_TOPIC and REVISE_TOPIC */
+  topicKey: string | null
+  topic: Topic | null
+  topicTitle: string | null
+}
+
+export type RecommendationKind = 'EXAM_TOPIC' | 'REVISE_TOPIC' | 'CONTINUE_NOTE' | 'QUIZ_ON_TOPIC' | 'POPULAR_NOTE'
 
 export interface RejectedLearningEvent {
   /** Its place in the batch */

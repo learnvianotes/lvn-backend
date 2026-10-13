@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { Action, can } from '@lvn/contracts/domain'
-import type { NoteAccess, NoteReach, PlaceShare, StudyCard } from '@lvn-backend/facades'
+import type { NoteAccess, NoteReach, PlaceShare, PublicTopicNote, ReadableNote, StudyCard } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { noteFacts, visibleNotesWhere, type NoteAccessRow } from '../domain/note-access'
 import { NotesService } from './notes.service'
@@ -52,6 +52,36 @@ export class NoteAccessFacade implements NoteAccess {
       }
     }
     return out
+  }
+
+  async readable(viewerId: string, noteIds: string[]): Promise<ReadableNote[]> {
+    if (!noteIds.length) return []
+    const rows = await this.db.note.findMany({
+      where: { AND: [visibleNotesWhere(viewerId), { id: { in: noteIds } }] },
+      select: { id: true, ownerId: true, title: true, visibility: true, shares: { where: { userId: viewerId }, select: { role: true } }, publishedVersion: { select: { title: true } } },
+    })
+    const byId = new Map(rows.map((n) => [n.id, n]))
+    return noteIds.flatMap((id) => {
+      const n = byId.get(id)
+      if (!n) return []
+      // Owners and editors see the draft's title; everyone else the published one.
+      const drafts = n.ownerId === viewerId || n.shares.some((s) => s.role === 'EDITOR')
+      return [{ noteId: n.id, ownerId: n.ownerId, visibility: n.visibility, title: drafts ? n.title : (n.publishedVersion?.title ?? n.title) }]
+    })
+  }
+
+  async publicOnTopics(viewerId: string, topicIds: string[], options: { withQuiz?: boolean; take: number }): Promise<PublicTopicNote[]> {
+    if (!topicIds.length) return []
+    const rows = await this.db.note.findMany({
+      where: { AND: [visibleNotesWhere(null), { ownerId: { not: viewerId }, topics: { some: { topicId: { in: topicIds } } } }] },
+      select: { id: true, publishedAt: true, topics: { select: { topicId: true } }, publishedVersion: { select: { title: true, cards: options.withQuiz ?? false } } },
+      orderBy: { publishedAt: 'desc' },
+      take: options.withQuiz ? options.take * 5 : options.take,
+    })
+    return rows
+      .filter((n) => !options.withQuiz || ((n.publishedVersion?.cards ?? []) as { type: string }[]).some((c) => c.type === 'quiz'))
+      .slice(0, options.take)
+      .map((n) => ({ noteId: n.id, title: n.publishedVersion?.title ?? '', topicIds: n.topics.map((t) => t.topicId) }))
   }
 
   async showcaseProblem(noteId: string, groupId: string): Promise<string | null> {
