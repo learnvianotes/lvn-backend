@@ -61,7 +61,7 @@ const trimmed = (s: string | null | undefined) => (s?.trim() ? s.trim() : null)
  * The AI providers page (ADR-0065), for platform admins: connections to Claude, ChatGPT, Gemini, an OpenAI-compatible
  * server (a LiteLLM proxy…) or an Ollama; which answers by default for chats and for embeddings; each task's route;
  * and a test that asks the provider for one word, one embedding and its models. Every change is audited (without
- * keys) and reaches every process within 30 seconds.
+ * keys) and reaches every process on its next call.
  */
 @Injectable()
 export class AiSettingsService {
@@ -124,7 +124,7 @@ export class AiSettingsService {
     const data = { label, baseUrl, mayReceivePrivate: input.mayReceivePrivate, enabled: input.enabled, chatModel, embedModel, ...prices, ...key }
     const saved = existing ? await this.db.aiConnection.update({ where: { id: existing.id }, data }) : await this.db.aiConnection.create({ data: { id: newId(), kind: input.kind, ...data } })
     await this.audit.record({ actorId: adminId, action: 'ai.connection.saved', targetType: 'AiConnection', targetId: saved.id, metadata: { kind: saved.kind, label, enabled: saved.enabled, mayReceivePrivate: saved.mayReceivePrivate, keyChanged: !!apiKey || !!input.clearApiKey } })
-    this.providers.invalidate()
+    await this.changed()
     return view(saved)
   }
 
@@ -135,7 +135,7 @@ export class AiSettingsService {
     // Routes through it fall back to the default connection; defaults that were it fall back to the environment.
     await this.db.aiConnection.delete({ where: { id } })
     await this.audit.record({ actorId: adminId, action: 'ai.connection.deleted', targetType: 'AiConnection', targetId: id, metadata: { kind: existing.kind, label: existing.label } })
-    this.providers.invalidate()
+    await this.changed()
     return this.settings(adminId)
   }
 
@@ -150,7 +150,7 @@ export class AiSettingsService {
     const data = { chatConnectionId: chat?.id ?? null, embedConnectionId: embed?.id ?? null }
     await this.db.aiSettings.upsert({ where: { id: 1 }, create: { id: 1, ...data }, update: data })
     await this.audit.record({ actorId: adminId, action: 'ai.defaults.changed', targetType: 'AiSettings', metadata: { chat: chat?.label ?? null, embed: embed?.label ?? null } })
-    this.providers.invalidate()
+    await this.changed()
     return this.settings(adminId)
   }
 
@@ -166,7 +166,7 @@ export class AiSettingsService {
     const data = { connectionId: connection?.id ?? null, model, inputMicroUsdPerMTok: price(input.inputMicroUsdPerMTok, 'inputMicroUsdPerMTok'), outputMicroUsdPerMTok: price(input.outputMicroUsdPerMTok, 'outputMicroUsdPerMTok') }
     await this.db.aiModelRoute.upsert({ where: { task: input.task }, create: { task: input.task, ...data }, update: data })
     await this.audit.record({ actorId: adminId, action: 'ai.route.saved', targetType: 'AiModelRoute', metadata: { task: input.task, connection: connection?.label ?? null, model } })
-    this.providers.invalidate()
+    await this.changed()
     return this.settings(adminId)
   }
 
@@ -174,7 +174,7 @@ export class AiSettingsService {
     await this.assertAdmin(adminId)
     await this.db.aiModelRoute.deleteMany({ where: { task } })
     await this.audit.record({ actorId: adminId, action: 'ai.route.deleted', targetType: 'AiModelRoute', metadata: { task } })
-    this.providers.invalidate()
+    await this.changed()
     return this.settings(adminId)
   }
 
@@ -212,6 +212,12 @@ export class AiSettingsService {
     }
     if (!done.length) return { ok: models.length > 0, message: models.length ? `Reached it: ${models.length} models listed. Choose a chat or embedding model to try them.` : 'Choose a chat or embedding model to try.', latencyMs: Date.now() - started, models }
     return { ok: true, message: `${done.join('; ')}.`, latencyMs: Date.now() - started, models }
+  }
+
+  /** Every process reads the settings again on its next call (AiProviders checks the version). */
+  private async changed() {
+    await this.db.aiSettings.upsert({ where: { id: 1 }, create: { id: 1, version: 1 }, update: { version: { increment: 1 } } })
+    this.providers.invalidate()
   }
 
   private async assertAdmin(userId: string) {

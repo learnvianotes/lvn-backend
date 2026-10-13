@@ -203,6 +203,15 @@ describe('AI providers', () => {
     expect(await gateway({ provider: 'none', ollama: null }).status()).toEqual({ available: false, reason: 'NOT_CONFIGURED' })
   })
 
+  it('a change made elsewhere reaches a running process on its next call', async () => {
+    // One gateway kept across calls, as in the worker; the change is made as another process would make it.
+    const worker = gateway()
+    expect((await ask(worker)).model).toBe('gemma4')
+    const id = await connect({ kind: 'OPENAI_COMPATIBLE', baseUrl: openai.url, chatModel: 'litellm-model' })
+    await db.aiSettings.upsert({ where: { id: 1 }, create: { id: 1, chatConnectionId: id, version: 1 }, update: { chatConnectionId: id, version: { increment: 1 } } })
+    expect((await ask(worker)).model).toBe('litellm-model')
+  })
+
   it('stores keys sealed: the database never holds the key', async () => {
     const id = await connect({ kind: 'OPENAI', baseUrl: openai.url, key: 'sk-secret-value-9876', chatModel: 'gpt-test' })
     const row = await db.aiConnection.findUniqueOrThrow({ where: { id } })

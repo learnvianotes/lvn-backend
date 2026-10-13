@@ -31,18 +31,17 @@ interface State {
   routes: Map<string, Route>
 }
 
-/** Settings are read again after this long, so a change on one API instance reaches the others and the worker. */
-const STATE_CACHE_MS = 30_000
 
 /**
  * Which provider and model answer each call (ADR-0065). In order: the task's route (its connection, or the default
  * one, with its model and prices); the default connection for chats or for embeddings; the environment's provider.
- * A disabled connection, or one whose key cannot be read, answers nothing.
+ * A disabled connection, or one whose key cannot be read, answers nothing. Each call checks the settings' version (one
+ * row by its key), so a change made on one API instance reaches the others and the worker at once.
  */
 @Injectable()
 export class AiProviders {
   private readonly log = new Logger('AiProviders')
-  private cached: { at: number; state: Promise<State> } | null = null
+  private cached: { version: number; state: Promise<State> } | null = null
 
   constructor(
     private readonly db: PrismaService,
@@ -51,7 +50,7 @@ export class AiProviders {
     private readonly keys: AiKeys,
   ) {}
 
-  /** After a change: read the settings again on the next call. */
+  /** After a change in this process: read the settings again on the next call (the version tells the others). */
   invalidate(): void {
     this.cached = null
   }
@@ -111,10 +110,12 @@ export class AiProviders {
     return c?.row.enabled && c.adapter ? { connectionId: id, row: c.row, adapter: c.adapter } : null
   }
 
-  private state(): Promise<State> {
-    if (this.cached && Date.now() - this.cached.at < STATE_CACHE_MS) return this.cached.state
+  private async state(): Promise<State> {
+    const row = await this.db.aiSettings.findUnique({ where: { id: 1 }, select: { version: true } })
+    const version = row?.version ?? 0
+    if (this.cached && this.cached.version === version) return this.cached.state
     const state = this.load()
-    this.cached = { at: Date.now(), state }
+    this.cached = { version, state }
     state.catch(() => (this.cached = null))
     return state
   }

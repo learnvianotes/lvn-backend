@@ -51,7 +51,8 @@ Facts that shape the design:
    2. the default connection;
    3. the environment's provider (`AI_PROVIDER`).
    - A disabled connection, or one whose key cannot be read, is skipped, so AI falls back rather than failing.
-   - Settings are re-read within 30 seconds by every API instance and worker.
+   - Every change raises `AiSettings.version`; each process checks it (one row by its key) before a call and reads the
+     settings again when it moved, so a change on one API instance reaches the others and the worker at once.
 4. **Adapters.**
    - **OpenAI dialect, for `OPENAI`, `GEMINI` and `OPENAI_COMPATIBLE`:**
      - structured answers via `response_format: json_schema`;

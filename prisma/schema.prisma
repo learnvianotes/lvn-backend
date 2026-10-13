@@ -2097,9 +2097,11 @@ model AiConnection {
 }
 
 /// Which connection answers by default (ADR-0065); one row, id 1. With no chat connection, the environment's provider
-/// (AI_PROVIDER) answers.
+/// (AI_PROVIDER) answers. `version` goes up with every change to connections, defaults or routes, so every process
+/// reads them again on its next call.
 model AiSettings {
   id                Int           @id @default(1)
+  version           Int           @default(0)
   chatConnectionId  String?       @db.Uuid
   chatConnection    AiConnection? @relation("chatDefault", fields: [chatConnectionId], references: [id], onDelete: SetNull)
   embedConnectionId String?       @db.Uuid
