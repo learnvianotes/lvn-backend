@@ -148,10 +148,11 @@ if (aiStatus.available) {
   const artifactId = run.runAiTask.artifact?.id
   ok(run.runAiTask.artifact?.status === 'QUEUED', "B asks AI for flashcards of A's note", run.runAiTask.userErrors[0]?.message)
   let made
+  // The local model answers one request at a time: behind the PDF pages it reads again, the first task can wait minutes.
   const settled = await eventually(async () => {
     made = (await gql('query ($id: UUID!) { aiArtifact(id: $id) { status fromPublishedVersion cards { type } error } }', { id: artifactId }, B.token)).aiArtifact
     return made.status === 'READY' || made.status === 'FAILED'
-  }, 180_000)
+  }, 360_000)
   ok(settled && made.status === 'READY' && made.fromPublishedVersion && made.cards.length > 0 && made.cards.every((c) => c.type === 'flashcard'), 'the worker makes them with the real model, from the published version', made?.error ?? `${made?.cards?.length ?? 0} cards`)
   const kept = await gql('mutation ($input: KeepAiCardsInput!) { keepAiCards(input: $input) { noteId userErrors { message } } }', { input: { artifactId, cardIndexes: [0], into: 'NEW_NOTE' } }, B.token)
   const keptId = kept.keepAiCards.noteId
