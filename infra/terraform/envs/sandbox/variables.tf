@@ -96,3 +96,9 @@ variable "web_count" {
   type    = number
   default = 1
 }
+
+variable "aws_emulator" {
+  description = "true only for the AWS stand-in (ADR-0066): an AWS emulator (Moto) at AWS_ENDPOINT_URL instead of AWS"
+  type        = bool
+  default     = false
+}

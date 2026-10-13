@@ -7,6 +7,7 @@ own account with production sizes.
 ```text
 envs/sandbox   root module of the sandbox; settings in envs/sandbox/.env (template .env.example)
 envs/local     the local environment on a VM until the sandbox exists (ADR-0036); settings in envs/local/.env
+envs/emulated  settings only: the sandbox's root module against Moto, an AWS stand-in on its own VM (ADR-0066)
 bootstrap      the bucket for the Terraform state (once per account)
 modules/network   VPC; public and private subnets; optional NAT; security groups CloudFront → ALB → tasks → data
 modules/data      RDS PostgreSQL 16 (TLS only, generated password) and ElastiCache Redis 7 (encrypted)
@@ -18,7 +19,8 @@ modules/edge      CloudFront with HTTPS on its default address, reaching the ALB
 run.sh, bootstrap.sh, lib.sh   wrappers that load envs/<env>/.env
 ../scripts/deploy.sh           build, push, migrate, roll out
 ../scripts/deploy-local.sh     the same for the local environment
-../local-vm/vm.sh              the local environment's VM
+../local-vm/vm.sh              the local environment's VM (LVN_VM_ENV=emulated: the AWS stand-in's)
+../scripts/aws-stand-in.sh     the sandbox's Terraform against the AWS stand-in
 ```
 
 ## The local environment (no AWS account yet)
@@ -45,6 +47,34 @@ pnpm smoke http://127.0.0.1:8080 --mailpit http://127.0.0.1:8025
 `vm.sh stop` shuts the VM down and `vm.sh up` starts it again with everything in place; `vm.sh destroy` deletes its
 disk. The web build bakes in `TF_VAR_public_url`, so deploy again after changing it. Phones use the development build
 pointed at that URL (it allows plain HTTP); for Google sign-in on the web, add its host to Firebase's authorized domains.
+
+## The AWS stand-in (no AWS account yet)
+
+ADR-0066. The sandbox's own Terraform — `bootstrap`, `envs/sandbox` and every module — applied to
+[Moto](https://github.com/getmoto/moto), an AWS emulator, in a small VM of its own (2 CPUs, 3 GB). Nothing runs there:
+Moto records what Terraform asks for and answers like AWS, so a change to the modules can be planned, applied and
+destroyed before it meets a real account. The apps run on the local environment, not here.
+
+```bash
+cp infra/terraform/envs/emulated/.env.example infra/terraform/envs/emulated/.env   # set LVN_VM_DIR if you like
+infra/scripts/aws-stand-in.sh up          # first run: the VM (~3 min), Moto, the state bucket, terraform init
+infra/scripts/aws-stand-in.sh plan        # also apply | destroy | output | state …  (run.sh emulated …, in the VM)
+infra/scripts/aws-stand-in.sh check       # fmt, validate, apply everything, destroy everything
+infra/scripts/aws-stand-in.sh down         # stop the VM; Moto forgets the emulated account
+```
+
+| What | Where |
+| --- | --- |
+| Moto's API, and its dashboard at `/moto-api/` | `http://localhost:4566` (this machine only) |
+| A shell in the VM | `infra/scripts/aws-stand-in.sh ssh` (then `docker logs moto`) |
+| The AWS CLI against it | `AWS_ENDPOINT_URL=http://localhost:4566 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test aws …` |
+
+Moto keeps the account in memory: after `down` (or `reset`), `up` creates the state bucket again and the sandbox
+starts empty. `TF_VAR_aws_emulator=true` swaps the few pieces Moto cannot create, only in this env: a plain custom
+origin for CloudFront's VPC origin, the managed CloudFront policies by id, no ElastiCache (a placeholder host in
+`REDIS_URL`); the budget is left out. Those are checked only by the first real apply (ADR-0066 lists the gaps). A plan
+right after an apply is not empty: Moto reads some attributes back with defaults (RDS, CloudFront, SES); that is the
+emulator, not drift.
 
 ## The sandbox on AWS: what you need
 

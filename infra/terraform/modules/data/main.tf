@@ -54,12 +54,26 @@ resource "aws_db_instance" "this" {
   enabled_cloudwatch_logs_exports = ["postgresql"]
 }
 
+# The AWS stand-in (ADR-0066) has no Redis: Moto cannot read a replication group back (its member clusters are
+# missing), keeps a deleted cache cluster "deleting" for ever, and cannot delete a cache subnet group.
+moved {
+  from = aws_elasticache_subnet_group.this
+  to   = aws_elasticache_subnet_group.this[0]
+}
+
 resource "aws_elasticache_subnet_group" "this" {
+  count      = var.aws_emulator ? 0 : 1
   name       = var.name
   subnet_ids = var.subnet_ids
 }
 
+moved {
+  from = aws_elasticache_replication_group.this
+  to   = aws_elasticache_replication_group.this[0]
+}
+
 resource "aws_elasticache_replication_group" "this" {
+  count                      = var.aws_emulator ? 0 : 1
   replication_group_id       = var.name
   description                = "LearnViaNotes ${var.name}: sessions, rate limits, BullMQ queues"
   engine                     = "redis"
@@ -69,7 +83,7 @@ resource "aws_elasticache_replication_group" "this" {
   automatic_failover_enabled = var.multi_az
   multi_az_enabled           = var.multi_az
   port                       = 6379
-  subnet_group_name          = aws_elasticache_subnet_group.this.name
+  subnet_group_name          = aws_elasticache_subnet_group.this[0].name
   security_group_ids         = [var.security_group_id]
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true

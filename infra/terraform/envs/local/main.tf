@@ -4,12 +4,12 @@
 
 locals {
   images = {
-    postgres = "pgvector/pgvector:0.8.7-pg16"
-    redis    = "redis:7.4.11-alpine"
-    s3       = "rustfs/rustfs:1.0.1"
-    mailpit  = "axllent/mailpit:v1.31.4"
-    proxy    = "caddy:2.11.7-alpine"
-    awscli   = "amazon/aws-cli:2.37.10"
+    postgres  = "pgvector/pgvector:0.8.7-pg16"
+    redis     = "redis:7.4.11-alpine"
+    s3        = "rustfs/rustfs:1.0.1"
+    mailpit   = "axllent/mailpit:v1.31.4"
+    proxy     = "caddy:2.11.7-alpine"
+    awscli    = "amazon/aws-cli:2.37.10"
     clamav    = "clamav/clamav:1.5.4"
     typesense = "typesense/typesense:30.2"
   }
@@ -73,6 +73,8 @@ locals {
       AI_EMBED_MODEL = var.ai_embed_model
       # The budget breaker (ADR-0058), shown tripping and resetting by the lifecycle check.
       AI_MONTHLY_BUDGET_MICRO_USD = tostring(var.ai_monthly_budget_micro_usd)
+      # Encrypts the provider keys saved on /admin/ai (ADR-0065).
+      AI_KEYS_SECRET = random_password.ai_keys.result
     },
     { for k, v in local.optional : k => v if v != "" },
     var.extra_backend_environment,
@@ -89,6 +91,11 @@ resource "tls_private_key" "jwt" {
 }
 
 resource "random_password" "code_hmac" {
+  length  = 48
+  special = false
+}
+
+resource "random_password" "ai_keys" {
   length  = 48
   special = false
 }

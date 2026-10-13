@@ -16,8 +16,15 @@ variable "bucket" {
   type = string
 }
 
+variable "aws_emulator" {
+  description = "true only for the AWS stand-in (ADR-0066): an AWS emulator (Moto) at AWS_ENDPOINT_URL instead of AWS"
+  type        = bool
+  default     = false
+}
+
 provider "aws" {
-  region = var.region
+  region            = var.region
+  s3_use_path_style = var.aws_emulator
 }
 
 resource "aws_s3_bucket" "state" {
