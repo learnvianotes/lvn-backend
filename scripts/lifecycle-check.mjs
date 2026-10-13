@@ -309,7 +309,7 @@ if (opt('--vm')) {
   }
   const published = (await gql('mutation ($input: PublishClassQuizInput!) { publishClassQuiz(input: $input) { quiz { id questionCount } userErrors { message } } }', { input: { classroomId, title: `Lesson quiz ${WORD}`, questions, sourceNoteId: planId } }, A.token)).publishClassQuiz
   const quizId = published.quiz?.id
-  ok(!!quizId && (await eventually(async () => (await gql('{ notifications(first: 1) { edges { node { category path } } } }', {}, D.token)).notifications.edges[0]?.node.path === `/classes/${classroomId}/quizzes/${quizId}`)), 'A publishes a quiz to the class and D is told', published.userErrors[0]?.message ?? `${published.quiz?.questionCount} questions${quizByAi ? ' made by the real model' : ''}`)
+  ok(!!quizId && (await eventually(async () => (await gql('{ notifications(first: 1) { edges { node { category path } } } }', {}, D.token)).notifications.edges[0]?.node.path === `/classes/${classroomId}/quizzes/${quizId}`)), 'A publishes a quiz to the class and D is told', published.userErrors[0]?.message ?? `${published.quiz?.questionCount} question${published.quiz?.questionCount === 1 ? '' : 's'}${quizByAi ? ' made by the real model' : ''}`)
   const toTake = (await gql('query ($id: UUID!) { classQuiz(id: $id) { questions { id correct choices { id } } } }', { id: quizId }, D.token)).classQuiz
   const taken = (await gql('mutation ($input: SubmitQuizAttemptInput!) { submitQuizAttempt(input: $input) { attempt { score total } quiz { questions { correct } } userErrors { message } } }', { input: { quizId, clientOpId: newId(), answers: toTake.questions.map((q) => ({ questionId: q.id, choiceIds: [q.choices[0].id] })) } }, D.token)).submitQuizAttempt
   ok(toTake.questions.every((q) => q.correct === null) && taken.attempt?.total === toTake.questions.length && taken.quiz.questions.every((q) => q.correct?.length), 'D takes it without seeing the answers, is scored by the server, then sees them', taken.userErrors[0]?.message ?? `${taken.attempt?.score}/${taken.attempt?.total}`)
@@ -464,6 +464,25 @@ if (aiStatus.available) {
   const applied = cleaned?.changes?.length ? (await gql('mutation ($input: ApplyAiChangesInput!) { applyAiChanges(input: $input) { applied userErrors { message } } }', { input: { artifactId: cleanRun.runAiTask.artifact.id, cardIds: cleaned.changes.map((c) => c.cardId) } }, A.token)).applyAiChanges : null
   const mended = (await gql('query ($id: UUID!) { note(id: $id) { cards(first: 10) { edges { node { content } } } } }', { id: brokenId }, A.token)).note.cards.edges.map((e) => JSON.stringify(e.node.content)).join(' ')
   ok(applied?.applied.length === cleaned?.changes.length && mended.includes('the energy stored') && !mended.includes('en- ergy'), 'A applies them: the note’s cards are mended', applied?.userErrors[0]?.message)
+}
+
+// The monthly AI budget breaker (ADR-0058, Phase 5 exit), on the local environment (--vm): a month's spend over the
+// budget pauses AI for everyone, with words for the person; the same spend in last month's books does not count, and
+// AI answers again. The local model costs nothing, so the spend is written to the books directly.
+if (opt('--vm') && (await gql('{ aiStatus { available } }')).aiStatus.available) {
+  const spendId = newId()
+  sql(`INSERT INTO ai.\\"AiUsage\\" (id, task, provider, model, \\"promptTokens\\", \\"completionTokens\\", \\"costMicroUsd\\", \\"latencyMs\\", ok) VALUES ('${spendId}', 'LIFECYCLE_BUDGET', 'OLLAMA', 'gemma4', 0, 0, 2000000000, 0, true)`)
+  // Each API instance and the worker look at the month's spend once a minute.
+  let refused
+  const paused = await eventually(async () => {
+    refused = await gql('mutation ($input: RunAiTaskInput!) { runAiTask(input: $input) { artifact { id } userErrors { message } } }', { input: { noteId: id, task: 'SUMMARIZE' } }, A.token).catch((e) => ({ error: e.message }))
+    return (await gql('{ aiStatus { reason } }')).aiStatus.reason === 'BUDGET' && /budget/.test(JSON.stringify(refused))
+  }, 150_000)
+  ok(paused, 'a month’s spend over the budget pauses AI, saying why', JSON.stringify(refused)?.slice(0, 120))
+  sql(`UPDATE ai.\\"AiUsage\\" SET \\"createdAt\\" = date_trunc('month', now()) - interval '1 day' WHERE id = '${spendId}'`)
+  // The entrance takes turns between the two API instances: both answer again.
+  const answering = async () => (await gql('{ aiStatus { available } }')).aiStatus.available
+  ok(await eventually(async () => (await answering()) && (await answering()), 150_000), 'last month’s spend does not count: AI answers again')
 }
 
 console.log(`1..${n}`)

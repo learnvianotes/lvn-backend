@@ -71,6 +71,8 @@ locals {
       OLLAMA_URL     = var.ollama_url
       AI_CHAT_MODEL  = var.ai_chat_model
       AI_EMBED_MODEL = var.ai_embed_model
+      # The budget breaker (ADR-0058), shown tripping and resetting by the lifecycle check.
+      AI_MONTHLY_BUDGET_MICRO_USD = tostring(var.ai_monthly_budget_micro_usd)
     },
     { for k, v in local.optional : k => v if v != "" },
     var.extra_backend_environment,
