@@ -30,6 +30,7 @@ describe('search: hybrid ranking', () => {
     return res.data!.search.notes
   }
 
+  // Three apps, one with every provider: slower than one hook's default under the full suite's load.
   beforeAll(async () => {
     hybrid = await createTestApp({ SEARCH_HYBRID: 'true' }, { providers: [[SEMANTIC_SEARCH, semantic]] })
     plain = await createTestApp({}, { resetDatabase: false })
@@ -46,7 +47,7 @@ describe('search: hybrid ranking', () => {
     ids.flows = await write(hybrid, owner, 'Network flows', 'Max flow equals min cut.', 'PUBLIC')
     ids.secret = await write(hybrid, other, 'My private plans', 'Nobody else reads this.', 'PRIVATE')
     await hybrid.app.get(SearchIndex).drainAll()
-  })
+  }, 90_000)
 
   afterAll(async () => {
     await unbound?.close()

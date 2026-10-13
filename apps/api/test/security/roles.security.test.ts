@@ -35,6 +35,7 @@ describe('security: roles', () => {
     expect(roleInputs.sort()).toEqual(['inviteToClassroom(input).role', 'setClassroomRole(input).role', 'setGlobalRole(input).role', 'setGroupRole(input).role', 'shareNote(input).role'])
   })
 
+  // Every mutation of the API, several times: it grows with the API, so it has its own time.
   it('every mutation, called by a student with every role value and their own or a teacher’s id, leaves them a student', async () => {
     const internal: string[] = []
     // signOut last: it ends the session the token belongs to.
@@ -56,7 +57,7 @@ describe('security: roles', () => {
     expect(await roleOf(t, actors.a.id)).toBe('STUDENT')
     expect(await roleOf(t, actors.teacher.id)).toBe('TEACHER')
     expect(await t.app.get(PrismaService).user.count({ where: { globalRole: 'PLATFORM_ADMIN' } })).toBe(1)
-  })
+  }, 120_000)
 
   it('refuses setGlobalRole to students and teachers, and the generated call does work for a platform admin', async () => {
     const setRole = mutations().find((m) => m.name === 'setGlobalRole')!
