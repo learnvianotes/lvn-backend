@@ -524,6 +524,20 @@ if (opt('--vm') && (await gql('{ aiStatus { available } }')).aiStatus.available)
   ok(before.cards.some((c) => c.cardId === cardId) && graded.review?.state === 'REVIEW' && !after.cards.some((c) => c.cardId === cardId) && after.doneToday === before.doneToday + 1, 'A’s new flashcard is in today’s reviews; graded Easy it waits days', graded.userErrors[0]?.message ?? graded.review?.due)
 }
 
+// Rhythm (ADR-0069): A's focus day counts this week in A's zone; A plans six days, pauses from today and ends it.
+{
+  const RHYTHM = '{ rhythm { timeZone plannedDays target countedDays today { day counted } week { day status } pauses { id active } pauseDaysLeft } }'
+  const r = (await gql(RHYTHM, {}, A.token)).rhythm
+  ok(r.timeZone === 'Asia/Kolkata' && r.today.counted && r.countedDays >= 1 && r.week.find((d) => d.day === r.today.day)?.status === 'COUNTED', 'A’s Rhythm counts today, in A’s time zone', JSON.stringify({ zone: r.timeZone, today: r.today, counted: r.countedDays }))
+  const OK = (op, type) => `mutation ($input: ${type}!) { ${op}(input: $input) { ok userErrors { message code } } }`
+  const plan = (await gql(OK('setRhythmPlan', 'SetRhythmPlanInput'), { input: { plannedDays: [1, 2, 3, 4, 5, 6] } }, A.token)).setRhythmPlan
+  const paused = (await gql(OK('pauseRhythm', 'PauseRhythmInput'), { input: { from: r.today.day, to: r.today.day, reason: 'EXAMS' } }, A.token)).pauseRhythm
+  const during = (await gql(RHYTHM, {}, A.token)).rhythm
+  const ended = (await gql(OK('endRhythmPause', 'RhythmPauseIdInput'), { input: { id: during.pauses[0]?.id } }, A.token)).endRhythmPause
+  const after = (await gql(RHYTHM, {}, A.token)).rhythm
+  ok(plan.ok && paused.ok && ended.ok && during.plannedDays.length === 6 && during.pauses[0]?.active && during.pauseDaysLeft === 13 && !after.pauses.length && after.pauseDaysLeft === 14, 'A plans six days, pauses today for exams, and ends the pause: its day comes back', JSON.stringify([plan, paused, ended].map((x) => x.userErrors[0]?.message ?? 'ok')))
+}
+
 console.log(`1..${n}`)
 if (failed) {
   console.log(`# ${failed} of ${n} checks failed`)
