@@ -152,3 +152,28 @@ What the slices settled:
   - the draft legal pages' "mailto:[…]" links are text until the owner fills them in;
   - a /core problem without a video has no greyed-out video button;
   - the phone prototype's placeholder screen and mock data, never rendered, are removed.
+
+## Implementation notes (UI-b; 2026-10-14)
+
+- **Tabs are offered, not fixed.** A note shows Content, then AI Summary, Flashcards, Quiz and Discussions only when
+  each has something or a way to make something:
+  - AI available;
+  - an editor who can add a card;
+  - a published note's discussion.
+
+  A reader of a note without study material, while AI is off, sees Content and Discussions. The tab lives in `?tab=`.
+- **The cards stay mounted under the other tabs.** Autosave, undo and the editor's state carry on, and focus mode is
+  always the cards.
+- **The card rail replaces the outline column.** It is a row of the note's sections with Previous and Next, from
+  1024 px, and phones keep Contents.
+- **The dock's suggestions are existing tasks only.**
+  - The board's "Give examples with diagrams" has no task and is left out.
+  - "Create quick notes" is Tidy into notes for editors, and Make notes for someone who may only copy.
+  - The dock steps aside while the AI tasks sheet is open, so nothing is shown twice.
+- **Reaction counts** on a reader's note stay as ADR-0027 and ADR-0047 have them.
+- **Found on the local environment:**
+  - The card editors (flashcard, quiz, question, table, media) wrote `{ ...data, field }` with the data of their last
+    render. Two quick edits in a row could undo the first, and the live check lost a flashcard's back. They now write
+    onto the card's data as it is in the document.
+  - On public pages, the app's frame arriving with the session mounted the page again (an unsubscribe link's answer
+    vanished). The frame now keeps the page in place.
