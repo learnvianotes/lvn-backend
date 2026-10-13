@@ -44,7 +44,7 @@ describe('transcription and quick notes', () => {
   }
   const addCard = async (type: string, content: object) => {
     const id = newId()
-    const saved = await t.gql<{ updateNoteDraft: { results: { status: string; message: string | null }[] } }>(`mutation ($input: UpdateNoteDraftInput!) { updateNoteDraft(input: $input) { results { status message } ${ERRORS} } }`, { input: { noteId, ops: [{ kind: 'UPSERT', id, type, position: `b${Date.now()}`, content }] } }, owner.token)
+    const saved = await t.gql<{ updateNoteDraft: { results: { status: string; message: string | null }[] } }>(`mutation ($input: UpdateNoteDraftInput!) { updateNoteDraft(input: $input) { results { status message } ${ERRORS} } }`, { input: { noteId, ops: [{ kind: 'UPSERT', id, type, position: `b${Date.now()}1`, content }] } }, owner.token)
     expect(saved.data?.updateNoteDraft.results[0]).toMatchObject({ status: 'APPLIED' })
     return id
   }

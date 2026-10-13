@@ -1,0 +1,108 @@
+# Rhythm (ADR-0030, ADR-0069): a weekly, forgiving habit instead of a daily streak.
+
+enum RhythmDayStatus {
+  COUNTED
+  "A planned day that ended uncounted, and was not paused"
+  MISSED
+  "An unplanned day that ended uncounted: rest, never a miss"
+  REST
+  PAUSED
+  TODAY
+  AHEAD
+}
+
+enum RhythmPauseReason {
+  EXAMS
+  ILLNESS
+  FESTIVAL
+  TRAVEL
+  OTHER
+}
+
+type RhythmDay {
+  "YYYY-MM-DD, a learning day in the learner's zone"
+  day: String!
+  "1 Monday … 7 Sunday"
+  weekday: Int!
+  planned: Boolean!
+  counted: Boolean!
+  status: RhythmDayStatus!
+}
+
+"One part of today's ring"
+type RhythmItem {
+  "REVIEWS now; PLAN_TASK and WEAK_TOPIC with the exam planner"
+  kind: String!
+  done: Int!
+  total: Int!
+}
+
+type RhythmToday {
+  day: String!
+  learningSeconds: Int!
+  reviews: Int!
+  "10 learning minutes or 10 reviews"
+  counted: Boolean!
+  "The day after a missed planned day, until a day counts"
+  comeback: Boolean!
+  "Today followed a missed planned day and counted: back on rhythm"
+  cameBack: Boolean!
+  items: [RhythmItem!]!
+}
+
+type RhythmPause {
+  id: UUID!
+  from: String!
+  to: String!
+  reason: RhythmPauseReason!
+  active: Boolean!
+}
+
+type Rhythm {
+  timeZone: String!
+  "ISO weekdays, 1 Monday … 7 Sunday"
+  plannedDays: [Int!]!
+  "Planned days less paused ones, at least 1"
+  target: Int!
+  countedDays: Int!
+  met: Boolean!
+  "Monday to Sunday"
+  week: [RhythmDay!]!
+  today: RhythmToday!
+  weeksThisTerm: Int!
+  weeksAllTime: Int!
+  countedDaysAllTime: Int!
+  "Current and coming pauses"
+  pauses: [RhythmPause!]!
+  "Of the 14 a term"
+  pauseDaysLeft: Int!
+}
+
+input SetRhythmPlanInput {
+  "3 to 6 weekdays, 1 Monday … 7 Sunday"
+  plannedDays: [Int!]!
+}
+
+input PauseRhythmInput {
+  "YYYY-MM-DD, today or later"
+  from: String!
+  to: String!
+  reason: RhythmPauseReason!
+}
+
+input RhythmPauseIdInput {
+  id: UUID!
+}
+
+extend type Query {
+  "Signed in only"
+  rhythm: Rhythm!
+}
+
+extend type Mutation {
+  "Signed in only, as every mutation below"
+  setRhythmPlan(input: SetRhythmPlanInput!): OkPayload!
+  pauseRhythm(input: PauseRhythmInput!): OkPayload!
+  "Ends a pause early (or drops one not started); its unused days come back"
+  endRhythmPause(input: RhythmPauseIdInput!): OkPayload!
+}
