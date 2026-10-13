@@ -1,0 +1,67 @@
+# Ask AI (§10.2, ADR-0060): answers from the notes the asker may read, with their sources.
+
+"Where Ask AI looks, always within what the asker may read"
+enum AskAiScope {
+  "One note, as the asker reads it (the draft for its owner and editors)"
+  THIS_NOTE
+  "The asker's published notes"
+  MY_NOTES
+  "Notes shared with the asker's groups and classes"
+  MY_PLACES
+  PUBLIC
+  "Notes shared with a workspace: asked from one of its doubts (ADR-0015)"
+  WORKSPACE
+}
+
+"A passage an answer cites, by its number in the answer ([1], [2] …)"
+type AiSource {
+  n: Int!
+  noteId: UUID!
+  title: String!
+  "The published version it came from; null for a draft (this note, asked by its owner or an editor)"
+  versionId: UUID
+  cardIds: [UUID!]!
+  snippet: String!
+}
+
+"An Ask AI answer: the asker's own. Its text grows while it is RUNNING (live AI_ANSWER events say when)"
+type AiAnswer {
+  id: UUID!
+  question: String!
+  scope: AskAiScope!
+  status: AiArtifactStatus!
+  "Markdown citing sources as [n]"
+  text: String!
+  sources: [AiSource!]!
+  "FAILED: why, in words for the asker"
+  error: String
+  noteId: UUID
+  doubtId: UUID
+  createdAt: DateTime!
+}
+
+input AskAiInput {
+  question: String!
+  scope: AskAiScope!
+  "THIS_NOTE: the note"
+  noteId: UUID
+}
+
+type AskAiPayload {
+  answer: AiAnswer
+  userErrors: [UserError!]!
+}
+
+extend type Query {
+  aiAnswer(id: UUID!): AiAnswer
+  "The viewer's recent answers, newest first: about one note, one doubt, or all"
+  myAiAnswers(first: Int = 20, noteId: UUID, doubtId: UUID): [AiAnswer!]!
+}
+
+extend type Mutation {
+  "UNAVAILABLE when AI is off or failing; RATE_LIMITED when the day's allowance is used up"
+  askAi(input: AskAiInput!): AskAiPayload!
+  "Ask AI on a workspace doubt, over the notes shared with the workspace (ADR-0015)"
+  askAiAboutDoubt(doubtId: UUID!): AskAiPayload!
+  deleteAiAnswer(id: UUID!): OkPayload!
+}

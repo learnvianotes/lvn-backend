@@ -14,6 +14,8 @@ export { NoteAccessFacade } from './application/note-access.facade'
 export { NoteAiFacade } from './application/note-ai.facade'
 /** The search indexes, their outbox drainer and queue (§11, ADR-0055), run by apps/worker. */
 export { NOTES_SEARCH_QUEUE, SearchIndex } from './application/search-index'
+/** Ask AI's chunks (ADR-0060): embedded by apps/worker from the notes.chunks queue; NoteRetrievalFacade is NOTE_RETRIEVAL. */
+export { NOTES_CHUNKS_QUEUE, NoteChunks, NoteRetrievalFacade } from './application/note-chunks'
 /** Hybrid ranking's semantic side (ADR-0057), bound by Phase 5. */
 export { SEMANTIC_SEARCH, type SemanticSearch } from './application/search-ranking'
 /** The notes part of a data export (ADR-0018), bound to NOTES_DATA_EXPORT by the composition roots. */

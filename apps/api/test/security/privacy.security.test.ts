@@ -12,9 +12,9 @@ import { publicSchema } from './support/fuzz'
 /**
  * §17.1: B cannot read A's private data through any channel: account data (Phase 1); notes, their files, PDF
  * highlights and conversions, public pages, copies, search and exports (Phase 2); notifications and live updates
- * (Phase 3); groups and classrooms (Phase 3). Comments, recommendations and RAG arrive later; their assertions are todos
- * until then. Search is asked of both providers on the same data (Phase 4, ADR-0055): Postgres and Typesense must give
- * the same answer.
+ * (Phase 3); groups and classrooms (Phase 3). Ask AI has its own suite (rag-leakage.security.test.ts, Phase 5);
+ * recommendations arrive later and their assertions are todos until then. Search is asked of both providers on the
+ * same data (Phase 4, ADR-0055): Postgres and Typesense must give the same answer.
  */
 describe('security: privacy', () => {
   let t: TestApp
@@ -246,8 +246,10 @@ describe('security: privacy', () => {
         await verify(actors.b.id, false)
       }
     })
-    it.todo('B gets no recommendations or Ask AI answers that draw on A’s private notes (Phase 5)')
-    it.todo('unpublishing removes a note from recommendations and RAG within 60 seconds (Phase 5)')
+    // Ask AI (ADR-0060): rag-leakage.security.test.ts asks 1,000 questions without a leak, and ask-ai.e2e.test.ts shows a
+    // note leaving PUBLIC drops out of the next answer at once. Recommendations are not built yet.
+    it.todo('B gets no recommendations that draw on A’s private notes')
+    it.todo('unpublishing removes a note from recommendations within 60 seconds')
     it('subscriptions never deliver A’s events to B, and cannot ask for anyone else’s (ADR-0042)', async () => {
       // The live subscription takes no arguments: whose events a socket gets comes only from its token.
       expect(LIVE_SDL).toMatch(/type Subscription \{\s*live: LiveEvent!\s*\}/)

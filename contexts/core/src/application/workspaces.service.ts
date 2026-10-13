@@ -3,7 +3,7 @@ import { Action, can, GlobalRole, GroupRole as Role } from '@lvn/contracts/domai
 import { docSchema, docText } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { AUDIT, NOTE_ACCESS, PEOPLE, POLICY, type Audit, type NoteAccess, type People, type Policy } from '@lvn-backend/facades'
+import { AUDIT, NOTE_ACCESS, PEOPLE, POLICY, type Audit, type DoubtForAi, type NoteAccess, type People, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { CORE_CONFIG, type CoreConfig } from '../core.config'
@@ -262,6 +262,24 @@ export class WorkspacesService implements OnModuleInit {
         delete: doubt.authorId === viewerId || can(actor, Action.GROUP_MODERATE_POSTS, loaded.resource),
       },
     }
+  }
+
+  /**
+   * The DOUBTS facade (ADR-0060): a doubt and its answers as text for Ask AI on a doubt (ADR-0015), when the viewer may
+   * read it (on the workspace's team, or its mentor); else null.
+   */
+  async forAi(viewerId: string, doubtId: string): Promise<DoubtForAi | null> {
+    const found = await this.getDoubt(viewerId, doubtId)
+    if (!found) return null
+    const answers = await this.db.doubtAnswer.findMany({ where: { doubtId, deletedAt: null }, orderBy: { createdAt: 'asc' }, take: 20, select: { body: true } })
+    const text = [found.doubt.body, ...answers.map((a) => a.body)]
+      .map((body) => {
+        const parsed = docSchema.safeParse(body)
+        return parsed.success ? docText(parsed.data).trim() : ''
+      })
+      .filter(Boolean)
+      .join('\n\n')
+    return { groupId: found.doubt.groupId, title: found.doubt.title, text }
   }
 
   private async mustDoubt(viewerId: string, doubtId: string) {

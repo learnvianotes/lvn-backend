@@ -26,6 +26,8 @@ describe('liveEvent (ADR-0042)', () => {
 
   it('carries a kind, an id and a time', () => {
     expect(liveEvent.parse(event)).toEqual(event)
+    // An Ask AI answer with more text (ADR-0060): its id, never its words.
+    expect(liveEvent.parse({ ...event, kind: 'AI_ANSWER' })).toEqual({ ...event, kind: 'AI_ANSWER' })
   })
 
   it('carries nothing else: no text, no unknown kinds', () => {

@@ -23,6 +23,8 @@ export const LIVE_SDL = /* GraphQL */ `
 
   enum LiveEventKind {
     NOTIFICATION
+    "An Ask AI answer of the viewer's has more text: refetch aiAnswer(id) (ADR-0060)"
+    AI_ANSWER
   }
 
   "Something changed for the viewer: refetch it through /graphql"

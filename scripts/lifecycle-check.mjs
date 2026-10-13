@@ -160,6 +160,17 @@ if (aiStatus.available) {
   ok(asA.publishedVersion?.number === 1 && asA.aiArtifacts.length === 0, "A's note keeps its version, and A sees none of B's results")
   const used = (await gql('{ myAiAllowance { usedToday limitToday } }', {}, B.token)).myAiAllowance
   ok(used.usedToday > 0, "the model's tokens count against B's day", `${used.usedToday} of ${used.limitToday ?? 'no limit'}`)
+  // Ask AI (ADR-0060): the worker embeds the published version; B asks public notes and the answer cites A's note.
+  const embedded = opt('--vm') ? await eventually(async () => /\b[1-9]\d*\b/.test(sql(`SELECT count(*) FROM notes.\\"NoteChunk\\" WHERE \\"noteId\\" = '${id}'`).toString().split('\n')[2] ?? ''), 120_000) : true
+  ok(embedded, "the worker embeds A's published note for Ask AI")
+  const question = await gql('mutation ($input: AskAiInput!) { askAi(input: $input) { answer { id status } userErrors { message } } }', { input: { question: `What does a heap keep on top? ${WORD}`, scope: 'PUBLIC' } }, B.token)
+  const answerId = question.askAi.answer?.id
+  let answered
+  await eventually(async () => {
+    answered = (await gql('query ($id: UUID!) { aiAnswer(id: $id) { status text sources { noteId versionId } error } }', { id: answerId }, B.token)).aiAnswer
+    return answered.status === 'READY' || answered.status === 'FAILED'
+  }, 180_000)
+  ok(answered?.status === 'READY' && answered.text.length > 0 && answered.sources.some((s) => s.noteId === id && s.versionId), "B asks AI over public notes: the real model answers, citing A's note", answered?.error ?? question.askAi.userErrors[0]?.message ?? `${answered?.sources?.length ?? 0} sources`)
 } else {
   console.log(`# AI is off here (${aiStatus.reason}): AI tasks not checked`)
 }

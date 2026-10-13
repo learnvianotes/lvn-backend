@@ -152,6 +152,28 @@ type AiAllowance
 }
 
 """
+An Ask AI answer: the asker's own. Its text grows while it is RUNNING (live AI_ANSWER events say when)
+"""
+type AiAnswer
+  @join__type(graph: AI)
+{
+  id: UUID!
+  question: String!
+  scope: AskAiScope!
+  status: AiArtifactStatus!
+
+  """Markdown citing sources as [n]"""
+  text: String!
+  sources: [AiSource!]!
+
+  """FAILED: why, in words for the asker"""
+  error: String
+  noteId: UUID
+  doubtId: UUID
+  createdAt: DateTime!
+}
+
+"""
 What a task made for the viewer from a note (ADR-0059). Only its maker sees it, while they can read the note
 """
 type AiArtifact
@@ -218,6 +240,22 @@ enum AiLanguage
   ENGLISH @join__enumValue(graph: AI)
   HINDI @join__enumValue(graph: AI)
   TELUGU @join__enumValue(graph: AI)
+}
+
+"""A passage an answer cites, by its number in the answer ([1], [2] …)"""
+type AiSource
+  @join__type(graph: AI)
+{
+  n: Int!
+  noteId: UUID!
+  title: String!
+
+  """
+  The published version it came from; null for a draft (this note, asked by its owner or an editor)
+  """
+  versionId: UUID
+  cardIds: [UUID!]!
+  snippet: String!
 }
 
 type AiStatus
@@ -291,6 +329,41 @@ input AppealModerationInput
   entityType: ReportEntityType!
   entityId: UUID!
   message: String!
+}
+
+input AskAiInput
+  @join__type(graph: AI)
+{
+  question: String!
+  scope: AskAiScope!
+
+  """THIS_NOTE: the note"""
+  noteId: UUID
+}
+
+type AskAiPayload
+  @join__type(graph: AI)
+{
+  answer: AiAnswer
+  userErrors: [UserError!]!
+}
+
+"""Where Ask AI looks, always within what the asker may read"""
+enum AskAiScope
+  @join__type(graph: AI)
+{
+  """One note, as the asker reads it (the draft for its owner and editors)"""
+  THIS_NOTE @join__enumValue(graph: AI)
+
+  """The asker's published notes"""
+  MY_NOTES @join__enumValue(graph: AI)
+
+  """Notes shared with the asker's groups and classes"""
+  MY_PLACES @join__enumValue(graph: AI)
+  PUBLIC @join__enumValue(graph: AI)
+
+  """Notes shared with a workspace: asked from one of its doubts (ADR-0015)"""
+  WORKSPACE @join__enumValue(graph: AI)
 }
 
 input AskDoubtInput
@@ -1855,6 +1928,17 @@ type Mutation
   runAiTask(input: RunAiTaskInput!): AiArtifactPayload! @join__field(graph: AI)
   keepAiCards(input: KeepAiCardsInput!): KeepAiCardsPayload! @join__field(graph: AI)
   deleteAiArtifact(id: UUID!): OkPayload! @join__field(graph: AI)
+
+  """
+  UNAVAILABLE when AI is off or failing; RATE_LIMITED when the day's allowance is used up
+  """
+  askAi(input: AskAiInput!): AskAiPayload! @join__field(graph: AI)
+
+  """
+  Ask AI on a workspace doubt, over the notes shared with the workspace (ADR-0015)
+  """
+  askAiAboutDoubt(doubtId: UUID!): AskAiPayload! @join__field(graph: AI)
+  deleteAiAnswer(id: UUID!): OkPayload! @join__field(graph: AI)
   markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload! @join__field(graph: COMMUNICATION)
   updateNotificationSettings(input: UpdateNotificationSettingsInput!): NotificationSettingsPayload! @join__field(graph: COMMUNICATION)
 
@@ -2839,6 +2923,13 @@ type Query
   @join__type(graph: NOTES)
   @join__type(graph: USERS)
 {
+  aiAnswer(id: UUID!): AiAnswer @join__field(graph: AI)
+
+  """
+  The viewer's recent answers, newest first: about one note, one doubt, or all
+  """
+  myAiAnswers(first: Int = 20, noteId: UUID, doubtId: UUID): [AiAnswer!]! @join__field(graph: AI)
+
   """
   One of the viewer's AI results; null when it is not theirs or they can no longer read the note
   """
