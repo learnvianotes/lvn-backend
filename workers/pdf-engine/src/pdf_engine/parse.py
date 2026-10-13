@@ -14,6 +14,8 @@ from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 
+from .escalate import Escalation, PageSignal, choose, page_signals, render_pages
+
 #: Pictures are kept at twice the page's resolution: sharp enough for a note, small enough to store
 PICTURE_SCALE = 2.0
 
@@ -34,6 +36,11 @@ class Parsed:
     pictures: list[Picture] = field(default_factory=list)
     pages: int = 0
     seconds: float = 0.0
+    #: Each page's scores and formula regions (stage 4, ADR-0063)
+    signals: list[PageSignal] = field(default_factory=list)
+    #: The pages to read again with the vision model, and their PNGs
+    escalate: list[Escalation] = field(default_factory=list)
+    page_images: dict[int, bytes] = field(default_factory=dict)
 
 
 @lru_cache(maxsize=4)
@@ -71,6 +78,16 @@ def parse_pdf(path: Path, *, ocr: bool, languages: tuple[str, ...] = ("en",)) ->
         image = picture.get("image")
         if isinstance(image, dict):
             image["uri"] = f"pictures/{index}.png"
+    pages = len(document.get("pages", {}))
+    signals = page_signals(result.confidence, document)
+    escalate = choose(signals, pages)
+    page_images = render_pages(path, [e.page for e in escalate]) if escalate else {}
     return Parsed(
-        document=document, pictures=pictures, pages=len(document.get("pages", {})), seconds=time.monotonic() - started
+        document=document,
+        pictures=pictures,
+        pages=pages,
+        seconds=time.monotonic() - started,
+        signals=signals,
+        escalate=[e for e in escalate if e.page in page_images],
+        page_images=page_images,
     )

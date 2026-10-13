@@ -2,17 +2,18 @@ import { z } from 'zod'
 import { CardType, type AiTaskType } from '@lvn/contracts/domain'
 import { parseCardContent } from '@lvn/contracts/validation'
 import type { NewCard } from '@lvn-backend/facades'
+import type { TextChange } from './clean-up'
 
 export type AiLanguage = 'ENGLISH' | 'HINDI' | 'TELUGU'
 export const LANGUAGE_NAMES: Record<AiLanguage, string> = { ENGLISH: 'English', HINDI: 'Hindi', TELUGU: 'Telugu' }
 
-/** What a task gives (ADR-0059): text shown beside the note, or cards to keep. */
-export type TaskResult = { markdown: string } | { title: string; cards: NewCard[] }
+/** What a task gives (ADR-0059): text shown beside the note, cards to keep, or changes to the note's words (ADR-0063). */
+export type TaskResult = { markdown: string } | { title: string; cards: NewCard[] } | { changes: TextChange[] }
 
 export interface TaskDef<T> {
   task: AiTaskType
-  /** TEXT: Markdown beside the note; CARDS: cards the person keeps */
-  kind: 'TEXT' | 'CARDS'
+  /** TEXT: Markdown beside the note; CARDS: cards the person keeps; CHANGES: card text the person applies */
+  kind: 'TEXT' | 'CARDS' | 'CHANGES'
   /** contexts/ai/prompts/<prompt>.md */
   prompt: string
   schema: z.ZodType<T>
@@ -22,7 +23,7 @@ export interface TaskDef<T> {
   codeOnly?: true
   /** Hears one audio or video card (TRANSCRIBE), or also sees the note's photos (QUICK_NOTE) (ADR-0062) */
   input?: 'AUDIO' | 'IMAGES'
-  /** Only on a note the person may edit: their own rough material (QUICK_NOTE) */
+  /** Only on a note the person may edit: their own rough material (QUICK_NOTE), or its words to mend (CLEAN_UP) */
   editorsOnly?: true
 }
 
@@ -35,7 +36,7 @@ export const doc = (text: string) => ({ type: 'doc', content: text.split(/\n\s*\
 export const inline = (text: string) => textNodes(text.replace(/\s+/g, ' ').trim())
 
 /** Only cards that pass their type's schema in @lvn/contracts are kept; the preview is exactly what will be stored. */
-function valid(cards: NewCard[]): NewCard[] {
+export function valid(cards: NewCard[]): NewCard[] {
   return cards.flatMap((c) => {
     const parsed = parseCardContent(c.type, c.content)
     return parsed.ok ? [{ type: c.type, content: parsed.content }] : []
@@ -62,6 +63,9 @@ const quiz = z.object({
 })
 const sheet = z.object({ sections: z.array(z.object({ heading: z.string().min(1), points: z.array(z.string().min(1)).min(1).max(10) })).min(1).max(8) })
 const newNote = z.object({ title: z.string().min(1), sections: z.array(z.object({ heading: z.string().min(1), text: z.string().min(1) })).min(1).max(12) })
+
+/** CLEAN_UP's answer for one batch: the passages it would change, by their number (ADR-0063). */
+export const repairs = z.object({ changes: z.array(z.object({ n: z.number().int().min(1), text: z.string() })).max(100) })
 
 /** TRANSCRIBE's answer is put together from the pieces' plain text, not asked of the model as JSON. */
 const transcript = z.object({ text: z.string(), cut: z.boolean() })
@@ -138,6 +142,8 @@ export const TASKS: { [K in AiTaskType]: TaskDef<unknown> } = {
     }),
   },
   QUICK_NOTE: { task: 'QUICK_NOTE', kind: 'CARDS', prompt: 'quick-note', schema: newNote, input: 'IMAGES', editorsOnly: true, result: noteFromSections },
+  // Asked batch by batch; the service puts the checked changes together (ADR-0063).
+  CLEAN_UP: { task: 'CLEAN_UP', kind: 'CHANGES', prompt: 'clean-up', schema: repairs, editorsOnly: true, result: (o: { changes: TextChange[] }) => ({ changes: o.changes }) },
 }
 
 /** The most of a note's words a task reads; the rest is cut, and the person is told. */

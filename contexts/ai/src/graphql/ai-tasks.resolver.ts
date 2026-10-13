@@ -12,7 +12,7 @@ type Options = { language?: AiLanguage; cut?: boolean }
 
 /** An artifact as GraphQL shows it: its payload spread into `markdown` or `title` and `cards`. */
 const toArtifact = (a: ArtifactRow) => {
-  const payload = (a.status === 'READY' ? a.payload : null) as { markdown?: string; title?: string; cards?: unknown[] } | null
+  const payload = (a.status === 'READY' ? a.payload : null) as { markdown?: string; title?: string; cards?: unknown[]; changes?: { cardId: string; before: string; after: string }[]; applied?: string[] } | null
   const options = a.options as Options
   return {
     id: a.id,
@@ -22,6 +22,7 @@ const toArtifact = (a: ArtifactRow) => {
     markdown: payload?.markdown ?? null,
     title: payload?.title ?? null,
     cards: payload?.cards ?? null,
+    changes: payload?.changes?.map((c) => ({ ...c, applied: !!payload.applied?.includes(c.cardId) })) ?? null,
     error: a.error,
     fromPublishedVersion: a.versionId !== null,
     truncated: !!options.cut,
@@ -52,6 +53,12 @@ export class AiTasksResolver {
   @UseGuards(SignedInGuard)
   keepAiCards(@Args('input') input: { artifactId: string; cardIndexes: number[]; into: 'NOTE' | 'NEW_NOTE' }, @CurrentViewer() viewer: Viewer) {
     return withUserErrors<{ noteId: string | null; userErrors: UserError[] }>(async () => ({ noteId: await this.tasks.keep(viewer.userId, input) }), { noteId: null })
+  }
+
+  @Mutation('applyAiChanges')
+  @UseGuards(SignedInGuard)
+  applyAiChanges(@Args('input') input: { artifactId: string; cardIds: string[] }, @CurrentViewer() viewer: Viewer) {
+    return withUserErrors<{ applied: string[]; userErrors: UserError[] }>(async () => ({ applied: await this.tasks.apply(viewer.userId, input) }), { applied: [] })
   }
 
   @Mutation('deleteAiArtifact')

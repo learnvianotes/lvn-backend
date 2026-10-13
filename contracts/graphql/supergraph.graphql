@@ -193,6 +193,11 @@ type AiArtifact
   """Card tasks, once READY: the cards to choose from"""
   cards: [AiCard!]
 
+  """
+  CLEAN_UP, once READY: the changes to choose from (empty when nothing needs mending)
+  """
+  changes: [AiChange!]
+
   """FAILED: why, in words for the person"""
   error: String
 
@@ -232,6 +237,20 @@ type AiCard
 {
   type: String!
   content: JSON!
+}
+
+"""A card's words as CLEAN_UP would leave them (ADR-0063)"""
+type AiChange
+  @join__type(graph: AI)
+{
+  cardId: UUID!
+
+  """What the card said when the change was made"""
+  before: String!
+  after: String!
+
+  """Applied to the note with applyAiChanges"""
+  applied: Boolean!
 }
 
 """
@@ -316,6 +335,11 @@ enum AiTask
   The person's own note's rough words and photos, as a structured note (ADR-0062)
   """
   QUICK_NOTE @join__enumValue(graph: AI)
+
+  """
+  Mends what PDF conversion broke in the text, heading and quote cards of a note the person may edit, as changes to apply (ADR-0063)
+  """
+  CLEAN_UP @join__enumValue(graph: AI)
 }
 
 """Why AI is not answering"""
@@ -359,6 +383,25 @@ input AppealModerationInput
   entityType: ReportEntityType!
   entityId: UUID!
   message: String!
+}
+
+input ApplyAiChangesInput
+  @join__type(graph: AI)
+{
+  artifactId: UUID!
+
+  """The cards whose changes to apply"""
+  cardIds: [UUID!]!
+}
+
+type ApplyAiChangesPayload
+  @join__type(graph: AI)
+{
+  """
+  The cards changed; a card edited since the change was made is left as it is
+  """
+  applied: [UUID!]!
+  userErrors: [UserError!]!
 }
 
 input AskAiInput
@@ -1957,6 +2000,11 @@ type Mutation
   """
   runAiTask(input: RunAiTaskInput!): AiArtifactPayload! @join__field(graph: AI)
   keepAiCards(input: KeepAiCardsInput!): KeepAiCardsPayload! @join__field(graph: AI)
+
+  """
+  Applies chosen changes of a CLEAN_UP result to the note, through the normal save (ADR-0063)
+  """
+  applyAiChanges(input: ApplyAiChangesInput!): ApplyAiChangesPayload! @join__field(graph: AI)
   deleteAiArtifact(id: UUID!): OkPayload! @join__field(graph: AI)
 
   """
@@ -2822,6 +2870,16 @@ type PdfConversion
   """Pages without a text layer, read with OCR"""
   scannedPages: Int
   cards: Int
+
+  """
+  Pages the vision model read again where the OCR was unsure or met maths (ADR-0063)
+  """
+  aiPages: Int
+
+  """
+  Of those, the readings rejected for disagreeing with the OCR (its cards kept)
+  """
+  aiRejected: Int
 
   """Why it failed, in words for people"""
   error: String

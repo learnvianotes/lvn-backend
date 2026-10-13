@@ -105,6 +105,17 @@ describe('converting PDFs into notes', () => {
     expect((await t.gql<{ pdfPagesThisMonth: { used: number; limit: number | null } }>('{ pdfPagesThisMonth { used limit } }', {}, owner.token)).data!.pdfPagesThisMonth).toEqual({ used: 1, limit: null })
   })
 
+  it('keeps the OCR’s cards of the pages the engine chose to read again when AI is off (ADR-0063)', async () => {
+    const { noteId, fileId } = await pdfNote()
+    const id = (await convert(owner.token, noteId, fileId)).conversion!.id
+    const sha256 = createHash('sha256').update(randomBytes(16)).digest('hex')
+    await conversions.triaged({ conversionId: id, pages: 1, scannedPages: 1, sha256, encrypted: false })
+    const parsed = await engineParsed(`pdf-engine/${sha256}/`)
+    await conversions.map({ ...parsed, conversionId: id, escalate: [{ page: 1, reason: 'low-confidence', score: 0.4, ocr: 0.4, key: `pdf-engine/${sha256}/pages/1.png` }] })
+    const seen = await t.gql<{ pdfConversion: { status: string; cards: number; aiPages: number | null; aiRejected: number | null } }>('query ($id: UUID!) { pdfConversion(id: $id) { status cards aiPages aiRejected } }', { id }, owner.token)
+    expect(seen.data!.pdfConversion).toEqual({ status: 'DONE', cards: 8, aiPages: 0, aiRejected: 0 })
+  })
+
   it('reads a PDF once: the same PDF converted again reuses what the engine read', async () => {
     const { noteId, fileId } = await pdfNote()
     const sha256 = createHash('sha256').update(randomBytes(16)).digest('hex')

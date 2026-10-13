@@ -16,6 +16,8 @@ export { AiEmbeddings } from './application/ai-embeddings'
 export { PIPELINE_TASKS, PublicPipeline } from './application/public-pipeline'
 /** Recordings and photos for the model (ADR-0062). */
 export { MAX_IMAGES, MAX_SECONDS, PIECE_SECONDS } from './application/media-input'
+/** PDF pages the vision model reads again (ADR-0063): the PAGE_VISION facade. */
+export { AiPageVision } from './application/page-vision'
 
 /** This context's federation subgraph, composed by apps/api's gateway (ADR-0033). */
 export const aiSubgraph = { name: 'ai', typeDefs: aiTypeDefs, modules: [AiModule] }

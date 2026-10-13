@@ -36,6 +36,8 @@ export interface AiArtifact {
   title: string | null
   /** Card tasks, once READY: the cards to choose from */
   cards: Array<AiCard> | null
+  /** CLEAN_UP, once READY: the changes to choose from (empty when nothing needs mending) */
+  changes: Array<AiChange> | null
   /** FAILED: why, in words for the person */
   error: string | null
   /** Made from the published version (the viewer is a reader) rather than the draft */
@@ -58,6 +60,16 @@ export type AiArtifactStatus = 'QUEUED' | 'RUNNING' | 'READY' | 'FAILED'
 export interface AiCard {
   type: string
   content: unknown
+}
+
+/** A card's words as CLEAN_UP would leave them (ADR-0063) */
+export interface AiChange {
+  cardId: string
+  /** What the card said when the change was made */
+  before: string
+  after: string
+  /** Applied to the note with applyAiChanges */
+  applied: boolean
 }
 
 /** A study aid made from a public note's published version: a summary, key concepts, practice questions, a quiz or flashcards */
@@ -93,10 +105,22 @@ export interface AiStatus {
   reason: AiUnavailableReason | null
 }
 
-export type AiTask = 'SUMMARIZE' | 'KEY_CONCEPTS' | 'EXPLAIN_SIMPLY' | 'PRACTICE_QUESTIONS' | 'TRANSLATE' | 'FIND_MISTAKES' | 'EXPLAIN_CODE' | 'FLASHCARDS' | 'QUIZ' | 'REVISION_SHEET' | 'CREATE_NOTES' | 'OUTLINE_TO_NOTE' | 'TRANSCRIBE' | 'QUICK_NOTE'
+export type AiTask = 'SUMMARIZE' | 'KEY_CONCEPTS' | 'EXPLAIN_SIMPLY' | 'PRACTICE_QUESTIONS' | 'TRANSLATE' | 'FIND_MISTAKES' | 'EXPLAIN_CODE' | 'FLASHCARDS' | 'QUIZ' | 'REVISION_SHEET' | 'CREATE_NOTES' | 'OUTLINE_TO_NOTE' | 'TRANSCRIBE' | 'QUICK_NOTE' | 'CLEAN_UP'
 
 /** Why AI is not answering */
 export type AiUnavailableReason = 'NOT_CONFIGURED' | 'BUDGET' | 'PROVIDER_DOWN'
+
+export interface ApplyAiChangesInput {
+  artifactId: string
+  /** The cards whose changes to apply */
+  cardIds: Array<string>
+}
+
+export interface ApplyAiChangesPayload {
+  /** The cards changed; a card edited since the change was made is left as it is */
+  applied: Array<string>
+  userErrors: Array<UserError>
+}
 
 export interface AskAiInput {
   question: string
@@ -136,6 +160,10 @@ export interface MutationRunAiTaskArgs {
 
 export interface MutationKeepAiCardsArgs {
   input: KeepAiCardsInput
+}
+
+export interface MutationApplyAiChangesArgs {
+  input: ApplyAiChangesInput
 }
 
 export interface MutationDeleteAiArtifactArgs {

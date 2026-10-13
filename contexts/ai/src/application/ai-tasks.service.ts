@@ -6,7 +6,8 @@ import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { LIVE, NOTE_AI, type Live, type NoteAi, type NoteAiSource } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
-import { LANGUAGE_NAMES, SOURCE_CHARS, TASKS, type AiLanguage, type TaskResult } from '../domain/tasks'
+import { batches, batchText, isRepair, type TextChange } from '../domain/clean-up'
+import { LANGUAGE_NAMES, repairs, SOURCE_CHARS, TASKS, type AiLanguage, type TaskResult } from '../domain/tasks'
 import { AiGateway } from './ai-gateway'
 import { MediaInput } from './media-input'
 
@@ -54,10 +55,10 @@ export class AiTasksService {
     const status = await this.gateway.status()
     if (!status.available) throw Errors.unavailable(status.reason === 'BUDGET' ? 'AI is paused until next month: this month’s AI budget is used up.' : status.reason === 'PROVIDER_DOWN' ? 'AI is not answering right now. Try again in a minute.' : 'AI is not switched on here.')
     const source = await this.allowed(viewerId, input.noteId, input.task)
-    if (def.editorsOnly && !source.canEdit) throw Errors.forbidden('Quick notes are made from your own notes.')
+    if (def.editorsOnly && !source.canEdit) throw Errors.forbidden(def.kind === 'CHANGES' ? 'Only people who can edit the note clean it up.' : 'Quick notes are made from your own notes.')
     const cards = this.pick(source, input.cardIds ?? null, def)
     if (def.input === 'AUDIO' && cards.length !== 1) throw Errors.validation('Choose one recording or video to transcribe.', ['input', 'cardIds'])
-    if (!cards.length) throw Errors.validation(def.codeOnly ? 'This note has no code to explain.' : 'This note has nothing to work on yet.', ['input', 'noteId'])
+    if (!cards.length) throw Errors.validation(def.codeOnly ? 'This note has no code to explain.' : def.kind === 'CHANGES' ? 'This note has no text to clean up.' : 'This note has nothing to work on yet.', ['input', 'noteId'])
     const { usedToday, limitToday, resetsAt } = await this.gateway.allowance(viewerId)
     if (limitToday !== null && usedToday >= limitToday) throw Errors.rateLimited(Math.ceil((resetsAt.getTime() - Date.now()) / 1000), 'You have used today’s AI allowance. It renews at midnight UTC.')
     const options: Options = { language: input.language ?? 'ENGLISH', cardIds: input.cardIds?.length ? input.cardIds : null }
@@ -84,6 +85,7 @@ export class AiTasksService {
       const def = TASKS[task]
       const source = artifact.ownerId ? await this.allowed(artifact.ownerId, artifact.noteId, task) : await this.publicVersion(artifact.noteId, artifact.versionId)
       ownerOfNote = source.ownerId
+      if (def.editorsOnly && !source.canEdit) throw Errors.forbidden('You can no longer edit this note.')
       const cards = this.pick(source, options.cardIds, def)
       const isPrivate = source.visibility !== 'PUBLIC'
       let result: TaskResult
@@ -93,6 +95,11 @@ export class AiTasksService {
         const heard = await this.media.transcribe(fileOf(cards[0]!)!, { userId: artifact.ownerId, private: isPrivate })
         cut = heard.cut
         result = def.result(heard, source.title)
+      } else if (def.kind === 'CHANGES') {
+        // CLEAN_UP: the note's words, batch by batch, as the person's work (ADR-0063).
+        const mended = await this.cleanUp(task, artifact.ownerId!, cards, isPrivate)
+        cut = mended.cut
+        result = def.result({ changes: mended.changes }, source.title)
       } else {
         const words = def.input === 'IMAGES' ? cards.filter((c) => c.type !== CardType.IMAGE) : cards
         let body = words.map((c) => (c.type === CardType.CODE ? `\`\`\`${(c.content as { language?: string }).language ?? ''}\n${c.text}\n\`\`\`` : c.text)).join('\n\n')
@@ -123,6 +130,44 @@ export class AiTasksService {
     }
     // The owner's note page follows its study aids' progress (ADR-0061).
     if (!artifact.ownerId && ownerOfNote) await this.live.notify(ownerOfNote, LiveEventKind.NOTE_PROCESSING, artifact.noteId).catch(() => undefined)
+  }
+
+  /**
+   * The changes the model proposes for the cards' words, checked one by one (`isRepair`). Batches run in order; when the
+   * allowance or the model gives out after the first, what was found so far is kept and the rest counts as cut.
+   */
+  private async cleanUp(task: AiTaskType, userId: string, cards: NoteAiSource['cards'], isPrivate: boolean): Promise<{ changes: TextChange[]; cut: boolean }> {
+    const plan = batches(cards)
+    const changes: TextChange[] = []
+    for (const [i, batch] of plan.batches.entries()) {
+      try {
+        const generated = await this.gateway.generate({ task, userId, private: isPrivate, prompt: 'clean-up', content: { passages: batchText(batch) }, schema: repairs, temperature: 0 })
+        for (const { n, text } of generated.output.changes) {
+          const card = batch[n - 1]
+          if (card && !changes.some((c) => c.cardId === card.id) && isRepair(card.text, text)) changes.push({ cardId: card.id, before: card.text, after: text.trim() })
+        }
+      } catch (e) {
+        if (i === 0) throw e
+        return { changes, cut: true }
+      }
+    }
+    return { changes, cut: plan.cut }
+  }
+
+  /**
+   * Applies chosen changes of the person's CLEAN_UP result to the note, through the notes context (ADR-0063). A card
+   * edited since the change was proposed is left as it is. Returns the cards changed.
+   */
+  async apply(viewerId: string, input: { artifactId: string; cardIds: string[] }): Promise<string[]> {
+    const artifact = await this.mine(viewerId, input.artifactId)
+    const payload = artifact.payload as { changes?: TextChange[]; applied?: string[] } | null
+    if (artifact.status !== 'READY' || !payload?.changes) throw Errors.validation('There are no changes to apply here.')
+    const picked = payload.changes.filter((c) => input.cardIds.includes(c.cardId))
+    if (!picked.length) throw Errors.validation('Choose at least one change.', ['input', 'cardIds'])
+    const applied = await this.notes.rewriteText(viewerId, artifact.noteId, picked.map((c) => ({ cardId: c.cardId, before: c.before, text: c.after })))
+    const all = [...new Set([...(payload.applied ?? []), ...applied])]
+    await this.db.noteArtifact.update({ where: { id: artifact.id }, data: { payload: { ...payload, applied: all } as unknown as Prisma.InputJsonValue, ...(applied.length ? { keptAt: new Date() } : {}) } })
+    return applied
   }
 
   /** A public note's published version, as anyone reads it; gone when it is no longer public or has a newer version. */
@@ -198,15 +243,22 @@ export class AiTasksService {
     return source
   }
 
-  /** The cards a task reads: code (EXPLAIN_CODE), one recording (TRANSCRIBE), words and photos (QUICK_NOTE), else words. */
+  /**
+   * The cards a task reads: code (EXPLAIN_CODE), one recording (TRANSCRIBE), words and photos (QUICK_NOTE), text,
+   * heading and quote cards (CLEAN_UP), else words.
+   */
   private pick(source: NoteAiSource, cardIds: string[] | null, def: (typeof TASKS)[AiTaskType]) {
     const chosen = cardIds?.length ? source.cards.filter((c) => cardIds.includes(c.id)) : source.cards
     if (def.codeOnly) return chosen.filter((c) => c.type === CardType.CODE)
+    if (def.kind === 'CHANGES') return chosen.filter((c) => MENDABLE.has(c.type) && c.text.trim().length > 0)
     if (def.input === 'AUDIO') return chosen.filter((c) => (c.type === CardType.AUDIO || c.type === CardType.VIDEO) && !!fileOf(c))
     if (def.input === 'IMAGES') return chosen.filter((c) => c.text.trim().length > 0 || (c.type === CardType.IMAGE && !!fileOf(c)))
     return chosen.filter((c) => c.text.trim().length > 0)
   }
 }
+
+/** The cards whose words clean-up mends (ADR-0063), as the notes context rewrites them. */
+const MENDABLE: ReadonlySet<string> = new Set([CardType.TEXT, CardType.HEADING, CardType.QUOTE])
 
 /** A media card's file. */
 const fileOf = (c: { content: unknown }) => (c.content as { fileId?: string } | null)?.fileId ?? null

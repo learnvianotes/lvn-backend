@@ -25,3 +25,13 @@ def test_a_digital_chapter_keeps_its_structure() -> None:
 @pytest.mark.models
 def test_the_evaluation_set_passes() -> None:
     assert main([str(FIXTURES), "--min-recall", "0.9"]) == 0
+
+
+@pytest.mark.models
+def test_a_scanned_hindi_page_goes_to_the_vision_model() -> None:
+    # ADR-0063: the `en` recogniser reads almost none of it and Docling grades the page "fair", so it is escalated,
+    # and rendered for the vision model.
+    parsed = parse_pdf(FIXTURES / "hindi-scan.pdf", ocr=True)
+    assert [e.page for e in parsed.escalate] == [1]
+    assert parsed.escalate[0].reason == "low-confidence"
+    assert parsed.page_images[1].startswith(b"\x89PNG")
