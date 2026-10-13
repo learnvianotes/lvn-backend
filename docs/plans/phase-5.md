@@ -69,7 +69,7 @@ repo it touches and checked on the local environment. Nothing is pushed.
 
 | Slice | State | Evidence |
 | --- | --- | --- |
-| P5a AI gateway | In progress | |
+| P5a AI gateway | Done 2026-10-13 | ADR-0058. The `ai` context: `AiGateway` with an Ollama adapter (JSON-schema answers, streaming, embeddings, images), `ai.AiModelRoute` (task → model, prices), an `AiUsage` row per call, the plan's `AI_TOKENS_DAILY` (the FREE plan already set §10.1's numbers by role; no limits in code), a monthly budget breaker with `AiBudgetThreshold` at 80 % and 100 %, a circuit breaker (three failures open it for 30 s), versioned prompts in `contexts/ai/prompts` with people's text fenced, one repair of an answer that does not fit, and the data-processing flag. `aiStatus` and `myAiAllowance` on a new `ai` subgraph; `ErrorCode.UNAVAILABLE`. Contracts 0.33.0. Tests: gateway 13 against Postgres and a stand-in Ollama (`libs/testing`), a live adapter test against the real Ollama (gemma4, embeddinggemma), API 2, contracts config 20; backend suite green (the API's 338 after timeouts traced to a full root disk and load). Local environment: recreated on the AOSP partition (owner: "use the Aosp only for the storage"); its containers reach the host's Ollama at 10.0.2.2:11434 and `aiStatus` is available; smoke 13/13, lifecycle 60/60 |
 | P5b AI tasks | | |
 | P5c Ask AI | | |
 | P5d Public-note pipeline | | |
