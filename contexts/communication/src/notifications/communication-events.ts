@@ -82,6 +82,10 @@ export class CommunicationEvents implements OnModuleInit {
     this.events.subscribe('RhythmBuddyChanged', async ({ payload }) => {
       await this.notifications.notify({ userId: payload.userId, category: 'RHYTHM_BUDDY', path: '/rhythm', actorId: payload.otherId, data: { kind: payload.kind } })
     })
+    // A resource moderators approved or rejected (ADR-0074): the submitter is told, and the notification opens it.
+    this.events.subscribe('ResourceDecided', async ({ payload }) => {
+      await this.notifications.notify({ userId: payload.submittedById, category: 'RESOURCE', path: `/resources/${payload.resourceId}`, data: { decision: payload.decision } })
+    })
     // A quiz published to a class (ADR-0064): its other members are told, and the notification opens the quiz.
     this.events.subscribe('QuizPublished', async ({ payload }) => {
       if (!payload.classroomId || !payload.memberIds?.length) return

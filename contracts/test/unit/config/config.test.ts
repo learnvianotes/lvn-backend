@@ -122,6 +122,12 @@ describe('AI settings (ADR-0058)', () => {
     const cfg = loadConfig(workerConfigSchema, { ...valid, AI_PROVIDER: 'ollama', OLLAMA_URL: 'http://10.0.2.2:11434', AI_CHAT_MODEL: 'gemma4', AI_EMBED_MODEL: 'embeddinggemma', AI_MONTHLY_BUDGET_MICRO_USD: '50000000' })
     expect(cfg).toMatchObject({ AI_PROVIDER: 'ollama', AI_CHAT_MODEL: 'gemma4', AI_MONTHLY_BUDGET_MICRO_USD: 50_000_000 })
   })
+
+  it('lets tests allow named hosts for the safe fetcher, never production (ADR-0074)', () => {
+    expect(loadConfig(apiConfigSchema, { ...valid, SAFE_FETCH_ALLOW_HOSTS: '127.0.0.1, Stand-In ' }).SAFE_FETCH_ALLOW_HOSTS).toEqual(['127.0.0.1', 'stand-in'])
+    expect(loadConfig(apiConfigSchema, valid).SAFE_FETCH_ALLOW_HOSTS).toEqual([])
+    expect(() => loadConfig(apiConfigSchema, { ...valid, APP_ENV: 'production', SAFE_FETCH_ALLOW_HOSTS: '127.0.0.1' })).toThrow(/SAFE_FETCH_ALLOW_HOSTS/)
+  })
 })
 
 describe('workerConfigSchema', () => {

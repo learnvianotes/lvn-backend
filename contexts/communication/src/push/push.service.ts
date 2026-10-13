@@ -51,6 +51,8 @@ export function pushBody(category: NotificationCategory, data: Record<string, un
       return data.kind === 'ACCEPTED' ? `${who} is now your Rhythm buddy` : `${who} asked you to be Rhythm buddies`
     case 'REVISION_REMINDER':
       return 'Today’s revision for your exam is waiting'
+    case 'RESOURCE':
+      return data.decision === 'APPROVED' ? 'Your resource is in the catalogue' : 'Moderators did not approve your resource'
     case 'MODERATION':
       return data.kind === 'RESTORED' ? 'A moderator brought back something of yours' : 'A moderator reviewed something of yours'
     default:

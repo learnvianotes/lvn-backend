@@ -15,6 +15,8 @@ export interface TopicRef {
    * page counts for the topic too. Null for proposed topics and topic groups.
    */
   coreKey: string | null
+  /** LVN's own topic, public to everyone; false for a person's proposal, which only they use (ADR-0074) */
+  curated: boolean
 }
 
 export interface Topics {

@@ -1495,6 +1495,7 @@ enum ReportEntityType {
   CLASSROOM_POST
   DOUBT
   GROUP
+  RESOURCE
 
   @@schema("core")
 }
@@ -1621,6 +1622,8 @@ enum NotificationCategory {
   MENTION
   /// Someone asked the person to be Rhythm buddies, or accepted (ADR-0072)
   RHYTHM_BUDDY
+  /// Moderators approved or rejected a resource the person submitted (ADR-0074)
+  RESOURCE
 
   @@schema("comms")
 }
@@ -2203,6 +2206,73 @@ enum RepositoryProvider {
   GITHUB
   GITLAB
 
+  @@schema("core")
+}
+
+// ── Resources (§14.4, ADR-0074) ─────────────────────────────────────────────────────────────────────────────────────
+
+enum ResourceType {
+  BOOK
+  COURSE
+  TOOL
+  SOFTWARE
+  HARDWARE
+  OTHER
+
+  @@schema("core")
+}
+
+enum ResourceStatus {
+  /// Waiting for platform moderators: seen by its submitter and moderators only
+  PENDING
+  APPROVED
+  /// Rejected, or removed after approval; `reason` says why
+  REJECTED
+
+  @@schema("core")
+}
+
+/// A resource of the learning catalogue. No commerce fields (price, store, seller, affiliate): a test reads this model.
+model Resource {
+  id            String          @id @db.Uuid
+  type          ResourceType
+  title         String
+  description   String?
+  /// As the submitter gave it, after normaliseUrl (no tracking or affiliate parameters)
+  url           String
+  /// normaliseUrl(url) without the scheme: one key for http and https, for duplicates
+  urlKey        String
+  /// ISBN-13, for books
+  isbn          String?
+  /// "By": the author or maker
+  author        String?
+  /// Cross-context reference to notes.File (purpose COVER, parent RESOURCE)
+  coverFileId   String?         @db.Uuid
+  /// Cross-context reference to users.User
+  submittedById String          @db.Uuid
+  status        ResourceStatus  @default(PENDING)
+  /// The moderator's reason for a rejection or a removal, for the submitter
+  reason        String?
+  decidedAt     DateTime?       @db.Timestamptz(3)
+  createdAt     DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime        @updatedAt @db.Timestamptz(3)
+  topics        ResourceTopic[]
+
+  @@index([status, createdAt])
+  @@index([submittedById, createdAt])
+  @@index([urlKey])
+  @@index([isbn])
+  @@schema("core")
+}
+
+model ResourceTopic {
+  resourceId String   @db.Uuid
+  /// Cross-context reference to notes.Topic (a curated topic)
+  topicId    String   @db.Uuid
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@id([resourceId, topicId])
+  @@index([topicId])
   @@schema("core")
 }
 

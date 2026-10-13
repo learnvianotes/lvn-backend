@@ -16,7 +16,7 @@ export class TopicsFacade implements Topics {
   private ref(t: Row): TopicRef {
     // A curated topic with no children is a /core page (scripts/curated-topics.mjs: groups became parents).
     const page = t.origin === 'CURATED' && !t.children.length
-    return { id: t.id, key: `topic:${t.id}`, title: t.title, subjectTitle: t.subject.title, coreKey: page ? `core:${t.subject.slug}/${t.slug}` : null }
+    return { id: t.id, key: `topic:${t.id}`, title: t.title, subjectTitle: t.subject.title, coreKey: page ? `core:${t.subject.slug}/${t.slug}` : null, curated: t.origin === 'CURATED' }
   }
 
   async usable(viewerId: string, ids: string[]): Promise<TopicRef[]> {

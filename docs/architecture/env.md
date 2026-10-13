@@ -96,6 +96,8 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | api | no (secret) | — (LinkedIn off) | OAuth app for `oauthExchange` |
 | `GITHUB_OAUTH_URL`, `GITHUB_API_URL` | api | with GitHub | — | `https://github.com`, `https://api.github.com` |
 | `GITLAB_API_URL` | api, worker | no | — (GitLab repositories show the link only) | `https://gitlab.com/api/v4`: public details of a project workspace's GitLab repository (ADR-0048). `GITHUB_API_URL` serves GitHub repositories the same way |
+| `OPEN_LIBRARY_URL`, `OPEN_LIBRARY_COVERS_URL` | api | no | — (ISBNs are not looked up) | `https://openlibrary.org`, `https://covers.openlibrary.org`: a book's details and cover by ISBN when someone submits a resource (ADR-0074). No key; requests name LearnViaNotes and its web address |
+| `SAFE_FETCH_ALLOW_HOSTS` | api | no | — | Comma-separated hosts the safe fetcher reaches although they are not on the public internet (ADR-0074): a test's stand-in server. **Never in production** |
 | `FCM_API_URL`, `GOOGLE_OAUTH_TOKEN_URL` | api, worker | with push | — (push off) | `https://fcm.googleapis.com`, `https://oauth2.googleapis.com/token` (ADR-0050) |
 | `FCM_SERVICE_ACCOUNT_JSON` | api, worker | with push (secret) | — (push off) | The Firebase project's service account key, as JSON; only the Cloud Messaging role is needed (ADR-0021) |
 | `GITHUB_TOKEN` | api, worker | no (secret) | — | A token with no scopes, for GitHub's higher rate limit on public repository details (ADR-0048) |

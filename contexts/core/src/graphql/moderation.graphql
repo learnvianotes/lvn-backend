@@ -27,11 +27,11 @@ type OkPayload @shareable {
 }
 
 enum ModerationState { OK PENDING_REVIEW HIDDEN REMOVED }
-enum ReportEntityType { NOTE USER COMMENT GROUP_POST CLASSROOM_POST DOUBT GROUP }
+enum ReportEntityType { NOTE USER COMMENT GROUP_POST CLASSROOM_POST DOUBT GROUP RESOURCE }
 "Whose queue a case is in (ADR-0051)"
 enum ModerationScope { PLATFORM GROUP CLASSROOM }
 enum ReportReason { HARASSMENT SEXUAL SELF_HARM HATE SPAM COPYRIGHT OTHER }
-"APPROVE frees a held note, puts back hidden or removed content and removed groups, and lifts a suspension; HIDE and REMOVE take it off for everyone but its author; DISMISS closes reports; WARN tells the author; SUSPEND (accounts only, platform admins, ADR-0053) stops an account reaching others for suspendDays"
+"APPROVE frees a held note, puts back hidden or removed content and removed groups, lifts a suspension, and approves a resource; HIDE and REMOVE take it off for everyone but its author (REMOVE rejects a resource, ADR-0074); DISMISS closes reports; WARN tells the author; SUSPEND (accounts only, platform admins, ADR-0053) stops an account reaching others for suspendDays"
 enum ModerationActionType { APPROVE HIDE REMOVE WARN SUSPEND DISMISS }
 
 input ReportContentInput {

@@ -31,12 +31,14 @@ interface PurposeRule {
   restricted: boolean
 }
 
-/** Purposes open so far; COVER, VOICE_NOTE and IMPORT arrive with their features. */
+/** Purposes open so far; VOICE_NOTE arrives with its feature. */
 const PURPOSES: Partial<Record<FilePurposeKind, PurposeRule>> = {
   ATTACHMENT: { parentType: 'NOTE', mimeTypes: Object.keys(NOTE_MEDIA), maxBytes: (m) => NOTE_MEDIA[m]!, restricted: false },
   // ADR-0018: notes to import — an LVN export, a ZIP of Markdown, or one Markdown or text file.
   IMPORT: { parentType: 'IMPORT_JOB', mimeTypes: ['application/zip', 'text/markdown', 'text/plain'], maxBytes: 200 * 1024 ** 2, restricted: false },
   AVATAR: { parentType: 'AVATAR', mimeTypes: IMAGES, maxBytes: UploadLimits.image, restricted: false },
+  // ADR-0074: a resource's cover picture, uploaded before the resource is sent and attached to it then.
+  COVER: { parentType: 'RESOURCE', mimeTypes: IMAGES, maxBytes: 2 * 1024 ** 2, restricted: false },
   VERIFICATION_DOCUMENT: { parentType: 'VERIFICATION_REQUEST', mimeTypes: [...IMAGES, 'application/pdf'], maxBytes: UploadLimits.document, restricted: true },
 }
 

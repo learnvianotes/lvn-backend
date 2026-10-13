@@ -112,6 +112,18 @@ const auth = z.object({
   GITLAB_API_URL: z.url().optional(),
   /** Optional: a token with no scopes, for GitHub's higher rate limit on public repository details (ADR-0048). */
   GITHUB_TOKEN: z.string().min(1).optional(),
+  /** Resources (ADR-0074): Open Library's API (https://openlibrary.org) for books by ISBN; without it ISBNs are not looked up. */
+  OPEN_LIBRARY_URL: z.url().optional(),
+  /** Open Library's covers (https://covers.openlibrary.org): a book's cover is copied into storage from here. */
+  OPEN_LIBRARY_COVERS_URL: z.url().optional(),
+  /**
+   * Comma-separated hosts the safe fetcher (ADR-0074) reaches although they are not on the public internet: a test's
+   * stand-in server. Never set in production.
+   */
+  SAFE_FETCH_ALLOW_HOSTS: z
+    .string()
+    .optional()
+    .transform((s) => (s ? s.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean) : [])),
   LINKEDIN_CLIENT_ID: z.string().min(1).optional(),
   LINKEDIN_CLIENT_SECRET: z.string().min(1).optional(),
   /** LinkedIn's OAuth base (https://www.linkedin.com/oauth/v2) and OpenID userinfo API (https://api.linkedin.com/v2). */
@@ -200,6 +212,11 @@ const analyticsConfigured = <T extends { POSTHOG_HOST?: string; POSTHOG_API_KEY?
   if (!!c.POSTHOG_HOST !== !!c.POSTHOG_API_KEY) ctx.addIssue({ code: 'custom', path: [c.POSTHOG_HOST ? 'POSTHOG_API_KEY' : 'POSTHOG_HOST'], message: 'POSTHOG_HOST and POSTHOG_API_KEY go together' })
 }
 
+/** The safe fetcher's allow list is for tests and stand-ins: production fetches public addresses only (ADR-0074). */
+const safeFetchConfigured = <T extends { APP_ENV: string; SAFE_FETCH_ALLOW_HOSTS: string[] }>(c: T, ctx: z.RefinementCtx) => {
+  if (c.APP_ENV === 'production' && c.SAFE_FETCH_ALLOW_HOSTS.length) ctx.addIssue({ code: 'custom', path: ['SAFE_FETCH_ALLOW_HOSTS'], message: 'never set in production' })
+}
+
 const aiConfigured = <T extends { AI_PROVIDER: 'none' | 'ollama'; OLLAMA_URL?: string; AI_CHAT_MODEL?: string; AI_EMBED_MODEL?: string }>(c: T, ctx: z.RefinementCtx) => {
   if (c.AI_PROVIDER !== 'ollama') return
   for (const key of ['OLLAMA_URL', 'AI_CHAT_MODEL', 'AI_EMBED_MODEL'] as const) if (!c[key]) ctx.addIssue({ code: 'custom', path: [key], message: 'required when AI_PROVIDER=ollama' })
@@ -229,7 +246,7 @@ const apiShape = backendBase
   .extend(ai.shape)
   .extend(analytics.shape)
 
-export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(searchConfigured).superRefine(aiConfigured).superRefine(analyticsConfigured)
+export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(searchConfigured).superRefine(aiConfigured).superRefine(analyticsConfigured).superRefine(safeFetchConfigured)
 export type ApiConfig = z.infer<typeof apiConfigSchema>
 
 /**
@@ -247,6 +264,7 @@ export const workerConfigSchema = apiShape
   .superRefine(searchConfigured)
   .superRefine(aiConfigured)
   .superRefine(analyticsConfigured)
+  .superRefine(safeFetchConfigured)
 export type WorkerConfig = z.infer<typeof workerConfigSchema>
 
 const publicId = z.string().min(1).optional()

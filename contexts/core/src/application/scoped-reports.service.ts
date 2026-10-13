@@ -6,10 +6,11 @@ import { ClassroomsService } from './classrooms.service'
 import { CommentsService } from './comments.service'
 import { GroupsService } from './groups.service'
 import { ModerationService } from './moderation.service'
+import { ResourcesService } from './resources.service'
 import { WorkspacesService } from './workspaces.service'
 
 /**
- * Reports on comments, posts, announcements, doubts and groups (ADR-0051). Only what the reporter can see can be
+ * Reports on comments, posts, announcements, doubts, groups (ADR-0051) and resources (ADR-0074). Only what the reporter can see can be
  * reported, never their own, and the report goes to its scope's queue. Notes and accounts go to ModerationService.
  */
 @Injectable()
@@ -20,6 +21,7 @@ export class ScopedReportsService {
     private readonly groups: GroupsService,
     private readonly classes: ClassroomsService,
     private readonly workspaces: WorkspacesService,
+    private readonly resources: ResourcesService,
     @Inject(POLICY) private readonly policy: Policy,
   ) {}
 
@@ -49,6 +51,11 @@ export class ScopedReportsService {
         return (await this.workspaces.getDoubt(viewerId, entityId))?.doubt.authorId ?? null
       case 'GROUP':
         return (await this.groups.view(viewerId, entityId))?.group.ownerId ?? null
+      case 'RESOURCE': {
+        // Only an approved resource is the catalogue's to report (ADR-0074); a waiting one is the moderators' already.
+        const r = await this.resources.one(viewerId, entityId)
+        return r?.status === 'APPROVED' ? r.submittedById : null
+      }
       default:
         return null
     }

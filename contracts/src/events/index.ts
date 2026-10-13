@@ -221,6 +221,18 @@ export const events = {
     classroomId: uuid.optional(),
     noteId: uuid.optional(),
   })),
+  /** A resource was submitted, or resubmitted after a rejection: it waits for platform moderators (ADR-0074). */
+  ResourceSubmitted: eventEnvelope('ResourceSubmitted', 1, z.object({
+    resourceId: uuid,
+    submittedById: uuid,
+  })),
+  /** Moderators approved a resource (or put it back), or rejected (or removed) it with a reason for its submitter. */
+  ResourceDecided: eventEnvelope('ResourceDecided', 1, z.object({
+    resourceId: uuid,
+    submittedById: uuid,
+    decision: z.enum(['APPROVED', 'REJECTED']),
+    moderatorId: uuid,
+  })),
   /**
    * Someone named people with @handle in a comment or a post (ADR-0054). Only people who can read it and have nothing
    * between them and the author are listed; where it is, never what it says.

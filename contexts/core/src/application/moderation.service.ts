@@ -169,6 +169,10 @@ export class ModerationService implements Moderation {
     } else if (isContent(input.entityType)) {
       const held = await this.setContentState(input.entityType, input.entityId, 'PENDING_REVIEW', 'Several people reported this. A moderator will look at it.', 'OK')
       if (held) await this.audit.record({ actorId: null, action: 'moderation.held', targetType: input.entityType, targetId: input.entityId, metadata: { reports: people } })
+    } else if (input.entityType === 'RESOURCE') {
+      // An approved resource leaves the catalogue until a moderator looks (ADR-0074).
+      const held = await this.db.resource.updateMany({ where: { id: input.entityId, status: 'APPROVED' }, data: { status: 'PENDING' } })
+      if (held.count) await this.audit.record({ actorId: null, action: 'moderation.held', targetType: 'RESOURCE', targetId: input.entityId, metadata: { reports: people } })
     }
   }
 
@@ -183,6 +187,32 @@ export class ModerationService implements Moderation {
     else await this.db.report.create({ data: { id, ...key, reason, details, scope: subject.scope, scopeId: subject.scopeId } })
     await this.audit.record({ actorId: null, action: 'moderation.held', targetType: entityType, targetId: entityId, metadata: { reason } })
     await this.events.publish('ContentReported', { reportId: id, entityType, entityId })
+  }
+
+  /**
+   * A new or resubmitted resource's case in the platform queue (ADR-0074): every submission waits for a moderator. The
+   * scorer's verdict on its words goes with it.
+   */
+  async openSubmissionCase(resourceId: string, text: string): Promise<void> {
+    const verdict = this.verdictOf(text)
+    const reason: ReportReason = verdict?.reason ?? 'OTHER'
+    const details = verdict ? `New resource. The word check says: ${verdict.message}` : 'New resource, waiting for approval.'
+    const key = { entityType: 'RESOURCE' as const, entityId: resourceId, reporterId: null }
+    const existing = await this.db.report.findFirst({ where: key, select: { id: true } })
+    const id = existing?.id ?? newId()
+    if (existing) await this.db.report.update({ where: { id }, data: { reason, details, status: 'OPEN', resolvedAt: null, resolvedById: null, createdAt: new Date() } })
+    else await this.db.report.create({ data: { id, ...key, reason, details } })
+    await this.events.publish('ContentReported', { reportId: id, entityType: 'RESOURCE', entityId: resourceId })
+  }
+
+  /** Closes the open reports and appeals of things that are gone (a deleted resource), so their cases leave the queue. */
+  async closeCases(entityType: ReportEntityType, entityIds: string[], byId: string | null): Promise<void> {
+    if (!entityIds.length) return
+    const now = new Date()
+    await this.db.$transaction([
+      this.db.report.updateMany({ where: { entityType, entityId: { in: entityIds }, status: 'OPEN' }, data: { status: 'RESOLVED', resolvedAt: now, resolvedById: byId } }),
+      this.db.moderationAppeal.updateMany({ where: { entityType, entityId: { in: entityIds }, status: 'OPEN' }, data: { status: 'DECIDED', decidedAt: now } }),
+    ])
   }
 
   /** The verdict's report reason, for content the scorer flags. */
@@ -226,6 +256,10 @@ export class ModerationService implements Moderation {
         if (c.targetType === 'NOTE') return { ...platform, authorId: c.authorId, path: `/notes/${c.targetId}`, noteId: c.targetId }
         const place = await this.subject(c.targetType, c.targetId)
         return place ? { ...place, authorId: c.authorId } : null
+      }
+      case 'RESOURCE': {
+        const r = await this.db.resource.findUnique({ where: { id: entityId }, select: { submittedById: true } })
+        return r ? { ...platform, authorId: r.submittedById, path: `/resources/${entityId}` } : null
       }
       default:
         return null
@@ -417,6 +451,18 @@ export class ModerationService implements Moderation {
       if (input.action === 'APPROVE' && !removedGroup) throw Errors.validation('Only a group moderators removed can be put back.', ['input', 'action'])
       if (input.action !== 'APPROVE' && input.action !== 'DISMISS' && g?.deletedAt) throw Errors.notFound('That group is not there any more.')
     }
+    // A resource (ADR-0074): approved (or put back), rejected or removed with a reason (REMOVE), or reports dismissed.
+    let resource: { status: 'PENDING' | 'APPROVED' | 'REJECTED'; submittedById: string } | null = null
+    if (input.entityType === 'RESOURCE') {
+      if (!['APPROVE', 'REMOVE', 'DISMISS'].includes(input.action)) throw Errors.validation('A resource is approved, rejected, or its reports dismissed.', ['input', 'action'])
+      resource = await this.db.resource.findUnique({ where: { id: input.entityId }, select: { status: true, submittedById: true } })
+      if (!resource) throw Errors.notFound('That is not there any more.')
+      if (input.action === 'DISMISS' && resource.status !== 'APPROVED') {
+        // People's reports held it: dismissing them puts it back; a new submission needs a yes or a no.
+        const held = await this.db.report.count({ where: { entityType: 'RESOURCE', entityId: input.entityId, status: 'OPEN', reporterId: { not: null } } })
+        if (!held) throw Errors.validation('Approve or reject a new resource.', ['input', 'action'])
+      }
+    }
     let note: ModeratedNote | undefined
     if (input.entityType === 'NOTE') {
       ;[note] = await this.notes.describe([input.entityId])
@@ -473,6 +519,12 @@ export class ModerationService implements Moderation {
         await this.policy.lift(input.entityId)
       }
       told = input.action === 'WARN' ? 'WARNED' : input.action === 'SUSPEND' ? 'SUSPENDED' : input.action === 'APPROVE' ? 'RESTORED' : null
+    }
+    if (resource) {
+      const next = input.action === 'REMOVE' ? 'REJECTED' : 'APPROVED'
+      await this.db.resource.update({ where: { id: input.entityId }, data: { status: next, reason: next === 'REJECTED' ? reason : null, decidedAt: now } })
+      // Dismissing people's reports puts a held resource back without a word: its submitter was not told of the hold.
+      if (next !== resource.status && input.action !== 'DISMISS') await this.events.publish('ResourceDecided', { resourceId: input.entityId, submittedById: resource.submittedById, decision: next, moderatorId: userId })
     }
     await this.audit.record({ actorId: userId, action: `moderation.${input.action.toLowerCase()}`, targetType: input.entityType, targetId: input.entityId, metadata: { ...(reason ? { reason } : {}), scope: subject.scope, ...(subject.scopeId ? { scopeId: subject.scopeId } : {}) } })
     if (told && subject.authorId) {

@@ -434,6 +434,9 @@ importers:
       '@lvn-backend/redis':
         specifier: workspace:*
         version: link:../../libs/redis
+      '@lvn-backend/safe-fetch':
+        specifier: workspace:*
+        version: link:../../libs/safe-fetch
       '@lvn-backend/storage':
         specifier: workspace:*
         version: link:../../libs/storage
@@ -831,6 +834,8 @@ importers:
       '@lvn-backend/testing':
         specifier: workspace:*
         version: link:../testing
+
+  libs/safe-fetch: {}
 
   libs/storage:
     dependencies:
