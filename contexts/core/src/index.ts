@@ -25,6 +25,8 @@ export { RhythmService } from './application/rhythm.service'
 export { ExamsService } from './application/exams.service'
 /** Recommendations (ADR-0071): the worker recomputes them hourly for active people. */
 export { RecommendationsService } from './application/recommendations.service'
+/** Focus sessions (ADR-0072): the worker ends the ones left open. */
+export { FocusService } from './application/focus.service'
 
 /** This context's federation subgraph, composed by apps/api's gateway (ADR-0033). */
 export const coreSubgraph = { name: 'core', typeDefs: coreTypeDefs, modules: [CoreModule] }

@@ -47,6 +47,8 @@ export function pushBody(category: NotificationCategory, data: Record<string, un
       return 'Your import is done'
     case 'MENTION':
       return `${who} mentioned you`
+    case 'RHYTHM_BUDDY':
+      return data.kind === 'ACCEPTED' ? `${who} is now your Rhythm buddy` : `${who} asked you to be Rhythm buddies`
     case 'REVISION_REMINDER':
       return 'Today’s revision for your exam is waiting'
     case 'MODERATION':

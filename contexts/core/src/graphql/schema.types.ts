@@ -72,6 +72,11 @@ export interface AnswerMentorInviteInput {
   accept: boolean
 }
 
+export interface AnswerRhythmBuddyInput {
+  id: string
+  accept: boolean
+}
+
 export interface AppealModerationInput {
   entityType: ReportEntityType
   entityId: string
@@ -95,6 +100,13 @@ export interface CardReviewResult {
   due: Date
   state: ReviewState
   intervalDays: number
+}
+
+export interface ClassPerformance {
+  quizzes: number
+  students: Array<ClassStudentPerformance>
+  /** Hardest first */
+  topics: Array<ClassTopicPerformance>
 }
 
 export interface ClassQuiz {
@@ -141,6 +153,15 @@ export interface ClassQuizQuestion {
   explanation: unknown | null
 }
 
+export interface ClassQuizScore {
+  quizId: string
+  quizTitle: string
+  /** The student's first attempt */
+  score: number
+  total: number
+  submittedAt: Date
+}
+
 export interface Classroom {
   id: string
   name: string
@@ -160,6 +181,10 @@ export interface Classroom {
   joinRequests: Array<ClassroomJoinRequest> | null
   /** Members only: announcements, newest first */
   posts: ClassroomPostConnection | null
+  /** Members only: this week's Rhythm across the class */
+  rhythmRing?: ClassroomRhythm | null
+  /** Staff only: each student's first score on each quiz, and the topics the class finds hard */
+  performance?: ClassPerformance | null
   /** Members only: published quizzes, newest first */
   quizzes?: Array<ClassQuiz> | null
 }
@@ -259,7 +284,48 @@ export interface ClassroomPreview {
   viewerRequestId: string | null
 }
 
+/** This week across a class's students */
+export interface ClassroomRhythm {
+  students: number
+  /** Students whose week is met */
+  metCount: number
+  countedDays: number
+  /** The sum of the students' targets */
+  targetDays: number
+  /** Only students who share their Rhythm with their classes */
+  people: Array<ClassroomRhythmPerson>
+}
+
+export interface ClassroomRhythmPerson {
+  user: User
+  /** A child account's first name only */
+  name: string
+  countedDays: number
+  target: number
+  met: boolean
+}
+
 export type ClassroomRole = 'TEACHER' | 'TA' | 'STUDENT'
+
+export interface ClassStudentPerformance {
+  user: User
+  name: string
+  scores: Array<ClassQuizScore>
+  submitted: number
+  /** Right over asked across the scores, 0–1; null before a first quiz */
+  average: number | null
+}
+
+export interface ClassTopicPerformance {
+  key: string
+  topic: Topic | null
+  title: string
+  /** Right over answers on the topic in first attempts, 0–1 */
+  accuracy: number
+  answers: number
+  /** Under 60 % */
+  hard: boolean
+}
 
 export interface Comment {
   id: string
@@ -540,6 +606,29 @@ export interface ExamTopicOption {
   subjectTitle: string
 }
 
+export interface FocusSession {
+  id: string
+  /** topic:<id> or core:<subject>/<topic> */
+  topicKey: string | null
+  note: Note | null
+  plannedMinutes: number
+  breakMinutes: number
+  meetUrl: string | null
+  startedAt: Date
+  endedAt: Date | null
+  /** Counted when it ended: the time since it started, at most the plan */
+  focusedSeconds: number
+}
+
+export interface FocusSessionIdInput {
+  id: string
+}
+
+export interface FocusSessionPayload {
+  session: FocusSession | null
+  userErrors: Array<UserError>
+}
+
 export interface Group {
   id: string
   name: string
@@ -706,6 +795,11 @@ export interface InviteMentorInput {
   groupId: string
   /** A teacher's handle or email */
   person: string
+}
+
+export interface InviteRhythmBuddyInput {
+  /** Someone the viewer follows or is connected with */
+  handle: string
 }
 
 export interface InviteToClassroomInput {
@@ -980,6 +1074,26 @@ export interface MutationDeleteExamArgs {
   input: ExamIdInput
 }
 
+export interface MutationStartFocusSessionArgs {
+  input: StartFocusSessionInput
+}
+
+export interface MutationEndFocusSessionArgs {
+  input: FocusSessionIdInput
+}
+
+export interface MutationInviteRhythmBuddyArgs {
+  input: InviteRhythmBuddyInput
+}
+
+export interface MutationAnswerRhythmBuddyArgs {
+  input: AnswerRhythmBuddyInput
+}
+
+export interface MutationRemoveRhythmBuddyArgs {
+  input: RhythmBuddyIdInput
+}
+
 export interface MutationCreateGroupArgs {
   input: CreateGroupInput
 }
@@ -1090,6 +1204,10 @@ export interface MutationPauseRhythmArgs {
 
 export interface MutationEndRhythmPauseArgs {
   input: RhythmPauseIdInput
+}
+
+export interface MutationSetRhythmSharingArgs {
+  input: SetRhythmSharingInput
 }
 
 export interface MutationSetGroupRepositoryArgs {
@@ -1435,6 +1553,42 @@ export interface Rhythm {
   /** Of the 14 a term */
   pauseDaysLeft: number
   suggestion: RhythmSuggestion | null
+  /** Their name and counted days show on their classes' Rhythm ring (ADR-0072); off by default */
+  shareRhythm: boolean
+}
+
+export interface RhythmBuddies {
+  /** At most five */
+  buddies: Array<RhythmBuddy>
+  invites: Array<RhythmBuddyInvite>
+  sent: Array<RhythmBuddyInvite>
+}
+
+/** What a buddy may see of the other: studying now, and this week's counted days */
+export interface RhythmBuddy {
+  /** The link's id: end it with removeRhythmBuddy */
+  id: string
+  user: User
+  since: Date
+  studyingNow: boolean
+  studyingSince: Date | null
+  /** The session's topic, when it has one the viewer may see */
+  topicTitle: string | null
+  meetUrl: string | null
+  countedDays: number
+  target: number
+  met: boolean
+}
+
+export interface RhythmBuddyIdInput {
+  id: string
+}
+
+export interface RhythmBuddyInvite {
+  id: string
+  /** Who asked (invites), or who was asked (sent) */
+  user: User
+  at: Date
 }
 
 export interface RhythmDay {
@@ -1530,6 +1684,22 @@ export interface SetProjectShowcaseInput {
 export interface SetRhythmPlanInput {
   /** 3 to 6 weekdays, 1 Monday … 7 Sunday */
   plannedDays: Array<number>
+}
+
+export interface SetRhythmSharingInput {
+  share: boolean
+}
+
+export interface StartFocusSessionInput {
+  topicKey?: string | null
+  /** A note the viewer can read */
+  noteId?: string | null
+  /** 5–90, 25 by default */
+  minutes?: number | null
+  /** 0–30, 5 by default */
+  breakMinutes?: number | null
+  /** https://meet.google.com/abc-defg-hij; buddies see it during the session */
+  meetUrl?: string | null
 }
 
 export interface StudyNoteInput {

@@ -27,6 +27,8 @@ export const LIVE_SDL = /* GraphQL */ `
     AI_ANSWER
     "A study aid for the viewer's public note finished: refetch the note's noteProcessingStatus (ADR-0061); the id is the note's"
     NOTE_PROCESSING
+    "A Rhythm buddy started or ended a focus session: refetch rhythmBuddies (ADR-0072); the id is the buddy's"
+    BUDDY_PRESENCE
   }
 
   "Something changed for the viewer: refetch it through /graphql"

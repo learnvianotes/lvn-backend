@@ -1,6 +1,6 @@
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common'
 import { COMMS_EMAIL_QUEUE, COMMS_PUSH_QUEUE, DevicesService, EmailNotificationsService, NotificationService, PushService } from '@lvn-backend/communication'
-import { ExamsService, LEARNING_ANALYTICS_QUEUE, LearningEventsService, RecommendationsService, RhythmService, WorkspacesService } from '@lvn-backend/core'
+import { ExamsService, FocusService, LEARNING_ANALYTICS_QUEUE, LearningEventsService, RecommendationsService, RhythmService, WorkspacesService } from '@lvn-backend/core'
 import { NotesMaintenance } from '@lvn-backend/notes'
 import { Queues } from '@lvn-backend/queue'
 import { UsersMaintenance } from '@lvn-backend/users'
@@ -25,6 +25,7 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
     private readonly rhythm: RhythmService,
     private readonly exams: ExamsService,
     private readonly recommendations: RecommendationsService,
+    private readonly focus: FocusService,
     private readonly push: PushService,
     private readonly devices: DevicesService,
     private readonly emails: EmailNotificationsService,
@@ -96,6 +97,8 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
       'remind-exam-tasks': async () => ({ sent: await this.exams.remind() }),
       // ADR-0071: everyone active in the last 7 days gets fresh recommendations.
       'compute-recommendations': async () => ({ people: await this.recommendations.computeActive() }),
+      // ADR-0072: focus sessions left open past their work and rest end at their planned length.
+      'close-focus-sessions': async () => ({ closed: await this.focus.closeAbandoned() }),
       'learning-partitions': async () => {
         const done = await this.learning.maintain()
         this.log.log(`learning events: ${done.made} partitions made, ${done.forgotten} ids forgotten, ${done.dropped.length} partitions dropped`)
@@ -107,6 +110,7 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
     await this.queues.repeat(CORE_MAINTENANCE_QUEUE, 'close-rhythm-weeks', '25 * * * *')
     await this.queues.repeat(CORE_MAINTENANCE_QUEUE, 'remind-exam-tasks', '5 * * * *')
     await this.queues.repeat(CORE_MAINTENANCE_QUEUE, 'compute-recommendations', '35 * * * *')
+    await this.queues.repeat(CORE_MAINTENANCE_QUEUE, 'close-focus-sessions', '*/15 * * * *')
     // ADR-0067: the pseudonymous copy for PostHog, queued only when it is configured; retried by the queue.
     this.queues.process(LEARNING_ANALYTICS_QUEUE, { copy: async (data) => ({ sent: await this.learning.copyToAnalytics((data as { userId: string }).userId, (data as { eventIds: string[] }).eventIds) }) }, 2)
   }

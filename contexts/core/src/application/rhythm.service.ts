@@ -94,6 +94,23 @@ export class RhythmService implements OnModuleInit {
     return weekState({ today, since, plannedDays, counted, pauses }, start)
   }
 
+  /** This week at a glance, for buddies and the classroom ring (ADR-0072). */
+  async weekSummary(userId: string, now = new Date()): Promise<{ countedDays: number; target: number; met: boolean }> {
+    const today = learningDay(now, await this.learning.timeZoneOf(userId))
+    const [plannedDays, pauses] = await Promise.all([this.plannedDays(userId), this.pauses(userId)])
+    const w = await this.week(userId, weekStart(today), today, plannedDays, pauses)
+    return { countedDays: w.countedDays, target: w.target, met: w.met }
+  }
+
+  /** Whether the person's name and counted days show on their classes' Rhythm ring (ADR-0072). */
+  async sharing(userId: string): Promise<boolean> {
+    return (await this.db.learnerSettings.findUnique({ where: { userId }, select: { shareRhythm: true } }))?.shareRhythm ?? false
+  }
+
+  async setSharing(userId: string, share: boolean): Promise<void> {
+    await this.db.learnerSettings.upsert({ where: { userId }, create: { userId, shareRhythm: share }, update: { shareRhythm: share } })
+  }
+
   async rhythm(userId: string, now = new Date()) {
     const timeZone = await this.learning.timeZoneOf(userId)
     const today = learningDay(now, timeZone)
@@ -138,6 +155,7 @@ export class RhythmService implements OnModuleInit {
       pauses: pauses.filter((p) => p.to >= today).map((p) => ({ ...p, active: p.from <= today })),
       pauseDaysLeft: Math.max(PAUSE_DAYS_PER_TERM - pauseDaysUsed(term, pauses), 0),
       suggestion: await this.exams.suggestion(userId, plannedDays.length, now),
+      shareRhythm: await this.sharing(userId),
     }
   }
 

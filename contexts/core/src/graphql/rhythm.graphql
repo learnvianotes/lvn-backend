@@ -89,6 +89,8 @@ type Rhythm {
   "Of the 14 a term"
   pauseDaysLeft: Int!
   suggestion: RhythmSuggestion
+  "Their name and counted days show on their classes' Rhythm ring (ADR-0072); off by default"
+  shareRhythm: Boolean!
 }
 
 input SetRhythmPlanInput {
@@ -101,6 +103,10 @@ input PauseRhythmInput {
   from: String!
   to: String!
   reason: RhythmPauseReason!
+}
+
+input SetRhythmSharingInput {
+  share: Boolean!
 }
 
 input RhythmPauseIdInput {
@@ -118,4 +124,6 @@ extend type Mutation {
   pauseRhythm(input: PauseRhythmInput!): OkPayload!
   "Ends a pause early (or drops one not started); its unused days come back"
   endRhythmPause(input: RhythmPauseIdInput!): OkPayload!
+  "Shows, or stops showing, the viewer's name and counted days on their classes' Rhythm ring"
+  setRhythmSharing(input: SetRhythmSharingInput!): OkPayload!
 }

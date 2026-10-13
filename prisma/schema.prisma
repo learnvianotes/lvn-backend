@@ -1298,6 +1298,52 @@ model RecommendationDismissal {
   @@schema("core")
 }
 
+/// A focus session (ADR-0072): Pomodoro work and rest; the server counts the time between start and end, at most the
+/// planned minutes, as focus time on its topic.
+model FocusSession {
+  id             String    @id @db.Uuid
+  /// Cross-context reference to users.User
+  userId         String    @db.Uuid
+  /// topic:<id> or core:<subject>/<topic>
+  topicKey       String?
+  /// Cross-context reference to notes.Note
+  noteId         String?   @db.Uuid
+  plannedMinutes Int
+  breakMinutes   Int
+  /// Shown to the person's Rhythm buddies during the session
+  meetUrl        String?
+  startedAt      DateTime  @default(now()) @db.Timestamptz(3)
+  endedAt        DateTime? @db.Timestamptz(3)
+  focusedSeconds Int       @default(0)
+
+  @@index([userId, endedAt])
+  @@index([endedAt, startedAt])
+  @@schema("core")
+}
+
+enum RhythmBuddyStatus {
+  PENDING
+  ACCEPTED
+
+  @@schema("core")
+}
+
+/// Two learners who see each other studying (ADR-0072): asked by one, accepted by the other; five each at most.
+model RhythmBuddy {
+  id          String            @id @db.Uuid
+  /// Cross-context reference to users.User
+  requesterId String            @db.Uuid
+  /// Cross-context reference to users.User
+  addresseeId String            @db.Uuid
+  status      RhythmBuddyStatus @default(PENDING)
+  createdAt   DateTime          @default(now()) @db.Timestamptz(3)
+  acceptedAt  DateTime?         @db.Timestamptz(3)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+  @@schema("core")
+}
+
 /// A quiz result on one topic (ADR-0070), from a QUIZ_COMPLETED learning event with topics: weak topics and Readiness
 /// read the last three on each topic.
 model TopicQuizResult {
@@ -1379,6 +1425,8 @@ model LearnerSettings {
   timeZone    String   @default("UTC")
   /// Rhythm's planned days (ADR-0069): 3–6 ISO weekdays, 1 Monday … 7 Sunday
   plannedDays Int[]    @default([1, 2, 4, 6])
+  /// Shows their name and counted days on their classes' Rhythm ring (ADR-0072); off by default
+  shareRhythm Boolean  @default(false)
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
 
   @@schema("core")
@@ -1559,6 +1607,8 @@ enum NotificationCategory {
   MODERATION
   /// Someone named the person with @handle in a comment or a post they can read (ADR-0054)
   MENTION
+  /// Someone asked the person to be Rhythm buddies, or accepted (ADR-0072)
+  RHYTHM_BUDDY
 
   @@schema("comms")
 }
