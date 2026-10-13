@@ -43,6 +43,8 @@ export interface People {
   namesOf(ids: string[]): Promise<Record<string, string>>
   /** Where `communication` writes to a person (ADR-0050): their sign-in email and name; null for deleted accounts. */
   contactOf(userId: string): Promise<{ email: string; displayName: string; restrictedMinor: boolean } | null>
+  /** When the account was made (ADR-0069: Rhythm misses nothing from before); null for deleted accounts. */
+  joinedAt(userId: string): Promise<Date | null>
   /** The notes topics `userId` chose as interests on their study profile (ADR-0071: recommendations). */
   interestTopicIds(userId: string): Promise<string[]>
   /** Who `userId` follows, most recent first, at most 2,000 (ADR-0049: the Following feed). */

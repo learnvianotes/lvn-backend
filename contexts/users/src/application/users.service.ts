@@ -85,6 +85,11 @@ export class UsersService implements People {
     return { email: u.email, displayName: u.displayName, restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.config.digitalConsentAge, u.consents.length > 0) }
   }
 
+  /** People facade (ADR-0069): when the account was made; null for deleted accounts. */
+  async joinedAt(userId: string): Promise<Date | null> {
+    return (await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { createdAt: true } }))?.createdAt ?? null
+  }
+
   /** People facade (ADR-0049): who the person follows, most recent first. */
   async followingIds(userId: string): Promise<string[]> {
     return (await this.db.follow.findMany({ where: { followerId: userId }, orderBy: { createdAt: 'desc' }, select: { followeeId: true }, take: 2000 })).map((f) => f.followeeId)
