@@ -118,6 +118,9 @@ export class NotesExport implements DataExportPart {
     }
     files.push({ path: 'notes/folders.json', bytes: json(folders.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId, path: folderPath(f.id).join('/') }))) })
     files.push({ path: 'notes/tags.json', bytes: json(tags.map((t) => ({ id: t.id, name: t.name }))) })
+    // Notes saved to come back to (ADR-0076): which, and when; the notes themselves are other people's.
+    const saves = await this.db.noteSave.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } })
+    files.push({ path: 'notes/saved.json', bytes: json(saves.map((s) => ({ noteId: s.noteId, savedAt: s.createdAt }))) })
     return { files, counts: { notes: notes.length, versions: notes.reduce((n, x) => n + x.versions.length, 0), highlights: notes.reduce((n, x) => n + x.attachments.reduce((m, a) => m + a.highlights.length, 0), 0), media: files.filter((f) => f.path.includes('/media/')).length }, omitted }
   }
 }

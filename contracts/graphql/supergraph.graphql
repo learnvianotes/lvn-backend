@@ -2913,6 +2913,14 @@ type Mutation
   studyPdf(input: StudyPdfInput!): NotePayload! @join__field(graph: NOTES)
 
   """
+  Saves a note the viewer can read to their saved notes (ADR-0076); saving it again changes nothing
+  """
+  saveNote(input: NoteIdInput!): NotePayload! @join__field(graph: NOTES)
+
+  """Takes a note off the viewer's saved notes"""
+  unsaveNote(input: NoteIdInput!): NotePayload! @join__field(graph: NOTES)
+
+  """
   PRIVATE, SHARED or PUBLIC (owner, verified account); PUBLIC needs a published version
   """
   changeNoteVisibility(input: ChangeNoteVisibilityInput!): NotePayload! @join__field(graph: NOTES)
@@ -3148,6 +3156,11 @@ type Note
   The owner's and editors' highlights, in page order (empty for readers); only those on one PDF with `fileId`
   """
   highlights(fileId: UUID): [PdfHighlight!]! @join__field(graph: NOTES)
+
+  """
+  The viewer saved it to come back to (ADR-0076); private to them. False for visitors
+  """
+  viewerSaved: Boolean! @join__field(graph: NOTES)
 
   """Owner only: the people the note is shared with; null for anyone else"""
   shares: [NoteShare!] @join__field(graph: NOTES)
@@ -3994,6 +4007,11 @@ type Query
   A PDF (or other file) of a note to read, with a link that works for an hour; null when the viewer may not open it
   """
   noteFile(noteId: UUID!, fileId: UUID!): MediaFile @join__field(graph: NOTES)
+
+  """
+  Notes the viewer saved and can still read, newest saved first (ADR-0076); a page can be shorter than asked
+  """
+  savedNotes(first: Int, after: String): NoteConnection! @join__field(graph: NOTES)
 
   """
   At most 100 characters; `first` per kind, 1 to 20 (default 5). With filters the words may be left out: the notes

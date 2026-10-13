@@ -296,6 +296,14 @@ export interface MutationStudyPdfArgs {
   input: StudyPdfInput
 }
 
+export interface MutationSaveNoteArgs {
+  input: NoteIdInput
+}
+
+export interface MutationUnsaveNoteArgs {
+  input: NoteIdInput
+}
+
 export interface MutationChangeNoteVisibilityArgs {
   input: ChangeNoteVisibilityInput
 }
@@ -388,6 +396,8 @@ export interface Note {
   moderation?: NoteModeration | null
   /** The owner's and editors' highlights, in page order (empty for readers); only those on one PDF with `fileId` */
   highlights?: Array<PdfHighlight>
+  /** The viewer saved it to come back to (ADR-0076); private to them. False for visitors */
+  viewerSaved?: boolean
   /** Owner only: the people the note is shared with; null for anyone else */
   shares?: Array<NoteShare> | null
   /** Set on a copy of another note; it cannot be removed */
@@ -689,6 +699,11 @@ export interface QueryFindTopicsArgs {
 export interface QueryNoteFileArgs {
   noteId: string
   fileId: string
+}
+
+export interface QuerySavedNotesArgs {
+  first?: number | null
+  after?: string | null
 }
 
 export interface QuerySearchArgs {

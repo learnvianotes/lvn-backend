@@ -792,6 +792,7 @@ model Note {
   tags             NoteTag[]
   topics           NoteTopic[]
   chunks           NoteChunk[]
+  saves            NoteSave[]
 
   @@index([ownerId, deletedAt, draftUpdatedAt(sort: Desc)])
   @@index([folderId])
@@ -871,6 +872,19 @@ model NoteChunk {
 }
 
 /// User-level grants (§4.2). Group and classroom shares arrive with groups (Phase 3).
+/// A note someone saved to read later (lvn-backend ADR-0076): private to them, shown while they can still read it.
+model NoteSave {
+  noteId    String   @db.Uuid
+  /// Cross-context reference to users.User
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@id([noteId, userId])
+  @@index([userId, createdAt])
+  @@schema("notes")
+}
+
 model NoteShare {
   noteId      String          @db.Uuid
   /// Cross-context reference to users.User
