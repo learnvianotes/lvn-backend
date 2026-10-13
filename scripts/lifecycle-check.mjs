@@ -508,6 +508,22 @@ if (opt('--vm') && (await gql('{ aiStatus { available } }')).aiStatus.available)
   }
 }
 
+// Learning history and flashcard reviews (ADR-0067, ADR-0068): A's day is in the history with the focus time; a
+// flashcard of A's own is in today's queue, a grade takes it out, and the day counts the review.
+{
+  const history = (await gql('{ learningHistory(days: 3) { days { day learningSeconds counted } } }', {}, A.token)).learningHistory
+  ok(history.days.some((d) => d.learningSeconds >= 660 && d.counted), 'A’s history shows the day with its focus time, counting for Rhythm', JSON.stringify(history.days[0]))
+  const front = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `What does a heap keep on top? ${WORD}` }] }] }
+  const back = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'The smallest item.' }] }] }
+  const cardId = newId()
+  await gql('mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } } }', { input: { title: `Cards ${WORD}`, cards: [{ id: cardId, type: 'flashcard', position: 'a0', content: { front, back } }] } }, A.token)
+  const QUEUE = '{ reviewQueue { cards { cardId } doneToday } }'
+  const before = (await gql(QUEUE, {}, A.token)).reviewQueue
+  const graded = (await gql('mutation ($input: ReviewCardInput!) { reviewCard(input: $input) { review { state due } userErrors { message } } }', { input: { cardId, rating: 'EASY', clientOpId: newId(), durationMs: 5000 } }, A.token)).reviewCard
+  const after = (await gql(QUEUE, {}, A.token)).reviewQueue
+  ok(before.cards.some((c) => c.cardId === cardId) && graded.review?.state === 'REVIEW' && !after.cards.some((c) => c.cardId === cardId) && after.doneToday === before.doneToday + 1, 'A’s new flashcard is in today’s reviews; graded Easy it waits days', graded.userErrors[0]?.message ?? graded.review?.due)
+}
+
 console.log(`1..${n}`)
 if (failed) {
   console.log(`# ${failed} of ${n} checks failed`)
