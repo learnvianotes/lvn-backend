@@ -12,6 +12,8 @@ export { AiExport } from './application/ai-export'
 /** Ask AI (ADR-0060): the worker runs queued questions; AiEmbeddings is the EMBEDDINGS facade. */
 export { AskService } from './application/ask.service'
 export { AiEmbeddings } from './application/ai-embeddings'
+/** Study aids for public notes (ADR-0061). */
+export { PIPELINE_TASKS, PublicPipeline } from './application/public-pipeline'
 
 /** This context's federation subgraph, composed by apps/api's gateway (ADR-0033). */
 export const aiSubgraph = { name: 'ai', typeDefs: aiTypeDefs, modules: [AiModule] }

@@ -4,7 +4,7 @@ import { cardPlainText, positionsBetween } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import type { NewCard, NoteAi, NoteAiSource } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
-import { noteFacts, type NoteAccessRow } from '../domain/note-access'
+import { noteFacts, visibleNotesWhere, type NoteAccessRow } from '../domain/note-access'
 import type { SnapshotCard } from '../domain/snapshot'
 import { DraftsService } from './drafts.service'
 import { NotesService } from './notes.service'
@@ -40,6 +40,7 @@ export class NoteAiFacade implements NoteAi {
     }
     return {
       noteId,
+      ownerId: note.ownerId,
       title,
       kind: note.kind,
       visibility: note.visibility,
@@ -48,6 +49,27 @@ export class NoteAiFacade implements NoteAi {
       mayAskAi: can(actor, Action.NOTE_ASK_AI, { kind: 'note', note: facts }),
       mayFork: can(actor, Action.NOTE_FORK, { kind: 'note', note: facts }),
       canEdit: access !== 'READER',
+      cards: cards.map((c) => ({ ...c, text: cardPlainText(c.type, c.content) })),
+    }
+  }
+
+  async publicSource(noteId: string): Promise<NoteAiSource | null> {
+    // The read predicate's public branch (visibleNotesWhere(null)): what a visitor who is not signed in reads.
+    const note = await this.db.note.findFirst({ where: { id: noteId, ...visibleNotesWhere(null) }, select: { ownerId: true, kind: true, visibility: true, publishedVersion: { select: { id: true, title: true, cards: true } } } })
+    const version = note?.publishedVersion
+    if (!note || !version) return null
+    const cards = (version.cards as unknown as SnapshotCard[]).map((c) => ({ id: c.id, type: c.type as CardType, content: c.content }))
+    return {
+      noteId,
+      ownerId: note.ownerId,
+      title: version.title,
+      kind: note.kind,
+      visibility: note.visibility,
+      access: 'READER',
+      versionId: version.id,
+      mayAskAi: true,
+      mayFork: false,
+      canEdit: false,
       cards: cards.map((c) => ({ ...c, text: cardPlainText(c.type, c.content) })),
     }
   }

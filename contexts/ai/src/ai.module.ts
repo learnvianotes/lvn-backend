@@ -5,10 +5,12 @@ import { AiExport } from './application/ai-export'
 import { AiTasksService } from './application/ai-tasks.service'
 import { AiEmbeddings } from './application/ai-embeddings'
 import { AskService } from './application/ask.service'
+import { PublicPipeline } from './application/public-pipeline'
 import { PromptLibrary } from './application/prompts'
 import { AiResolver } from './graphql/ai.resolver'
 import { AiTasksResolver, NoteAiArtifactsResolver } from './graphql/ai-tasks.resolver'
 import { AskResolver } from './graphql/ai-ask.resolver'
+import { InsightsResolver, NoteInsightsResolver } from './graphql/ai-insights.resolver'
 import { OllamaProvider } from './infrastructure/ollama'
 
 /**
@@ -31,14 +33,17 @@ export class AiModule {
         AiGateway,
         AiTasksService,
         AskService,
+        PublicPipeline,
         AiEmbeddings,
         AiExport,
         AiResolver,
         AiTasksResolver,
         NoteAiArtifactsResolver,
         AskResolver,
+        NoteInsightsResolver,
+        InsightsResolver,
       ],
-      exports: [AiGateway, AiTasksService, AskService, AiEmbeddings, AiExport],
+      exports: [AiGateway, AiTasksService, AskService, PublicPipeline, AiEmbeddings, AiExport],
     }
   }
 }

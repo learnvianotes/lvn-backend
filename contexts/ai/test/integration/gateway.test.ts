@@ -23,7 +23,7 @@ describe('AiGateway', () => {
   const published: { name: string; payload: unknown }[] = []
   const entitlements: Entitlements = { limit: async (userId) => planned.get(userId) ?? null }
   const events = { publish: async (name: string, payload: unknown) => void published.push({ name, payload }), subscribe: () => undefined } as unknown as EventBus
-  const config = (over: Partial<AiConfig> = {}): AiConfig => ({ provider: 'ollama', ollama: { url: ollama.url }, chatModel: 'gemma4', embedModel: 'embeddinggemma', timeoutMs: 5_000, monthlyBudgetMicroUsd: null, ...over })
+  const config = (over: Partial<AiConfig> = {}): AiConfig => ({ provider: 'ollama', ollama: { url: ollama.url }, chatModel: 'gemma4', embedModel: 'embeddinggemma', timeoutMs: 5_000, monthlyBudgetMicroUsd: null, publicPipeline: true, ...over })
   const gateway = (over: Partial<AiConfig> = {}, adapter: AiProviderAdapter | null = new OllamaProvider(ollama.url)) => new AiGateway(db, new PromptLibrary(), config(over), adapter, entitlements, events)
   const summary = z.object({ summary: z.string(), concepts: z.array(z.string()).min(1) })
   const ask = (g: AiGateway, userId: string | null = newId()) => g.generate({ task: 'SUMMARIZE', userId, private: true, prompt: 'summarize', vars: { language: 'English', sentences: 2 }, content: { title: 'Heaps', body: 'A heap keeps the smallest item on top.' }, schema: summary })

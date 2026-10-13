@@ -176,6 +176,8 @@ const ai = z.object({
   AI_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(120_000),
   /** The environment's monthly AI budget in millionths of a dollar; past it the breaker trips. Unset: no cap */
   AI_MONTHLY_BUDGET_MICRO_USD: z.coerce.number().int().min(0).optional(),
+  /** Study aids made when a note is published PUBLIC (ADR-0061): five model calls per version, as the platform's work */
+  AI_PUBLIC_PIPELINE: flag.default(true),
 })
 
 const aiConfigured = <T extends { AI_PROVIDER: 'none' | 'ollama'; OLLAMA_URL?: string; AI_CHAT_MODEL?: string; AI_EMBED_MODEL?: string }>(c: T, ctx: z.RefinementCtx) => {

@@ -16,6 +16,7 @@ export interface NoteAiCard {
 
 export interface NoteAiSource {
   noteId: string
+  ownerId: string
   title: string
   kind: NoteKind
   visibility: Visibility
@@ -39,6 +40,11 @@ export interface NewCard {
 export interface NoteAi {
   /** The note as `viewerId` reads it — the draft for owners and editors, else the published version — or null. */
   source(viewerId: string, noteId: string): Promise<NoteAiSource | null>
+  /**
+   * The note as anyone reads it, signed in or not: the published version of a PUBLIC note in good standing, or null
+   * (the public-note pipeline, ADR-0061).
+   */
+  publicSource(noteId: string): Promise<NoteAiSource | null>
   /** Appends cards to the draft; FORBIDDEN unless `viewerId` may edit it. */
   appendCards(viewerId: string, noteId: string, cards: NewCard[]): Promise<void>
   /**

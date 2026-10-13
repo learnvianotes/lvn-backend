@@ -23,6 +23,8 @@ export class PublicPages implements OnModuleInit {
     this.events.subscribe('NoteUnpublished', (e) => this.refresh(e.payload.noteId))
     // A showcase's credits are on its public page (ADR-0048).
     this.events.subscribe('ProjectContributorsChanged', (e) => this.refresh(e.payload.noteId))
+    // Its study aids, as the worker finishes each (ADR-0061).
+    this.events.subscribe('NoteArtifactReady', (e) => this.refresh(e.payload.noteId))
   }
 
   async refresh(noteId: string): Promise<void> {

@@ -234,6 +234,28 @@ type AiCard
   content: JSON!
 }
 
+"""
+A study aid made from a public note's published version: a summary, key concepts, practice questions, a quiz or flashcards
+"""
+type AiInsight
+  @join__type(graph: AI)
+{
+  id: UUID!
+  task: AiTask!
+  status: AiArtifactStatus!
+
+  """Text aids, once READY"""
+  markdown: String
+
+  """Card aids (quiz, flashcards), once READY: the title a kept note takes"""
+  title: String
+  cards: [AiCard!]
+
+  """Hidden by the owner: only they see it"""
+  hidden: Boolean!
+  versionId: UUID!
+}
+
 enum AiLanguage
   @join__type(graph: AI)
 {
@@ -1939,6 +1961,9 @@ type Mutation
   """
   askAiAboutDoubt(doubtId: UUID!): AskAiPayload! @join__field(graph: AI)
   deleteAiAnswer(id: UUID!): OkPayload! @join__field(graph: AI)
+
+  """The note's owner only"""
+  setAiInsightHidden(id: UUID!, hidden: Boolean!): OkPayload! @join__field(graph: AI)
   markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload! @join__field(graph: COMMUNICATION)
   updateNotificationSettings(input: UpdateNotificationSettingsInput!): NotificationSettingsPayload! @join__field(graph: COMMUNICATION)
 
@@ -2253,6 +2278,16 @@ type Note
   aiArtifacts: [AiArtifact!]! @join__field(graph: AI)
 
   """
+  Readers (signed in or not, while they may read the note): the READY aids the owner has not hidden. The owner: every step
+  """
+  aiInsights: [AiInsight!]! @join__field(graph: AI)
+
+  """
+  The owner's: the aids' progress; null for anyone else, or before any. Live NOTE_PROCESSING events say when a step ends
+  """
+  noteProcessingStatus: NoteProcessing @join__field(graph: AI)
+
+  """
   Signed-in readers of the note: its comments and reactions. Null for anonymous visitors
   """
   discussion: Discussion @join__field(graph: CORE)
@@ -2499,6 +2534,24 @@ type NotePermissions
   delete: Boolean!
   share: Boolean!
   fork: Boolean!
+}
+
+"""The study aids' progress for the note's current published version"""
+type NoteProcessing
+  @join__type(graph: AI)
+{
+  versionId: UUID!
+  steps: [NoteProcessingStep!]!
+
+  """Every step READY or FAILED"""
+  done: Boolean!
+}
+
+type NoteProcessingStep
+  @join__type(graph: AI)
+{
+  task: AiTask!
+  status: AiArtifactStatus!
 }
 
 type NoteSearchHit
