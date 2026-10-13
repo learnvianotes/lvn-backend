@@ -15,8 +15,10 @@ describe('Rhythm', () => {
   let db: PrismaService
   const RHYTHM = '{ rhythm { timeZone plannedDays target countedDays met weeksThisTerm weeksAllTime countedDaysAllTime pauseDaysLeft week { day weekday planned counted status } today { day counted comeback cameBack reviews learningSeconds items { kind done total } } pauses { id from to reason active } } }'
   type Rhythm = { rhythm: { timeZone: string; plannedDays: number[]; target: number; countedDays: number; met: boolean; weeksThisTerm: number; weeksAllTime: number; countedDaysAllTime: number; pauseDaysLeft: number; week: { day: string; weekday: number; planned: boolean; counted: boolean; status: string }[]; today: { day: string; counted: boolean; comeback: boolean; cameBack: boolean }; pauses: { id: string; from: string; to: string; active: boolean }[] } }
-  const person = async () => {
+  /** Someone who joined a month ago, unless `joinedToday` (ADR-0069: nothing from before joining is missed). */
+  const person = async (joinedToday = false) => {
     const u = await seedUser(app.app, { verified: true, handle: `rh${Date.now()}${Math.floor(Math.random() * 1e6)}` })
+    if (!joinedToday) await db.user.update({ where: { id: u.id }, data: { createdAt: new Date(Date.now() - 30 * 86_400_000) } })
     return { id: u.id, token: tokenFor(app.config, u.id) }
   }
   const rhythm = async (token: string) => (await app.gql<Rhythm>(RHYTHM, {}, token)).data!.rhythm
@@ -66,6 +68,16 @@ describe('Rhythm', () => {
     expect((await rhythm(me.token)).today).toMatchObject({ comeback: true, cameBack: false })
     await studyAt(me.token, new Date())
     expect((await rhythm(me.token)).today).toMatchObject({ comeback: false, cameBack: true })
+  })
+
+  it('misses nothing from before a new account joined, and offers no comeback on its first day', async () => {
+    const me = await person(true)
+    await app.gql(ok('SetRhythmPlan'), { input: { plannedDays: [1, 2, 3, 4, 5, 6] } }, me.token)
+    const r = await rhythm(me.token)
+    expect(r.today.comeback).toBe(false)
+    expect(r.week.filter((d) => d.status === 'MISSED')).toEqual([])
+    // Only today and the days after it are planned this week.
+    expect(r.target).toBe(Math.max(r.week.filter((d) => d.day >= r.today.day && d.weekday <= 6).length, 1))
   })
 
   it('pauses: from today on, 14 days a term, not over another pause; paused planned days leave the target', async () => {

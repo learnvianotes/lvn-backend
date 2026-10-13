@@ -47,6 +47,14 @@ describe('the week', () => {
     expect(missedBefore('2026-10-18', { plannedDays: plan, counted: days('2026-10-12'), pauses: [{ from: '2026-10-13', to: '2026-10-17' }] })).toBe(false)
   })
 
+  it('misses nothing from before the person started: those planned days leave the target', () => {
+    // Joined on Wednesday 14 Oct: Monday and Tuesday were before, so the week aims for Thursday and Saturday.
+    const w = weekState({ today: '2026-10-14', since: '2026-10-14', plannedDays: plan, counted: days(), pauses: [] })
+    expect(w.days.map((d) => d.status)).toEqual(['REST', 'REST', 'TODAY', 'AHEAD', 'AHEAD', 'AHEAD', 'AHEAD'])
+    expect(w).toMatchObject({ target: 2, comebackToday: false })
+    expect(missedBefore('2026-10-14', { plannedDays: plan, counted: days(), pauses: [], since: '2026-10-14' })).toBe(false)
+  })
+
   it('takes 3–6 distinct weekdays as a plan', () => {
     expect(validPlan([1, 3, 5])).toBe(true)
     expect(validPlan([1, 2, 3, 4, 5, 6])).toBe(true)

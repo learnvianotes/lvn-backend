@@ -1,7 +1,7 @@
 # Flashcard reviews (P6c)
 
 - Date: 2026-10-13
-- Package: `@lvn/contracts` (minor bump at merge)
+- Package: `@lvn/contracts` 0.42.0
 - Spec: §14.2; ADR-0068
 - Breaking: no
 
