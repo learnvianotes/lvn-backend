@@ -10,6 +10,8 @@ export interface CoreConfig {
   repositories: { githubApiUrl: string | null; gitlabApiUrl: string | null; githubToken: string | null }
   /** ADR-0067: the worker's pseudonymous copy of learning events for PostHog; null: off */
   analytics: { host: string; apiKey: string; pseudonymSecret: string } | null
+  /** ADR-0074: Open Library for books by ISBN (null: not looked up), and how the safe fetcher names itself */
+  resources: { openLibraryUrl: string | null; openLibraryCoversUrl: string | null; userAgent: string; allowHosts: string[] }
 }
 
 export const CORE_CONFIG = Symbol('CORE_CONFIG')
@@ -19,4 +21,10 @@ export const coreConfigFrom = (c: ApiConfig): CoreConfig => ({
   moderation: { wordsFile: c.MODERATION_WORDS_FILE ?? null },
   repositories: { githubApiUrl: c.GITHUB_API_URL ?? null, gitlabApiUrl: c.GITLAB_API_URL ?? null, githubToken: c.GITHUB_TOKEN ?? null },
   analytics: c.POSTHOG_HOST && c.POSTHOG_API_KEY ? { host: c.POSTHOG_HOST, apiKey: c.POSTHOG_API_KEY, pseudonymSecret: c.CODE_HMAC_SECRET } : null,
+  resources: {
+    openLibraryUrl: c.OPEN_LIBRARY_URL?.replace(/\/$/, '') ?? null,
+    openLibraryCoversUrl: c.OPEN_LIBRARY_COVERS_URL?.replace(/\/$/, '') ?? null,
+    userAgent: `LearnViaNotes/1.0 (+${c.WEB_URL})`,
+    allowHosts: c.SAFE_FETCH_ALLOW_HOSTS,
+  },
 })

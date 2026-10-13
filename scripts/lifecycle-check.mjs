@@ -595,6 +595,31 @@ if (opt('--vm')) {
   ok(decided.request?.status === 'APPROVED' && viewer.teacherStatus === 'VERIFIED' && viewer.globalRole === 'TEACHER' && viewer.verified && !invited.userErrors.length, 'a platform admin approves: F is a verified teacher, and F’s class takes students', JSON.stringify([decided.userErrors, viewer, invited.userErrors]))
 }
 
+// Resources (ADR-0074), with the real Open Library: G looks a book up by its ISBN and sends it with its cover; it waits
+// unseen by anyone else; a platform admin approves it from the queue; a guest reads it, and its cover is in storage.
+// G deletes it at the end, so the next run can send the same book again.
+if (opt('--vm')) {
+  const G = await signUp('g')
+  const moderator = await signUp('res-admin')
+  sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'INSTITUTIONAL_EMAIL' WHERE id = '${G.id}'`)
+  sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'INSTITUTIONAL_EMAIL', \\"globalRole\\" = 'PLATFORM_ADMIN' WHERE id = '${moderator.id}'`)
+  const preview = (await gql('query ($input: ResourcePreviewInput!) { resourcePreview(input: $input) { url title author isbn type imageUrl found } }', { input: { isbn: '0-13-235088-2' } }, G.token)).resourcePreview
+  ok(preview.found && /Clean Code/.test(preview.title ?? '') && /Martin/.test(preview.author ?? '') && preview.isbn === '9780132350884' && preview.type === 'BOOK', 'G looks a book up by its ISBN on Open Library, its authors from the work', JSON.stringify(preview))
+  const topic = (await gql('query ($q: String!) { examTopicOptions(query: $q) { id } }', { q: 'array' }, G.token)).examTopicOptions[0]
+  const sent = (await gql('mutation ($input: SubmitResourceInput!) { submitResource(input: $input) { resource { id status coverUrl } userErrors { message } } }', { input: { type: 'BOOK', title: preview.title, url: `${preview.url}?run=${WORD}`, isbn: `${preview.isbn}`, author: preview.author, topicIds: [topic?.id], imageUrl: preview.imageUrl } }, G.token)).submitResource
+  const id = sent.resource?.id
+  const unseen = id ? (await gql('query ($id: UUID!) { resource(id: $id) { id } }', { id })).resource : 'no resource'
+  ok(sent.resource?.status === 'PENDING' && unseen === null, 'G sends it: it waits for moderators, and a guest cannot see it', JSON.stringify([sent.userErrors, unseen]))
+  const queued = (await gql('{ moderationQueue(first: 50) { edges { node { entityType resource { id } } } } }', {}, moderator.token)).moderationQueue.edges.some((e) => e.node.resource?.id === id)
+  const decided = (await gql('mutation ($input: ModerateContentInput!) { moderateContent(input: $input) { ok userErrors { message } } }', { input: { entityType: 'RESOURCE', entityId: id, action: 'APPROVE' } }, moderator.token)).moderateContent
+  const seen = (await gql('query ($id: UUID!) { resource(id: $id) { status title coverUrl submittedBy { id } } }', { id })).resource
+  const cover = seen?.coverUrl ? await fetch(seen.coverUrl) : null
+  ok(queued && decided.ok && seen?.status === 'APPROVED' && cover?.ok && /^image\//.test(cover.headers.get('content-type') ?? ''), 'a platform admin approves it from the queue; a guest reads it, with its cover from storage', JSON.stringify([queued, decided, seen, cover?.status]))
+  const removed = (await gql('mutation ($input: ResourceIdInput!) { deleteResource(input: $input) { ok } }', { input: { id } }, G.token)).deleteResource
+  const gone = (await gql('query ($id: UUID!) { resource(id: $id) { id } }', { id })).resource
+  ok(removed.ok && gone === null, 'G deletes it, and it is gone for everyone', JSON.stringify([removed, gone]))
+}
+
 console.log(`1..${n}`)
 if (failed) {
   console.log(`# ${failed} of ${n} checks failed`)

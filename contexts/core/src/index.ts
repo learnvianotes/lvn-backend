@@ -30,3 +30,5 @@ export { FocusService } from './application/focus.service'
 
 /** This context's federation subgraph, composed by apps/api's gateway (ADR-0033). */
 export const coreSubgraph = { name: 'core', typeDefs: coreTypeDefs, modules: [CoreModule] }
+export { COMMERCE_WORDS } from './domain/resources'
+export { ResourcesService } from './application/resources.service'

@@ -62,6 +62,9 @@ locals {
       # Project workspaces' repository cards (ADR-0048): the providers' public APIs, no token.
       GITHUB_API_URL = "https://api.github.com"
       GITLAB_API_URL = "https://gitlab.com/api/v4"
+      # Resources (ADR-0074): books by ISBN and their covers from Open Library, no key.
+      OPEN_LIBRARY_URL        = "https://openlibrary.org"
+      OPEN_LIBRARY_COVERS_URL = "https://covers.openlibrary.org"
       # Search on Typesense (ADR-0055); Postgres answers when it cannot.
       SEARCH_PROVIDER   = "typesense"
       TYPESENSE_URL     = "http://typesense:8108"

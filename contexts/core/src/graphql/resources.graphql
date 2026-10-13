@@ -1,0 +1,129 @@
+# Resources (§14.4, ADR-0074): a learning catalogue people submit and moderators approve. No prices, stores or
+# affiliate links.
+
+enum ResourceType { BOOK COURSE TOOL SOFTWARE HARDWARE OTHER }
+
+"PENDING: waiting for moderators (its submitter and moderators see it); APPROVED: public; REJECTED: rejected or removed, with a reason"
+enum ResourceStatus { PENDING APPROVED REJECTED }
+
+type ResourceActions {
+  "Its submitter, until it is approved; saving a rejected one sends it to moderators again"
+  edit: Boolean!
+  delete: Boolean!
+  report: Boolean!
+}
+
+"A resource of the catalogue: approved ones are everyone's, guests included"
+type Resource @key(fields: "id") {
+  id: UUID!
+  type: ResourceType!
+  title: String!
+  description: String
+  "The link without tracking or affiliate parameters; the apps show it with rel=\"ugc nofollow noopener\""
+  url: String!
+  "The link's site without www., e.g. nptel.ac.in"
+  host: String!
+  "ISBN-13, for books"
+  isbn: String
+  "By: the author or maker"
+  author: String
+  "A read URL for its cover picture, valid for 15 minutes"
+  coverUrl: String
+  "Curated topics; null for one the viewer may no longer see"
+  topics: [Topic]!
+  submittedBy: User!
+  status: ResourceStatus!
+  "Why moderators rejected or removed it: its submitter and moderators only"
+  reason: String
+  decidedAt: DateTime
+  createdAt: DateTime!
+  viewerCan: ResourceActions!
+}
+
+"What a link's page or an ISBN's book says, for the person to edit before sending; nothing is kept"
+type ResourcePreview {
+  "The link as it would be kept, or the book's Open Library page"
+  url: String
+  title: String
+  description: String
+  author: String
+  isbn: String
+  "A guess from the page or the site; the person chooses"
+  type: ResourceType
+  siteName: String
+  "The page's picture on its own site: sent back with the resource, the server copies it into storage"
+  imageUrl: String
+  "The page or the book was read; false: fill in the details by hand"
+  found: Boolean!
+  "An approved resource with this link or ISBN already"
+  existing: Resource
+}
+
+input ResourcePreviewInput {
+  url: String
+  "Looked up on Open Library instead of the link"
+  isbn: String
+}
+
+input SubmitResourceInput {
+  type: ResourceType!
+  title: String!
+  description: String
+  url: String!
+  "Books only"
+  isbn: String
+  author: String
+  "1 to 5 curated topics"
+  topicIds: [UUID!]!
+  "An uploaded picture (purpose COVER)"
+  coverFileId: UUID
+  "Else the preview's imageUrl, copied into storage"
+  imageUrl: String
+}
+
+input UpdateResourceInput {
+  id: UUID!
+  type: ResourceType!
+  title: String!
+  description: String
+  url: String!
+  isbn: String
+  author: String
+  topicIds: [UUID!]!
+  coverFileId: UUID
+  imageUrl: String
+  "Take the cover away"
+  removeCover: Boolean
+}
+
+input ResourceIdInput {
+  id: UUID!
+}
+
+type ResourcePayload {
+  resource: Resource
+  userErrors: [UserError!]!
+}
+
+extend type Query {
+  "An approved resource, or one's own, or any for moderators; null otherwise"
+  resource(id: UUID!): Resource
+  "The viewer's resources, newest first, whatever their state"
+  myResources: [Resource!]!
+  "Curated topics with every word of the query in their title, at most 20: a resource's topics come from these"
+  resourceTopicOptions(query: String!): [ExamTopicOption!]!
+  "Reads a link's page or looks a book up by ISBN (30 an hour)"
+  resourcePreview(input: ResourcePreviewInput!): ResourcePreview!
+}
+
+extend type Mutation {
+  "Sends a resource to moderators (verified adults; 10 a day, 20 waiting at most)"
+  submitResource(input: SubmitResourceInput!): ResourcePayload!
+  updateResource(input: UpdateResourceInput!): ResourcePayload!
+  deleteResource(input: ResourceIdInput!): OkPayload!
+}
+
+extend type ModerationCase {
+  "Set for RESOURCE cases"
+  resource: Resource
+}

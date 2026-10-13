@@ -1,4 +1,4 @@
-import { type AiTaskType, ClassroomRole, DERIVATIVE_AI_TASKS, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, NoteRole, VerificationMethod, Visibility } from './enums'
+import { type AiTaskType, ClassroomRole, DERIVATIVE_AI_TASKS, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, NoteRole, ResourceStatus, VerificationMethod, Visibility } from './enums'
 
 /**
  * The permission matrix (spec §5), defined once. The backend's PolicyService loads the facts
@@ -98,6 +98,12 @@ export const Action = {
   CONTENT_REPORT: 'content.report',
   /** The platform moderation queue (§15.1): PLATFORM_ADMIN until the admin app exists (ADR-0037). */
   CONTENT_MODERATE: 'content.moderate',
+  /** Resources (§14.4, ADR-0074): submitting one for moderators to approve */
+  RESOURCE_SUBMIT: 'resource.submit',
+  RESOURCE_READ: 'resource.read',
+  /** Its submitter, while it waits or after it was rejected (saving resubmits it) */
+  RESOURCE_EDIT: 'resource.edit',
+  RESOURCE_DELETE: 'resource.delete',
 } as const
 export type Action = (typeof Action)[keyof typeof Action]
 
@@ -222,6 +228,12 @@ export type Resource =
       /** The classroom's Teacher or TA has invited the actor and the invite is still valid. */
       invitedByStaff?: boolean
     }
+  | {
+      /** A resource of the catalogue (ADR-0074) */
+      kind: 'learningResource'
+      submittedById: string
+      status: ResourceStatus
+    }
 
 /** Note-level relationship, from strongest to weakest — the columns of the §5 table. */
 export type NoteRelation =
@@ -303,6 +315,7 @@ export const NEEDS_VERIFIED_ACCOUNT: ReadonlySet<Action> = new Set<Action>([
   Action.USER_REQUEST_CONNECTION,
   Action.USER_RESPOND_TO_CONNECTION,
   Action.ACCOUNT_REVIEW_VERIFICATION,
+  Action.RESOURCE_SUBMIT,
 ])
 
 /**
@@ -324,6 +337,7 @@ export const BLOCKED_WHILE_SUSPENDED: ReadonlySet<Action> = new Set<Action>([
   Action.CLASSROOM_MODERATE_REPORTS,
   Action.TEACHER_EDIT_PROFILE,
   Action.CONTENT_MODERATE,
+  Action.RESOURCE_EDIT,
 ])
 
 function readable(actor: Actor | null, note: NoteFacts): boolean {
@@ -487,6 +501,22 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           return false
       }
     }
+    case 'learningResource': {
+      const mine = actor?.id === resource.submittedById
+      const moderator = actor?.globalRole === GlobalRole.PLATFORM_ADMIN
+      switch (action) {
+        case Action.RESOURCE_READ:
+          // Waiting and rejected resources are their submitter's and the moderators' alone (ADR-0074).
+          return resource.status === ResourceStatus.APPROVED || mine || moderator
+        case Action.RESOURCE_EDIT:
+          // An approved resource is the catalogue's: its submitter deletes it rather than changing it.
+          return mine && resource.status !== ResourceStatus.APPROVED
+        case Action.RESOURCE_DELETE:
+          return mine || moderator
+        default:
+          return false
+      }
+    }
     case 'newNote':
       // Anyone signed in writes notes and projects; blogs and posts are teacher publications (ADR-0014, ADR-0015).
       if (!actor || action !== Action.NOTE_CREATE) return false
@@ -506,6 +536,9 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           return actor.globalRole === GlobalRole.TEACHER || actor.teacherApplicant === true
         case Action.CONTENT_MODERATE:
           return actor.globalRole === GlobalRole.PLATFORM_ADMIN
+        case Action.RESOURCE_SUBMIT:
+          // A resource is public with its submitter's name: child accounts do not publish in public (§15.2).
+          return !actor.restrictedMinor
         default:
           return false
       }

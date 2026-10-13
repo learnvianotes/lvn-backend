@@ -20,6 +20,7 @@
     "@lvn-backend/prisma-base": "workspace:*",
     "@lvn-backend/queue": "workspace:*",
     "@lvn-backend/redis": "workspace:*",
+    "@lvn-backend/safe-fetch": "workspace:*",
     "@lvn-backend/storage": "workspace:*",
     "@lvn/contracts": "workspace:@learnvianotes/contracts@*",
     "@nestjs/common": "^11.2.7",

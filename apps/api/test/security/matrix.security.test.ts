@@ -34,6 +34,7 @@ describe('security: the permission matrix, action by action', () => {
     unfollowUser: 'PersonInput', removeFollower: 'PersonInput', blockUser: 'PersonInput', unblockUser: 'PersonInput', restrictUser: 'PersonInput', unrestrictUser: 'PersonInput',
     requestConnection: 'PersonInput', respondToConnectionRequest: 'RespondToConnectionRequestInput', removeConnection: 'PersonInput', updateTeacherProfile: 'UpdateTeacherProfileInput',
     reportContent: 'ReportContentInput', addComment: 'AddCommentInput', moderateContent: 'ModerateContentInput', publishClassQuiz: 'PublishClassQuizInput',
+    submitResource: 'SubmitResourceInput', updateResource: 'UpdateResourceInput', deleteResource: 'ResourceIdInput',
   }
   type Outcome = 'allowed' | 'refused'
   /** A mutation's outcome: refused on a GraphQL error (FORBIDDEN, NOT_FOUND, UNAUTHENTICATED) or a user error. */
@@ -319,13 +320,48 @@ describe('security: the permission matrix, action by action', () => {
     ])
   })
 
+  it('resources (ADR-0074): verified adults submit; a waiting one is its submitter’s and the moderators’ alone; moderators decide', async () => {
+    ;[Action.RESOURCE_SUBMIT, Action.RESOURCE_READ, Action.RESOURCE_EDIT, Action.RESOURCE_DELETE].forEach(action)
+    const topicId = (await db.topic.findFirstOrThrow({ where: { origin: 'CURATED', children: { none: {} } }, select: { id: true } })).id
+    const fields = () => ({ type: 'COURSE', title: 'Operating Systems, NPTEL', url: `https://nptel.ac.in/courses/${newId()}`, topicIds: [topicId] })
+    const made = async (who: Person) => (await t.gql<{ submitResource: { resource: { id: string } } }>('mutation ($input: SubmitResourceInput!) { submitResource(input: $input) { resource { id } } }', { input: fields() }, who.token)).data!.submitResource.resource.id
+    /** Reading is refused when the resource comes back null: hidden things are "not found" (§5). */
+    const read = async (who: Person | null, id: string) => {
+      const res = await t.gql<{ resource: { id: string } | null }>('query ($id: UUID!) { resource(id: $id) { id } }', { id }, who?.token)
+      return res.data?.resource ? { outcome: 'allowed' as const, why: '' } : { outcome: 'refused' as const, why: 'null' }
+    }
+    const waiting = await made(member)
+    const doomed = await made(member)
+    await expectCases([
+      ['submit, signed out', 'refused', () => run(null, 'submitResource', fields())],
+      ['submit, unverified', 'refused', () => run(unverified, 'submitResource', fields())],
+      ['submit, a restricted minor', 'refused', () => run(minor, 'submitResource', fields())],
+      ['submit, a verified student', 'allowed', () => run(outsider, 'submitResource', fields())],
+      ['read a waiting one, a guest', 'refused', () => read(null, waiting)],
+      ['read a waiting one, someone else', 'refused', () => read(outsider, waiting)],
+      ['read a waiting one, a teacher', 'refused', () => read(teacher, waiting)],
+      ['read a waiting one, its submitter', 'allowed', () => read(member, waiting)],
+      ['read a waiting one, a platform admin', 'allowed', () => read(platformAdmin, waiting)],
+      ['edit a waiting one, someone else', 'refused', () => run(outsider, 'updateResource', { id: waiting, ...fields() })],
+      ['edit a waiting one, its submitter', 'allowed', () => run(member, 'updateResource', { id: waiting, ...fields() })],
+      ['approve, a teacher', 'refused', () => run(teacher, 'moderateContent', { entityType: 'RESOURCE', entityId: waiting, action: 'APPROVE' })],
+      ['approve, a group moderator', 'refused', () => run(moderator, 'moderateContent', { entityType: 'RESOURCE', entityId: waiting, action: 'APPROVE' })],
+      ['approve, a platform admin', 'allowed', () => run(platformAdmin, 'moderateContent', { entityType: 'RESOURCE', entityId: waiting, action: 'APPROVE' })],
+      ['read an approved one, a guest', 'allowed', () => read(null, waiting)],
+      ['edit an approved one, its submitter', 'refused', () => run(member, 'updateResource', { id: waiting, ...fields() })],
+      ['delete, someone else', 'refused', () => run(outsider, 'deleteResource', { id: waiting })],
+      ['delete, its submitter', 'allowed', () => run(member, 'deleteResource', { id: waiting })],
+      ['delete someone’s, a platform admin', 'allowed', () => run(platformAdmin, 'deleteResource', { id: doomed })],
+    ])
+  })
+
   /** Actions whose channel arrives in a later phase; each stays here until it has cases above. */
   const NOT_YET: Record<string, string> = {
     [Action.CLASSROOM_VIEW_PERFORMANCE]: 'Phase 6: progress, from quiz attempts and learning events (plans/phase-4.md)',
   }
 
   it('every community action has cases above or a phase that brings it', () => {
-    const community = Object.values(Action).filter((a) => /^(group|classroom|user|teacher|content)\./.test(a))
+    const community = Object.values(Action).filter((a) => /^(group|classroom|user|teacher|content|resource)\./.test(a))
     expect(community.filter((a) => !covered.has(a) && !NOT_YET[a])).toEqual([])
   })
 })

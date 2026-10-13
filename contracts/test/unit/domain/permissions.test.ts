@@ -1,4 +1,4 @@
-import { AiTaskType, ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, VerificationMethod, Visibility } from '../../../src/domain/enums'
+import { AiTaskType, ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, ResourceStatus, VerificationMethod, Visibility } from '../../../src/domain/enums'
 import { Action, aiTaskAction, BLOCKED_WHILE_SUSPENDED, can, NEEDS_VERIFIED_ACCOUNT, type Actor, type NoteFacts, type Resource } from '../../../src/domain/permissions'
 
 /**
@@ -476,6 +476,7 @@ describe('verified account (ADR-0017)', () => {
       'classroom.acceptInvite', 'classroom.create', 'classroom.requestJoin',
       'group.acceptMentorInvite', 'group.answerDoubt', 'group.askDoubt', 'group.create', 'group.join', 'group.post', 'group.requestJoin',
       'note.changeVisibility', 'note.comment', 'note.publish', 'note.share',
+      'resource.submit',
       'user.follow', 'user.requestConnection', 'user.respondToConnection',
     ])
   })
@@ -592,5 +593,47 @@ describe('a suspended account (ADR-0053)', () => {
 
   it('every action that needs a verified account is blocked while suspended', () => {
     for (const a of NEEDS_VERIFIED_ACCOUNT) expect(BLOCKED_WHILE_SUSPENDED.has(a)).toBe(true)
+  })
+})
+
+describe('resources (ADR-0074)', () => {
+  const admin = student('a', { globalRole: GlobalRole.PLATFORM_ADMIN })
+  const of = (status: ResourceStatus, submittedById = 'owner'): Resource => ({ kind: 'learningResource', submittedById, status })
+
+  it('verified adults submit; child accounts, unverified and suspended accounts and visitors do not', () => {
+    expect(can(other, Action.RESOURCE_SUBMIT)).toBe(true)
+    expect(can(verifiedTeacher, Action.RESOURCE_SUBMIT)).toBe(true)
+    expect(can(student('m', { restrictedMinor: true }), Action.RESOURCE_SUBMIT)).toBe(false)
+    expect(can(student('u', { institutionVerified: false }), Action.RESOURCE_SUBMIT)).toBe(false)
+    expect(can(student('s', { suspended: true }), Action.RESOURCE_SUBMIT)).toBe(false)
+    expect(can(anon, Action.RESOURCE_SUBMIT)).toBe(false)
+  })
+
+  it('an approved resource is everyone’s to read; a waiting or rejected one its submitter’s and the moderators’ alone', () => {
+    for (const actor of [owner, other, anon, admin]) expect(can(actor, Action.RESOURCE_READ, of(ResourceStatus.APPROVED))).toBe(true)
+    for (const status of [ResourceStatus.PENDING, ResourceStatus.REJECTED]) {
+      expect(can(owner, Action.RESOURCE_READ, of(status))).toBe(true)
+      expect(can(admin, Action.RESOURCE_READ, of(status))).toBe(true)
+      expect(can(other, Action.RESOURCE_READ, of(status))).toBe(false)
+      expect(can(verifiedTeacher, Action.RESOURCE_READ, of(status))).toBe(false)
+      expect(can(anon, Action.RESOURCE_READ, of(status))).toBe(false)
+    }
+  })
+
+  it('its submitter edits it until it is approved, and deletes it any time; moderators delete; nobody else does either', () => {
+    expect(can(owner, Action.RESOURCE_EDIT, of(ResourceStatus.PENDING))).toBe(true)
+    expect(can(owner, Action.RESOURCE_EDIT, of(ResourceStatus.REJECTED))).toBe(true)
+    expect(can(owner, Action.RESOURCE_EDIT, of(ResourceStatus.APPROVED))).toBe(false)
+    expect(can(student('owner', { suspended: true }), Action.RESOURCE_EDIT, of(ResourceStatus.REJECTED))).toBe(false)
+    expect(can(admin, Action.RESOURCE_EDIT, of(ResourceStatus.PENDING))).toBe(false)
+    expect(can(other, Action.RESOURCE_EDIT, of(ResourceStatus.PENDING))).toBe(false)
+    // An action that is not about resources is refused for one.
+    expect(can(owner, Action.NOTE_READ, of(ResourceStatus.APPROVED))).toBe(false)
+    for (const status of Object.values(ResourceStatus)) {
+      expect(can(owner, Action.RESOURCE_DELETE, of(status))).toBe(true)
+      expect(can(admin, Action.RESOURCE_DELETE, of(status))).toBe(true)
+      expect(can(other, Action.RESOURCE_DELETE, of(status))).toBe(false)
+      expect(can(anon, Action.RESOURCE_DELETE, of(status))).toBe(false)
+    }
   })
 })

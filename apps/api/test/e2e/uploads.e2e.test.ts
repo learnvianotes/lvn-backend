@@ -58,7 +58,10 @@ describe('uploads', () => {
     [{ mimeType: 'text/html' }, ['input', 'mimeType']],
     [{ sizeBytes: 21 * 1024 * 1024 }, ['input', 'sizeBytes']],
     [{ sizeBytes: 0 }, ['input', 'sizeBytes']],
-    [{ purpose: 'COVER' }, ['input', 'purpose']],
+    [{ purpose: 'VOICE_NOTE' }, ['input', 'purpose']],
+    // A resource's cover (ADR-0074) is a picture of at most 2 MB.
+    [{ purpose: 'COVER', sizeBytes: 3 * 1024 * 1024 }, ['input', 'sizeBytes']],
+    [{ purpose: 'COVER', mimeType: 'application/pdf', fileName: 'a.pdf' }, ['input', 'mimeType']],
     [{ fileName: '/// ' }, ['input', 'fileName']],
   ])('refuses %j', async (over, field) => {
     const res = await createIntent(t, token, { fileName: 'a.png', mimeType: 'image/png', sizeBytes: 100, purpose: 'AVATAR', ...over })

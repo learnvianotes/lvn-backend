@@ -917,7 +917,7 @@ export interface ModeratedNote {
   deleted: boolean
 }
 
-/** APPROVE frees a held note, puts back hidden or removed content and removed groups, and lifts a suspension; HIDE and REMOVE take it off for everyone but its author; DISMISS closes reports; WARN tells the author; SUSPEND (accounts only, platform admins, ADR-0053) stops an account reaching others for suspendDays */
+/** APPROVE frees a held note, puts back hidden or removed content and removed groups, lifts a suspension, and approves a resource; HIDE and REMOVE take it off for everyone but its author (REMOVE rejects a resource, ADR-0074); DISMISS closes reports; WARN tells the author; SUSPEND (accounts only, platform admins, ADR-0053) stops an account reaching others for suspendDays */
 export type ModerationActionType = 'APPROVE' | 'HIDE' | 'REMOVE' | 'WARN' | 'SUSPEND' | 'DISMISS'
 
 export interface ModerationAppeal {
@@ -946,6 +946,8 @@ export interface ModerationCase {
   reports: Array<ModerationReport>
   appeal: ModerationAppeal | null
   openedAt: Date
+  /** Set for RESOURCE cases */
+  resource?: Resource | null
 }
 
 export interface ModerationCaseConnection {
@@ -1178,6 +1180,18 @@ export interface MutationDismissRecommendationArgs {
   input: DismissRecommendationInput
 }
 
+export interface MutationSubmitResourceArgs {
+  input: SubmitResourceInput
+}
+
+export interface MutationUpdateResourceArgs {
+  input: UpdateResourceInput
+}
+
+export interface MutationDeleteResourceArgs {
+  input: ResourceIdInput
+}
+
 export interface MutationReviewCardArgs {
   input: ReviewCardInput
 }
@@ -1358,6 +1372,18 @@ export interface QueryRecommendationsArgs {
   limit?: number | null
 }
 
+export interface QueryResourceArgs {
+  id: string
+}
+
+export interface QueryResourceTopicOptionsArgs {
+  query: string
+}
+
+export interface QueryResourcePreviewArgs {
+  input: ResourcePreviewInput
+}
+
 export interface QueryDoubtArgs {
   id: string
 }
@@ -1462,7 +1488,7 @@ export interface ReportContentInput {
   details?: string | null
 }
 
-export type ReportEntityType = 'NOTE' | 'USER' | 'COMMENT' | 'GROUP_POST' | 'CLASSROOM_POST' | 'DOUBT' | 'GROUP'
+export type ReportEntityType = 'NOTE' | 'USER' | 'COMMENT' | 'GROUP_POST' | 'CLASSROOM_POST' | 'DOUBT' | 'GROUP' | 'RESOURCE'
 
 export type ReportReason = 'HARASSMENT' | 'SEXUAL' | 'SELF_HARM' | 'HATE' | 'SPAM' | 'COPYRIGHT' | 'OTHER'
 
@@ -1478,6 +1504,79 @@ export interface RequestToJoinGroupInput {
   /** At most 500 characters, for the admins */
   message?: string | null
 }
+
+/** A resource of the catalogue: approved ones are everyone's, guests included */
+export interface Resource {
+  id: string
+  type: ResourceType
+  title: string
+  description: string | null
+  /** The link without tracking or affiliate parameters; the apps show it with rel="ugc nofollow noopener" */
+  url: string
+  /** The link's site without www., e.g. nptel.ac.in */
+  host: string
+  /** ISBN-13, for books */
+  isbn: string | null
+  /** By: the author or maker */
+  author: string | null
+  /** A read URL for its cover picture, valid for 15 minutes */
+  coverUrl: string | null
+  /** Curated topics; null for one the viewer may no longer see */
+  topics: Array<Topic | null>
+  submittedBy: User
+  status: ResourceStatus
+  /** Why moderators rejected or removed it: its submitter and moderators only */
+  reason: string | null
+  decidedAt: Date | null
+  createdAt: Date
+  viewerCan: ResourceActions
+}
+
+export interface ResourceActions {
+  /** Its submitter, until it is approved; saving a rejected one sends it to moderators again */
+  edit: boolean
+  delete: boolean
+  report: boolean
+}
+
+export interface ResourceIdInput {
+  id: string
+}
+
+export interface ResourcePayload {
+  resource: Resource | null
+  userErrors: Array<UserError>
+}
+
+/** What a link's page or an ISBN's book says, for the person to edit before sending; nothing is kept */
+export interface ResourcePreview {
+  /** The link as it would be kept, or the book's Open Library page */
+  url: string | null
+  title: string | null
+  description: string | null
+  author: string | null
+  isbn: string | null
+  /** A guess from the page or the site; the person chooses */
+  type: ResourceType | null
+  siteName: string | null
+  /** The page's picture on its own site: sent back with the resource, the server copies it into storage */
+  imageUrl: string | null
+  /** The page or the book was read; false: fill in the details by hand */
+  found: boolean
+  /** An approved resource with this link or ISBN already */
+  existing: Resource | null
+}
+
+export interface ResourcePreviewInput {
+  url?: string | null
+  /** Looked up on Open Library instead of the link */
+  isbn?: string | null
+}
+
+/** PENDING: waiting for moderators (its submitter and moderators see it); APPROVED: public; REJECTED: rejected or removed, with a reason */
+export type ResourceStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+
+export type ResourceType = 'BOOK' | 'COURSE' | 'TOOL' | 'SOFTWARE' | 'HARDWARE' | 'OTHER'
 
 /** A flashcard to review, as the person reads its note now */
 export interface ReviewCard {
@@ -1713,6 +1812,22 @@ export interface SubmitQuizAttemptInput {
   answers: Array<QuizAnswerInput>
 }
 
+export interface SubmitResourceInput {
+  type: ResourceType
+  title: string
+  description?: string | null
+  url: string
+  /** Books only */
+  isbn?: string | null
+  author?: string | null
+  /** 1 to 5 curated topics */
+  topicIds: Array<string>
+  /** An uploaded picture (purpose COVER) */
+  coverFileId?: string | null
+  /** Else the preview's imageUrl, copied into storage */
+  imageUrl?: string | null
+}
+
 /** A topic of the notes subgraph */
 export interface Topic {
   id: string
@@ -1757,6 +1872,21 @@ export interface UpdateGroupInput {
   description?: string | null
   privacy?: GroupPrivacy | null
   joinPolicy?: GroupJoinPolicy | null
+}
+
+export interface UpdateResourceInput {
+  id: string
+  type: ResourceType
+  title: string
+  description?: string | null
+  url: string
+  isbn?: string | null
+  author?: string | null
+  topicIds: Array<string>
+  coverFileId?: string | null
+  imageUrl?: string | null
+  /** Take the cover away */
+  removeCover?: boolean | null
 }
 
 /** A person, owned by the users subgraph */
