@@ -138,6 +138,32 @@ ok(await eventually(typo, 15_000), 'a typo in its words finds it too: Typesense 
 const fork = await gql('mutation ($input: NoteIdInput!) { forkNote(input: $input) { note { id visibility forkedFrom { author { id } } } userErrors { message } } }', { input: { noteId: id } }, B.token)
 ok(fork.forkNote.note?.visibility === 'PRIVATE' && fork.forkNote.note.forkedFrom?.author.id === A.id, 'B copies it, privately, with the credit to A')
 
+// AI tasks (ADR-0059), where the environment's AI answers (ADR-0058; locally, the dev machine's Ollama): B, a reader,
+// asks for flashcards of the published version, the worker makes them with the real model, B keeps one as a note of
+// their own, and A's note and its versions are untouched; only B sees the result, and the tokens count against B's day.
+const aiStatus = (await gql('{ aiStatus { available reason } }')).aiStatus
+if (aiStatus.available) {
+  const run = await gql('mutation ($input: RunAiTaskInput!) { runAiTask(input: $input) { artifact { id status } userErrors { message } } }', { input: { noteId: id, task: 'FLASHCARDS' } }, B.token)
+  const artifactId = run.runAiTask.artifact?.id
+  ok(run.runAiTask.artifact?.status === 'QUEUED', "B asks AI for flashcards of A's note", run.runAiTask.userErrors[0]?.message)
+  let made
+  const settled = await eventually(async () => {
+    made = (await gql('query ($id: UUID!) { aiArtifact(id: $id) { status fromPublishedVersion cards { type } error } }', { id: artifactId }, B.token)).aiArtifact
+    return made.status === 'READY' || made.status === 'FAILED'
+  }, 180_000)
+  ok(settled && made.status === 'READY' && made.fromPublishedVersion && made.cards.length > 0 && made.cards.every((c) => c.type === 'flashcard'), 'the worker makes them with the real model, from the published version', made?.error ?? `${made?.cards?.length ?? 0} cards`)
+  const kept = await gql('mutation ($input: KeepAiCardsInput!) { keepAiCards(input: $input) { noteId userErrors { message } } }', { input: { artifactId, cardIndexes: [0], into: 'NEW_NOTE' } }, B.token)
+  const keptId = kept.keepAiCards.noteId
+  const theirs = keptId ? (await gql('query ($id: UUID!) { note(id: $id) { viewerAccess visibility cards(first: 10) { edges { node { type } } } } }', { id: keptId }, B.token)).note : null
+  ok(keptId !== id && theirs?.viewerAccess === 'OWNER' && theirs.visibility === 'PRIVATE' && theirs.cards.edges.length === 1, 'B keeps one as a private note of their own', kept.keepAiCards.userErrors[0]?.message)
+  const asA = (await gql('query ($id: UUID!) { note(id: $id) { publishedVersion { number } aiArtifacts { id } } }', { id }, A.token)).note
+  ok(asA.publishedVersion?.number === 1 && asA.aiArtifacts.length === 0, "A's note keeps its version, and A sees none of B's results")
+  const used = (await gql('{ myAiAllowance { usedToday limitToday } }', {}, B.token)).myAiAllowance
+  ok(used.usedToday > 0, "the model's tokens count against B's day", `${used.usedToday} of ${used.limitToday ?? 'no limit'}`)
+} else {
+  console.log(`# AI is off here (${aiStatus.reason}): AI tasks not checked`)
+}
+
 // A second version, and the page follows.
 await gql('mutation ($input: UpdateNoteDraftInput!) { updateNoteDraft(input: $input) { results { status } } }', { input: { noteId: id, title: `Binary heaps ${WORD}` } }, A.token)
 const v2 = await gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { publishedVersion { number } slug } } }', { input: { noteId: id } }, A.token)
