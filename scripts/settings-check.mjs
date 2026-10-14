@@ -59,15 +59,6 @@ const up = await gql('mutation ($input: SignUpInput!) { signUp(input: $input) { 
   input: { email: `settings-${stamp}@example.com`, password: `settings passphrase ${stamp}`, displayName: 'Settings Check', dateOfBirth: '2000-01-01', acceptedTermsVersion: termsVersion },
 })
 const token = up.signUp.session.accessToken
-let accepted = 0
-for (let sent = 0; sent < 600; sent += 50) {
-  const answers = await Promise.all(Array.from({ length: 50 }, () => post({ query: '{ viewer { id } }' }, token)))
-  accepted += answers.filter((a) => a.status === 200).length
-}
-const refused = await post({ query: '{ viewer { id } }' }, token)
-const refusal = await refused.json().catch(() => ({}))
-ok(accepted === 600 && refused.status === 429 && Number(refused.headers.get('retry-after')) > 0 && refusal.errors?.[0]?.extensions?.code === 'RATE_LIMITED', 'a person’s 601st operation in a minute is refused with 429 and Retry-After', `${accepted} accepted, then ${refused.status}`)
-
 // Storage.
 const intent = (await gql('mutation ($input: CreateUploadIntentInput!) { createUploadIntent(input: $input) { intent { fileId uploadUrl } userErrors { message } } }', { input: { fileName: 'me.png', mimeType: 'image/png', sizeBytes: 68, purpose: 'AVATAR' } }, token)).createUploadIntent.intent
 const url = new URL(intent.uploadUrl)
@@ -87,6 +78,19 @@ if (opt('--vm')) {
   const settings = { policy: get('maxmemory-policy'), aof: get('appendonly'), fsync: get('appendfsync'), cap: Number(get('maxmemory')) }
   ok(settings.policy === 'noeviction' && settings.aof === 'yes' && settings.fsync === 'everysec' && settings.cap === 512 * 1024 ** 2, 'Redis keeps every key and writes them to disk every second, within 512 MB', JSON.stringify(settings))
 }
+
+// A fresh account, whose minute nothing else has spent.
+const rate = (await gql('mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken } userErrors { message } } }', {
+  input: { email: `settings-rate-${stamp}@example.com`, password: `settings passphrase ${stamp}`, displayName: 'Settings Rate', dateOfBirth: '2000-01-01', acceptedTermsVersion: termsVersion },
+})).signUp.session.accessToken
+let accepted = 0
+for (let sent = 0; sent < 600; sent += 50) {
+  const answers = await Promise.all(Array.from({ length: 50 }, () => post({ query: '{ viewer { id } }' }, rate)))
+  accepted += answers.filter((a) => a.status === 200).length
+}
+const refused = await post({ query: '{ viewer { id } }' }, rate)
+const refusal = await refused.json().catch(() => ({}))
+ok(accepted === 600 && refused.status === 429 && Number(refused.headers.get('retry-after')) > 0 && refusal.errors?.[0]?.extensions?.code === 'RATE_LIMITED', 'a person’s 601st operation in a minute is refused with 429 and Retry-After', `${accepted} accepted, then ${refused.status}`)
 
 console.log(`1..${n}`)
 console.log(failed ? `# ${failed} of ${n} checks failed` : `# all ${n} checks passed`)
