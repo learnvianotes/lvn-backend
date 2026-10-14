@@ -1,3 +1,4 @@
+import { metrics } from '@opentelemetry/api'
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { ExpressInstrumentation } from '@opentelemetry/instrumentation-express'
@@ -55,5 +56,8 @@ export function startTelemetry(options: TelemetryOptions): Telemetry {
     ],
   })
   sdk.start()
+  // A heartbeat at every collection, whether or not requests or jobs came: the TargetDown alert's "still running"
+  // (infra/terraform/monitoring/rules.yml, ADR-0089).
+  metrics.getMeter('lvn').createObservableGauge('lvn.up', { description: 'Reported by every running service' }).addCallback((result) => result.observe(1))
   return { enabled: true, shutdown: () => sdk.shutdown() }
 }

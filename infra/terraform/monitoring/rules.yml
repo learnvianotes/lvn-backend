@@ -59,7 +59,7 @@ groups:
           summary: "More than 0.5 % of jobs failed in the last hour"
           runbook: docs/runbooks/drain-a-queue.md
       - alert: TargetDown
-        expr: up{job="otel-collector"} == 0 or absent_over_time(target_info{service_name="lvn-api"}[5m]) or absent_over_time(target_info{service_name="lvn-worker"}[5m])
+        expr: up{job="otel-collector"} == 0 or absent_over_time(lvn_up{service_name="lvn-api"}[5m]) or absent_over_time(lvn_up{service_name="lvn-worker"}[5m])
         for: 5m
         labels: { severity: page }
         annotations:
