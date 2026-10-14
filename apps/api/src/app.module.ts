@@ -52,8 +52,9 @@ export class AppModule {
             useFactory: (limiter: RateLimiter) => async (ctx: unknown) => {
               const viewer = (ctx as RequestContext).viewer
               if (!viewer) return null
-              const hit = await limiter.hit(`gql:${viewer.userId}`, { max: OPERATIONS_PER_MINUTE, windowSeconds: 60 })
-              return hit.allowed ? null : hit.retryAfter
+              // Redis down is not a reason to refuse everyone: the edge still stops floods.
+              const hit = await limiter.hit(`gql:${viewer.userId}`, { max: OPERATIONS_PER_MINUTE, windowSeconds: 60 }).catch(() => null)
+              return !hit || hit.allowed ? null : hit.retryAfter
             },
           },
         }),
