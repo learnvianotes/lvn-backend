@@ -11,6 +11,7 @@ import { AskService } from './application/ask.service'
 import { PublicPipeline } from './application/public-pipeline'
 import { MediaInput } from './application/media-input'
 import { AiPageVision } from './application/page-vision'
+import { AiSkillsReader } from './application/skills-reader'
 import { PromptLibrary } from './application/prompts'
 import { AiResolver } from './graphql/ai.resolver'
 import { AiSettingsResolver } from './graphql/ai-settings.resolver'
@@ -44,6 +45,7 @@ export class AiModule {
         AiTasksService,
         MediaInput,
         AiPageVision,
+        AiSkillsReader,
         AskService,
         PublicPipeline,
         AiEmbeddings,
@@ -56,7 +58,7 @@ export class AiModule {
         InsightsResolver,
         AiSettingsResolver,
       ],
-      exports: [AiGateway, AiTasksService, AskService, PublicPipeline, AiEmbeddings, AiExport, AiPageVision],
+      exports: [AiGateway, AiTasksService, AskService, PublicPipeline, AiEmbeddings, AiExport, AiPageVision, AiSkillsReader],
     }
   }
 }

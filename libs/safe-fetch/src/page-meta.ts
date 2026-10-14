@@ -73,3 +73,31 @@ export function readPageMeta(html: string, pageUrl: string): PageMeta {
     author: author && !/^https?:\/\//i.test(author) ? author : null,
   }
 }
+
+/** A meta tag's content by its name, from the page's head; null when the head has none. */
+export function readMetaTag(html: string, name: string): string | null {
+  const head = html.slice(0, Math.max(html.search(/<\/head\s*>/i), 0) || 200_000)
+  for (const m of head.matchAll(/<meta\b[^>]*>/gi)) {
+    const a = attributes(m[0])
+    if ((a.name ?? '').toLowerCase() === name.toLowerCase() && a.content !== undefined) return decode(a.content).trim()
+  }
+  return null
+}
+
+/**
+ * A page's words as a reader sees them: scripts, styles and markup gone, entities decoded, white space collapsed, cut
+ * to `max` characters. Nothing runs and nothing else is fetched.
+ */
+export function readPageText(html: string, max: number): string {
+  const body = html
+    .replace(/<(script|style|noscript|template|svg)\b[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<(br|\/p|\/div|\/li|\/h[1-6]|\/tr|\/section|\/article)\b[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+  return decode(body)
+    .split('\n')
+    .map((l) => l.replace(/[ \t\f\v\u00a0]+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, max)
+}

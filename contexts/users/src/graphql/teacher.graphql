@@ -1,13 +1,22 @@
-# The teacher Skills tab, filled by hand (ADR-0012, ADR-0044); imports from public sources arrive in Phase 7.
+# The teacher Skills tab (ADR-0012, ADR-0044): filled by hand, and imported from public identifiers the teacher proves
+# are theirs (ADR-0077).
 
 enum TeacherSkillKind {
   SKILL
   QUALIFICATION
   EXPERIENCE
+  "Open-source work (ADR-0077)"
+  PROJECT
+  "A paper, book or chapter (ADR-0077)"
+  PUBLICATION
 }
 
 enum TeacherSkillSource {
   MANUAL
+  GITHUB
+  WEBSITE
+  ORCID
+  OPENALEX
 }
 
 type TeacherSkill {
@@ -16,19 +25,84 @@ type TeacherSkill {
   name: String!
   detail: String
   source: TeacherSkillSource!
+  "Where an imported item came from"
+  sourceUrl: String
+  "When an imported item was last fetched"
+  fetchedAt: DateTime
 }
 
 type TeacherProfile {
   headline: String
   bio: String
-  "In the teacher's order"
+  "Published items in the teacher's order; an imported one only while its identifier is proven"
   skills: [TeacherSkill!]!
+  "The teacher only: imported items waiting for review, newest first; null for anyone else"
+  drafts: [TeacherSkill!]
   updatedAt: DateTime
+}
+
+enum ExternalIdentityKind {
+  GITHUB
+  WEBSITE
+  ORCID
+  OPENALEX
+}
+
+"A public identifier a teacher claims, and how to prove it is theirs (ADR-0077)"
+type ExternalIdentity {
+  id: UUID!
+  kind: ExternalIdentityKind!
+  "A GitHub login, or a page's address"
+  value: String!
+  "What to put where it proves the identifier is the teacher's"
+  code: String!
+  "Where to put it, in words"
+  instructions: String!
+  "Proven now; cleared when a monthly re-check no longer finds the proof"
+  verified: Boolean!
+  checkedAt: DateTime
+  "When its public data was last imported"
+  fetchedAt: DateTime
+  "Why the last check or import did not work"
+  lastError: String
+}
+
+"Skills import for the viewer (ADR-0077)"
+type SkillsImport {
+  "Whether the viewer may import: a verified teacher, not suspended"
+  allowed: Boolean!
+  "The kinds of identifier this server can read"
+  sources: [ExternalIdentityKind!]!
+  identities: [ExternalIdentity!]!
+}
+
+extend type Query {
+  "The viewer's identifiers and what can be imported"
+  mySkillsImport: SkillsImport!
 }
 
 extend type User {
   "The Skills tab, for anyone; null for people who are not teachers"
   teacherProfile: TeacherProfile
+}
+
+input AddExternalIdentityInput {
+  kind: ExternalIdentityKind!
+  "A GitHub user name (or its profile's address), or a page's address"
+  value: String!
+}
+
+input ExternalIdentityIdInput {
+  identityId: UUID!
+}
+
+input TeacherSkillIdsInput {
+  skillIds: [UUID!]!
+}
+
+type ExternalIdentityPayload {
+  identity: ExternalIdentity
+  userErrors: [UserError!]!
 }
 
 input TeacherSkillInput {
@@ -52,5 +126,15 @@ type TeacherProfilePayload {
 }
 
 extend type Mutation {
+  "Replaces the items written by hand; imported items stay"
   updateTeacherProfile(input: UpdateTeacherProfileInput!): TeacherProfilePayload!
+  "Claims an identifier and gives the code that proves it (verified teachers)"
+  addExternalIdentity(input: AddExternalIdentityInput!): ExternalIdentityPayload!
+  "Checks the proof now; once proven, its public data is imported as drafts. At most 10 checks a day"
+  checkExternalIdentity(input: ExternalIdentityIdInput!): ExternalIdentityPayload!
+  "Removes the identifier and every item imported from it"
+  removeExternalIdentity(input: ExternalIdentityIdInput!): OkPayload!
+  "Drafts go on the tab, after its items; at most 60 items in all"
+  publishTeacherSkills(input: TeacherSkillIdsInput!): TeacherProfilePayload!
+  discardTeacherSkills(input: TeacherSkillIdsInput!): TeacherProfilePayload!
 }

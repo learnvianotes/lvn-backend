@@ -1,9 +1,9 @@
 import type { DynamicModule } from '@nestjs/common'
 import type { WorkerConfig } from '@lvn-backend/config'
-import { AiEmbeddings, AiExport, AiPageVision, AiModule, aiConfigFrom } from '@lvn-backend/ai'
+import { AiEmbeddings, AiExport, AiPageVision, AiSkillsReader, AiModule, aiConfigFrom } from '@lvn-backend/ai'
 import { CommunicationModule, communicationConfigFrom, MailService, LiveNotifier } from '@lvn-backend/communication'
 import { CoreExport, CoreModule, coreConfigFrom, LearningEventsService, ModerationService, PlacesService, ResourceSearchFacade, WorkspacesService } from '@lvn-backend/core'
-import { AI_DATA_EXPORT, AUDIT, CORE_DATA_EXPORT, LEARNING, DOUBTS, EMBEDDINGS, ENTITLEMENTS, FacadesModule, FILES, LIVE, MAILER, MODERATION, NOTE_ACCESS, NOTE_AI, NOTE_RETRIEVAL, PAGE_VISION, PLACES, RESOURCE_SEARCH, NOTE_MODERATION, NOTES_DATA_EXPORT, PEOPLE, POLICY, TOPICS } from '@lvn-backend/facades'
+import { AI_DATA_EXPORT, AUDIT, CORE_DATA_EXPORT, LEARNING, DOUBTS, EMBEDDINGS, ENTITLEMENTS, FacadesModule, FILES, LIVE, MAILER, MODERATION, NOTE_ACCESS, NOTE_AI, NOTE_RETRIEVAL, PAGE_VISION, PLACES, SKILLS_READER, RESOURCE_SEARCH, NOTE_MODERATION, NOTES_DATA_EXPORT, PEOPLE, POLICY, TOPICS } from '@lvn-backend/facades'
 import { FilesService, NoteAccessFacade, NoteAiFacade, TopicsFacade, NoteRetrievalFacade, NoteModerationService, NotesExport, NotesModule, notesConfigFrom } from '@lvn-backend/notes'
 import { AuditService, EntitlementService, PolicyService, UsersModule, usersConfigFrom, UsersService } from '@lvn-backend/users'
 
@@ -42,6 +42,7 @@ export const facades = () =>
     [AI_DATA_EXPORT, AiExport],
     [EMBEDDINGS, AiEmbeddings],
     [PAGE_VISION, AiPageVision],
+    [SKILLS_READER, AiSkillsReader],
     [NOTE_RETRIEVAL, NoteRetrievalFacade],
     [DOUBTS, WorkspacesService],
     [LIVE, LiveNotifier],

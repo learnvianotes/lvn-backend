@@ -5,6 +5,12 @@ export interface AcceptTermsInput {
   version: string
 }
 
+export interface AddExternalIdentityInput {
+  kind: ExternalIdentityKind
+  /** A GitHub user name (or its profile's address), or a page's address */
+  value: string
+}
+
 /** An application to teach (ADR-0073). fileIds: 0–3 proof files uploaded with createUploadIntent(purpose:
  * VERIFICATION_DOCUMENT), seen by platform admins only, deleted 30 days after the decision */
 export interface ApplyToTeachInput {
@@ -77,6 +83,36 @@ export type DomainReviewStatus = 'ACADEMIC_QUEUED' | 'NEEDS_REVIEW' | 'APPROVED'
 
 /** Fixed error vocabulary (§6.2) */
 export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE'
+
+/** A public identifier a teacher claims, and how to prove it is theirs (ADR-0077) */
+export interface ExternalIdentity {
+  id: string
+  kind: ExternalIdentityKind
+  /** A GitHub login, or a page's address */
+  value: string
+  /** What to put where it proves the identifier is the teacher's */
+  code: string
+  /** Where to put it, in words */
+  instructions: string
+  /** Proven now; cleared when a monthly re-check no longer finds the proof */
+  verified: boolean
+  checkedAt: Date | null
+  /** When its public data was last imported */
+  fetchedAt: Date | null
+  /** Why the last check or import did not work */
+  lastError: string | null
+}
+
+export interface ExternalIdentityIdInput {
+  identityId: string
+}
+
+export type ExternalIdentityKind = 'GITHUB' | 'WEBSITE' | 'ORCID' | 'OPENALEX'
+
+export interface ExternalIdentityPayload {
+  identity: ExternalIdentity | null
+  userErrors: Array<UserError>
+}
 
 export type GlobalRole = 'STUDENT' | 'TEACHER' | 'PLATFORM_ADMIN'
 
@@ -206,6 +242,26 @@ export interface MutationRemoveConnectionArgs {
 
 export interface MutationUpdateTeacherProfileArgs {
   input: UpdateTeacherProfileInput
+}
+
+export interface MutationAddExternalIdentityArgs {
+  input: AddExternalIdentityInput
+}
+
+export interface MutationCheckExternalIdentityArgs {
+  input: ExternalIdentityIdInput
+}
+
+export interface MutationRemoveExternalIdentityArgs {
+  input: ExternalIdentityIdInput
+}
+
+export interface MutationPublishTeacherSkillsArgs {
+  input: TeacherSkillIdsInput
+}
+
+export interface MutationDiscardTeacherSkillsArgs {
+  input: TeacherSkillIdsInput
 }
 
 export interface MutationAcceptTermsArgs {
@@ -442,6 +498,15 @@ export interface SignUpInput {
   acceptedTermsVersion: string
 }
 
+/** Skills import for the viewer (ADR-0077) */
+export interface SkillsImport {
+  /** Whether the viewer may import: a verified teacher, not suspended */
+  allowed: boolean
+  /** The kinds of identifier this server can read */
+  sources: Array<ExternalIdentityKind>
+  identities: Array<ExternalIdentity>
+}
+
 /** Department and year are shown to others only if showOnProfile; interests stay private */
 export interface StudentProfile {
   department: string | null
@@ -456,8 +521,10 @@ export interface StudentProfile {
 export interface TeacherProfile {
   headline: string | null
   bio: string | null
-  /** In the teacher's order */
+  /** Published items in the teacher's order; an imported one only while its identifier is proven */
   skills: Array<TeacherSkill>
+  /** The teacher only: imported items waiting for review, newest first; null for anyone else */
+  drafts: Array<TeacherSkill> | null
   updatedAt: Date | null
 }
 
@@ -472,6 +539,14 @@ export interface TeacherSkill {
   name: string
   detail: string | null
   source: TeacherSkillSource
+  /** Where an imported item came from */
+  sourceUrl: string | null
+  /** When an imported item was last fetched */
+  fetchedAt: Date | null
+}
+
+export interface TeacherSkillIdsInput {
+  skillIds: Array<string>
 }
 
 export interface TeacherSkillInput {
@@ -482,9 +557,9 @@ export interface TeacherSkillInput {
   detail?: string | null
 }
 
-export type TeacherSkillKind = 'SKILL' | 'QUALIFICATION' | 'EXPERIENCE'
+export type TeacherSkillKind = 'SKILL' | 'QUALIFICATION' | 'EXPERIENCE' | 'PROJECT' | 'PUBLICATION'
 
-export type TeacherSkillSource = 'MANUAL'
+export type TeacherSkillSource = 'MANUAL' | 'GITHUB' | 'WEBSITE' | 'ORCID' | 'OPENALEX'
 
 /** Where the viewer stands as a teacher (ADR-0073) */
 export type TeacherStatus = 'NONE' | 'PENDING' | 'VERIFIED' | 'DECLINED'

@@ -20,3 +20,5 @@ export { GOOGLE_ID_TOKENS, MX_LOOKUP, type GoogleIdTokens, type MxLookup, type P
 export const usersSubgraph = { name: 'users', typeDefs: usersTypeDefs, modules: [UsersModule] }
 /** Data exports (ADR-0018): requested here, built by apps/worker from the users.export queue. */
 export { DataExportService, USERS_EXPORT_QUEUE } from './application/data-export.service'
+/** Skills import (ADR-0077): the worker's import and monthly refresh. */
+export { SkillsImportService, USERS_SKILLS_QUEUE } from './application/skills-import.service'

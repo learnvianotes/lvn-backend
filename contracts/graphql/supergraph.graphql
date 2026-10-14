@@ -118,6 +118,15 @@ input AddCommentInput
   body: JSON!
 }
 
+input AddExternalIdentityInput
+  @join__type(graph: USERS)
+{
+  kind: ExternalIdentityKind!
+
+  """A GitHub user name (or its profile's address), or a page's address"""
+  value: String!
+}
+
 input AddPdfHighlightInput
   @join__type(graph: NOTES)
 {
@@ -1755,6 +1764,57 @@ type ExamTopicOption
 }
 
 """
+A public identifier a teacher claims, and how to prove it is theirs (ADR-0077)
+"""
+type ExternalIdentity
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  kind: ExternalIdentityKind!
+
+  """A GitHub login, or a page's address"""
+  value: String!
+
+  """What to put where it proves the identifier is the teacher's"""
+  code: String!
+
+  """Where to put it, in words"""
+  instructions: String!
+
+  """Proven now; cleared when a monthly re-check no longer finds the proof"""
+  verified: Boolean!
+  checkedAt: DateTime
+
+  """When its public data was last imported"""
+  fetchedAt: DateTime
+
+  """Why the last check or import did not work"""
+  lastError: String
+}
+
+input ExternalIdentityIdInput
+  @join__type(graph: USERS)
+{
+  identityId: UUID!
+}
+
+enum ExternalIdentityKind
+  @join__type(graph: USERS)
+{
+  GITHUB @join__enumValue(graph: USERS)
+  WEBSITE @join__enumValue(graph: USERS)
+  ORCID @join__enumValue(graph: USERS)
+  OPENALEX @join__enumValue(graph: USERS)
+}
+
+type ExternalIdentityPayload
+  @join__type(graph: USERS)
+{
+  identity: ExternalIdentity
+  userErrors: [UserError!]!
+}
+
+"""
 What an upload is for: AVATAR, VERIFICATION_DOCUMENT, and ATTACHMENT (a picture, video, audio or PDF for a note you can edit, given as parentId). Other purposes arrive with their features.
 """
 enum FilePurpose
@@ -3046,7 +3106,26 @@ type Mutation
   """Returns the person who was asked"""
   withdrawConnectionRequest(input: ConnectionRequestInput!): PersonPayload! @join__field(graph: USERS)
   removeConnection(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
+
+  """Replaces the items written by hand; imported items stay"""
   updateTeacherProfile(input: UpdateTeacherProfileInput!): TeacherProfilePayload! @join__field(graph: USERS)
+
+  """
+  Claims an identifier and gives the code that proves it (verified teachers)
+  """
+  addExternalIdentity(input: AddExternalIdentityInput!): ExternalIdentityPayload! @join__field(graph: USERS)
+
+  """
+  Checks the proof now; once proven, its public data is imported as drafts. At most 10 checks a day
+  """
+  checkExternalIdentity(input: ExternalIdentityIdInput!): ExternalIdentityPayload! @join__field(graph: USERS)
+
+  """Removes the identifier and every item imported from it"""
+  removeExternalIdentity(input: ExternalIdentityIdInput!): OkPayload! @join__field(graph: USERS)
+
+  """Drafts go on the tab, after its items; at most 60 items in all"""
+  publishTeacherSkills(input: TeacherSkillIdsInput!): TeacherProfilePayload! @join__field(graph: USERS)
+  discardTeacherSkills(input: TeacherSkillIdsInput!): TeacherProfilePayload! @join__field(graph: USERS)
 
   """Accept the current Terms, Privacy Policy and content licence"""
   acceptTerms(input: AcceptTermsInput!): OkPayload! @join__field(graph: USERS)
@@ -4099,6 +4178,9 @@ type Query
 
   """Pending connection requests to and from the viewer, newest first"""
   myConnectionRequests: [ConnectionRequestItem!]! @join__field(graph: USERS)
+
+  """The viewer's identifiers and what can be imported"""
+  mySkillsImport: SkillsImport! @join__field(graph: USERS)
   myVerificationRequests: [VerificationRequest!]! @join__field(graph: USERS)
 
   """Signed in: the viewer's latest application to teach (ADR-0073)"""
@@ -5248,6 +5330,18 @@ input SignUpInput
   acceptedTermsVersion: String!
 }
 
+"""Skills import for the viewer (ADR-0077)"""
+type SkillsImport
+  @join__type(graph: USERS)
+{
+  """Whether the viewer may import: a verified teacher, not suspended"""
+  allowed: Boolean!
+
+  """The kinds of identifier this server can read"""
+  sources: [ExternalIdentityKind!]!
+  identities: [ExternalIdentity!]!
+}
+
 input StartFocusSessionInput
   @join__type(graph: CORE)
 {
@@ -5466,8 +5560,15 @@ type TeacherProfile
   headline: String
   bio: String
 
-  """In the teacher's order"""
+  """
+  Published items in the teacher's order; an imported one only while its identifier is proven
+  """
   skills: [TeacherSkill!]!
+
+  """
+  The teacher only: imported items waiting for review, newest first; null for anyone else
+  """
+  drafts: [TeacherSkill!]
   updatedAt: DateTime
 }
 
@@ -5486,6 +5587,18 @@ type TeacherSkill
   name: String!
   detail: String
   source: TeacherSkillSource!
+
+  """Where an imported item came from"""
+  sourceUrl: String
+
+  """When an imported item was last fetched"""
+  fetchedAt: DateTime
+}
+
+input TeacherSkillIdsInput
+  @join__type(graph: USERS)
+{
+  skillIds: [UUID!]!
 }
 
 input TeacherSkillInput
@@ -5506,12 +5619,22 @@ enum TeacherSkillKind
   SKILL @join__enumValue(graph: USERS)
   QUALIFICATION @join__enumValue(graph: USERS)
   EXPERIENCE @join__enumValue(graph: USERS)
+
+  """Open-source work (ADR-0077)"""
+  PROJECT @join__enumValue(graph: USERS)
+
+  """A paper, book or chapter (ADR-0077)"""
+  PUBLICATION @join__enumValue(graph: USERS)
 }
 
 enum TeacherSkillSource
   @join__type(graph: USERS)
 {
   MANUAL @join__enumValue(graph: USERS)
+  GITHUB @join__enumValue(graph: USERS)
+  WEBSITE @join__enumValue(graph: USERS)
+  ORCID @join__enumValue(graph: USERS)
+  OPENALEX @join__enumValue(graph: USERS)
 }
 
 """Where the viewer stands as a teacher (ADR-0073)"""

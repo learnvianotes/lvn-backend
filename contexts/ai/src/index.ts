@@ -18,6 +18,8 @@ export { PIPELINE_TASKS, PublicPipeline } from './application/public-pipeline'
 export { MAX_IMAGES, MAX_SECONDS, PIECE_SECONDS } from './application/media-input'
 /** PDF pages the vision model reads again (ADR-0063): the PAGE_VISION facade. */
 export { AiPageVision } from './application/page-vision'
+/** Teachers' public pages read into Skills tab items (ADR-0077): the SKILLS_READER facade. */
+export { AiSkillsReader } from './application/skills-reader'
 
 /** This context's federation subgraph, composed by apps/api's gateway (ADR-0033). */
 export const aiSubgraph = { name: 'ai', typeDefs: aiTypeDefs, modules: [AiModule] }
