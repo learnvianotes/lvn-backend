@@ -213,3 +213,33 @@ What the slices settled:
     now merges.
   - The exams and recommendations tests assumed the calendar day was the learning day. They now allow for the hours
     from midnight to 04:00, when the calendar is a day ahead.
+
+## Implementation notes (UI-e1; 2026-10-14)
+
+UI-e is built in two parts:
+- **UI-e1**, in the apps only: quiz paging, search tabs and the group page's floating ＋.
+- **UI-e2**, which needs the API: the Exams tabs and the group's picture.
+
+- **One question at a time** applies to class quizzes, the only player with several questions.
+  - It shows 3/10 with a progress bar, Previous and Next, and a number for each question to jump to (answered ones
+    marked). Submit is on the last question.
+  - Answers are kept while moving back and forth. The server still gets them all in one submission (ADR-0064).
+  - After submitting, the review stays a list, so every answer and explanation can be read at once.
+  - A note's quiz cards and AI quiz results stay cards.
+  - Found on the way: on the web, practice's Cancel was a submit button inside the form, so it sent the answers. Next,
+    turning into Submit under the same click, could do the same. Both are fixed.
+- **Search tabs.**
+  - The tabs are All, Notes, Topics, Groups (with classes, which have no tab of their own), Users and Resources. Each
+    asks the API for its kinds only (`scopes`).
+  - On All, each section's heading has See all, which opens its tab.
+  - Kind and source chips show where notes are listed (All and Notes). A topic picked from Topics lists its notes in
+    Notes.
+  - Only notes page; the other kinds show the first 20 (ADR-0056).
+  - The web keeps the tab in the address (`tab=`). `/search?topic=…` links still open All, filtered.
+- **The floating ＋** is on a group's Posts tab, for those who may post.
+  - It opens a dialog on the web, and a full-screen composer on the phone with Post at the top. What was typed stays
+    if it is closed.
+  - The inline composer is gone.
+  - Found on the local environment: a bottom sheet sat under the keyboard. The app draws edge to edge, so the keyboard
+    covers the window instead of shrinking it, and nothing lifted a sheet drawn in the root portal. The phone's other
+    sheets with text boxes are checked in Phase 7's exit sweep.
