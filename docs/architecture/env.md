@@ -101,6 +101,13 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `FCM_API_URL`, `GOOGLE_OAUTH_TOKEN_URL` | api, worker | with push | — (push off) | `https://fcm.googleapis.com`, `https://oauth2.googleapis.com/token` (ADR-0050) |
 | `FCM_SERVICE_ACCOUNT_JSON` | api, worker | with push (secret) | — (push off) | The Firebase project's service account key, as JSON; only the Cloud Messaging role is needed (ADR-0021) |
 | `GITHUB_TOKEN` | api, worker | no (secret) | — | A token with no scopes, for GitHub's higher rate limit on public repository details (ADR-0048) |
+| `GITHUB_APP_ID` | api, worker | no | — | The GitHub App's id (ADR-0078); all of `GITHUB_APP_*` or none |
+| `GITHUB_APP_SLUG` | api, worker | no | — | The App's slug, for its install link |
+| `GITHUB_APP_PRIVATE_KEY` | api, worker | no (secret) | — | The App's private key (PEM, line breaks as `\n`), signing its RS256 JWTs |
+| `GITHUB_APP_WEBHOOK_SECRET` | api, worker | no (secret) | — | Checks each delivery's `X-Hub-Signature-256`; at least 16 characters |
+| `GITHUB_APP_CLIENT_ID` | api, worker | no | — | The App's OAuth client, to confirm who installed it |
+| `GITHUB_APP_CLIENT_SECRET` | api, worker | no (secret) | — | The App's OAuth client secret |
+| `GITHUB_APP_URL` | api, worker | no | — | GitHub's web origin (https://github.com): install links and the OAuth code exchange |
 | `LINKEDIN_OAUTH_URL`, `LINKEDIN_API_URL` | api | with LinkedIn | — | `https://www.linkedin.com/oauth/v2`, `https://api.linkedin.com/v2` |
 | `OAUTH_REDIRECT_URIS` | api | with GitHub or LinkedIn | — | Comma-separated redirect URIs registered with the providers; `oauthExchange` refuses any other. Web: `<SITE_URL>/oauth/callback`; app (GitHub only): `<scheme>://oauth/callback` of each variant |
 

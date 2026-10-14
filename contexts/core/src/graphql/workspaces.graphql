@@ -29,6 +29,41 @@ type GroupRepository {
   stars: Int
   pushedAt: DateTime
   refreshedAt: DateTime
+  "Members, for a GitHub repository while the GitHub App is set up here (ADR-0078); null otherwise"
+  app: RepositoryApp
+  "Members: the repository's commits, pull requests and issues from the GitHub App, newest first; null for others"
+  events(first: Int): [RepositoryEvent!]
+}
+
+type RepositoryApp {
+  "The App is connected: the repository's activity comes to the workspace"
+  connected: Boolean!
+  "The workspace's admins, while not connected: where to install the App (for an hour)"
+  installUrl: String
+}
+
+enum RepositoryEventKind { PUSH PULL_REQUEST ISSUE }
+
+"What happened in the repository: never code, only the title, who, where and when (ADR-0078)"
+type RepositoryEvent {
+  id: UUID!
+  kind: RepositoryEventKind!
+  "pushed, opened, closed, merged or reopened"
+  action: String!
+  "A commit's first line, or a pull request's or issue's title"
+  title: String!
+  number: Int
+  "A GitHub login, not a LearnViaNotes person"
+  authorLogin: String
+  url: String!
+  at: DateTime!
+}
+
+"From GitHub's return to the setup page: the install link's state, the installation and the person's code"
+input ConnectRepositoryAppInput {
+  state: String!
+  installationId: String!
+  code: String!
 }
 
 type DoubtActions {
@@ -140,6 +175,10 @@ type DoubtPayload {
 extend type Mutation {
   "Admins and the Owner"
   setGroupRepository(input: SetGroupRepositoryInput!): GroupPayload!
+  "Confirms the person installed the GitHub App and that it covers the workspace's repository, then connects it (ADR-0078)"
+  connectRepositoryApp(input: ConnectRepositoryAppInput!): GroupPayload!
+  "Stops the repository's activity and deletes what was kept"
+  disconnectRepositoryApp(input: GroupIdInput!): GroupPayload!
   "Admins and the Owner invite a teacher; the invite lasts 14 days"
   inviteMentor(input: InviteMentorInput!): GroupPayload!
   answerMentorInvite(input: AnswerMentorInviteInput!): GroupPayload!

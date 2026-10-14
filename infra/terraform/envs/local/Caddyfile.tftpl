@@ -1,4 +1,5 @@
-# The entrance, as CloudFront and the load balancer are in the sandbox: one origin, /graphql and /health/* to the API,
+# The entrance, as CloudFront and the load balancer are in the sandbox: one origin, /graphql, /health/* and /webhooks/*
+# (GitHub App deliveries, ADR-0078) to the API,
 # everything else to the web. Caddy replaces any X-Forwarded-For a client sends with the address it sees.
 {
 	admin off
@@ -6,7 +7,7 @@
 }
 
 :80 {
-	@api path /graphql /graphql/* /health/*
+	@api path /graphql /graphql/* /health/* /webhooks/*
 	# Every API instance, in turn (ADR-0042); WebSockets for /graphql/live pass through as they are.
 	handle @api {
 		reverse_proxy ${api} {

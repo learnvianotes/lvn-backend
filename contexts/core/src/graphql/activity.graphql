@@ -1,13 +1,13 @@
 # The activity of the viewer's groups and classes (ADR-0049): newest first, ids and places only.
 
-enum ActivityKind { GROUP_POST IDEA DOUBT CLASS_ANNOUNCEMENT SHARED_NOTE }
+enum ActivityKind { GROUP_POST IDEA DOUBT CLASS_ANNOUNCEMENT SHARED_NOTE REPOSITORY }
 
 type ActivityItem {
   "Unique in the feed: a note shared to two places is two items. Deliberately not an id, so caches keep items apart"
   key: String!
   kind: ActivityKind!
   at: DateTime!
-  "Who posted, asked or shared"
+  "Who posted, asked or shared; null for REPOSITORY"
   actor: User
   group: Group
   classroom: Classroom
@@ -19,6 +19,8 @@ type ActivityItem {
   doubt: Doubt
   "SHARED_NOTE: null when the viewer can no longer read it"
   note: Note
+  "REPOSITORY: a commit, pull request or issue in a workspace's repository (ADR-0078)"
+  repositoryEvent: RepositoryEvent
 }
 
 type ActivityEdge {

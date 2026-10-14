@@ -1869,30 +1869,31 @@ enum JoinRequestStatus {
 
 /// A community of people (§4.1, ADR-0045). PUBLIC is discoverable; content is for members in every group.
 model Group {
-  id             String             @id @db.Uuid
-  name           String
-  description    String?
-  type           GroupType          @default(COMMUNITY)
-  privacy        GroupPrivacy       @default(PUBLIC)
+  id               String             @id @db.Uuid
+  name             String
+  description      String?
+  type             GroupType          @default(COMMUNITY)
+  privacy          GroupPrivacy       @default(PUBLIC)
   /// A PRIVATE group always uses APPROVAL, whatever is stored (ADR-0011)
-  joinPolicy     GroupJoinPolicy    @default(APPROVAL)
+  joinPolicy       GroupJoinPolicy    @default(APPROVAL)
   /// Cross-context reference to users.User
-  ownerId        String             @db.Uuid
-  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime           @updatedAt @db.Timestamptz(3)
-  deletedAt      DateTime?          @db.Timestamptz(3)
+  ownerId          String             @db.Uuid
+  createdAt        DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime           @updatedAt @db.Timestamptz(3)
+  deletedAt        DateTime?          @db.Timestamptz(3)
   /// Set when platform moderators removed the group (ADR-0053): why, for its owner alone; the owner may appeal once
-  removedReason  String?
+  removedReason    String?
   /// Project workspaces (ADR-0048): the PUBLIC PROJECT note that credits the team; cross-context reference to notes.Note
-  showcaseNoteId String?            @db.Uuid
+  showcaseNoteId   String?            @db.Uuid
   /// ADR-0076: the group's picture, set by its admins; cross-context reference to notes.FileObject (GROUP_PICTURE)
-  pictureFileId  String?            @db.Uuid
-  members        GroupMember[]
-  requests       GroupJoinRequest[]
-  posts          GroupPost[]
-  repository     GroupRepository?
-  doubts         Doubt[]
-  mentorInvites  MentorInvite[]
+  pictureFileId    String?            @db.Uuid
+  members          GroupMember[]
+  requests         GroupJoinRequest[]
+  posts            GroupPost[]
+  repository       GroupRepository?
+  repositoryEvents RepositoryEvent[]
+  doubts           Doubt[]
+  mentorInvites    MentorInvite[]
 
   @@index([privacy, deletedAt, createdAt(sort: Desc)])
   @@index([ownerId])
@@ -2411,19 +2412,79 @@ model ResourceTopic {
 
 /// A workspace's linked repository: public details from the provider's API when it shows them, else the link only.
 model GroupRepository {
-  groupId     String             @id @db.Uuid
-  provider    RepositoryProvider
-  url         String
+  groupId        String              @id @db.Uuid
+  provider       RepositoryProvider
+  url            String
   /// owner/repo on GitHub, the namespace path on GitLab
-  path        String
+  path           String
   /// The provider showed it: name, description, language, stars, last push
-  available   Boolean            @default(false)
-  metadata    Json?
-  refreshedAt DateTime?          @db.Timestamptz(3)
-  createdAt   DateTime           @default(now()) @db.Timestamptz(3)
-  group       Group              @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  available      Boolean             @default(false)
+  metadata       Json?
+  refreshedAt    DateTime?           @db.Timestamptz(3)
+  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
+  /// ADR-0078: the GitHub App installation confirmed for this repository; its activity comes by webhook
+  installationId String?
+  group          Group               @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  installation   GitHubInstallation? @relation(fields: [installationId], references: [id], onDelete: SetNull)
 
   @@index([refreshedAt])
+  @@index([installationId])
+  @@schema("core")
+}
+
+/// ADR-0078: a GitHub App installation that the person who made it confirmed with their own token
+model GitHubInstallation {
+  /// GitHub's installation id
+  id           String            @id
+  /// The user or organisation it is installed on
+  accountLogin String
+  /// Cross-context reference to users.User: who connected it
+  createdById  String            @db.Uuid
+  createdAt    DateTime          @default(now()) @db.Timestamptz(3)
+  repositories GroupRepository[]
+
+  @@schema("core")
+}
+
+/// ADR-0078: a webhook delivery, stored when received and handled by the worker; kept 30 days to drop repeats
+model GitHubDelivery {
+  /// X-GitHub-Delivery
+  id         String    @id
+  event      String
+  payload    Json
+  receivedAt DateTime  @default(now()) @db.Timestamptz(3)
+  handledAt  DateTime? @db.Timestamptz(3)
+
+  @@index([receivedAt])
+  @@schema("core")
+}
+
+enum RepositoryEventKind {
+  PUSH
+  PULL_REQUEST
+  ISSUE
+
+  @@schema("core")
+}
+
+/// ADR-0078: what happened in a workspace's repository: a commit, a pull request or an issue; never code
+model RepositoryEvent {
+  id          String              @id @db.Uuid
+  groupId     String              @db.Uuid
+  kind        RepositoryEventKind
+  /// pushed, opened, closed, merged or reopened
+  action      String
+  /// A commit's first line, or a pull request's or issue's title
+  title       String
+  number      Int?
+  authorLogin String?
+  url         String
+  at          DateTime            @db.Timestamptz(3)
+  deliveryId  String
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+  group       Group               @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, at(sort: Desc)])
   @@schema("core")
 }
 

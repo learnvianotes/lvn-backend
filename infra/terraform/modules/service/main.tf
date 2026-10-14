@@ -221,7 +221,7 @@ resource "aws_lb_listener_rule" "api" {
   }
   condition {
     path_pattern {
-      values = ["/graphql", "/graphql/*", "/health/*"]
+      values = ["/graphql", "/graphql/*", "/health/*", "/webhooks/*"]
     }
   }
 }

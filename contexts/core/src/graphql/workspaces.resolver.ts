@@ -4,6 +4,7 @@ import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-gua
 import { withUserErrors, type UserError } from '@lvn-backend/errors'
 import { connection, decodeCursor, pageSize } from '@lvn-backend/graphql'
 import { GroupsService, type GroupView } from '../application/groups.service'
+import { GitHubAppService } from '../application/github-app.service'
 import { WorkspacesService, type DoubtRow, type RepositoryDetails } from '../application/workspaces.service'
 import { ModerationService, moderationFor } from '../application/moderation.service'
 import type { GroupParent } from './groups.resolver'
@@ -26,6 +27,7 @@ export class WorkspaceGroupResolver {
   constructor(
     private readonly groups: GroupsService,
     private readonly workspaces: WorkspacesService,
+    private readonly githubApp: GitHubAppService,
   ) {}
 
   private async view(g: GroupParent, viewerId: string): Promise<GroupView | null> {
@@ -39,7 +41,10 @@ export class WorkspaceGroupResolver {
     const repo = await this.workspaces.repository(g.id)
     if (!repo) return null
     const details = (repo.available ? repo.metadata : null) as RepositoryDetails | null
-    return { provider: repo.provider, url: repo.url, available: repo.available, name: details?.name ?? null, description: details?.description ?? null, language: details?.language ?? null, stars: details?.stars ?? null, pushedAt: details?.pushedAt ? new Date(details.pushedAt) : null, refreshedAt: repo.refreshedAt }
+    // ADR-0078: the GitHub App's state, for members of a workspace whose repository is on GitHub.
+    const view = await this.view(g, viewer.userId)
+    const app = this.githubApp.configured() && repo.provider === 'GITHUB' && view?.role ? { connected: !!repo.installationId, installUrl: !repo.installationId && view.can.manage ? this.githubApp.installUrl(g.id) : null } : null
+    return { groupId: g.id, provider: repo.provider, url: repo.url, available: repo.available, name: details?.name ?? null, description: details?.description ?? null, language: details?.language ?? null, stars: details?.stars ?? null, pushedAt: details?.pushedAt ? new Date(details.pushedAt) : null, refreshedAt: repo.refreshedAt, app }
   }
 
   @ResolveField('ideas')
@@ -85,6 +90,16 @@ export class WorkspaceGroupResolver {
   @Mutation('setGroupRepository')
   setGroupRepository(@Args('input') input: { groupId: string; url?: string | null }, @CurrentViewer() viewer: Viewer) {
     return this.payload(viewer.userId, () => this.workspaces.setRepository(viewer.userId, input.groupId, input.url ?? null))
+  }
+
+  @Mutation('connectRepositoryApp')
+  connectRepositoryApp(@Args('input') input: { state: string; installationId: string; code: string }, @CurrentViewer() viewer: Viewer) {
+    return this.payload(viewer.userId, () => this.githubApp.connect(viewer.userId, input.state, input.installationId, input.code))
+  }
+
+  @Mutation('disconnectRepositoryApp')
+  disconnectRepositoryApp(@Args('input') input: { groupId: string }, @CurrentViewer() viewer: Viewer) {
+    return this.payload(viewer.userId, async () => (await this.githubApp.disconnect(viewer.userId, input.groupId), input.groupId))
   }
 
   @Mutation('inviteMentor')
@@ -225,5 +240,16 @@ export class DoubtResolver {
   @Mutation('reopenDoubt')
   reopenDoubt(@Args('input') input: { doubtId: string }, @CurrentViewer() viewer: Viewer) {
     return this.payload(viewer.userId, () => this.workspaces.reopen(viewer.userId, input.doubtId))
+  }
+}
+
+/** A workspace repository's activity from the GitHub App (ADR-0078): members only. */
+@Resolver('GroupRepository')
+export class GroupRepositoryResolver {
+  constructor(private readonly githubApp: GitHubAppService) {}
+
+  @ResolveField('events')
+  events(@Parent() r: { groupId: string }, @Args('first') first: number | null, @CurrentViewer() viewer: Viewer | null) {
+    return this.githubApp.events(viewer?.userId ?? null, r.groupId, first ?? 20)
   }
 }

@@ -77,7 +77,7 @@ type ActivityItem
   kind: ActivityKind!
   at: DateTime!
 
-  """Who posted, asked or shared"""
+  """Who posted, asked or shared; null for REPOSITORY"""
   actor: User
   group: Group
   classroom: Classroom
@@ -93,6 +93,11 @@ type ActivityItem
 
   """SHARED_NOTE: null when the viewer can no longer read it"""
   note: Note
+
+  """
+  REPOSITORY: a commit, pull request or issue in a workspace's repository (ADR-0078)
+  """
+  repositoryEvent: RepositoryEvent
 }
 
 enum ActivityKind
@@ -103,6 +108,7 @@ enum ActivityKind
   DOUBT @join__enumValue(graph: CORE)
   CLASS_ANNOUNCEMENT @join__enumValue(graph: CORE)
   SHARED_NOTE @join__enumValue(graph: CORE)
+  REPOSITORY @join__enumValue(graph: CORE)
 }
 
 input AddCommentInput
@@ -1308,6 +1314,17 @@ type ConnectionRequestItem
   createdAt: DateTime!
 }
 
+"""
+From GitHub's return to the setup page: the install link's state, the installation and the person's code
+"""
+input ConnectRepositoryAppInput
+  @join__type(graph: CORE)
+{
+  state: String!
+  installationId: String!
+  code: String!
+}
+
 enum ContributorRole
   @join__type(graph: NOTES)
 {
@@ -2129,6 +2146,16 @@ type GroupRepository
   stars: Int
   pushedAt: DateTime
   refreshedAt: DateTime
+
+  """
+  Members, for a GitHub repository while the GitHub App is set up here (ADR-0078); null otherwise
+  """
+  app: RepositoryApp
+
+  """
+  Members: the repository's commits, pull requests and issues from the GitHub App, newest first; null for others
+  """
+  events(first: Int): [RepositoryEvent!]
 }
 
 enum GroupRole
@@ -2923,6 +2950,14 @@ type Mutation
 
   """Admins and the Owner"""
   setGroupRepository(input: SetGroupRepositoryInput!): GroupPayload! @join__field(graph: CORE)
+
+  """
+  Confirms the person installed the GitHub App and that it covers the workspace's repository, then connects it (ADR-0078)
+  """
+  connectRepositoryApp(input: ConnectRepositoryAppInput!): GroupPayload! @join__field(graph: CORE)
+
+  """Stops the repository's activity and deletes what was kept"""
+  disconnectRepositoryApp(input: GroupIdInput!): GroupPayload! @join__field(graph: CORE)
 
   """Admins and the Owner invite a teacher; the invite lasts 14 days"""
   inviteMentor(input: InviteMentorInput!): GroupPayload! @join__field(graph: CORE)
@@ -4490,6 +4525,48 @@ enum ReportReason
   SPAM @join__enumValue(graph: CORE)
   COPYRIGHT @join__enumValue(graph: CORE)
   OTHER @join__enumValue(graph: CORE)
+}
+
+type RepositoryApp
+  @join__type(graph: CORE)
+{
+  """The App is connected: the repository's activity comes to the workspace"""
+  connected: Boolean!
+
+  """
+  The workspace's admins, while not connected: where to install the App (for an hour)
+  """
+  installUrl: String
+}
+
+"""
+What happened in the repository: never code, only the title, who, where and when (ADR-0078)
+"""
+type RepositoryEvent
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  kind: RepositoryEventKind!
+
+  """pushed, opened, closed, merged or reopened"""
+  action: String!
+
+  """A commit's first line, or a pull request's or issue's title"""
+  title: String!
+  number: Int
+
+  """A GitHub login, not a LearnViaNotes person"""
+  authorLogin: String
+  url: String!
+  at: DateTime!
+}
+
+enum RepositoryEventKind
+  @join__type(graph: CORE)
+{
+  PUSH @join__enumValue(graph: CORE)
+  PULL_REQUEST @join__enumValue(graph: CORE)
+  ISSUE @join__enumValue(graph: CORE)
 }
 
 enum RepositoryProvider

@@ -9,7 +9,8 @@ import { AppModule } from './app.module'
 
 async function bootstrap() {
   const logger = createLogger({ service: 'lvn-api', env: config.APP_ENV, level: config.LOG_LEVEL })
-  const app = await NestFactory.create<NestExpressApplication>(AppModule.forRoot(config), { logger: new PinoNestLogger(logger) })
+  // rawBody: GitHub App deliveries are checked by their signature over the exact bytes sent (ADR-0078).
+  const app = await NestFactory.create<NestExpressApplication>(AppModule.forRoot(config), { logger: new PinoNestLogger(logger), rawBody: true })
   configureHttp(app, config, logger)
   // Local RustFS starts empty; sandbox and production buckets come from Terraform.
   if (config.APP_ENV === 'development') await app.get(Storage).ensureBuckets([config.S3_BUCKET, config.S3_RESTRICTED_BUCKET])
