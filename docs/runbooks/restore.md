@@ -41,8 +41,8 @@ When: data was lost or corrupted (a bad migration, a mistaken delete, a broken d
 
 ## Restore on the local environment
 
-`infra/scripts/backup-local.sh` takes a backup now (the VM's cron runs it nightly). `infra/scripts/restore-local.sh
-<backup>` restores one into a separate database (`lvn_restore`) and separate buckets. It starts an API on the copy and
+`infra/scripts/backup-local.sh` takes a backup now (a systemd timer in the VM runs it nightly: `systemctl --user
+list-timers`). `infra/scripts/restore-local.sh <backup>` restores one into a separate database (`lvn_restore`) and separate buckets. It starts an API on the copy and
 checks that every table's row count matches the backup and that the API answers on it. This is the drill, and it never
 touches the live data. To replace the live data with a backup:
 

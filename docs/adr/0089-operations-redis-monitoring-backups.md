@@ -40,8 +40,8 @@ Phase 9's review of operations (docs/plans/phase-9.md) found:
   `rules.yml` holds the SLOs as recording rules and the alerts of `docs/runbooks/on-call.md`: multiwindow,
   multi-burn-rate error-budget alerts for 99.9 % availability, p95 over 300 ms, queue backlog, failing jobs and a
   silent service. The sandbox will run the same rules on a managed Prometheus when AWS starts.
-- **Backups on the local environment.** `envs/local/backup.sh` runs nightly from the VM's crontab, and on demand from
-  `infra/scripts/backup-local.sh`. It takes `pg_dump -Fc`, both buckets and every table's row count, and keeps 7.
+- **Backups on the local environment.** `envs/local/backup.sh` runs nightly from a systemd timer in the VM, and on
+  demand from `infra/scripts/backup-local.sh`. It takes `pg_dump -Fc`, both buckets and every table's row count, and keeps 7.
 - **The restore drill.** `envs/local/restore.sh`, run through `infra/scripts/restore-local.sh`:
   - restores a backup into a separate database and separate buckets;
   - checks every table's count and every file against the backup;
