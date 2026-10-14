@@ -347,9 +347,12 @@ export class ResourcesService implements OnModuleInit {
 
   /** A deleted account's resources go with it, as its notes do; their open cases close. */
   async erase(userId: string): Promise<void> {
-    const rows = await this.db.resource.findMany({ where: { submittedById: userId }, select: { id: true } })
+    const rows = await this.db.resource.findMany({ where: { submittedById: userId }, select: { id: true, coverFileId: true } })
     if (!rows.length) return
     await this.db.resource.deleteMany({ where: { submittedById: userId } })
+    // Their covers go with them (ADR-0088).
+    const covers = rows.flatMap((r) => (r.coverFileId ? [r.coverFileId] : []))
+    if (covers.length) await this.files.delete(covers).catch(() => undefined)
     await this.moderation.closeCases('RESOURCE', rows.map((r) => r.id), null)
     for (const r of rows) await this.events.publish('ResourceChanged', { resourceId: r.id })
   }

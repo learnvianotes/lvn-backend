@@ -1,0 +1,21 @@
+# Deleting one's account (ADR-0088): asked for, then deleted 14 days later unless cancelled.
+
+input RequestAccountDeletionInput {
+  "The account's password; required when the account has one"
+  password: String
+  "The word DELETE"
+  confirm: String!
+}
+
+type AccountDeletionPayload {
+  "When the account will be deleted; null once cancelled"
+  deletionScheduledFor: DateTime
+  userErrors: [UserError!]!
+}
+
+extend type Mutation {
+  "Ask for your account to be deleted in 14 days, with your private notes and learning history; every other device is signed out. Public notes, posts and comments stay, by \"Deleted user\""
+  requestAccountDeletion(input: RequestAccountDeletionInput!): AccountDeletionPayload!
+  "Keep your account: cancels a deletion you asked for"
+  cancelAccountDeletion: AccountDeletionPayload!
+}

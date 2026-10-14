@@ -13,6 +13,8 @@ export interface MailTemplates {
   passwordChanged: { displayName: string }
   /** 6-digit code for a college or organisation email (ADR-0017) */
   institutionalCode: { displayName: string; code: string; expiresInMinutes: number }
+  /** ADR-0088: the account will be deleted on deleteOn unless the person signs in and cancels */
+  accountDeletion: { displayName: string; deleteOn: string; link: string }
   /** ADR-0018: the data export is ready to download, until expiresOn */
   dataExportReady: { displayName: string; link: string; expiresOn: string }
   /** ADR-0050: a class announcement, to each member who keeps these emails on */

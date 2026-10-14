@@ -1,6 +1,6 @@
 {
   "name": "@learnvianotes/contracts",
-  "version": "0.57.0",
+  "version": "0.58.0",
   "description": "LearnViaNotes shared contracts: domain enums, permission matrix, config, event and notification schemas, GraphQL schema. Imported as @lvn/contracts (ADR-0031).",
   "license": "UNLICENSED",
   "publishConfig": {

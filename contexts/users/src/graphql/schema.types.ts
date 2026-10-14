@@ -5,6 +5,12 @@ export interface AcceptTermsInput {
   version: string
 }
 
+export interface AccountDeletionPayload {
+  /** When the account will be deleted; null once cancelled */
+  deletionScheduledFor: Date | null
+  userErrors: Array<UserError>
+}
+
 export interface AddExternalIdentityInput {
   kind: ExternalIdentityKind
   /** A GitHub user name (or its profile's address), or a page's address */
@@ -170,6 +176,10 @@ export interface MutationRequestPasswordResetArgs {
 
 export interface MutationResetPasswordArgs {
   input: ResetPasswordInput
+}
+
+export interface MutationRequestAccountDeletionArgs {
+  input: RequestAccountDeletionInput
 }
 
 export interface MutationUpdateProfileArgs {
@@ -414,6 +424,13 @@ export interface RelationActions {
   removeConnection: boolean
 }
 
+export interface RequestAccountDeletionInput {
+  /** The account's password; required when the account has one */
+  password?: string | null
+  /** The word DELETE */
+  confirm: string
+}
+
 /** fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by platform admins only, deleted 30 days after the decision */
 export interface RequestDocumentVerificationInput {
   fileIds: Array<string>
@@ -599,6 +616,8 @@ export interface User {
   verificationMethod: VerificationMethod | null
   globalRole: GlobalRole
   createdAt: Date
+  /** Viewer only: when the account will be deleted, if its owner asked (ADR-0088) */
+  deletionScheduledFor: Date | null
   /** The viewer's own profile; for others only when they show it */
   profile?: StudentProfile | null
   /** Viewer only */

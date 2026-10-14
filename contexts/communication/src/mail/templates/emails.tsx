@@ -36,6 +36,18 @@ export function PasswordChanged({ displayName }: MailTemplates['passwordChanged'
   )
 }
 
+export function AccountDeletion({ displayName, deleteOn, link }: MailTemplates['accountDeletion']) {
+  return (
+    <Layout preview="Your LearnViaNotes account will be deleted">
+      <Heading as="h1" style={heading}>Your account will be deleted</Heading>
+      <Text style={paragraph}>Hi {displayName}, you asked to delete your LearnViaNotes account. On {deleteOn} your account, your private notes and your learning history will be deleted for good. Notes you made public stay, by "Deleted user".</Text>
+      <Text style={paragraph}>Changed your mind? Sign in before then and cancel:</Text>
+      <Button href={link} style={button}>Keep my account</Button>
+      <Text style={muted}>If this was not you, sign in, cancel, and change your password straight away. Every other device was signed out.</Text>
+    </Layout>
+  )
+}
+
 export function DataExportReady({ displayName, link, expiresOn }: MailTemplates['dataExportReady']) {
   return (
     <Layout preview="Your LearnViaNotes data is ready to download">

@@ -5,6 +5,7 @@ import { isRestrictedMinor } from '../domain/rules'
 import type { User } from '../graphql/schema.types'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { InstitutionalEmailService } from './institutional-email.service'
+import { deletionDate } from './account-deletion.service'
 
 @Injectable()
 export class UsersService implements People {
@@ -74,7 +75,8 @@ export class UsersService implements People {
   /** People facade (ADR-0050): display names for push text and emails. */
   async namesOf(ids: string[]): Promise<Record<string, string>> {
     if (!ids.length) return {}
-    const rows = await this.db.user.findMany({ where: { id: { in: [...new Set(ids)] }, deletedAt: null }, select: { id: true, displayName: true } })
+    // A deleted account's name is its tombstone's, "Deleted user" (ADR-0088).
+    const rows = await this.db.user.findMany({ where: { id: { in: [...new Set(ids)] } }, select: { id: true, displayName: true } })
     return Object.fromEntries(rows.map((r) => [r.id, r.displayName]))
   }
 
@@ -145,17 +147,19 @@ export class UsersService implements People {
       institutionalEmailStatus: null,
       institution: institutional.institution,
       restrictedMinor: null,
+      deletionScheduledFor: null,
     }
   }
 
   /**
    * Anyone's view of several users at once (other contexts' references to users, batched per request): the same
-   * fields as publicProfile, in two queries. Deleted or unknown ids are missing from the result.
+   * fields as publicProfile, in two queries. Unknown ids are missing from the result. A deleted account answers as its
+   * tombstone, "Deleted user" (ADR-0088), so what it made public keeps an author without a name.
    */
   async publicProfiles(userIds: readonly string[]): Promise<User[]> {
     const ids = [...new Set(userIds)]
     const [users, confirmed] = await Promise.all([
-      this.db.user.findMany({ where: { id: { in: ids }, deletedAt: null } }),
+      this.db.user.findMany({ where: { id: { in: ids } } }),
       this.db.institutionalEmail.findMany({
         where: { userId: { in: ids }, replacedAt: null, verifiedAt: { not: null }, organizationId: { not: null } },
         include: { organization: { select: { name: true } } },
@@ -179,6 +183,7 @@ export class UsersService implements People {
       institutionalEmailStatus: null,
       institution: institutionOf.has(u.id) ? { name: institutionOf.get(u.id)!, verified: true } : null,
       restrictedMinor: null,
+      deletionScheduledFor: null,
     }))
   }
 
@@ -205,6 +210,7 @@ export class UsersService implements People {
       institutionalEmailStatus: institutional.status,
       institution: institutional.institution,
       restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.config.digitalConsentAge, u.consents.length > 0),
+      deletionScheduledFor: deletionDate(u.deletionRequestedAt),
     }
   }
 }

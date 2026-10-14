@@ -127,5 +127,9 @@ export class NotificationService {
   async forget(userId: string): Promise<void> {
     await this.db.notification.deleteMany({ where: { userId } })
     await this.db.notification.updateMany({ where: { actorId: userId }, data: { actorId: null } })
+    // ADR-0088: their phones and what they chose to hear about go too.
+    await this.db.deviceToken.deleteMany({ where: { userId } })
+    await this.db.notificationPreference.deleteMany({ where: { userId } })
+    await this.db.notificationSettings.deleteMany({ where: { userId } })
   }
 }

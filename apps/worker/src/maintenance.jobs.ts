@@ -42,8 +42,15 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
         this.log.log(`purged documents of ${purged} decided verification requests`)
         return { purged }
       },
+      // ADR-0088: accounts past their 14 days are deleted; recent deletions announced again for a week.
+      'delete-accounts': async () => {
+        const done = await this.users.deleteAccounts()
+        this.log.log(`deleted ${done.deleted} accounts, announced ${done.announced} recent deletions again`)
+        return done
+      },
     })
     await this.queues.repeat(USERS_MAINTENANCE_QUEUE, 'purge-verification-documents', '15 3 * * *')
+    await this.queues.repeat(USERS_MAINTENANCE_QUEUE, 'delete-accounts', '20 3 * * *')
 
     this.queues.process(NOTES_MAINTENANCE_QUEUE, {
       // §4.3: public notes keep every published version, others their newest 50.
@@ -55,6 +62,8 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
       // §4.5: the trash keeps notes for 30 days.
       // §13.2: sync answers are kept 30 days.
       'prune-sync-log': async () => ({ pruned: await this.notes.pruneSyncLog() }),
+      // §9.2 orphan-s3 (ADR-0088): uploads never completed or never attached.
+      'purge-orphan-files': async () => ({ purged: await this.notes.purgeOrphanFiles() }),
       'empty-trash': async () => {
         const deleted = await this.notes.emptyTrash()
         this.log.log(`deleted ${deleted} notes from the trash`)
@@ -64,6 +73,7 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
     await this.queues.repeat(NOTES_MAINTENANCE_QUEUE, 'prune-versions', '30 3 * * *')
     await this.queues.repeat(NOTES_MAINTENANCE_QUEUE, 'empty-trash', '45 3 * * *')
     await this.queues.repeat(NOTES_MAINTENANCE_QUEUE, 'prune-sync-log', '50 3 * * *')
+    await this.queues.repeat(NOTES_MAINTENANCE_QUEUE, 'purge-orphan-files', '40 3 * * *')
 
     this.queues.process(COMMS_MAINTENANCE_QUEUE, {
       // ADR-0042: read notifications are kept 90 days, unread ones a year.
