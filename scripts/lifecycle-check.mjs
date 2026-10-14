@@ -327,6 +327,12 @@ if (opt('--vm')) {
   const asking = (await gql('query ($id: UUID!) { classroom(id: $id) { joinRequests { id } } }', { id: classroomId }, A.token)).classroom.joinRequests
   await gql('mutation ($input: ReviewClassroomJoinRequestInput!) { reviewClassroomJoinRequest(input: $input) { classroom { id } } }', { input: { requestId: asking[0].id, decision: 'APPROVED' } }, A.token)
   ok((await gql('query ($id: UUID!) { classroom(id: $id) { viewerRole members { role } } }', { id: classroomId }, D.token)).classroom.viewerRole === 'STUDENT', 'A lets D in; D is a student')
+  // The class goal (ADR-0081): A turns it on; D sees the total, never the parts; A sees each part.
+  const GOAL = 'query ($id: UUID!) { classroom(id: $id) { rhythmRing { goal { target progress automatic parts { countedDays } } } } }'
+  const goalOn = (await gql('mutation ($input: SetClassGoalInput!) { setClassGoal(input: $input) { ok userErrors { message } } }', { input: { classroomId, on: true } }, A.token)).setClassGoal
+  const seenByD = (await gql(GOAL, { id: classroomId }, D.token)).classroom.rhythmRing.goal
+  const seenByA = (await gql(GOAL, { id: classroomId }, A.token)).classroom.rhythmRing.goal
+  ok(goalOn.ok && seenByD?.automatic && seenByD.target >= 1 && seenByD.parts === null && seenByA?.parts?.length === 1, 'A sets a class goal: D sees its total, A each part', JSON.stringify({ goalOn, seenByD, seenByA }))
   await gql('mutation ($input: CreateClassroomPostInput!) { createClassroomPost(input: $input) { classroom { id } } }', { input: { classroomId, body: text('Test on Friday').doc } }, A.token)
   ok(await eventually(async () => (await gql('{ notifications(first: 1) { edges { node { category } } } }', {}, D.token)).notifications.edges[0]?.node.category === 'CLASSROOM_POST'), 'A posts an announcement and D is told')
   await gql('mutation ($input: NoteClassroomInput!) { shareNoteToClassroom(input: $input) { note { id } } }', { input: { noteId: planId, classroomId } }, A.token)
@@ -581,6 +587,13 @@ if (opt('--vm') && (await gql('{ aiStatus { available } }')).aiStatus.available)
   const during = (await gql(RHYTHM, {}, A.token)).rhythm
   const ended = (await gql(OK('endRhythmPause', 'RhythmPauseIdInput'), { input: { id: during.pauses[0]?.id } }, A.token)).endRhythmPause
   const after = (await gql(RHYTHM, {}, A.token)).rhythm
+  // Weekly tasks (ADR-0081): A adds one with a plan; it shows with its progress this week, and goes when removed.
+  const TASKS = '{ weeklyTasks { max tasks { id kind target plan progress done } } }'
+  const added = (await gql('mutation ($input: AddWeeklyTaskInput!) { addWeeklyTask(input: $input) { task { id progress } userErrors { message } } }', { input: { kind: 'REVIEWS', target: 5, plan: 'After lunch' } }, A.token)).addWeeklyTask
+  const listed = (await gql(TASKS, {}, A.token)).weeklyTasks.tasks.find((t) => t.id === added.task?.id)
+  await gql('mutation ($input: WeeklyTaskIdInput!) { removeWeeklyTask(input: $input) { ok } }', { input: { id: added.task?.id } }, A.token)
+  const gone = !(await gql(TASKS, {}, A.token)).weeklyTasks.tasks.some((t) => t.id === added.task?.id)
+  ok(listed?.plan === 'After lunch' && Number.isInteger(listed.progress) && gone, 'A adds a weekly task with a plan, sees its progress, and removes it', JSON.stringify({ added, listed }))
   ok(plan.ok && paused.ok && ended.ok && during.plannedDays.length === 6 && during.pauses[0]?.active && during.pauseDaysLeft === 13 && !after.pauses.length && after.pauseDaysLeft === 14, 'A plans six days, pauses today for exams, and ends the pause: its day comes back', JSON.stringify([plan, paused, ended].map((x) => x.userErrors[0]?.message ?? 'ok')))
 }
 
