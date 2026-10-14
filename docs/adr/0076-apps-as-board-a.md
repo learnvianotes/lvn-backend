@@ -243,3 +243,36 @@ UI-e is built in two parts:
   - Found on the local environment: a bottom sheet sat under the keyboard. The app draws edge to edge, so the keyboard
     covers the window instead of shrinking it, and nothing lifted a sheet drawn in the root portal. The phone's other
     sheets with text boxes are checked in Phase 7's exit sweep.
+
+## Implementation notes (UI-e2; 2026-10-14)
+
+- **Exams' tabs.** Exams has four tabs:
+  - **Upcoming:** the exams and adding one.
+  - **Study Plan:** today's sessions.
+  - **Progress:** Readiness, each topic's mastery and the weak topics.
+  - **Notes:** notes on an exam's topics.
+
+  With no exam coming up, each tab leads to adding one.
+- **The checklist shows; it is not ticked by hand.**
+  - A session is done by studying its topics: 10 minutes on them that day, or a quiz on them (ADR-0070).
+  - A box to tick would claim study that did not happen, or do nothing. So each line shows done or to do and leads
+    to its topics: their notes on the web, and Explore on the phone. A core subject's topic is found by its name.
+  - Continue plan opens the first topic still to study today, and is not shown once the day is done.
+  - Each exam's whole plan is a link away.
+- **Exam notes.** Search takes `topicIds`, any of up to 20 topics.
+  - The Notes tab lists the person's own notes on an exam's topics, those shared with them and public ones, newest
+    first.
+  - The read rule is search's (ADR-0055), so nothing new can be seen.
+- **A group's picture.**
+  - A new file purpose, `GROUP_PICTURE`: JPEG, PNG or WebP, up to 2 MB.
+  - Set by the group's admins, with a file of their own. A replaced or removed picture's file is deleted.
+  - It shows atop the group to anyone who sees the group, like its name and description. The group can be reported
+    like the rest of it.
+  - A deleted group keeps its picture, since moderators may restore a group.
+- **Found on the way (Phase 7 exit):**
+  - **Account deletion is not built yet.** The architecture's user-initiated deletion with a 14-day grace has no
+    mutation, and nothing publishes `UserDeleted`, though many contexts erase on it.
+  - A resource cover copied from a link is never virus-scanned.
+  - Uploaded covers never attached have no sweeper.
+
+  These are recorded for the phase that hardens privacy; none is changed here.
