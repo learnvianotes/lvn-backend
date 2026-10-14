@@ -1464,6 +1464,8 @@ model LearnerSettings {
   shareRhythm Boolean  @default(false)
   /// An adult shows their achievements and level on their profile (ADR-0080); off by default, never for a minor
   showAchievements Boolean @default(false)
+  /// An adult sees their band among adults after a contest closes (ADR-0082); off by default, never for a minor
+  contestBands     Boolean @default(false)
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
 
   @@schema("core")
@@ -2692,6 +2694,213 @@ model ClassGoal {
   setById     String   @db.Uuid
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
 
+  @@schema("core")
+}
+
+// ── Weekly contests (ADR-0082) ─────────────────────────────────────────────────────────────────────────────────────
+
+enum ContestStatus {
+  DRAFT
+  PUBLISHED
+
+  @@schema("core")
+}
+
+/// A timed set of questions platform admins write; each person makes one attempt while its window is open.
+model Contest {
+  id            String            @id @db.Uuid
+  title         String
+  /// Cross-context reference to notes.Subject
+  subjectId     String?           @db.Uuid
+  subjectTitle  String?
+  opensAt       DateTime          @db.Timestamptz(3)
+  closesAt      DateTime          @db.Timestamptz(3)
+  minutes       Int
+  /// Questions each attempt gets, drawn from the pool
+  questionCount Int
+  status        ContestStatus     @default(DRAFT)
+  createdById   String            @db.Uuid
+  createdAt     DateTime          @default(now()) @db.Timestamptz(3)
+  publishedAt   DateTime?         @db.Timestamptz(3)
+  questions     ContestQuestion[]
+  attempts      ContestAttempt[]
+
+  @@index([status, opensAt])
+  @@schema("core")
+}
+
+model ContestQuestion {
+  id              String   @id @db.Uuid
+  contestId       String   @db.Uuid
+  prompt          String
+  /// [{ id, text }], in the order written
+  choices         Json
+  correctChoiceId String
+  explanation     String
+  position        Int
+  contest         Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+
+  @@index([contestId, position])
+  @@schema("core")
+}
+
+/// One person's attempt: its questions and each one's choice order are fixed when it starts.
+model ContestAttempt {
+  id          String          @id @db.Uuid
+  contestId   String          @db.Uuid
+  /// Cross-context reference to users.User
+  userId      String          @db.Uuid
+  startedAt   DateTime        @default(now()) @db.Timestamptz(3)
+  deadline    DateTime        @db.Timestamptz(3)
+  submittedAt DateTime?       @db.Timestamptz(3)
+  /// The questions drawn, in order
+  questionIds String[]
+  /// Each question's choice ids in the order this person sees them: { questionId: [choiceId…] }
+  choiceOrder Json
+  score       Int?
+  total       Int
+  contest     Contest         @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  answers     ContestAnswer[]
+
+  @@unique([contestId, userId])
+  @@index([userId, startedAt(sort: Desc)])
+  @@schema("core")
+}
+
+model ContestAnswer {
+  attemptId  String         @db.Uuid
+  questionId String         @db.Uuid
+  choiceId   String
+  answeredAt DateTime       @default(now()) @db.Timestamptz(3)
+  attempt    ContestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@id([attemptId, questionId])
+  @@schema("core")
+}
+
+// ── Mock interviews: the data model only (ADR-0083) ────────────────────────────────────────────────────────────────
+// Nothing reads or writes these tables yet: no GraphQL, no routes, no UI. A feature built on them is for adults and
+// needs its own ADR (consent, recording, who sees feedback). There is no company, job, application or referral here.
+
+enum MockInterviewLevel {
+  INTRO
+  CORE
+  ADVANCED
+
+  @@schema("core")
+}
+
+enum MockInterviewKind {
+  PEER
+  TEACHER
+  SELF
+
+  @@schema("core")
+}
+
+enum MockInterviewStatus {
+  REQUESTED
+  SCHEDULED
+  DONE
+  CANCELLED
+
+  @@schema("core")
+}
+
+model MockInterviewTemplate {
+  id          String                     @id @db.Uuid
+  title       String
+  /// topic:<uuid>, when on a topic
+  topicKey    String?
+  level       MockInterviewLevel
+  /// Cross-context reference to users.User
+  createdById String                     @db.Uuid
+  createdAt   DateTime                   @default(now()) @db.Timestamptz(3)
+  questions   MockInterviewQuestion[]
+  criteria    InterviewRubricCriterion[]
+  interviews  MockInterview[]
+
+  @@schema("core")
+}
+
+model MockInterviewQuestion {
+  id         String                @id @db.Uuid
+  templateId String                @db.Uuid
+  prompt     String
+  /// What a good answer shows
+  signals    String?
+  position   Int
+  template   MockInterviewTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId, position])
+  @@schema("core")
+}
+
+/// One criterion of a template's rubric: a description for each of four levels, so ratings are anchored.
+model InterviewRubricCriterion {
+  id         String                @id @db.Uuid
+  templateId String                @db.Uuid
+  name       String
+  /// Four descriptions, level 1 to 4
+  levels     String[]
+  position   Int
+  template   MockInterviewTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId, position])
+  @@schema("core")
+}
+
+model InterviewSlot {
+  id         String          @id @db.Uuid
+  /// Cross-context reference to users.User
+  hostId     String          @db.Uuid
+  startsAt   DateTime        @db.Timestamptz(3)
+  endsAt     DateTime        @db.Timestamptz(3)
+  timeZone   String
+  capacity   Int             @default(1)
+  createdAt  DateTime        @default(now()) @db.Timestamptz(3)
+  interviews MockInterview[]
+
+  @@index([hostId, startsAt])
+  @@schema("core")
+}
+
+model MockInterview {
+  id               String                @id @db.Uuid
+  templateId       String                @db.Uuid
+  slotId           String?               @db.Uuid
+  /// Cross-context reference to users.User
+  candidateId      String                @db.Uuid
+  /// Cross-context reference to users.User; null when practising alone
+  interviewerId    String?               @db.Uuid
+  kind             MockInterviewKind
+  status           MockInterviewStatus   @default(REQUESTED)
+  /// Recorded only with the candidate's consent; off by default
+  recordingConsent Boolean               @default(false)
+  createdAt        DateTime              @default(now()) @db.Timestamptz(3)
+  template         MockInterviewTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  slot             InterviewSlot?        @relation(fields: [slotId], references: [id], onDelete: SetNull)
+  feedback         InterviewFeedback[]
+
+  @@index([candidateId, createdAt(sort: Desc)])
+  @@schema("core")
+}
+
+model InterviewFeedback {
+  id                 String        @id @db.Uuid
+  interviewId        String        @db.Uuid
+  /// Cross-context reference to users.User
+  authorId           String        @db.Uuid
+  /// { criterionId: 1–4 }
+  scores             Json
+  strengths          String?
+  nextSteps          String?
+  /// Whether the candidate may read it
+  visibleToCandidate Boolean       @default(true)
+  createdAt          DateTime      @default(now()) @db.Timestamptz(3)
+  interview          MockInterview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@index([interviewId])
   @@schema("core")
 }
 

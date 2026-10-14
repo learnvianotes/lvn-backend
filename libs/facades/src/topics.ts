@@ -28,4 +28,6 @@ export interface Topics {
   ofNotes(noteIds: string[]): Promise<Map<string, string[]>>
   /** Each note's subject: the subject of its first topic, for the notes that have one (ADR-0080: contributor achievements) */
   subjectsOfNotes(noteIds: string[]): Promise<Map<string, { id: string; title: string }>>
+  /** A notes subject by id (ADR-0082: a contest's subject), or null */
+  subject(id: string): Promise<{ id: string; title: string } | null>
 }

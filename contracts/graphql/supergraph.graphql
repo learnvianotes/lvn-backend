@@ -222,6 +222,42 @@ input AddWeeklyTaskInput
   plan: String
 }
 
+"""A contest as its writers see it"""
+type AdminContest
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  title: String!
+  subjectId: UUID
+  subjectTitle: String
+  opensAt: DateTime!
+  closesAt: DateTime!
+  minutes: Int!
+  questionCount: Int!
+  published: Boolean!
+  questions: [AdminContestQuestion!]!
+
+  """How many have started it"""
+  attempts: Int!
+}
+
+type AdminContestPayload
+  @join__type(graph: CORE)
+{
+  contest: AdminContest
+  userErrors: [UserError!]!
+}
+
+type AdminContestQuestion
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  prompt: String!
+  choices: [ContestChoice!]!
+  correctChoiceId: String!
+  explanation: String!
+}
+
 """
 The viewer's AI tokens today (UTC) against their plan's daily limit (§10.1, ADR-0024)
 """
@@ -616,6 +652,14 @@ input AnswerClassroomInviteInput
 {
   inviteId: UUID!
   accept: Boolean!
+}
+
+input AnswerContestQuestionInput
+  @join__type(graph: CORE)
+{
+  attemptId: UUID!
+  questionId: UUID!
+  choiceId: String!
 }
 
 input AnswerDoubtInput
@@ -1433,6 +1477,162 @@ input ConnectRepositoryAppInput
   state: String!
   installationId: String!
   code: String!
+}
+
+type Contest
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  title: String!
+  subjectTitle: String
+  opensAt: DateTime!
+  closesAt: DateTime!
+  minutes: Int!
+
+  """Questions each attempt gets"""
+  questionCount: Int!
+  state: ContestState!
+
+  """Participants as a milestone (1,000+, 2,000+…); null below the first"""
+  participantsMilestone: Int
+
+  """The viewer's attempt, if they started one"""
+  viewerAttempt: ContestAttempt
+}
+
+type ContestAttempt
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  startedAt: DateTime!
+
+  """When it is marked as it stands"""
+  deadline: DateTime!
+  submittedAt: DateTime
+
+  """Submitted, or past its deadline"""
+  finished: Boolean!
+
+  """Once finished"""
+  score: Int
+  total: Int!
+
+  """
+  In the order drawn for the viewer, each with its choices in the viewer's order
+  """
+  questions: [ContestAttemptQuestion!]!
+
+  """
+  The viewer's best share right (0–100) on this subject's contests, once finished
+  """
+  personalBest: Int
+
+  """For an adult who asked, once the window has closed; null otherwise"""
+  band: ContestBand
+}
+
+input ContestAttemptIdInput
+  @join__type(graph: CORE)
+{
+  attemptId: UUID!
+}
+
+type ContestAttemptQuestion
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  prompt: String!
+  choices: [ContestChoice!]!
+  myChoiceId: String
+
+  """Only once the attempt is finished"""
+  correctChoiceId: String
+
+  """Only once the attempt is finished"""
+  explanation: String
+}
+
+"""
+Where an adult's finished attempt falls among adults' (ADR-0082); never given to anyone under 18
+"""
+enum ContestBand
+  @join__type(graph: CORE)
+{
+  TOP_10 @join__enumValue(graph: CORE)
+  TOP_25 @join__enumValue(graph: CORE)
+  TOP_50 @join__enumValue(graph: CORE)
+}
+
+type ContestChoice
+  @join__type(graph: CORE)
+{
+  id: String!
+  text: String!
+}
+
+input ContestIdInput
+  @join__type(graph: CORE)
+{
+  id: UUID!
+}
+
+input ContestInput
+  @join__type(graph: CORE)
+{
+  """Leave out to create one"""
+  id: UUID
+  title: String!
+  subjectId: UUID
+  opensAt: DateTime!
+  closesAt: DateTime!
+  minutes: Int!
+  questionCount: Int!
+  questions: [ContestQuestionInput!]!
+}
+
+type ContestPayload
+  @join__type(graph: CORE)
+{
+  contest: Contest
+  userErrors: [UserError!]!
+}
+
+input ContestQuestionInput
+  @join__type(graph: CORE)
+{
+  prompt: String!
+
+  """2–6 choices, in order"""
+  choices: [String!]!
+
+  """The index of the right choice"""
+  correct: Int!
+  explanation: String!
+}
+
+type ContestSettings
+  @join__type(graph: CORE)
+{
+  """See a band among adults after a contest closes"""
+  showBands: Boolean!
+
+  """Only adults may"""
+  canShowBands: Boolean!
+}
+
+type ContestSettingsPayload
+  @join__type(graph: CORE)
+{
+  settings: ContestSettings
+  userErrors: [UserError!]!
+}
+
+enum ContestState
+  @join__type(graph: CORE)
+{
+  UPCOMING @join__enumValue(graph: CORE)
+  OPEN @join__enumValue(graph: CORE)
+  CLOSED @join__enumValue(graph: CORE)
 }
 
 type Contribution
@@ -2976,6 +3176,23 @@ type Mutation
   approveComment(input: CommentIdInput!): CommentPayload! @join__field(graph: CORE)
   react(input: ReactInput!): ReactPayload! @join__field(graph: CORE)
 
+  """One attempt each, while the contest is open"""
+  startContest(input: StartContestInput!): ContestPayload! @join__field(graph: CORE)
+
+  """Until the deadline or the submission; may change an answer"""
+  answerContestQuestion(input: AnswerContestQuestionInput!): ContestPayload! @join__field(graph: CORE)
+  submitContest(input: ContestAttemptIdInput!): ContestPayload! @join__field(graph: CORE)
+
+  """Adults only"""
+  setContestBands(input: SetContestBandsInput!): ContestSettingsPayload! @join__field(graph: CORE)
+
+  """Platform admins: creates a draft, or changes one"""
+  saveContest(input: ContestInput!): AdminContestPayload! @join__field(graph: CORE)
+  publishContest(input: ContestIdInput!): AdminContestPayload! @join__field(graph: CORE)
+
+  """Drafts only"""
+  deleteContest(input: ContestIdInput!): OkPayload! @join__field(graph: CORE)
+
   """
   Shows or hides the viewer's achievements and level on their profile; refused under 18
   """
@@ -4241,6 +4458,16 @@ type Query
   The public notes most reacted to and discussed in the last week, each person counted once, never the note's owner
   """
   trendingFeed(first: Int, after: String): CommunityConnection! @join__field(graph: CORE)
+
+  """
+  Published contests: open ones, upcoming ones, and those closed in the last four weeks
+  """
+  contests: [Contest!]! @join__field(graph: CORE)
+  contest(id: UUID!): Contest @join__field(graph: CORE)
+  contestSettings: ContestSettings! @join__field(graph: CORE)
+
+  """Platform admins: every contest, drafts included"""
+  adminContests: [AdminContest!]! @join__field(graph: CORE)
 
   """The viewer's points history, newest first"""
   myPoints(first: Int, after: String): PointsEntryConnection! @join__field(graph: CORE)
@@ -5515,6 +5742,12 @@ input SetClassroomRoleInput
   role: ClassroomRole!
 }
 
+input SetContestBandsInput
+  @join__type(graph: CORE)
+{
+  show: Boolean!
+}
+
 input SetGlobalRoleInput
   @join__type(graph: USERS)
 {
@@ -5662,6 +5895,12 @@ type SkillsImport
   """The kinds of identifier this server can read"""
   sources: [ExternalIdentityKind!]!
   identities: [ExternalIdentity!]!
+}
+
+input StartContestInput
+  @join__type(graph: CORE)
+{
+  contestId: UUID!
 }
 
 input StartFocusSessionInput

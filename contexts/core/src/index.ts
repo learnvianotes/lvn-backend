@@ -38,4 +38,5 @@ export { CORE_GITHUB_QUEUE, GitHubAppService } from './application/github-app.se
 export { CORE_ENGAGEMENT_QUEUE, PointsService } from './application/points.service'
 export { AchievementsService } from './application/achievements.service'
 export { WeeklyTasksService } from './application/weekly-tasks.service'
+export { ContestsService } from './application/contests.service'
 export { GitHubWebhookController } from './http/github-webhook.controller'

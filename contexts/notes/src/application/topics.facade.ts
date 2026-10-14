@@ -45,6 +45,10 @@ export class TopicsFacade implements Topics {
     return out
   }
 
+  async subject(id: string): Promise<{ id: string; title: string } | null> {
+    return this.db.subject.findUnique({ where: { id }, select: { id: true, title: true } })
+  }
+
   async subjectsOfNotes(noteIds: string[]): Promise<Map<string, { id: string; title: string }>> {
     const out = new Map<string, { id: string; title: string }>()
     if (!noteIds.length) return out

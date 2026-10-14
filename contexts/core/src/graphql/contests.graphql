@@ -1,0 +1,179 @@
+# Weekly contests (ADR-0082): a timed set of questions platform admins write; one attempt each, timed by the server;
+# scores and personal bests for the person only; a band among adults for an adult who asks, once the window closes.
+
+enum ContestState {
+  UPCOMING
+  OPEN
+  CLOSED
+}
+
+"Where an adult's finished attempt falls among adults' (ADR-0082); never given to anyone under 18"
+enum ContestBand {
+  TOP_10
+  TOP_25
+  TOP_50
+}
+
+type ContestChoice {
+  id: String!
+  text: String!
+}
+
+type Contest {
+  id: UUID!
+  title: String!
+  subjectTitle: String
+  opensAt: DateTime!
+  closesAt: DateTime!
+  minutes: Int!
+  "Questions each attempt gets"
+  questionCount: Int!
+  state: ContestState!
+  "Participants as a milestone (1,000+, 2,000+…); null below the first"
+  participantsMilestone: Int
+  "The viewer's attempt, if they started one"
+  viewerAttempt: ContestAttempt
+}
+
+type ContestAttempt {
+  id: UUID!
+  startedAt: DateTime!
+  "When it is marked as it stands"
+  deadline: DateTime!
+  submittedAt: DateTime
+  "Submitted, or past its deadline"
+  finished: Boolean!
+  "Once finished"
+  score: Int
+  total: Int!
+  "In the order drawn for the viewer, each with its choices in the viewer's order"
+  questions: [ContestAttemptQuestion!]!
+  "The viewer's best share right (0–100) on this subject's contests, once finished"
+  personalBest: Int
+  "For an adult who asked, once the window has closed; null otherwise"
+  band: ContestBand
+}
+
+type ContestAttemptQuestion {
+  id: UUID!
+  prompt: String!
+  choices: [ContestChoice!]!
+  myChoiceId: String
+  "Only once the attempt is finished"
+  correctChoiceId: String
+  "Only once the attempt is finished"
+  explanation: String
+}
+
+type ContestSettings {
+  "See a band among adults after a contest closes"
+  showBands: Boolean!
+  "Only adults may"
+  canShowBands: Boolean!
+}
+
+type ContestPayload {
+  contest: Contest
+  userErrors: [UserError!]!
+}
+
+type ContestSettingsPayload {
+  settings: ContestSettings
+  userErrors: [UserError!]!
+}
+
+"A contest as its writers see it"
+type AdminContest {
+  id: UUID!
+  title: String!
+  subjectId: UUID
+  subjectTitle: String
+  opensAt: DateTime!
+  closesAt: DateTime!
+  minutes: Int!
+  questionCount: Int!
+  published: Boolean!
+  questions: [AdminContestQuestion!]!
+  "How many have started it"
+  attempts: Int!
+}
+
+type AdminContestQuestion {
+  id: UUID!
+  prompt: String!
+  choices: [ContestChoice!]!
+  correctChoiceId: String!
+  explanation: String!
+}
+
+type AdminContestPayload {
+  contest: AdminContest
+  userErrors: [UserError!]!
+}
+
+input ContestQuestionInput {
+  prompt: String!
+  "2–6 choices, in order"
+  choices: [String!]!
+  "The index of the right choice"
+  correct: Int!
+  explanation: String!
+}
+
+input ContestInput {
+  "Leave out to create one"
+  id: UUID
+  title: String!
+  subjectId: UUID
+  opensAt: DateTime!
+  closesAt: DateTime!
+  minutes: Int!
+  questionCount: Int!
+  questions: [ContestQuestionInput!]!
+}
+
+input ContestIdInput {
+  id: UUID!
+}
+
+input StartContestInput {
+  contestId: UUID!
+}
+
+input AnswerContestQuestionInput {
+  attemptId: UUID!
+  questionId: UUID!
+  choiceId: String!
+}
+
+input ContestAttemptIdInput {
+  attemptId: UUID!
+}
+
+input SetContestBandsInput {
+  show: Boolean!
+}
+
+extend type Query {
+  "Published contests: open ones, upcoming ones, and those closed in the last four weeks"
+  contests: [Contest!]!
+  contest(id: UUID!): Contest
+  contestSettings: ContestSettings!
+  "Platform admins: every contest, drafts included"
+  adminContests: [AdminContest!]!
+}
+
+extend type Mutation {
+  "One attempt each, while the contest is open"
+  startContest(input: StartContestInput!): ContestPayload!
+  "Until the deadline or the submission; may change an answer"
+  answerContestQuestion(input: AnswerContestQuestionInput!): ContestPayload!
+  submitContest(input: ContestAttemptIdInput!): ContestPayload!
+  "Adults only"
+  setContestBands(input: SetContestBandsInput!): ContestSettingsPayload!
+  "Platform admins: creates a draft, or changes one"
+  saveContest(input: ContestInput!): AdminContestPayload!
+  publishContest(input: ContestIdInput!): AdminContestPayload!
+  "Drafts only"
+  deleteContest(input: ContestIdInput!): OkPayload!
+}
