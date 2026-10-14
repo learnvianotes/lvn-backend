@@ -41,6 +41,8 @@ export interface NoteFilters {
   kinds?: string[] | null
   subjectId?: string | null
   topicId?: string | null
+  /** Any of these topics */
+  topicIds?: string[] | null
   authorId?: string | null
   sources?: NoteSource[] | null
 }
@@ -54,6 +56,7 @@ export function noteFiltersFilter(f: NoteFilters, reach: SearchReach): string | 
   if (f.kinds?.length) parts.push(`kind:=[${f.kinds.join(',')}]`)
   if (f.subjectId) parts.push(`subjectIds:=${quote(f.subjectId)}`)
   if (f.topicId) parts.push(`topicIds:=${quote(f.topicId)}`)
+  if (f.topicIds?.length) parts.push(`topicIds:=${list(f.topicIds)}`)
   if (f.authorId) parts.push(`ownerId:=${quote(f.authorId)}`)
   if (f.sources?.length) {
     const me = reach.viewerId ? quote(reach.viewerId) : null

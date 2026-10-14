@@ -15,6 +15,8 @@ export const MATCH_START = '\uE000'
 export const MATCH_END = '\uE001'
 /** Notes one search reaches, page after page, on either provider (ADR-0056). */
 export const MAX_NOTES = 200
+/** How many topics one search may filter by (an exam's, ADR-0076) */
+export const MAX_TOPICS = 20
 
 export type SearchScope = 'NOTES' | 'PEOPLE' | 'TOPICS' | 'GROUPS' | 'CLASSROOMS' | 'RESOURCES'
 
@@ -71,6 +73,7 @@ export function noteFiltersWhere(f: NoteFilters, q: Pick<SearchQuery, 'viewerId'
   if (f.kinds?.length) and.push({ kind: { in: f.kinds as Prisma.EnumNoteKindFilter['in'] } })
   if (f.subjectId) and.push({ topics: { some: { topic: { subjectId: f.subjectId } } } })
   if (f.topicId) and.push({ topics: { some: { topicId: f.topicId } } })
+  if (f.topicIds?.length) and.push({ topics: { some: { topicId: { in: f.topicIds } } } })
   if (f.authorId) and.push({ ownerId: f.authorId })
   if (f.sources?.length) {
     const me = q.viewerId
