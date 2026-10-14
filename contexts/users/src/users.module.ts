@@ -16,6 +16,7 @@ import { DnsMxLookup, FirebaseGoogleIdTokens, GOOGLE_ID_TOKENS, MX_LOOKUP } from
 import { RegistrationService } from './application/registration.service'
 import { SessionService } from './application/session.service'
 import { SocialService } from './application/social.service'
+import { SkillsImportService } from './application/skills-import.service'
 import { TeacherProfileService } from './application/teacher-profile.service'
 import { UsersService } from './application/users.service'
 import { VerificationService } from './application/verification.service'
@@ -25,7 +26,7 @@ import { TermsResolver } from './graphql/terms.resolver'
 import { DataResolver } from './graphql/data.resolver'
 import { RegistrationResolver } from './graphql/registration.resolver'
 import { PeopleResolver, SocialResolver } from './graphql/social.resolver'
-import { TeacherProfileResolver } from './graphql/teacher.resolver'
+import { TeacherProfileFieldsResolver, TeacherProfileResolver } from './graphql/teacher.resolver'
 import { TeacherStatusResolver, VerificationResolver } from './graphql/verification.resolver'
 import { UserReferenceResolver } from './graphql/user-reference.resolver'
 import { ViewerResolver } from './graphql/viewer.resolver'
@@ -70,10 +71,12 @@ export class UsersModule {
         LegacyService,
         SocialService,
         TeacherProfileService,
+        SkillsImportService,
         ViewerResolver,
         SocialResolver,
         PeopleResolver,
         TeacherProfileResolver,
+        TeacherProfileFieldsResolver,
         UserReferenceResolver,
         AuthResolver,
         RegistrationResolver,
@@ -83,7 +86,7 @@ export class UsersModule {
         TermsResolver,
         DataResolver,
       ],
-      exports: [PolicyService, EntitlementService, UsersMaintenance, DataExportService],
+      exports: [PolicyService, EntitlementService, UsersMaintenance, DataExportService, SkillsImportService],
     }
   }
 }

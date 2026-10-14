@@ -8,19 +8,46 @@ import { PolicyService } from './policy.service'
 
 export const TEACHER_PROFILE_LIMITS = { headline: 120, bio: 2000, skills: 60, name: 120, detail: 500 } as const
 
+type Kind = 'SKILL' | 'QUALIFICATION' | 'EXPERIENCE' | 'PROJECT' | 'PUBLICATION'
+type Source = 'MANUAL' | 'GITHUB' | 'WEBSITE' | 'ORCID' | 'OPENALEX'
+export interface TeacherSkillView {
+  id: string
+  kind: Kind
+  name: string
+  detail: string | null
+  source: Source
+  sourceUrl: string | null
+  fetchedAt: Date | null
+}
+
 export interface TeacherProfileView {
+  /** Whose tab it is, for the owner-only fields */
+  userId: string
   headline: string | null
   bio: string | null
-  skills: { id: string; kind: 'SKILL' | 'QUALIFICATION' | 'EXPERIENCE'; name: string; detail: string | null; source: 'MANUAL' }[]
+  skills: TeacherSkillView[]
   updatedAt: Date | null
 }
+
+const viewOf = (s: { id: string; kind: Kind; name: string; detail: string | null; source: Source; sourceUrl: string | null; fetchedAt: Date | null }): TeacherSkillView => ({
+  id: s.id,
+  kind: s.kind,
+  name: s.name,
+  detail: s.detail,
+  source: s.source,
+  sourceUrl: s.sourceUrl,
+  fetchedAt: s.fetchedAt,
+})
 
 const clean = (value: string | null | undefined) => {
   const v = value?.replace(/\s+/g, ' ').trim()
   return v ? v : null
 }
 
-/** The Skills tab (ADR-0012, ADR-0044): what a teacher tells students about themselves, edited by hand for now. */
+/**
+ * The Skills tab (ADR-0012, ADR-0044, ADR-0077): what a teacher tells students about themselves, by hand and imported
+ * from identifiers they proved. Published items show, an imported one only while its identifier is proven.
+ */
 @Injectable()
 export class TeacherProfileService {
   constructor(
@@ -32,17 +59,27 @@ export class TeacherProfileService {
 
   /** For anyone; null for people who are not teachers. */
   async view(userId: string): Promise<TeacherProfileView | null> {
-    const user = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { globalRole: true, teacherProfile: true, teacherSkills: { orderBy: { position: 'asc' } } } })
+    const user = await this.db.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { globalRole: true, teacherProfile: true, teacherSkills: { where: { status: 'PUBLISHED', OR: [{ identityId: null }, { identity: { verifiedAt: { not: null } } }] }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] } },
+    })
     if (!user || user.globalRole !== 'TEACHER') return null
     return {
+      userId,
       headline: user.teacherProfile?.headline ?? null,
       bio: user.teacherProfile?.bio ?? null,
-      skills: user.teacherSkills.map((s) => ({ id: s.id, kind: s.kind, name: s.name, detail: s.detail, source: s.source })),
+      skills: user.teacherSkills.map(viewOf),
       updatedAt: user.teacherProfile?.updatedAt ?? null,
     }
   }
 
-  async update(actorId: string, input: { headline?: string | null; bio?: string | null; skills: { kind: 'SKILL' | 'QUALIFICATION' | 'EXPERIENCE'; name: string; detail?: string | null }[] }): Promise<TeacherProfileView> {
+  /** The teacher's imported items waiting for review, newest first (ADR-0077). */
+  async drafts(userId: string): Promise<TeacherSkillView[]> {
+    return (await this.db.teacherSkill.findMany({ where: { userId, status: 'DRAFT' }, orderBy: [{ createdAt: 'desc' }, { position: 'asc' }] })).map(viewOf)
+  }
+
+  /** The headline, bio and the items written by hand, in this order; imported items are kept (ADR-0077). */
+  async update(actorId: string, input: { headline?: string | null; bio?: string | null; skills: { kind: Kind; name: string; detail?: string | null }[] }): Promise<TeacherProfileView> {
     const actor = await this.policy.actor(actorId)
     if (!can(actor, Action.TEACHER_EDIT_PROFILE)) throw Errors.forbidden('Only teachers have a Skills tab.')
     const L = TEACHER_PROFILE_LIMITS
@@ -50,7 +87,8 @@ export class TeacherProfileService {
     const bio = input.bio?.trim() || null
     if (headline && headline.length > L.headline) throw Errors.validation(`Keep the headline to ${L.headline} characters.`, ['input', 'headline'])
     if (bio && bio.length > L.bio) throw Errors.validation(`Keep the bio to ${L.bio} characters.`, ['input', 'bio'])
-    if (input.skills.length > L.skills) throw Errors.validation(`At most ${L.skills} items.`, ['input', 'skills'])
+    const imported = await this.db.teacherSkill.count({ where: { userId: actorId, status: 'PUBLISHED', source: { not: 'MANUAL' } } })
+    if (input.skills.length + imported > L.skills) throw Errors.validation(`At most ${L.skills} items${imported ? `, ${imported} of them imported` : ''}.`, ['input', 'skills'])
     const skills = input.skills.map((s, i) => {
       const name = clean(s.name)
       if (!name) throw Errors.validation('Every item needs a name.', ['input', 'skills', String(i), 'name'])
@@ -61,7 +99,7 @@ export class TeacherProfileService {
     })
     await this.db.$transaction(async (tx) => {
       await tx.teacherProfile.upsert({ where: { userId: actorId }, create: { userId: actorId, headline, bio }, update: { headline, bio } })
-      await tx.teacherSkill.deleteMany({ where: { userId: actorId } })
+      await tx.teacherSkill.deleteMany({ where: { userId: actorId, source: 'MANUAL' } })
       if (skills.length) await tx.teacherSkill.createMany({ data: skills })
     })
     await this.audit.record({ actorId, action: 'teacher.profile', targetType: 'USER', targetId: actorId, metadata: { skills: skills.length } })

@@ -181,6 +181,7 @@ model User {
   connectionInvites    ConnectionRequest[]   @relation("connectionTo")
   teacherProfile       TeacherProfile?
   teacherSkills        TeacherSkill[]
+  externalIdentities   ExternalIdentity[]
 
   @@schema("users")
 }
@@ -1739,29 +1740,88 @@ enum TeacherSkillKind {
   SKILL
   QUALIFICATION
   EXPERIENCE
+  /// ADR-0077: open-source work, from a proven GitHub account
+  PROJECT
+  /// ADR-0077: a paper, book or chapter
+  PUBLICATION
 
   @@schema("users")
 }
 
-/// Where a Skills item came from: by hand now; public sources the teacher proves are theirs in Phase 7 (ADR-0012).
+/// Where a Skills item came from: by hand, or a public source the teacher proved is theirs (ADR-0012, ADR-0077).
 enum TeacherSkillSource {
   MANUAL
+  GITHUB
+  WEBSITE
+  ORCID
+  OPENALEX
+
+  @@schema("users")
+}
+
+/// ADR-0077: imported items wait as drafts until the teacher publishes them; manual items are published as saved.
+enum TeacherSkillStatus {
+  DRAFT
+  PUBLISHED
 
   @@schema("users")
 }
 
 model TeacherSkill {
-  id        String             @id @db.Uuid
-  userId    String             @db.Uuid
-  kind      TeacherSkillKind
-  name      String
-  detail    String?
-  position  Int
-  source    TeacherSkillSource @default(MANUAL)
-  createdAt DateTime           @default(now()) @db.Timestamptz(3)
-  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String             @id @db.Uuid
+  userId     String             @db.Uuid
+  kind       TeacherSkillKind
+  name       String
+  detail     String?
+  position   Int
+  source     TeacherSkillSource @default(MANUAL)
+  status     TeacherSkillStatus @default(PUBLISHED)
+  /// ADR-0077: where an imported item came from, and when it was last fetched
+  sourceUrl  String?
+  fetchedAt  DateTime?          @db.Timestamptz(3)
+  /// ADR-0077: the proven identifier an imported item came from; removing it removes its items
+  identityId String?            @db.Uuid
+  createdAt  DateTime           @default(now()) @db.Timestamptz(3)
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  identity   ExternalIdentity?  @relation(fields: [identityId], references: [id], onDelete: Cascade)
 
   @@index([userId, position])
+  @@index([identityId])
+  @@schema("users")
+}
+
+/// ADR-0077: a public identifier a teacher claims, and its proof
+enum ExternalIdentityKind {
+  GITHUB
+  WEBSITE
+  ORCID
+  OPENALEX
+
+  @@schema("users")
+}
+
+/// ADR-0077: a public identifier a teacher proves is theirs (a code in a GitHub bio or gist, a meta tag on a page)
+model ExternalIdentity {
+  id         String               @id @db.Uuid
+  userId     String               @db.Uuid
+  kind       ExternalIdentityKind
+  /// A GitHub login, or a page's address
+  value      String
+  /// What the teacher puts where it proves the identifier is theirs
+  code       String
+  /// Set while the proof is in place; cleared when a re-check no longer finds it
+  verifiedAt DateTime?            @db.Timestamptz(3)
+  checkedAt  DateTime?            @db.Timestamptz(3)
+  /// When its public data was last imported
+  fetchedAt  DateTime?            @db.Timestamptz(3)
+  /// Why the last check or import did not work, in words for the teacher
+  lastError  String?
+  createdAt  DateTime             @default(now()) @db.Timestamptz(3)
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skills     TeacherSkill[]
+
+  @@unique([userId, kind, value])
+  @@index([verifiedAt, fetchedAt])
   @@schema("users")
 }
 

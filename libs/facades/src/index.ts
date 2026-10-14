@@ -10,6 +10,7 @@ export { MODERATION, NOTE_MODERATION, type Moderation, type ModerationSubject, t
 export { PLACES, type ClassroomForSearch, type GroupForSearch, type Places } from './places'
 export { NOTE_ACCESS, type NoteAccess, type NoteReach, type PlaceShare, type PublicTopicNote, type PublicTopicPage, type ReadableNote, type StudyCard } from './note-access'
 export { PAGE_VISION, type PageVision } from './page-vision'
+export { SKILLS_READER, type ReadSkill, type SkillsReader } from './skills-reader'
 export { NOTE_AI, type NewCard, type NoteAi, type NoteAiCard, type NoteAiSource } from './note-ai'
 export { DOUBTS, EMBEDDINGS, LIVE, NOTE_RETRIEVAL, type DoubtForAi, type Doubts, type Embeddings, type Live, type NoteRetrieval, type RetrievalScope, type RetrievedChunk } from './ask-ai'
 export { AI_DATA_EXPORT, CORE_DATA_EXPORT, NOTES_DATA_EXPORT, type DataExportPart, type ExportFile } from './data-export'

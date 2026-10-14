@@ -1,4 +1,5 @@
 export { isBlockedAddress } from './addresses'
 export { SafeFetchError, SafeFetcher, type FetchRequest, type FetchResult, type SafeFetchErrorCode, type SafeFetchOptions } from './fetcher'
-export { readPageMeta, type PageMeta } from './page-meta'
+export { readMetaTag, readPageMeta, readPageText, type PageMeta } from './page-meta'
+export { parseRobots, RobotsCache, robotsAllows } from './robots'
 export { InvalidUrlError, isbn13, normaliseUrl } from './url'

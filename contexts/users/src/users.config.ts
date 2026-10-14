@@ -17,6 +17,11 @@ export interface UsersConfig {
   oauthRedirectUris: string[]
   /** Where old-site snapshots are (ADR-0023): the restricted bucket and the environment prefix */
   legacy: { bucket: string; env: string }
+  /**
+   * ADR-0077: skills import. GitHub's REST API (null: GitHub is not offered) with an optional token for its larger
+   * allowance, and how the safe fetcher names itself and which test hosts it may reach.
+   */
+  skillsImport: { githubApiUrl: string | null; githubToken: string | null; userAgent: string; allowHosts: string[] }
 }
 
 export const USERS_CONFIG = Symbol('USERS_CONFIG')
@@ -43,5 +48,6 @@ export function usersConfigFrom(c: ApiConfig): UsersConfig {
     oauthRedirectUris: c.OAUTH_REDIRECT_URIS,
     // Old-site snapshots (ADR-0023) live in the restricted bucket under the environment prefix.
     legacy: { bucket: c.S3_RESTRICTED_BUCKET, env: c.APP_ENV },
+    skillsImport: { githubApiUrl: c.GITHUB_API_URL ?? null, githubToken: c.GITHUB_TOKEN ?? null, userAgent: `LearnViaNotes/1.0 (+${c.WEB_URL})`, allowHosts: c.SAFE_FETCH_ALLOW_HOSTS },
   }
 }

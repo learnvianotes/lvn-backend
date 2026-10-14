@@ -29,4 +29,4 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
 export const presetOf = (kind: AiProviderKind): ProviderPreset => PROVIDER_PRESETS.find((p) => p.kind === kind)!
 
 /** Tasks a route can send to a connection and model: the AI tasks, Ask AI, pages read again, and embeddings. */
-export const ROUTABLE_TASKS: readonly string[] = [...Object.values(AiTaskType), 'ASK', 'READ_PAGE', 'EMBED']
+export const ROUTABLE_TASKS: readonly string[] = [...Object.values(AiTaskType), 'ASK', 'READ_PAGE', 'READ_SKILLS', 'EMBED']

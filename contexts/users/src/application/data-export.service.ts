@@ -118,7 +118,7 @@ export class DataExportService {
 
   /** The users context's part: the account and everything recorded about it, never secrets (hashes, tokens). */
   private async usersPart(userId: string): Promise<{ files: ExportFile[]; counts: Record<string, number>; omitted: string[] }> {
-    const [user, sessions, providers, institutional, memberships, consents, verification, profile, plan, legacy, audit] = await Promise.all([
+    const [user, sessions, providers, institutional, memberships, consents, verification, profile, plan, legacy, audit, teacher, teacherItems, identities] = await Promise.all([
       this.db.user.findUniqueOrThrow({ where: { id: userId } }),
       this.db.session.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } }),
       this.db.oAuthAccount.findMany({ where: { userId } }),
@@ -130,6 +130,9 @@ export class DataExportService {
       this.db.userPlan.findUnique({ where: { userId }, include: { plan: true } }),
       this.db.legacyImport.findUnique({ where: { userId } }),
       this.db.auditLog.findMany({ where: { OR: [{ actorId: userId }, { targetType: 'USER', targetId: userId }] }, orderBy: { createdAt: 'asc' } }),
+      this.db.teacherProfile.findUnique({ where: { userId } }),
+      this.db.teacherSkill.findMany({ where: { userId }, orderBy: [{ status: 'asc' }, { position: 'asc' }] }),
+      this.db.externalIdentity.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } }),
     ])
     const { passwordHash: _secret, ...account } = user
     const files: ExportFile[] = [
@@ -143,6 +146,20 @@ export class DataExportService {
       { path: 'data/users/study-profile.json', bytes: json(profile ? { department: profile.department, yearOfStudy: profile.yearOfStudy, interestTopicIds: profile.interestTopicIds, showOnProfile: profile.showOnProfile } : null) },
       { path: 'data/users/plan.json', bytes: json(plan ? { plan: plan.plan.name, since: plan.startedAt } : null) },
       { path: 'data/users/old-site-import.json', bytes: json(legacy ? { status: legacy.status, counts: legacy.counts, claimedAt: legacy.claimedAt, declinedAt: legacy.declinedAt } : null) },
+      // The Skills tab (ADR-0044, ADR-0077): every item with its source, and the identifiers without their codes.
+      {
+        path: 'data/users/teacher-profile.json',
+        bytes: json(
+          teacher || teacherItems.length || identities.length
+            ? {
+                headline: teacher?.headline ?? null,
+                bio: teacher?.bio ?? null,
+                items: teacherItems.map((s) => ({ kind: s.kind, name: s.name, detail: s.detail, source: s.source, status: s.status, sourceUrl: s.sourceUrl, fetchedAt: s.fetchedAt })),
+                identifiers: identities.map((i) => ({ kind: i.kind, value: i.value, verifiedAt: i.verifiedAt, fetchedAt: i.fetchedAt })),
+              }
+            : null,
+        ),
+      },
       { path: 'data/users/activity-log.json', bytes: json(audit.map((a) => ({ action: a.action, by: a.actorId === userId ? 'you' : a.actorId ? 'someone else' : 'LearnViaNotes', targetType: a.targetType, targetId: a.targetId, details: a.metadata, at: a.createdAt }))) },
     ]
     return { files, counts: { sessions: sessions.length, consents: consents.length }, omitted: [] }
