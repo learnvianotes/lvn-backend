@@ -35,4 +35,6 @@ export { ResourcesService } from './application/resources.service'
 export { ResourceSearchFacade } from './application/resource-search.facade'
 /** Repository activity from a GitHub App (ADR-0078): the service, its worker queue and the API's webhook. */
 export { CORE_GITHUB_QUEUE, GitHubAppService } from './application/github-app.service'
+export { CORE_ENGAGEMENT_QUEUE, PointsService } from './application/points.service'
+export { AchievementsService } from './application/achievements.service'
 export { GitHubWebhookController } from './http/github-webhook.controller'

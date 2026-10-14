@@ -139,12 +139,18 @@ let trended = false
   }
   if (opt('--vm')) {
     const fan = await signUp('t')
-    sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'INSTITUTIONAL_EMAIL' WHERE id = '${fan.id}'`)
+    // A week old too, so the reaction also counts for A's points (ADR-0080).
+    sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'INSTITUTIONAL_EMAIL', \\"createdAt\\" = now() - interval '10 days' WHERE id = '${fan.id}'`)
     const reacted = (await gql('mutation ($input: ReactInput!) { react(input: $input) { userErrors { message } } }', { input: { kind: 'HELPFUL', target: { type: 'NOTE', id } } }, fan.token)).react
     const trending = (await gql('{ trendingFeed(first: 100) { edges { node { id } } } }', {}, A.token)).trendingFeed.edges.map((e) => e.node?.id)
     trended = trending.includes(id)
     ok(trended, 'a reader reacts to it: it is trending', reacted.userErrors[0]?.message)
+    ok(await eventually(async () => (await myPoints(A.token)).some((e) => e.rule === 'REACTION' && e.delta === 1)), 'the reaction earns A a point')
   }
+}
+/** A person's points history (ADR-0080). */
+async function myPoints(token) {
+  return (await gql('{ myPoints(first: 50) { edges { node { rule delta } } } }', {}, token)).myPoints.edges.map((e) => e.node)
 }
 // Saved notes (ADR-0076): B saves it to come back to; only B's list has it, and A cannot tell.
 const savedNoteIds = async (token) => (await gql('{ savedNotes { edges { node { id } } } }', {}, token)).savedNotes.edges.map((e) => e.node.id)
@@ -225,6 +231,7 @@ ok(await eventually(async () => [301, 308].includes((await page(path)).status)),
 await gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { visibility } } }', { input: { noteId: id, visibility: 'PRIVATE' } }, A.token)
 ok(!(await savedNoteIds(B.token)).includes(id), 'made private, it leaves B\'s Saved')
 if (trended) ok(!(await gql('{ trendingFeed(first: 100) { edges { node { id } } } }', {}, A.token)).trendingFeed.edges.some((e) => e.node?.id === id), 'and it leaves Trending')
+if (trended) ok(await eventually(async () => (await myPoints(A.token)).reduce((s, e) => s + e.delta, 0) === 0), 'and A\'s point for it is taken back')
 ok(await eventually(async () => (await page(path2)).status === 404), 'made private, its page is gone')
 ok(!(await found()), 'and search no longer finds it')
 ok(await eventually(async () => !(await page('/sitemap.xml')).body.includes(id)), 'and the sitemap no longer lists it')

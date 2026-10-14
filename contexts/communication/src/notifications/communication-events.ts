@@ -90,6 +90,10 @@ export class CommunicationEvents implements OnModuleInit {
     this.events.subscribe('ResourceDecided', async ({ payload }) => {
       await this.notifications.notify({ userId: payload.submittedById, category: 'RESOURCE', path: `/resources/${payload.resourceId}`, data: { decision: payload.decision } })
     })
+    // An achievement (ADR-0080): told in the app, opening the person's achievements; never pushed.
+    this.events.subscribe('AchievementEarned', async ({ payload }) => {
+      await this.notifications.notify({ userId: payload.userId, category: 'ACHIEVEMENT', path: '/achievements', data: { kind: payload.kind, tier: payload.tier, ...(payload.subjectTitle ? { subject: payload.subjectTitle } : {}) } })
+    })
     // A quiz published to a class (ADR-0064): its other members are told, and the notification opens the quiz.
     this.events.subscribe('QuizPublished', async ({ payload }) => {
       if (!payload.classroomId || !payload.memberIds?.length) return

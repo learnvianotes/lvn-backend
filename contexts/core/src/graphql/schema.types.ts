@@ -17,6 +17,35 @@ export interface AccountWarning {
   at: Date
 }
 
+/** An achievement: the highest tier reached of one kind (and subject) */
+export interface Achievement {
+  id: string
+  kind: AchievementKind
+  /** The threshold reached: 5 topics, 12 weeks, 250 points… */
+  tier: number
+  title: string
+  /** What it says the person did */
+  description: string
+  /** For a subject contributor */
+  subjectTitle: string | null
+  earnedAt: Date
+}
+
+/** What an achievement marks */
+export type AchievementKind = 'TOPICS_MASTERED' | 'QUIZ_MASTER' | 'EXAM_READY' | 'RHYTHM_WEEKS' | 'SUBJECT_CONTRIBUTOR'
+
+export interface AchievementSettings {
+  /** Achievements and level shown on the viewer's profile */
+  showAchievements: boolean
+  /** Only adults may show them */
+  canShow: boolean
+}
+
+export interface AchievementSettingsPayload {
+  settings: AchievementSettings | null
+  userErrors: Array<UserError>
+}
+
 export interface ActivityConnection {
   edges: Array<ActivityEdge>
   pageInfo: PageInfo
@@ -411,6 +440,17 @@ export interface ConnectRepositoryAppInput {
   installationId: string
   code: string
 }
+
+export interface Contribution {
+  /** Points from what others did with the person's public work; never below 0 */
+  points: number
+  level: ContributorLevel
+  /** Points at which the next level starts; null at the top */
+  nextLevelAt: number | null
+}
+
+/** A level from points, lost again below its threshold */
+export type ContributorLevel = 'NEWCOMER' | 'CONTRIBUTOR' | 'TRUSTED'
 
 export interface CoreProblemMark {
   problemId: string
@@ -1098,6 +1138,10 @@ export interface MutationReactArgs {
   input: ReactInput
 }
 
+export interface MutationSetAchievementsShownArgs {
+  input: SetAchievementsShownInput
+}
+
 export interface MutationCreateExamArgs {
   input: CreateExamInput
 }
@@ -1358,6 +1402,33 @@ export interface PinGroupPostInput {
 
 export type Platform = 'WEB' | 'ANDROID' | 'IOS'
 
+/** A line of the viewer's own points history. Who acted is never told. */
+export interface PointsEntry {
+  id: string
+  /** Positive when earned, negative when taken back (a reaction removed, a note no longer public, a resource removed) */
+  delta: number
+  rule: PointsRule
+  sourceType: PointsSource
+  sourceId: string
+  subjectTitle: string | null
+  createdAt: Date
+}
+
+export interface PointsEntryConnection {
+  edges: Array<PointsEntryEdge>
+  pageInfo: PageInfo
+}
+
+export interface PointsEntryEdge {
+  cursor: string
+  node: PointsEntry
+}
+
+/** What earned points or took them back */
+export type PointsRule = 'REACTION' | 'FORK' | 'RESOURCE_APPROVED'
+
+export type PointsSource = 'NOTE' | 'RESOURCE'
+
 export type ProblemMark = 'SOLVED' | 'REVISIT'
 
 export interface PublishClassQuizInput {
@@ -1396,6 +1467,11 @@ export interface QueryForYouFeedArgs {
 }
 
 export interface QueryTrendingFeedArgs {
+  first?: number | null
+  after?: string | null
+}
+
+export interface QueryMyPointsArgs {
   first?: number | null
   after?: string | null
 }
@@ -1924,6 +2000,10 @@ export interface RhythmToday {
   items: Array<RhythmItem>
 }
 
+export interface SetAchievementsShownInput {
+  show: boolean
+}
+
 export interface SetClassroomRoleInput {
   classroomId: string
   userId: string
@@ -2071,6 +2151,10 @@ export interface UpdateResourceInput {
 /** A person, owned by the users subgraph */
 export interface User {
   id: string
+  /** Achievements, the highest tier of each: the viewer's own, or an adult's who shows them; null otherwise */
+  achievements?: Array<Achievement> | null
+  /** Points and level, under the same rule as achievements */
+  contribution?: Contribution | null
 }
 
 export interface UserError {

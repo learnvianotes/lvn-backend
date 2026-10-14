@@ -34,7 +34,7 @@ export class CoreExport implements DataExportPart {
   ) {}
 
   async exportFor(userId: string) {
-    const [progress, marks, reports, appeals, actions, groups, groupPosts, classes, classPosts, comments, reactions, quizzes, attempts, learning, reviews, rhythm, exams, recommendations, focus, buddies, resources, catalogue] = await Promise.all([
+    const [progress, marks, reports, appeals, actions, groups, groupPosts, classes, classPosts, comments, reactions, quizzes, attempts, learning, reviews, rhythm, exams, recommendations, focus, buddies, resources, catalogue, points, achievements] = await Promise.all([
       this.db.coreTopicProgress.findMany({ where: { userId }, orderBy: { topicKey: 'asc' } }),
       this.db.coreProblemMark.findMany({ where: { userId }, orderBy: { markedAt: 'asc' } }),
       this.db.report.findMany({ where: { reporterId: userId }, orderBy: { createdAt: 'asc' } }),
@@ -63,6 +63,9 @@ export class CoreExport implements DataExportPart {
       this.resources.exportOf(userId),
       // Saved resources and recommendations sent (ADR-0075).
       this.catalogue.exportOf(userId),
+      // Points and achievements (ADR-0080): their ledger, without the names of who acted.
+      this.db.pointsEntry.findMany({ where: { userId }, orderBy: { createdAt: 'asc' }, select: { delta: true, rule: true, sourceType: true, sourceId: true, subjectTitle: true, createdAt: true } }),
+      this.db.achievement.findMany({ where: { userId }, orderBy: { earnedAt: 'asc' }, select: { kind: true, tier: true, subjectTitle: true, earnedAt: true } }),
     ])
     return {
       files: [
@@ -77,6 +80,8 @@ export class CoreExport implements DataExportPart {
         { path: 'data/learning/rhythm-buddies.json', bytes: json(buddies) },
         { path: 'data/core/resources-you-submitted.json', bytes: json(resources) },
         { path: 'data/core/resources-saved-and-recommended.json', bytes: json(catalogue) },
+        { path: 'data/core/points.json', bytes: json(points) },
+        { path: 'data/core/achievements.json', bytes: json(achievements) },
         { path: 'data/core/problem-marks.json', bytes: json(marks.map(({ userId: _u, ...m }) => m)) },
         { path: 'data/core/reports-you-filed.json', bytes: json(reports.map((r) => ({ entityType: r.entityType, entityId: r.entityId, reason: r.reason, details: r.details, status: r.status, createdAt: r.createdAt }))) },
         { path: 'data/core/your-appeals.json', bytes: json(appeals.map((a) => ({ entityType: a.entityType, entityId: a.entityId, message: a.message, status: a.status, createdAt: a.createdAt, decidedAt: a.decidedAt }))) },
@@ -90,7 +95,7 @@ export class CoreExport implements DataExportPart {
         { path: 'data/core/class-quizzes.json', bytes: json(quizzes.map((q) => ({ id: q.id, classroomId: q.classroomId, title: q.title, publishedAt: q.publishedAt, questions: q.questions.map((x) => x.content) }))) },
         { path: 'data/core/quiz-attempts.json', bytes: json(attempts.map((a) => ({ id: a.id, quizId: a.quizId, score: a.score, total: a.total, submittedAt: a.submittedAt, answers: a.answers.map((x) => ({ questionId: x.questionId, choiceIds: x.choiceIds, correct: x.correct })) }))) },
       ],
-      counts: { studyProgress: progress.length, problemMarks: marks.length, reports: reports.length, appeals: appeals.length, groups: groups.length, groupPosts: groupPosts.length, classes: classes.length, classAnnouncements: classPosts.length, comments: comments.length, reactions: reactions.length, classQuizzes: quizzes.length, quizAttempts: attempts.length },
+      counts: { studyProgress: progress.length, problemMarks: marks.length, reports: reports.length, appeals: appeals.length, groups: groups.length, groupPosts: groupPosts.length, classes: classes.length, classAnnouncements: classPosts.length, comments: comments.length, reactions: reactions.length, classQuizzes: quizzes.length, quizAttempts: attempts.length, pointsEntries: points.length, achievements: achievements.length },
       omitted: [],
     }
   }

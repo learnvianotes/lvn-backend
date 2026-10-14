@@ -44,4 +44,12 @@ export class TopicsFacade implements Topics {
     for (const l of await this.db.noteTopic.findMany({ where: { noteId: { in: noteIds } }, select: { noteId: true, topicId: true } })) out.set(l.noteId, [...(out.get(l.noteId) ?? []), l.topicId])
     return out
   }
+
+  async subjectsOfNotes(noteIds: string[]): Promise<Map<string, { id: string; title: string }>> {
+    const out = new Map<string, { id: string; title: string }>()
+    if (!noteIds.length) return out
+    const links = await this.db.noteTopic.findMany({ where: { noteId: { in: noteIds } }, select: { noteId: true, topic: { select: { subject: { select: { id: true, title: true } } } } }, orderBy: [{ noteId: 'asc' }, { topicId: 'asc' }] })
+    for (const l of links) if (!out.has(l.noteId)) out.set(l.noteId, l.topic.subject)
+    return out
+  }
 }
