@@ -4,7 +4,7 @@
 scalar UUID
 
 "A person, owned by the users subgraph"
-type User @key(fields: "id", resolvable: false) {
+type User @key(fields: "id") {
   id: UUID!
 }
 

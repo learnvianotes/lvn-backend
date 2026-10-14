@@ -5,6 +5,8 @@ import { PrismaService } from '@lvn-backend/prisma-base'
 
 /** The categories a person can set today; categories of later phases join when they ship (ADR-0050). */
 export const SETTABLE: NotificationCategory[] = ['SHARE', 'COMMENT', 'FOLLOW', 'CONNECTION', 'JOIN_REQUEST', 'JOIN_DECISION', 'CLASSROOM_INVITE', 'CLASSROOM_POST', 'QUIZ_PUBLISHED', 'MENTOR_INVITE', 'DOUBT', 'MENTION', 'VERIFICATION', 'DATA_EXPORT', 'NOTES_IMPORT', 'REVISION_REMINDER', 'RHYTHM_BUDDY', 'RESOURCE']
+/** Categories shown in the app only, never pushed: an achievement says what was learned, quietly (ADR-0080). */
+export const IN_APP_ONLY: ReadonlySet<NotificationCategory> = new Set(['ACHIEVEMENT'])
 /** Categories that also send email; the weekly digest is a setting of its own. */
 export const EMAILED: ReadonlySet<NotificationCategory> = new Set(['CLASSROOM_POST'])
 export const DEFAULTS = { quietStart: '22:00', quietEnd: '07:00', timeZone: 'Asia/Kolkata', weeklyDigest: true } as const
@@ -78,6 +80,7 @@ export class PreferencesService {
 
   /** Push for this category now: on for the category and outside quiet hours. */
   async pushAllowed(userId: string, category: NotificationCategory, at = new Date()): Promise<boolean> {
+    if (IN_APP_ONLY.has(category)) return false
     const [row, pref] = await Promise.all([this.db.notificationSettings.findUnique({ where: { userId } }), this.db.notificationPreference.findUnique({ where: { userId_category: { userId, category } } })])
     if (pref?.push === false) return false
     const tz = row?.timeZone ?? DEFAULTS.timeZone

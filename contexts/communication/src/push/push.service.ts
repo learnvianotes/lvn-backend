@@ -54,6 +54,8 @@ export function pushBody(category: NotificationCategory, data: Record<string, un
     case 'RESOURCE':
       if (data.kind === 'RECOMMENDED') return `${who} recommended a resource to you`
       return data.decision === 'APPROVED' ? 'Your resource is in the catalogue' : 'Moderators did not approve your resource'
+    case 'ACHIEVEMENT':
+      return 'You reached a new achievement'
     case 'MODERATION':
       return data.kind === 'RESTORED' ? 'A moderator brought back something of yours' : 'A moderator reviewed something of yours'
     default:

@@ -26,4 +26,6 @@ export interface Topics {
   find(viewerId: string, query: string): Promise<TopicRef[]>
   /** Each note's topic ids, for the notes that have any */
   ofNotes(noteIds: string[]): Promise<Map<string, string[]>>
+  /** Each note's subject: the subject of its first topic, for the notes that have one (ADR-0080: contributor achievements) */
+  subjectsOfNotes(noteIds: string[]): Promise<Map<string, { id: string; title: string }>>
 }

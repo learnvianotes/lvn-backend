@@ -242,6 +242,14 @@ export const events = {
     fromUserId: uuid,
     toUserId: uuid,
   })),
+  /** A person reached an achievement tier (ADR-0080): they alone are told, in the app. */
+  AchievementEarned: eventEnvelope('AchievementEarned', 1, z.object({
+    userId: uuid,
+    achievementId: uuid,
+    kind: z.enum(['TOPICS_MASTERED', 'QUIZ_MASTER', 'EXAM_READY', 'RHYTHM_WEEKS', 'SUBJECT_CONTRIBUTOR']),
+    tier: z.number().int().positive(),
+    subjectTitle: z.string().max(200).optional(),
+  })),
   /**
    * Someone named people with @handle in a comment or a post (ADR-0054). Only people who can read it and have nothing
    * between them and the author are listed; where it is, never what it says.

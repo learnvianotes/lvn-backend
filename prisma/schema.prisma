@@ -1462,6 +1462,8 @@ model LearnerSettings {
   plannedDays Int[]    @default([1, 2, 4, 6])
   /// Shows their name and counted days on their classes' Rhythm ring (ADR-0072); off by default
   shareRhythm Boolean  @default(false)
+  /// An adult shows their achievements and level on their profile (ADR-0080); off by default, never for a minor
+  showAchievements Boolean @default(false)
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
 
   @@schema("core")
@@ -1647,6 +1649,8 @@ enum NotificationCategory {
   RHYTHM_BUDDY
   /// Moderators approved or rejected a resource the person submitted (ADR-0074)
   RESOURCE
+  /// An achievement reached (ADR-0080): in the app only
+  ACHIEVEMENT
 
   @@schema("comms")
 }
@@ -2571,6 +2575,78 @@ model ProjectContributor {
   @@id([noteId, userId])
   @@index([userId])
   @@schema("notes")
+}
+
+// ── Achievements, points and contributor levels (ADR-0080) ─────────────────────────────────────────────────────────
+
+/// What earned (or took back) points: only other people's actions on someone's public work
+enum PointsRule {
+  REACTION
+  FORK
+  RESOURCE_APPROVED
+
+  @@schema("core")
+}
+
+enum PointsSource {
+  NOTE
+  RESOURCE
+
+  @@schema("core")
+}
+
+/// The points ledger (ADR-0080): append-only. A person's points are the sum of their entries; a reversal is a new,
+/// negative entry. `awardKey` makes every award and reversal happen once: rule, source, actor and how many entries that
+/// triple already has.
+model PointsEntry {
+  id         String       @id @db.Uuid
+  /// Cross-context reference to users.User: who the points are for
+  userId     String       @db.Uuid
+  delta      Int
+  rule       PointsRule
+  sourceType PointsSource
+  sourceId   String       @db.Uuid
+  /// Cross-context reference to users.User: whose action it was (null for a moderator's approval)
+  actorId    String?      @db.Uuid
+  /// The notes subject the source belongs to, for subject contributor achievements
+  subjectId  String?      @db.Uuid
+  subjectTitle String?
+  awardKey   String       @unique
+  createdAt  DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([sourceType, sourceId])
+  @@index([actorId, userId, createdAt])
+  @@schema("core")
+}
+
+enum AchievementKind {
+  TOPICS_MASTERED
+  QUIZ_MASTER
+  EXAM_READY
+  RHYTHM_WEEKS
+  SUBJECT_CONTRIBUTOR
+
+  @@schema("core")
+}
+
+/// An achievement tier a person reached (ADR-0080), awarded once: `key` is the kind, the subject if any and the tier.
+model Achievement {
+  id           String          @id @db.Uuid
+  /// Cross-context reference to users.User
+  userId       String          @db.Uuid
+  kind         AchievementKind
+  /// The threshold reached: 5 topics, 12 weeks, 250 points…
+  tier         Int
+  /// For SUBJECT_CONTRIBUTOR: the notes subject
+  subjectId    String?         @db.Uuid
+  subjectTitle String?
+  key          String
+  earnedAt     DateTime        @default(now()) @db.Timestamptz(3)
+
+  @@unique([userId, key])
+  @@index([userId, earnedAt(sort: Desc)])
+  @@schema("core")
 }
 
 // ── Push, email and preferences (ADR-0050) ──────────────────────────────────────────────────────────────────────

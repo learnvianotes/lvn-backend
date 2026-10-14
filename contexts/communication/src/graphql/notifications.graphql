@@ -63,6 +63,8 @@ enum NotificationCategory {
   RHYTHM_BUDDY
   "Moderators approved or rejected a resource the person submitted (ADR-0074), or someone recommended one to them (ADR-0075)"
   RESOURCE
+  "An achievement the person reached (ADR-0080): in the app only, never pushed"
+  ACHIEVEMENT
 }
 
 """

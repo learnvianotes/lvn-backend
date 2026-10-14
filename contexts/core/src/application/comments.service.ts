@@ -11,6 +11,7 @@ import { GroupsService } from './groups.service'
 import { MentionsService } from './mentions.service'
 import { ModerationService } from './moderation.service'
 import { ResourcesService } from './resources.service'
+import { PointsService } from './points.service'
 
 export type CommentTargetKind = 'NOTE' | 'GROUP_POST' | 'CLASSROOM_POST' | 'RESOURCE'
 /** Resources take comments, not reactions: people save them instead (ADR-0075). */
@@ -62,6 +63,7 @@ export class CommentsService {
     private readonly moderation: ModerationService,
     private readonly mentions: MentionsService,
     private readonly resources: ResourcesService,
+    private readonly points: PointsService,
     @Inject(NOTE_ACCESS) private readonly notes: NoteAccess,
     @Inject(PEOPLE) private readonly people: People,
     @Inject(POLICY) private readonly policy: Policy,
@@ -269,12 +271,15 @@ export class CommentsService {
     if (found.ownerId !== viewerId && (await this.people.blockedBetween(viewerId, found.ownerId))) throw Errors.forbidden("You can't react here.")
     const key = { targetType_targetId_userId: { targetType: target.type, targetId: target.id, userId: viewerId } }
     if (!kind) {
-      await this.db.reaction.deleteMany({ where: { targetType: target.type, targetId: target.id, userId: viewerId } })
+      const { count } = await this.db.reaction.deleteMany({ where: { targetType: target.type, targetId: target.id, userId: viewerId } })
+      // A reaction on a public note was worth a point to its owner (ADR-0080): taking it back takes the point back.
+      if (count && target.type === 'NOTE') await this.points.reacted(viewerId, target.id, false)
       return
     }
     const rate = await this.limiter.hit(`core:react:${viewerId}`, { max: COMMENT_LIMITS.reactionsPerHour, windowSeconds: 3600 })
     if (!rate.allowed) throw Errors.rateLimited(rate.retryAfter, 'You have reacted a lot in the last hour. Try again later.')
     await this.db.reaction.upsert({ where: key, create: { targetType: target.type, targetId: target.id, userId: viewerId, kind }, update: { kind } })
+    if (target.type === 'NOTE') await this.points.reacted(viewerId, target.id, true)
   }
 
   /** The reactions on a target the viewer can see, after a change. */

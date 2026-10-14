@@ -8,9 +8,11 @@ import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { InvalidUrlError, isbn13, normaliseUrl, readPageMeta, SafeFetcher, SafeFetchError } from '@lvn-backend/safe-fetch'
 import { CORE_CONFIG, type CoreConfig } from '../core.config'
+import { TRUSTED_RESOURCES_PER_DAY } from '../domain/engagement'
 import { hostOf, pictureType, suggestType, urlKeyOf, type ResourceTypeKind } from '../domain/resources'
 import { OpenLibrary } from '../infrastructure/open-library'
 import { ModerationService } from './moderation.service'
+import { PointsService } from './points.service'
 
 type Row = Prisma.ResourceGetPayload<{ include: { topics: true } }>
 
@@ -68,6 +70,7 @@ export class ResourcesService implements OnModuleInit {
     private readonly db: PrismaService,
     private readonly limiter: RateLimiter,
     private readonly moderation: ModerationService,
+    private readonly points: PointsService,
     @Inject(POLICY) private readonly policy: Policy,
     @Inject(TOPICS) private readonly topics: Topics,
     @Inject(FILES) private readonly files: Files,
@@ -240,7 +243,9 @@ export class ResourcesService implements OnModuleInit {
       this.db.resource.count({ where: { submittedById: viewerId, createdAt: { gte: new Date(Date.now() - DAY_MS) } } }),
       this.db.resource.count({ where: { submittedById: viewerId, status: 'PENDING' } }),
     ])
-    if (today >= RESOURCE_LIMITS.perDay) throw Errors.rateLimited(3600, `You can add ${RESOURCE_LIMITS.perDay} resources a day. Add more tomorrow.`)
+    // Trusted contributors (ADR-0080) may add more a day; moderators still decide every one.
+    const perDay = (await this.points.isTrusted(viewerId)) ? TRUSTED_RESOURCES_PER_DAY : RESOURCE_LIMITS.perDay
+    if (today >= perDay) throw Errors.rateLimited(3600, `You can add ${perDay} resources a day. Add more tomorrow.`)
     if (waiting >= RESOURCE_LIMITS.waiting) throw Errors.validation(`${RESOURCE_LIMITS.waiting} of your resources are waiting for moderators. Add more once some are approved.`)
     const f = await this.fields(viewerId, input)
     await this.assertNew(f.urlKey, f.isbn, null)
