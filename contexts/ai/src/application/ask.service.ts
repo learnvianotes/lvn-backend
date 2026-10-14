@@ -8,6 +8,7 @@ import { Queues } from '@lvn-backend/queue'
 import { ASK_CANDIDATES, citedSources, passagesOf, QUESTION_CHARS, rerank, sourcesBlock, type AnswerSource, type Passage } from '../domain/ask'
 import { AiGateway } from './ai-gateway'
 import { AI_TASKS_QUEUE } from './ai-tasks.service'
+import { NoteMaterial } from './note-material'
 
 type AnswerRow = Prisma.AiAnswerGetPayload<object>
 
@@ -42,6 +43,7 @@ export class AskService {
     @Inject(DOUBTS) private readonly doubts: Doubts,
     @Inject(LIVE) private readonly live: Live,
     @Inject(LEARNING) private readonly learning: Learning,
+    private readonly material: NoteMaterial,
   ) {}
 
   async ask(viewerId: string, input: { question: string; scope: AskAiScope; noteId?: string | null }): Promise<AnswerRow> {
@@ -166,7 +168,9 @@ export class AskService {
     if (row.scope === AskAiScope.THIS_NOTE) {
       const source = await this.notes.source(row.askerId, row.noteId!)
       if (!source?.mayAskAi) throw Errors.notFound('Note not found.')
-      const passages = passagesOf(source.cards.map((c) => ({ id: c.id, text: c.text }))).map((p) => ({ ...p, noteId: source.noteId, versionId: source.versionId, title: source.title, public: source.visibility === 'PUBLIC' }))
+      // With what its photos, PDFs and recordings say (ADR-0085).
+      const media = await this.material.ofMedia(source.cards, { noteId: source.noteId, ownerId: row.askerId, private: source.visibility !== 'PUBLIC' })
+      const passages = passagesOf(source.cards.map((c) => ({ id: c.id, text: media.texts.get(c.id) ?? c.text }))).map((p) => ({ ...p, noteId: source.noteId, versionId: source.versionId, title: source.title, public: source.visibility === 'PUBLIC' }))
       // Kept in the note's order, so the answer reads it front to back.
       const best = new Set(rerank(row.question, passages, undefined, Infinity))
       return passages.filter((p) => best.has(p))

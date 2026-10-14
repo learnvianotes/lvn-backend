@@ -10,6 +10,7 @@ import { AiEmbeddings } from './application/ai-embeddings'
 import { AskService } from './application/ask.service'
 import { PublicPipeline } from './application/public-pipeline'
 import { MediaInput } from './application/media-input'
+import { NoteMaterial } from './application/note-material'
 import { AiPageVision } from './application/page-vision'
 import { AiSkillsReader } from './application/skills-reader'
 import { PromptLibrary } from './application/prompts'
@@ -44,6 +45,7 @@ export class AiModule {
         AiSettingsService,
         AiTasksService,
         MediaInput,
+        NoteMaterial,
         AiPageVision,
         AiSkillsReader,
         AskService,
