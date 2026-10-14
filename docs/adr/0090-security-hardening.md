@@ -29,6 +29,9 @@ minute: ten a second, far above what a session needs.
 - Past it, the operation is refused before any resolver runs: `RATE_LIMITED`, HTTP 429 and `Retry-After`.
 - Signed-out requests are not counted here. Their floods are the edge's to stop, as are floods by address, because
   one address may be a whole campus.
+- Sign-up keeps no per-address limit in the API for the same reason: a college lab signs up a class from one address
+  on its first day. Mass sign-ups meet the edge's per-address rule, and a new account can do little that reaches
+  others until it is verified (publishing, groups, resources).
 
 **A firewall at the edge (AWS WAF, `modules/edge`).** A web ACL on the CloudFront distribution, in us-east-1 as
 CloudFront requires:
