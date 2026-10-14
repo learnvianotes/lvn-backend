@@ -1,7 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { PEOPLE, TOPICS, type People, type Topics } from '@lvn-backend/facades'
+import { Errors } from '@lvn-backend/errors'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { WEAK_ACCURACY } from '../domain/exams'
+import { classGoalTarget, pooled, shareCap } from '../domain/tasks'
 import { ClassroomsService } from './classrooms.service'
 import { RhythmService } from './rhythm.service'
 
@@ -46,13 +48,51 @@ export class ClassInsightsService {
       people.push({ userId: id, name: contact?.restrictedMinor ? firstName(names[id]) : names[id], ...w })
     }
     const all = [...weeks.values()]
+    const targetDays = all.reduce((s, w) => s + w.target, 0)
     return {
       students: ids.length,
       metCount: all.filter((w) => w.met).length,
       countedDays: all.reduce((s, w) => s + w.countedDays, 0),
-      targetDays: all.reduce((s, w) => s + w.target, 0),
+      targetDays,
       people: people.sort((a, b) => b.countedDays - a.countedDays || a.name.localeCompare(b.name)),
+      goal: await this.goal(classroomId, ids, weeks, targetDays, view.role === 'TEACHER' || view.role === 'TA', now),
     }
+  }
+
+  /**
+   * The class's pooled goal this week (ADR-0081), when staff turned it on: counted days across the class against a
+   * target, each student counting up to their share. Each student's part is for staff only.
+   */
+  private async goal(classroomId: string, ids: string[], weeks: Map<string, { countedDays: number }>, plannedDays: number, staff: boolean, now: Date) {
+    const row = await this.db.classGoal.findUnique({ where: { classroomId } })
+    if (!row) return null
+    const recent = ids.length
+      ? await this.db.rhythmWeek.groupBy({ by: ['weekStart'], where: { userId: { in: ids }, weekStart: { lt: new Date(now.getTime() - 6 * 86_400_000) } }, _sum: { countedDays: true }, orderBy: { weekStart: 'desc' }, take: 4 })
+      : []
+    const target = classGoalTarget({ students: ids.length, recentTotals: recent.map((r) => r._sum.countedDays ?? 0), plannedDays, set: row.target })
+    const cap = shareCap(target, ids.length)
+    const progress = pooled(ids.map((id) => weeks.get(id)?.countedDays ?? 0), cap)
+    return {
+      target,
+      progress,
+      sharePerStudent: cap,
+      automatic: row.target === null,
+      reached: progress >= target,
+      parts: staff ? ids.map((id) => ({ userId: id, countedDays: Math.min(weeks.get(id)?.countedDays ?? 0, cap) })) : null,
+    }
+  }
+
+  /** Staff turn the class goal on (with a target, or sized from the class's weeks) or off. */
+  async setGoal(viewerId: string, classroomId: string, on: boolean, target: number | null): Promise<void> {
+    const view = await this.classes.view(viewerId, classroomId)
+    if (!view?.role) throw Errors.notFound('Class not found.')
+    if (view.role !== 'TEACHER' && view.role !== 'TA') throw Errors.forbidden('Only the class’s teachers set its goal.')
+    if (!on) {
+      await this.db.classGoal.deleteMany({ where: { classroomId } })
+      return
+    }
+    if (target !== null && (!Number.isInteger(target) || target < 1 || target > 10_000)) throw Errors.validation('Choose a target from 1 to 10,000 days.', ['input', 'target'])
+    await this.db.classGoal.upsert({ where: { classroomId }, create: { classroomId, target, setById: viewerId }, update: { target, setById: viewerId } })
   }
 
   /** Staff only; null for anyone else. */

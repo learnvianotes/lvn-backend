@@ -209,6 +209,19 @@ input AddPdfHighlightInput
   cardId: UUID
 }
 
+input AddWeeklyTaskInput
+  @join__type(graph: CORE)
+{
+  kind: WeeklyTaskKind!
+  target: Int!
+
+  """Needed for TOPIC_MINUTES; optional for QUIZ_ANSWERS"""
+  topicId: UUID
+
+  """When and where (at most 140 characters)"""
+  plan: String
+}
+
 """
 The viewer's AI tokens today (UTC) against their plan's daily limit (§10.1, ADR-0024)
 """
@@ -719,6 +732,13 @@ type AuthPayload
   userErrors: [UserError!]!
 }
 
+type BuddyTogether
+  @join__type(graph: CORE)
+{
+  countedDays: Int!
+  target: Int!
+}
+
 """
 One block of a note (§4.1). `position` orders cards (a fractional index: compare as plain strings, then by id).
 """
@@ -884,6 +904,35 @@ input ChangeNoteVisibilityInput
 {
   noteId: UUID!
   visibility: Visibility!
+}
+
+"""
+Counted days across the class against a target; no one is listed in order, and it cannot be failed
+"""
+type ClassGoal
+  @join__type(graph: CORE)
+{
+  target: Int!
+
+  """Each student's counted days, up to their share"""
+  progress: Int!
+
+  """The most one student's days count"""
+  sharePerStudent: Int!
+
+  """Sized from the class's recent weeks rather than set by a teacher"""
+  automatic: Boolean!
+  reached: Boolean!
+
+  """Teachers only: each student's part"""
+  parts: [ClassGoalPart!]
+}
+
+type ClassGoalPart
+  @join__type(graph: CORE)
+{
+  user: User!
+  countedDays: Int!
 }
 
 type ClassPerformance
@@ -1158,6 +1207,11 @@ type ClassroomRhythm
 
   """Only students who share their Rhythm with their classes"""
   people: [ClassroomRhythmPerson!]!
+
+  """
+  The class's pooled goal this week, when its teachers turned it on (ADR-0081)
+  """
+  goal: ClassGoal
 }
 
 type ClassroomRhythmPerson
@@ -3035,6 +3089,14 @@ type Mutation
   """
   setRhythmSharing(input: SetRhythmSharingInput!): OkPayload! @join__field(graph: CORE)
 
+  """Adds a task to this week (at most three)"""
+  addWeeklyTask(input: AddWeeklyTaskInput!): WeeklyTaskPayload! @join__field(graph: CORE)
+  updateWeeklyTask(input: UpdateWeeklyTaskInput!): WeeklyTaskPayload! @join__field(graph: CORE)
+  removeWeeklyTask(input: WeeklyTaskIdInput!): OkPayload! @join__field(graph: CORE)
+
+  """Teachers turn their class's goal on or off"""
+  setClassGoal(input: SetClassGoalInput!): OkPayload! @join__field(graph: CORE)
+
   """Admins and the Owner"""
   setGroupRepository(input: SetGroupRepositoryInput!): GroupPayload! @join__field(graph: CORE)
 
@@ -4272,6 +4334,14 @@ type Query
   """Signed in only"""
   rhythm: Rhythm! @join__field(graph: CORE)
 
+  """The viewer's tasks this week, with how far each has come"""
+  weeklyTasks: WeeklyTasks! @join__field(graph: CORE)
+
+  """
+  Tasks worth setting this week: the next exam's weakest topic, weak topics, flashcards due
+  """
+  taskSuggestions: [TaskSuggestion!]! @join__field(graph: CORE)
+
   """A doubt the viewer's workspace holds"""
   doubt(id: UUID!): Doubt @join__field(graph: CORE)
 
@@ -5150,6 +5220,11 @@ type RhythmBuddy
   countedDays: Int!
   target: Int!
   met: Boolean!
+
+  """
+  The pair's week together (ADR-0081): both counted days against both targets
+  """
+  together: BuddyTogether!
 }
 
 input RhythmBuddyIdInput
@@ -5414,6 +5489,18 @@ input SetAiDefaultsInput
 {
   chatConnectionId: UUID
   embedConnectionId: UUID
+}
+
+input SetClassGoalInput
+  @join__type(graph: CORE)
+{
+  classroomId: UUID!
+  on: Boolean!
+
+  """
+  Counted days for the class this week; leave it out to size it from the class's recent weeks
+  """
+  target: Int
 }
 
 input SetClassroomRoleInput
@@ -5789,6 +5876,17 @@ type TagPayload
   userErrors: [UserError!]!
 }
 
+"""A task worth setting this week, and why"""
+type TaskSuggestion
+  @join__type(graph: CORE)
+{
+  kind: WeeklyTaskKind!
+  target: Int!
+  topicId: UUID
+  topicTitle: String
+  why: String!
+}
+
 type TeacherProfile
   @join__type(graph: USERS)
 {
@@ -6112,6 +6210,16 @@ input UpdateTeacherProfileInput
   skills: [TeacherSkillInput!]!
 }
 
+input UpdateWeeklyTaskInput
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  target: Int
+
+  """An empty plan clears it"""
+  plan: String
+}
+
 type UploadHeader
   @join__type(graph: NOTES)
 {
@@ -6370,6 +6478,60 @@ enum WeakTopicReason
   A topic of an exam in the next 14 days with no time on it in the last 14
   """
   NOT_REVISITED @join__enumValue(graph: CORE)
+}
+
+type WeeklyTask
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  kind: WeeklyTaskKind!
+  target: Int!
+  topicId: UUID
+  topicTitle: String
+
+  """When and where, in the person's words"""
+  plan: String
+
+  """This week so far, from what learning recorded"""
+  progress: Int!
+  done: Boolean!
+}
+
+input WeeklyTaskIdInput
+  @join__type(graph: CORE)
+{
+  id: UUID!
+}
+
+enum WeeklyTaskKind
+  @join__type(graph: CORE)
+{
+  """Flashcards graded"""
+  REVIEWS @join__enumValue(graph: CORE)
+
+  """Quiz answers, on a topic or any"""
+  QUIZ_ANSWERS @join__enumValue(graph: CORE)
+
+  """Learning minutes on a topic"""
+  TOPIC_MINUTES @join__enumValue(graph: CORE)
+}
+
+type WeeklyTaskPayload
+  @join__type(graph: CORE)
+{
+  task: WeeklyTask
+  userErrors: [UserError!]!
+}
+
+type WeeklyTasks
+  @join__type(graph: CORE)
+{
+  """The Monday of the person's Rhythm week (YYYY-MM-DD)"""
+  weekStart: String!
+  tasks: [WeeklyTask!]!
+
+  """Tasks a week may hold"""
+  max: Int!
 }
 
 enum YearOfStudy

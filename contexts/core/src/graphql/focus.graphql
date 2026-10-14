@@ -49,6 +49,13 @@ type RhythmBuddy {
   countedDays: Int!
   target: Int!
   met: Boolean!
+  "The pair's week together (ADR-0081): both counted days against both targets"
+  together: BuddyTogether!
+}
+
+type BuddyTogether {
+  countedDays: Int!
+  target: Int!
 }
 
 type RhythmBuddyInvite {
@@ -98,6 +105,27 @@ type ClassroomRhythm {
   targetDays: Int!
   "Only students who share their Rhythm with their classes"
   people: [ClassroomRhythmPerson!]!
+  "The class's pooled goal this week, when its teachers turned it on (ADR-0081)"
+  goal: ClassGoal
+}
+
+"Counted days across the class against a target; no one is listed in order, and it cannot be failed"
+type ClassGoal {
+  target: Int!
+  "Each student's counted days, up to their share"
+  progress: Int!
+  "The most one student's days count"
+  sharePerStudent: Int!
+  "Sized from the class's recent weeks rather than set by a teacher"
+  automatic: Boolean!
+  reached: Boolean!
+  "Teachers only: each student's part"
+  parts: [ClassGoalPart!]
+}
+
+type ClassGoalPart {
+  user: User!
+  countedDays: Int!
 }
 
 type ClassQuizScore {

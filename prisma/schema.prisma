@@ -2649,6 +2649,52 @@ model Achievement {
   @@schema("core")
 }
 
+// ── Weekly tasks and cooperative goals (ADR-0081) ──────────────────────────────────────────────────────────────────
+
+enum WeeklyTaskKind {
+  /// Flashcards graded
+  REVIEWS
+  /// Quiz answers, on a topic or any
+  QUIZ_ANSWERS
+  /// Learning minutes on a topic
+  TOPIC_MINUTES
+
+  @@schema("core")
+}
+
+/// A goal a person set for one Rhythm week (ADR-0081): at most three a week; progress is read from learning, never
+/// stored; an unfinished one simply ends with the week.
+model WeeklyTask {
+  id         String         @id @db.Uuid
+  /// Cross-context reference to users.User
+  userId     String         @db.Uuid
+  /// The Monday of the week, in the person's zone
+  weekStart  DateTime       @db.Date
+  kind       WeeklyTaskKind
+  target     Int
+  /// topic:<uuid> for a topic task
+  topicKey   String?
+  topicTitle String?
+  /// When and where they mean to do it, in their words (at most 140 characters)
+  plan       String?
+  createdAt  DateTime       @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, weekStart])
+  @@schema("core")
+}
+
+/// A class's pooled weekly goal of counted Rhythm days (ADR-0081): on while a row exists; `target` null sizes it from
+/// the class's recent weeks.
+model ClassGoal {
+  /// Cross-context reference to core.Classroom
+  classroomId String   @id @db.Uuid
+  target      Int?
+  setById     String   @db.Uuid
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  @@schema("core")
+}
+
 // ── Push, email and preferences (ADR-0050) ──────────────────────────────────────────────────────────────────────
 
 enum DevicePlatform {

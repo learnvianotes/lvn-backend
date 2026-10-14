@@ -88,6 +88,15 @@ export interface AddCommentInput {
   body: unknown
 }
 
+export interface AddWeeklyTaskInput {
+  kind: WeeklyTaskKind
+  target: number
+  /** Needed for TOPIC_MINUTES; optional for QUIZ_ANSWERS */
+  topicId?: string | null
+  /** When and where (at most 140 characters) */
+  plan?: string | null
+}
+
 export interface AnswerClassroomInviteInput {
   inviteId: string
   accept: boolean
@@ -122,6 +131,11 @@ export interface AskDoubtInput {
   repoRef?: string | null
 }
 
+export interface BuddyTogether {
+  countedDays: number
+  target: number
+}
+
 export interface CardIdInput {
   cardId: string
 }
@@ -131,6 +145,25 @@ export interface CardReviewResult {
   due: Date
   state: ReviewState
   intervalDays: number
+}
+
+/** Counted days across the class against a target; no one is listed in order, and it cannot be failed */
+export interface ClassGoal {
+  target: number
+  /** Each student's counted days, up to their share */
+  progress: number
+  /** The most one student's days count */
+  sharePerStudent: number
+  /** Sized from the class's recent weeks rather than set by a teacher */
+  automatic: boolean
+  reached: boolean
+  /** Teachers only: each student's part */
+  parts: Array<ClassGoalPart> | null
+}
+
+export interface ClassGoalPart {
+  user: User
+  countedDays: number
 }
 
 export interface ClassPerformance {
@@ -325,6 +358,8 @@ export interface ClassroomRhythm {
   targetDays: number
   /** Only students who share their Rhythm with their classes */
   people: Array<ClassroomRhythmPerson>
+  /** The class's pooled goal this week, when its teachers turned it on (ADR-0081) */
+  goal: ClassGoal | null
 }
 
 export interface ClassroomRhythmPerson {
@@ -1318,6 +1353,22 @@ export interface MutationSetRhythmSharingArgs {
   input: SetRhythmSharingInput
 }
 
+export interface MutationAddWeeklyTaskArgs {
+  input: AddWeeklyTaskInput
+}
+
+export interface MutationUpdateWeeklyTaskArgs {
+  input: UpdateWeeklyTaskInput
+}
+
+export interface MutationRemoveWeeklyTaskArgs {
+  input: WeeklyTaskIdInput
+}
+
+export interface MutationSetClassGoalArgs {
+  input: SetClassGoalInput
+}
+
 export interface MutationSetGroupRepositoryArgs {
   input: SetGroupRepositoryInput
 }
@@ -1928,6 +1979,8 @@ export interface RhythmBuddy {
   countedDays: number
   target: number
   met: boolean
+  /** The pair's week together (ADR-0081): both counted days against both targets */
+  together: BuddyTogether
 }
 
 export interface RhythmBuddyIdInput {
@@ -2002,6 +2055,13 @@ export interface RhythmToday {
 
 export interface SetAchievementsShownInput {
   show: boolean
+}
+
+export interface SetClassGoalInput {
+  classroomId: string
+  on: boolean
+  /** Counted days for the class this week; leave it out to size it from the class's recent weeks */
+  target?: number | null
 }
 
 export interface SetClassroomRoleInput {
@@ -2083,6 +2143,15 @@ export interface SubmitResourceInput {
   imageUrl?: string | null
 }
 
+/** A task worth setting this week, and why */
+export interface TaskSuggestion {
+  kind: WeeklyTaskKind
+  target: number
+  topicId: string | null
+  topicTitle: string | null
+  why: string
+}
+
 /** A topic of the notes subgraph */
 export interface Topic {
   id: string
@@ -2148,6 +2217,13 @@ export interface UpdateResourceInput {
   removeCover?: boolean | null
 }
 
+export interface UpdateWeeklyTaskInput {
+  id: string
+  target?: number | null
+  /** An empty plan clears it */
+  plan?: string | null
+}
+
 /** A person, owned by the users subgraph */
 export interface User {
   id: string
@@ -2177,3 +2253,35 @@ export interface WeakTopic {
 }
 
 export type WeakTopicReason = 'LOW_ACCURACY' | 'NOT_REVISITED'
+
+export interface WeeklyTask {
+  id: string
+  kind: WeeklyTaskKind
+  target: number
+  topicId: string | null
+  topicTitle: string | null
+  /** When and where, in the person's words */
+  plan: string | null
+  /** This week so far, from what learning recorded */
+  progress: number
+  done: boolean
+}
+
+export interface WeeklyTaskIdInput {
+  id: string
+}
+
+export type WeeklyTaskKind = 'REVIEWS' | 'QUIZ_ANSWERS' | 'TOPIC_MINUTES'
+
+export interface WeeklyTaskPayload {
+  task: WeeklyTask | null
+  userErrors: Array<UserError>
+}
+
+export interface WeeklyTasks {
+  /** The Monday of the person's Rhythm week (YYYY-MM-DD) */
+  weekStart: string
+  tasks: Array<WeeklyTask>
+  /** Tasks a week may hold */
+  max: number
+}
