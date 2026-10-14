@@ -75,6 +75,12 @@ describe('security: abuse', () => {
       expect((await t.gql<{ viewer: { id: string } }>('{ viewer { id } }', {}, actors.a.token)).data?.viewer).toBeTruthy()
     }, 60_000)
 
+    it('answers a subscription sent over HTTP with 400, not a failure (found by ZAP, Phase 9)', async () => {
+      const res = await request(t.app.getHttpServer()).post('/graphql').set('content-type', 'application/json').set('authorization', `Bearer ${actors.a.token}`).send({ query: 'subscription { live { kind id at } }' })
+      expect(res.status).toBe(400)
+      expect(res.body.errors[0].extensions).toMatchObject({ code: 'VALIDATION' })
+    })
+
     it('caps list sizes whatever `first` asks for', async () => {
       const db = t.app.get(PrismaService)
       const ids = Array.from({ length: 105 }, () => newId())

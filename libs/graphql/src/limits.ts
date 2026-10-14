@@ -81,9 +81,11 @@ export function limitsPlugin(): ApolloServerPlugin {
   return {
     async requestDidStart() {
       return {
-        async didResolveOperation({ request, document, schema, contextValue }) {
+        async didResolveOperation({ request, document, schema, contextValue, operation }) {
           // The operation name joins the request's log lines and its access-log entry (never the variables).
           noteOperation((contextValue as { req?: unknown }).req, request.operationName)
+          // Over HTTP the gateway plans queries and mutations only; its query planner fails on anything else (a 500).
+          if (operation?.operation === 'subscription') throw refuse('Live updates are a WebSocket subscription at /graphql/live.')
           if (isIntrospectionOnly(document, request.operationName)) return
           const depth = queryDepth(document, request.operationName)
           if (depth > MAX_DEPTH) throw refuse(`Query is too deep (${depth} > ${MAX_DEPTH}).`)
