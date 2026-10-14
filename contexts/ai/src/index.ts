@@ -20,6 +20,7 @@ export { IMAGES_TOGETHER, MAX_IMAGES, MAX_PDFS, MAX_SECONDS, PIECE_SECONDS } fro
 export { AiPageVision } from './application/page-vision'
 /** Teachers' public pages read into Skills tab items (ADR-0077): the SKILLS_READER facade. */
 export { AiSkillsReader } from './application/skills-reader'
+export { AiDailyLines } from './application/daily-lines'
 
 /** This context's federation subgraph, composed by apps/api's gateway (ADR-0033). */
 export const aiSubgraph = { name: 'ai', typeDefs: aiTypeDefs, modules: [AiModule] }
