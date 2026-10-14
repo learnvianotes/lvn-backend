@@ -9,7 +9,7 @@ import { Queues } from '@lvn-backend/queue'
 import { batches, batchText, isRepair, type TextChange } from '../domain/clean-up'
 import { LANGUAGE_NAMES, repairs, SOURCE_CHARS, TASKS, type AiLanguage, type TaskResult } from '../domain/tasks'
 import { AiGateway } from './ai-gateway'
-import { MediaInput } from './media-input'
+import { IMAGES_TOGETHER, MAX_IMAGES, MAX_PDFS, MediaInput } from './media-input'
 
 /** The `ai` context's task queue (§9.1 `ai`), run one at a time by apps/worker: one GPU serves one model. */
 export const AI_TASKS_QUEUE = 'ai.tasks'
@@ -103,12 +103,13 @@ export class AiTasksService {
         cut = mended.cut
         result = def.result({ changes: mended.changes }, source.title)
       } else {
-        const words = def.input === 'IMAGES' ? cards.filter((c) => c.type !== CardType.IMAGE) : cards
-        let body = words.map((c) => (c.type === CardType.CODE ? `\`\`\`${(c.content as { language?: string }).language ?? ''}\n${c.text}\n\`\`\`` : c.text)).join('\n\n')
+        // QUICK_NOTE also reads the note's photos and PDFs (ADR-0062, ADR-0084).
+        const material = def.input === 'IMAGES' ? await this.quickMaterial(cards, { userId: artifact.ownerId, private: isPrivate }) : { parts: cards.map(wordsOf), images: [] }
+        let body = material.parts.join('\n\n')
+        if (def.input === 'IMAGES' && !body.trim() && !material.images.length) throw Errors.validation('Nothing in these photos or files could be read. A scanned PDF becomes notes with Convert PDF.')
         cut = body.length > SOURCE_CHARS
         if (cut) body = body.slice(0, SOURCE_CHARS)
-        // QUICK_NOTE also sees the note's photos (ADR-0062).
-        const images = def.input === 'IMAGES' ? await this.media.images(cards.filter((c) => c.type === CardType.IMAGE).map((c) => fileOf(c)!)) : undefined
+        const images = material.images
         const language = LANGUAGE_NAMES[options.language] ?? 'English'
         const generated = await this.gateway.generate({
           task,
@@ -118,7 +119,7 @@ export class AiTasksService {
           vars: { language, target: language, sentences: 5 },
           content: { title: source.title || 'Untitled note', body: body || '(Only the photos.)' },
           schema: def.schema,
-          ...(images?.length ? { images } : {}),
+          ...(images.length ? { images } : {}),
         })
         result = def.result(generated.output, source.title)
       }
@@ -246,15 +247,41 @@ export class AiTasksService {
   }
 
   /**
-   * The cards a task reads: code (EXPLAIN_CODE), one recording (TRANSCRIBE), words and photos (QUICK_NOTE), text,
-   * heading and quote cards (CLEAN_UP), else words.
+   * A quick note's material in the cards' order (ADR-0062, ADR-0084): the words; up to MAX_IMAGES photos, sent with the
+   * request when IMAGES_TOGETHER or fewer, else each read on its own first; and the words of up to MAX_PDFS PDFs.
+   */
+  private async quickMaterial(cards: NoteAiSource['cards'], who: { userId: string | null; private: boolean }): Promise<{ parts: string[]; images: string[] }> {
+    const photos = cards.filter((c) => c.type === CardType.IMAGE && !!fileOf(c)).slice(0, MAX_IMAGES)
+    const files = cards.filter((c) => c.type === CardType.FILE && !!fileOf(c)).slice(0, MAX_PDFS)
+    const together = photos.length <= IMAGES_TOGETHER
+    const parts: string[] = []
+    let photo = 0
+    let pdf = 0
+    for (const c of cards) {
+      if (c.type === CardType.IMAGE) {
+        if (together || !photos.includes(c)) continue
+        const read = await this.media.readPhoto(fileOf(c)!, who)
+        photo++
+        if (read.trim()) parts.push(`Photo ${photo}:\n${read}`)
+      } else if (c.type === CardType.FILE) {
+        if (!files.includes(c)) continue
+        const read = await this.media.pdfText(fileOf(c)!)
+        if (read) parts.push(`PDF ${++pdf}:\n${read}`)
+      } else parts.push(wordsOf(c))
+    }
+    return { parts, images: together ? await this.media.images(photos.map((c) => fileOf(c)!)) : [] }
+  }
+
+  /**
+   * The cards a task reads: code (EXPLAIN_CODE), one recording (TRANSCRIBE), words, photos and PDFs (QUICK_NOTE),
+   * text, heading and quote cards (CLEAN_UP), else words.
    */
   private pick(source: NoteAiSource, cardIds: string[] | null, def: (typeof TASKS)[AiTaskType]) {
     const chosen = cardIds?.length ? source.cards.filter((c) => cardIds.includes(c.id)) : source.cards
     if (def.codeOnly) return chosen.filter((c) => c.type === CardType.CODE)
     if (def.kind === 'CHANGES') return chosen.filter((c) => MENDABLE.has(c.type) && c.text.trim().length > 0)
     if (def.input === 'AUDIO') return chosen.filter((c) => (c.type === CardType.AUDIO || c.type === CardType.VIDEO) && !!fileOf(c))
-    if (def.input === 'IMAGES') return chosen.filter((c) => c.text.trim().length > 0 || (c.type === CardType.IMAGE && !!fileOf(c)))
+    if (def.input === 'IMAGES') return chosen.filter((c) => c.text.trim().length > 0 || ((c.type === CardType.IMAGE || c.type === CardType.FILE) && !!fileOf(c)))
     return chosen.filter((c) => c.text.trim().length > 0)
   }
 }
@@ -264,3 +291,6 @@ const MENDABLE: ReadonlySet<string> = new Set([CardType.TEXT, CardType.HEADING, 
 
 /** A media card's file. */
 const fileOf = (c: { content: unknown }) => (c.content as { fileId?: string } | null)?.fileId ?? null
+
+/** A card's words for the model: code fenced with its language. */
+const wordsOf = (c: { type: string; text: string; content: unknown }) => (c.type === CardType.CODE ? `\`\`\`${(c.content as { language?: string }).language ?? ''}\n${c.text}\n\`\`\`` : c.text)

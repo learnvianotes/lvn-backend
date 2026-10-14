@@ -47,6 +47,28 @@ export function blocksToCards(blocks: z.infer<typeof block>[]): NewCard[] {
 /** The words of a page's blocks, to compare with the OCR's. */
 export const blocksText = (blocks: z.infer<typeof block>[]) => blocks.map((b) => [b.text, ...(b.items ?? []), ...(b.rows ?? []).flat()].join(' ')).join('\n')
 
+/** A page's blocks as Markdown, for the model to read again: a quick note of many photos (ADR-0084). */
+export const blocksMarkdown = (blocks: z.infer<typeof block>[]) =>
+  blocks
+    .map((b) => {
+      switch (b.kind) {
+        case 'heading':
+          return `${'#'.repeat(b.level ?? 2)} ${b.text}`
+        case 'list':
+          return (b.items?.length ? b.items : b.text.split('\n')).map((i, n) => `${b.ordered ? `${n + 1}.` : '-'} ${i.trim()}`).join('\n')
+        case 'formula':
+          return `$$${b.text.trim()}$$`
+        case 'table':
+          return (b.rows ?? []).map((r) => `| ${r.join(' | ')} |`).join('\n')
+        case 'code':
+          return `\`\`\`${b.language ?? ''}\n${b.text}\n\`\`\``
+        default:
+          return b.text
+      }
+    })
+    .filter((s) => s.trim())
+    .join('\n\n')
+
 /**
  * The PAGE_VISION facade (stage 4 of ADR-0028, ADR-0063): a PDF page image read by the vision model, verbatim, as the
  * platform's work. The page is the person's own material, so only providers that may receive private data see it.

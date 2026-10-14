@@ -4,16 +4,27 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { Inject, Injectable } from '@nestjs/common'
+import { QuickNoteLimits } from '@lvn/contracts/domain'
 import { FILES, type Files } from '@lvn-backend/facades'
+import { getDocumentProxy } from 'unpdf'
 import { AiGateway } from './ai-gateway'
+import { blocksMarkdown, pageSchema } from './page-vision'
 
 const run = promisify(execFile)
 /** One piece the model hears at a time (ADR-0062) */
 export const PIECE_SECONDS = 30
 /** The most of a recording that is transcribed */
 export const MAX_SECONDS = 30 * 60
-/** Photos a quick note reads, and their longest side */
-export const MAX_IMAGES = 4
+/**
+ * Photos a quick note reads (ADR-0084), and how many go to the model with the request: more are each read on their own
+ * first, as a PDF page is, so ten fit a small model's context (a photo is about 540 of a local model's 4,096 tokens).
+ */
+export const MAX_IMAGES = QuickNoteLimits.files
+export const IMAGES_TOGETHER = 4
+/** PDFs a quick note reads the words of, and the pages read of each */
+export const MAX_PDFS = QuickNoteLimits.files
+export const PDF_PAGES = 60
+/** A photo's longest side as the model sees it */
 const IMAGE_SIDE = 1280
 const FFMPEG_TIMEOUT_MS = 10 * 60_000
 
@@ -60,6 +71,36 @@ export class MediaInput {
         out.push((await readFile(jpeg)).toString('base64'))
       }
       return out
+    })
+  }
+
+  /** What a photo says, read on its own as a PDF page is (read-page, ADR-0063), as the person's work (ADR-0084). */
+  async readPhoto(fileId: string, who: { userId: string | null; private: boolean }): Promise<string> {
+    const [jpeg] = await this.images([fileId])
+    const read = await this.gateway.generate({ task: 'QUICK_NOTE', userId: who.userId, private: who.private, prompt: 'read-page', images: [jpeg!], schema: pageSchema, temperature: 0 })
+    return blocksMarkdown(read.output.blocks)
+  }
+
+  /**
+   * A PDF's words, page by page up to PDF_PAGES (ADR-0084). Empty when it has none (a scan, which Convert PDF reads),
+   * cannot be opened (a password) or is not a PDF.
+   */
+  async pdfText(fileId: string): Promise<string> {
+    return this.inTemp(async (dir) => {
+      const source = path.join(dir, 'source.pdf')
+      const { mimeType } = await this.files.download(fileId, source)
+      if (mimeType !== 'application/pdf') return ''
+      try {
+        const pdf = await getDocumentProxy(new Uint8Array(await readFile(source)))
+        const pages: string[] = []
+        for (let i = 1; i <= Math.min(pdf.numPages, PDF_PAGES); i++) {
+          const content = await (await pdf.getPage(i)).getTextContent()
+          pages.push(content.items.map((item) => ('str' in item ? `${item.str}${item.hasEOL ? '\n' : ' '}` : '')).join('').replace(/[ \t]+/g, ' ').replace(/ ?\n ?/g, '\n').trim())
+        }
+        return pages.filter(Boolean).join('\n\n')
+      } catch {
+        return ''
+      }
     })
   }
 

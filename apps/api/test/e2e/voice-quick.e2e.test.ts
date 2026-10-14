@@ -2,12 +2,12 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { AiTasksService, MAX_IMAGES } from '@lvn-backend/ai'
+import { AiTasksService, IMAGES_TOGETHER, MAX_IMAGES } from '@lvn-backend/ai'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { startFakeOllama, type FakeOllama } from '@lvn-backend/testing'
 import sharp from 'sharp'
 import { createTestApp, type TestApp } from '../support/app'
-import { upload } from '../support/flows'
+import { textPdf, upload } from '../support/flows'
 import { seedUser, tokenFor } from '../support/seed'
 
 /**
@@ -42,9 +42,10 @@ describe('transcription and quick notes', () => {
     await tasks.process(payload!.artifact!.id)
     return (await t.gql<{ aiArtifact: { status: string; title: string | null; cards: { type: string; content: unknown }[] | null; error: string | null; truncated: boolean } }>(`query ($id: UUID!) { aiArtifact(id: $id) { ${ARTIFACT} } }`, { id: payload!.artifact!.id }, who.token)).data!.aiArtifact
   }
-  const addCard = async (type: string, content: object) => {
+  let place = 0
+  const addCard = async (type: string, content: object, note = noteId) => {
     const id = newId()
-    const saved = await t.gql<{ updateNoteDraft: { results: { status: string; message: string | null }[] } }>(`mutation ($input: UpdateNoteDraftInput!) { updateNoteDraft(input: $input) { results { status message } ${ERRORS} } }`, { input: { noteId, ops: [{ kind: 'UPSERT', id, type, position: `b${Date.now()}1`, content }] } }, owner.token)
+    const saved = await t.gql<{ updateNoteDraft: { results: { status: string; message: string | null }[] } }>(`mutation ($input: UpdateNoteDraftInput!) { updateNoteDraft(input: $input) { results { status message } ${ERRORS} } }`, { input: { noteId: note, ops: [{ kind: 'UPSERT', id, type, position: `b${String(++place).padStart(3, '0')}1`, content }] } }, owner.token)
     expect(saved.data?.updateNoteDraft.results[0]).toMatchObject({ status: 'APPLIED' })
     return id
   }
@@ -110,14 +111,14 @@ describe('transcription and quick notes', () => {
   it('makes a structured note of rough words and photos, for the note’s owner only', async () => {
     const photo = await sharp({ create: { width: 2400, height: 1600, channels: 3, background: '#16a34a' } }).png().toBuffer()
     const fileIds: string[] = []
-    for (let i = 0; i < MAX_IMAGES + 1; i++) fileIds.push(await upload(t, owner.token, 'ATTACHMENT', 'image/png', photo, `board${i}.png`, noteId))
+    for (let i = 0; i < IMAGES_TOGETHER; i++) fileIds.push(await upload(t, owner.token, 'ATTACHMENT', 'image/png', photo, `board${i}.png`, noteId))
     for (const fileId of fileIds) await addCard('image', { fileId, alt: '' })
     ollama.answer = () => JSON.stringify({ title: 'Photosynthesis', sections: [{ heading: 'Light reactions', text: 'Light becomes chemical energy in the chloroplast.' }, { heading: 'Calvin cycle', text: 'Carbon dioxide is fixed into sugar.' }] })
     const quick = await done(owner, { noteId, task: 'QUICK_NOTE' })
     const asked = ollama.chats.at(-1)!
     const images = asked.messages.at(-1)!.images!
-    // The photos, at most four, as JPEGs no wider than 1,280 pixels; the rough words fenced in the prompt.
-    expect(images).toHaveLength(MAX_IMAGES)
+    // Four photos go with the request, as JPEGs no wider than 1,280 pixels; the rough words fenced in the prompt.
+    expect(images).toHaveLength(IMAGES_TOGETHER)
     const first = await sharp(Buffer.from(images[0]!, 'base64')).metadata()
     expect({ format: first.format, width: first.width }).toEqual({ format: 'jpeg', width: 1280 })
     expect(asked.messages.at(-1)!.content).toContain('photosynthesis: light -> sugar')
@@ -129,6 +130,32 @@ describe('transcription and quick notes', () => {
     await t.gql(`mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { ${ERRORS} } }`, { input: { noteId, visibility: 'PUBLIC' } }, owner.token)
     const refused = await run(reader, { noteId, task: 'QUICK_NOTE' })
     expect(refused.error ?? refused.payload?.userErrors[0]?.code).toBe('FORBIDDEN')
+  })
+
+  it('reads more photos than go together one by one, up to ten, and a PDF’s words, then makes one note of them', async () => {
+    const created = await t.gql<{ createNote: { note: { id: string } } }>(`mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } ${ERRORS} } }`, { input: { title: 'Cells', cards: [{ id: newId(), type: 'text', position: 'a0', content: text('membranes: what crosses?') }] } }, owner.token)
+    const many = created.data!.createNote.note.id
+    const photo = await sharp({ create: { width: 1600, height: 1200, channels: 3, background: '#2563eb' } }).jpeg().toBuffer()
+    for (let i = 0; i < MAX_IMAGES + 1; i++) await addCard('image', { fileId: await upload(t, owner.token, 'ATTACHMENT', 'image/jpeg', photo, `page${i}.jpg`, many), alt: '' }, many)
+    await addCard('file', { fileId: await upload(t, owner.token, 'ATTACHMENT', 'application/pdf', textPdf([['Osmosis moves water', 'across a membrane.'], ['Diffusion needs no energy.']]), 'handout.pdf', many) }, many)
+    let read = 0
+    ollama.answer = (req) =>
+      req.messages[0]!.content.includes('transcribe pages')
+        ? JSON.stringify({ blocks: [{ kind: 'heading', text: `Page ${++read}`, level: 2 }, { kind: 'paragraph', text: 'Water crosses the membrane.' }] })
+        : JSON.stringify({ title: 'Cell membranes', sections: [{ heading: 'Osmosis', text: 'Water crosses a membrane by osmosis.' }] })
+    const before = ollama.chats.length
+    const quick = await done(owner, { noteId: many, task: 'QUICK_NOTE' })
+    const chats = ollama.chats.slice(before)
+    // Ten photos, each read on its own (the eleventh is past the limit), then one request with what they and the PDF say.
+    expect(chats).toHaveLength(MAX_IMAGES + 1)
+    expect(chats.slice(0, MAX_IMAGES).map((c) => c.messages.at(-1)!.images?.length)).toEqual(Array(MAX_IMAGES).fill(1))
+    const asked = chats.at(-1)!.messages.at(-1)!
+    expect(asked.images ?? []).toEqual([])
+    expect(asked.content).toContain('membranes: what crosses?')
+    expect(asked.content).toContain(`Photo ${MAX_IMAGES}:\n## Page ${MAX_IMAGES}\n\nWater crosses the membrane.`)
+    expect(asked.content).not.toContain(`Photo ${MAX_IMAGES + 1}:`)
+    expect(asked.content).toContain('PDF 1:\nOsmosis moves water\nacross a membrane.\n\nDiffusion needs no energy.')
+    expect(quick).toMatchObject({ status: 'READY', title: 'Cell membranes' })
   })
 
   it('lets a reader transcribe a public note’s recording for themselves, kept as their own note', async () => {

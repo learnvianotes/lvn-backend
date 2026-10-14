@@ -7,6 +7,30 @@ export const SAMPLES = {
   html: new TextEncoder().encode('<html><script>alert(1)</script></html>'),
 }
 
+/** A PDF whose pages carry these lines as real text (Helvetica), with a correct cross-reference table. */
+export function textPdf(pages: string[][]): Uint8Array {
+  const objects: string[] = []
+  const font = 3 + pages.length * 2
+  objects[1] = '<< /Type /Catalog /Pages 2 0 R >>'
+  objects[2] = `<< /Type /Pages /Kids [${pages.map((_, i) => `${3 + i * 2} 0 R`).join(' ')}] /Count ${pages.length} >>`
+  pages.forEach((lines, i) => {
+    const stream = `BT /F1 12 Tf 72 720 Td ${lines.map((l) => `(${l.replace(/[()\\]/g, '\\$&')}) Tj 0 -16 Td`).join(' ')} ET`
+    objects[3 + i * 2] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${4 + i * 2} 0 R >>`
+    objects[4 + i * 2] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`
+  })
+  objects[font] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  let out = '%PDF-1.4\n'
+  const offsets: number[] = []
+  for (let n = 1; n < objects.length; n++) {
+    offsets[n] = out.length
+    out += `${n} 0 obj\n${objects[n]}\nendobj\n`
+  }
+  const xref = out.length
+  out += `xref\n0 ${objects.length}\n0000000000 65535 f \n${offsets.slice(1).map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`
+  out += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+  return new TextEncoder().encode(out)
+}
+
 const INTENT = `mutation ($input: CreateUploadIntentInput!) {
   createUploadIntent(input: $input) { intent { fileId uploadUrl uploadHeaders { name value } expiresAt } userErrors { field message code } }
 }`
