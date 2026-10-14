@@ -53,8 +53,10 @@ export function setup() {
   const run = Date.now()
   const learners = []
   for (let i = 0; i < USERS; i++) {
+    const email = `load-${run}-${i}@example.com`
+    const password = `load test passphrase ${run} ${i}`
     const res = gql(null, 'SignUp', 'mutation SignUp($input: SignUpInput!) { signUp(input: $input) { session { accessToken } userErrors { message } } }', {
-      input: { email: `load-${run}-${i}@example.com`, password: `load test passphrase ${run} ${i}`, displayName: `Load Learner ${i}`, dateOfBirth: '2002-04-11', acceptedTermsVersion: terms },
+      input: { email, password, displayName: `Load Learner ${i}`, dateOfBirth: '2002-04-11', acceptedTermsVersion: terms },
     })
     const token = res.json('data.signUp.session.accessToken')
     if (!token) continue
@@ -66,7 +68,7 @@ export function setup() {
       }).json('data.createNote.note.id')
       notes.push(id)
     }
-    learners.push({ token, notes })
+    learners.push({ email, password, token, notes })
   }
   const pub = gql(learners[0].token, 'PublicNotes', 'query PublicNotes { publicNotes(first: 20) { edges { node { id slug } } } }').json('data.publicNotes.edges') || []
   return { learners, publicPaths: pub.map((e) => `/n/${e.node.slug || 'note'}-${e.node.id}`) }
@@ -86,9 +88,19 @@ const SEARCH = 'query Search($q: String!) { search(query: $q, first: 20) { notes
 const FOR_YOU = 'query ForYou { forYouFeed(first: 20) { edges { node { __typename } } } }'
 const WRITE = 'mutation Write($input: UpdateNoteDraftInput!) { updateNoteDraft(input: $input) { results { status } } }'
 
+// Access tokens live 15 minutes: each virtual user signs in when it starts and again every 12, as an app refreshes its
+// session.
+const RENEW_MS = 12 * 60_000
+let session = null
+
 export default function (data) {
-  const me = data.learners[(__VU - 1) % data.learners.length]
-  if (!me) return
+  const learner = data.learners[(__VU - 1) % data.learners.length]
+  if (!learner) return
+  if (!session || Date.now() - session.at > RENEW_MS) {
+    const res = gql(null, 'SignIn', 'mutation SignIn($input: SignInInput!) { signIn(input: $input) { session { accessToken } userErrors { message } } }', { input: { email: learner.email, password: learner.password } })
+    session = { token: res.json('data.signIn.session.accessToken'), at: Date.now() }
+  }
+  const me = { ...learner, token: session.token }
   group('home', () => gql(me.token, 'Home', HOME))
   sleep(1 + Math.random() * 2)
   group('notes', () => {
