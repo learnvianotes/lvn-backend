@@ -2329,6 +2329,10 @@ type Mutation {
 
   """Removes the tag from every note"""
   deleteTag(input: IdInput!): OkPayload!
+
+  """
+  Removes drafts or imported items from the tab (items written by hand are edited with updateTeacherProfile)
+  """
   discardTeacherSkills(input: TeacherSkillIdsInput!): TeacherProfilePayload!
 
   """Signed in only: not shown again for 30 days"""

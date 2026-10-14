@@ -3125,6 +3125,10 @@ type Mutation
 
   """Drafts go on the tab, after its items; at most 60 items in all"""
   publishTeacherSkills(input: TeacherSkillIdsInput!): TeacherProfilePayload! @join__field(graph: USERS)
+
+  """
+  Removes drafts or imported items from the tab (items written by hand are edited with updateTeacherProfile)
+  """
   discardTeacherSkills(input: TeacherSkillIdsInput!): TeacherProfilePayload! @join__field(graph: USERS)
 
   """Accept the current Terms, Privacy Policy and content licence"""

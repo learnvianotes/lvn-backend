@@ -133,8 +133,9 @@ export class SkillsImportService {
     await this.audit.record({ actorId, action: 'teacher.skills.publish', targetType: 'USER', targetId: actorId, metadata: { count: drafts.length } })
   }
 
+  /** Drafts, or imported items on the tab, taken away; a later import may offer them again as drafts. */
   async discard(actorId: string, skillIds: string[]): Promise<void> {
-    await this.db.teacherSkill.deleteMany({ where: { id: { in: skillIds }, userId: actorId, status: 'DRAFT' } })
+    await this.db.teacherSkill.deleteMany({ where: { id: { in: skillIds }, userId: actorId, source: { not: 'MANUAL' } } })
   }
 
   /** The worker's job: the public data of a proven identifier, as drafts. */

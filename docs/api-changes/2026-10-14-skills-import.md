@@ -20,7 +20,9 @@
   - Until then `lastError` says what is missing, including a robots.txt that keeps the page out.
 - **`removeExternalIdentity({ identityId })`** deletes the identifier and every item from it.
 - **`TeacherProfile.drafts`**: imported items waiting for review, for the teacher only (null for anyone else).
-- **`publishTeacherSkills` / `discardTeacherSkills({ skillIds })`** act on drafts. At most 60 published items in all.
+- **`publishTeacherSkills({ skillIds })`** puts drafts on the tab, with at most 60 published items in all.
+- **`discardTeacherSkills({ skillIds })`** removes drafts, or imported items already on the tab. Items written by
+  hand are edited with `updateTeacherProfile`.
 - **`TeacherSkill`** gains `sourceUrl` and `fetchedAt`, the kinds `PROJECT` and `PUBLICATION`, and the sources
   `GITHUB`, `WEBSITE`, `ORCID` and `OPENALEX`. `skills` lists published items only, an imported one only while its
   identifier is proven.
