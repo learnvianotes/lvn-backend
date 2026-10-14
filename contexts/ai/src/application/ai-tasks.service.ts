@@ -8,6 +8,7 @@ import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
 import { batches, batchText, isRepair, type TextChange } from '../domain/clean-up'
 import { LANGUAGE_NAMES, repairs, SOURCE_CHARS, TASKS, type AiLanguage, type TaskResult } from '../domain/tasks'
+import { MIN_SCRIPT_SHARE, pieces, scriptShare } from '../domain/translate'
 import { AiGateway } from './ai-gateway'
 import { MediaInput } from './media-input'
 import { fileOf, isRecording, MEDIA, NoteMaterial } from './note-material'
@@ -106,6 +107,15 @@ export class AiTasksService {
         const heard = await this.media.transcribe(fileOf(cards[0]!)!, { userId: artifact.ownerId, private: isPrivate })
         cut = heard.cut
         result = def.result(heard, source.title)
+      } else if (task === 'TRANSLATE') {
+        // In plain text, piece by piece, each checked to be in the language (ADR-0086).
+        const material = await this.material.forTask(cards, { noteId: artifact.noteId, ownerId: artifact.ownerId, private: isPrivate, attach: false })
+        read = material.read
+        let body = material.parts.join('\n\n')
+        if (!body.trim()) throw Errors.validation('Nothing in this note’s photos, PDFs or recordings could be read. A scanned PDF becomes notes with Convert PDF.')
+        cut = body.length > SOURCE_CHARS
+        if (cut) body = body.slice(0, SOURCE_CHARS)
+        result = def.result(await this.translate(source.title, body, options.language, { userId: artifact.ownerId, private: isPrivate }), source.title)
       } else if (def.kind === 'CHANGES') {
         // CLEAN_UP: the note's words, batch by batch, as the person's work (ADR-0063).
         const mended = await this.cleanUp(task, artifact.ownerId!, cards, isPrivate)
@@ -143,6 +153,38 @@ export class AiTasksService {
     }
     // The owner's note page follows its study aids' progress (ADR-0061).
     if (!artifact.ownerId && ownerOfNote) await this.live.notify(ownerOfNote, LiveEventKind.NOTE_PROCESSING, artifact.noteId).catch(() => undefined)
+  }
+
+  /**
+   * A note translated (ADR-0086): its pieces of at most TRANSLATE_PIECE_CHARS in order, each in plain text at a low
+   * temperature; a piece whose letters are not mostly in the language's script is asked again once, insisting, and the
+   * answer more in the language is kept. The first piece carries the title, answered as its first line ("# Title").
+   */
+  private async translate(title: string, body: string, language: AiLanguage, who: { userId: string | null; private: boolean }): Promise<string> {
+    const target = LANGUAGE_NAMES[language] ?? 'English'
+    const out: string[] = []
+    for (const [i, piece] of pieces(body).entries()) {
+      const ask = async (insist: string) =>
+        (
+          await this.gateway.generate({
+            task: 'TRANSLATE',
+            userId: who.userId,
+            private: who.private,
+            prompt: i === 0 ? 'translate' : 'translate-more',
+            vars: { target, insist },
+            content: i === 0 ? { title: title || 'Untitled note', body: piece } : { body: piece },
+            temperature: 0.2,
+          })
+        ).output.replace(/<\/?content>/g, '').trim()
+      let text = await ask('')
+      const share = scriptShare(text, language)
+      if (share !== null && share < MIN_SCRIPT_SHARE && (scriptShare(piece, language) ?? 0) < MIN_SCRIPT_SHARE) {
+        const again = await ask(`\nYour last answer left much of it untranslated. Translate every sentence, heading and list item into ${target}.`)
+        if ((scriptShare(again, language) ?? 0) > share) text = again
+      }
+      out.push(text)
+    }
+    return out.join('\n\n')
   }
 
   /**

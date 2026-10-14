@@ -10,7 +10,7 @@ import { REDIS } from '@lvn-backend/redis'
 import type Redis from 'ioredis'
 import { getDocumentProxy } from 'unpdf'
 import { AiGateway } from './ai-gateway'
-import { blocksMarkdown, pageSchema } from './page-vision'
+import { blocksMarkdown, pageSchema, plainSymbols } from './page-vision'
 
 const run = promisify(execFile)
 /** One piece the model hears at a time (ADR-0062) */
@@ -87,7 +87,8 @@ export class MediaInput {
   async readPhoto(fileId: string, who: { userId: string | null; private: boolean }): Promise<string> {
     const key = `ai:photo-text:${fileId}`
     const kept = await this.redis.get(key).catch(() => null)
-    if (kept !== null) return kept
+    // Readings kept before symbols were made plain (ADR-0086) are made plain as they are read.
+    if (kept !== null) return plainSymbols(kept)
     const [jpeg] = await this.images([fileId])
     const read = await this.gateway.generate({ task: 'READ_PAGE', userId: who.userId, private: who.private, prompt: 'read-page', images: [jpeg!], schema: pageSchema, temperature: 0 })
     const text = blocksMarkdown(read.output.blocks)

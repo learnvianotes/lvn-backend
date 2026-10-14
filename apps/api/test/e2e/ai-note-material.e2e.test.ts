@@ -106,6 +106,32 @@ describe('AI reads a note’s photos, PDFs and recordings', () => {
     expect(summary.asked.content).toContain('Recording 1:\nEnzymes speed up reactions.')
   })
 
+  it('translates in plain-text pieces, asking again when one comes back untranslated (ADR-0086)', async () => {
+    const noteId = await newNote('Heaps')
+    const paragraph = (n: number) => ({ type: 'paragraph', content: [{ type: 'text', text: `Paragraph ${n}: ${'A min-heap keeps the smallest item at the root. '.repeat(14).trim()}` }] })
+    await addCard(noteId, 'text', { doc: { type: 'doc', content: [1, 2, 3].map(paragraph) } })
+    const before = ollama.chats.length
+    const answer = ollama.answer
+    let translations = 0
+    ollama.answer = (req) => {
+      if (!req.messages[0]!.content.startsWith('You are a translator')) return answer(req)
+      // The first piece first comes back in English.
+      if (++translations === 1) return `# Heaps\n\n${req.messages.at(-1)!.content.slice(0, 200)}`
+      return translations === 2 ? '# हीप\n\nमिन-हीप सबसे छोटे तत्व को जड़ पर रखता है।' : 'मिन-हीप सबसे छोटे तत्व को जड़ पर रखता है।'
+    }
+    const translated = await done({ noteId, task: 'TRANSLATE', language: 'HINDI' })
+    ollama.answer = answer
+    const chats = ollama.chats.slice(before)
+    // Two pieces (two paragraphs of about 700 characters, then one), the first asked twice; never as JSON.
+    expect(chats).toHaveLength(3)
+    expect(chats.every((c) => c.format === undefined)).toBe(true)
+    expect(chats[1]!.messages.at(-1)!.content).toContain('Your last answer left much of it untranslated.')
+    expect(chats[2]!.messages.at(-1)!.content).toContain('Translate this next part of a note into Hindi.')
+    const result = await gql<{ aiArtifact: { status: string; markdown: string } }>(`query ($id: UUID!) { aiArtifact(id: $id) { status markdown } }`, { id: translated.id })
+    expect(result.data!.aiArtifact.status).toBe('READY')
+    expect(result.data!.aiArtifact.markdown).toBe('## हीप\n\nमिन-हीप सबसे छोटे तत्व को जड़ पर रखता है।\n\nमिन-हीप सबसे छोटे तत्व को जड़ पर रखता है।')
+  })
+
   it('answers a question about a note of photos from what they say', async () => {
     const noteId = await newNote('Board')
     await photo(noteId, '#dc2626')
