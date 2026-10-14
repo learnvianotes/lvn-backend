@@ -1,4 +1,5 @@
 import { plainSymbols } from '../../src/application/page-vision'
+import { mendAll } from '../../src/domain/escapes'
 import { TASKS } from '../../src/domain/tasks'
 import { pieces, scriptShare, titled } from '../../src/domain/translate'
 
@@ -37,8 +38,7 @@ describe('translation', () => {
 })
 
 describe('answers with unescaped backslashes', () => {
-  it('are mended wherever the model writes them', async () => {
-    const { mendAll } = await import('../../src/domain/escapes')
+  it('are mended wherever the model writes them', () => {
     expect(mendAll({ summary: 'makes $\text{CO}_2$ and water', points: ['A $\rightarrow$ B', 'tab\tstays'] })).toEqual({ summary: 'makes $\\text{CO}_2$ and water', points: ['A $\\rightarrow$ B', 'tab\tstays'] })
   })
 })
