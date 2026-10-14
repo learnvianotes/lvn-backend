@@ -27,8 +27,8 @@ locals {
   log_opts = { max-size = "10m", max-file = "3" }
 
   optional = {
-    FIREBASE_PROJECT_ID         = var.firebase_project_id
-    SENTRY_DSN                  = var.sentry_dsn
+    FIREBASE_PROJECT_ID = var.firebase_project_id
+    SENTRY_DSN          = var.sentry_dsn
     # The local collector (ADR-0089) unless another endpoint is given.
     OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_otlp_endpoint != "" ? var.otel_exporter_otlp_endpoint : "http://otel-collector:4318"
   }
@@ -184,7 +184,7 @@ resource "docker_container" "redis" {
   # BullMQ keeps its jobs in Redis (ADR-0089): nothing may be evicted (noeviction: a full Redis refuses writes, which
   # is seen, instead of dropping a job, which is not), and the append-only file, synced every second, keeps queued jobs
   # through a restart. The cap stays well inside the VM's memory.
-  command  = ["redis-server", "--requirepass", random_password.redis.result, "--maxmemory", "512mb", "--maxmemory-policy", "noeviction", "--appendonly", "yes", "--appendfsync", "everysec"]
+  command = ["redis-server", "--requirepass", random_password.redis.result, "--maxmemory", "512mb", "--maxmemory-policy", "noeviction", "--appendonly", "yes", "--appendfsync", "everysec"]
   networks_advanced {
     name    = docker_network.this.id
     aliases = ["redis"]
