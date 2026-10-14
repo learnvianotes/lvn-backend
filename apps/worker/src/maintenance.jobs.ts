@@ -1,6 +1,6 @@
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common'
 import { COMMS_EMAIL_QUEUE, COMMS_PUSH_QUEUE, DevicesService, EmailNotificationsService, NotificationService, PushService } from '@lvn-backend/communication'
-import { ExamsService, FocusService, LEARNING_ANALYTICS_QUEUE, LearningEventsService, RecommendationsService, RhythmService, WorkspacesService, CORE_GITHUB_QUEUE, GitHubAppService, CORE_ENGAGEMENT_QUEUE, AchievementsService } from '@lvn-backend/core'
+import { ExamsService, FocusService, LEARNING_ANALYTICS_QUEUE, LearningEventsService, RecommendationsService, RhythmService, WorkspacesService, CORE_GITHUB_QUEUE, GitHubAppService, CORE_ENGAGEMENT_QUEUE, AchievementsService, DailyLineService } from '@lvn-backend/core'
 import { NotesMaintenance } from '@lvn-backend/notes'
 import { Queues } from '@lvn-backend/queue'
 import { UsersMaintenance } from '@lvn-backend/users'
@@ -23,6 +23,7 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
     private readonly workspaces: WorkspacesService,
     private readonly githubApp: GitHubAppService,
     private readonly achievements: AchievementsService,
+    private readonly dailyLines: DailyLineService,
     private readonly learning: LearningEventsService,
     private readonly rhythm: RhythmService,
     private readonly exams: ExamsService,
@@ -113,7 +114,15 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
       'purge-deliveries': async () => ({ purged: await this.githubApp.purgeDeliveries() }),
     })
     // Achievements (ADR-0080): checked again for one person a little after their learning or their points changed.
-    this.queues.process(CORE_ENGAGEMENT_QUEUE, { evaluate: async (data) => ({ awarded: (await this.achievements.evaluate((data as { userId: string }).userId)).length }) }, 2)
+    // Home's line for the day (ADR-0087): written by AI the first time a person opens Home on a learning day.
+    this.queues.process(
+      CORE_ENGAGEMENT_QUEUE,
+      {
+        evaluate: async (data) => ({ awarded: (await this.achievements.evaluate((data as { userId: string }).userId)).length }),
+        'daily-line': async (data) => ({ written: await this.dailyLines.write((data as { userId: string }).userId, (data as { day: string }).day) }),
+      },
+      2,
+    )
     await this.queues.repeat(CORE_GITHUB_QUEUE, 'purge-deliveries', '50 4 * * *')
     await this.queues.repeat(CORE_MAINTENANCE_QUEUE, 'refresh-repositories', '5 4 * * *')
     await this.queues.repeat(CORE_MAINTENANCE_QUEUE, 'learning-partitions', '10 4 * * *')

@@ -1795,6 +1795,28 @@ input CreateUploadIntentInput
   parentId: UUID
 }
 
+"""
+Written by AI for the person once a day; a chosen line until then, or when AI is off
+"""
+type DailyLine
+  @join__type(graph: CORE)
+{
+  """The learning day it is for (YYYY-MM-DD, in the person's zone)"""
+  day: String!
+
+  """A headline of a few words"""
+  title: String!
+
+  """One sentence"""
+  line: String!
+
+  """Written by AI for this person"""
+  fromAi: Boolean!
+
+  """AI is writing today's line: ask again in a few seconds"""
+  pending: Boolean!
+}
+
 type DataExport
   @join__type(graph: USERS)
 {
@@ -4468,6 +4490,9 @@ type Query
 
   """Platform admins: every contest, drafts included"""
   adminContests: [AdminContest!]! @join__field(graph: CORE)
+
+  """Signed in: Home's headline and line for today"""
+  dailyLine: DailyLine! @join__field(graph: CORE)
 
   """The viewer's points history, newest first"""
   myPoints(first: Int, after: String): PointsEntryConnection! @join__field(graph: CORE)

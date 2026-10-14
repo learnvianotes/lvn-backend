@@ -8,7 +8,7 @@ import { EventBusModule } from '@lvn-backend/event-bus'
 import { QueueModule } from '@lvn-backend/queue'
 import { RedisModule, SessionRevocations } from '@lvn-backend/redis'
 import { StorageModule } from '@lvn-backend/storage'
-import { AI_DATA_EXPORT, CORE_DATA_EXPORT, FILES, MAILER, NOTES_DATA_EXPORT, SKILLS_READER } from '@lvn-backend/facades'
+import { AI_DATA_EXPORT, CORE_DATA_EXPORT, DAILY_LINES, FILES, MAILER, NOTES_DATA_EXPORT, SKILLS_READER } from '@lvn-backend/facades'
 import { Global } from '@nestjs/common'
 import { AccessTokenVerifier } from '@lvn-backend/auth-guard'
 import { resetDatabase } from '@lvn-backend/testing'
@@ -72,8 +72,9 @@ class ProbeModule {}
     { provide: CORE_DATA_EXPORT, useValue: { exportFor: async () => ({ files: [], counts: {}, omitted: [] }) } },
     { provide: AI_DATA_EXPORT, useValue: { exportFor: async () => ({ files: [], counts: {}, omitted: [] }) } },
     { provide: SKILLS_READER, useValue: { available: async () => false, read: async () => [] } },
+    { provide: DAILY_LINES, useValue: { available: async () => false, write: async () => ({ title: '', line: '' }) } },
   ],
-  exports: [MAILER, FILES, NOTES_DATA_EXPORT, CORE_DATA_EXPORT, AI_DATA_EXPORT, SKILLS_READER],
+  exports: [MAILER, FILES, NOTES_DATA_EXPORT, CORE_DATA_EXPORT, AI_DATA_EXPORT, SKILLS_READER, DAILY_LINES],
 })
 class NoMailModule {}
 

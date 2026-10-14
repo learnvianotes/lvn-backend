@@ -683,6 +683,20 @@ export interface CreateGroupPostInput {
   kind?: GroupPostKind | null
 }
 
+/** Written by AI for the person once a day; a chosen line until then, or when AI is off */
+export interface DailyLine {
+  /** The learning day it is for (YYYY-MM-DD, in the person's zone) */
+  day: string
+  /** A headline of a few words */
+  title: string
+  /** One sentence */
+  line: string
+  /** Written by AI for this person */
+  fromAi: boolean
+  /** AI is writing today's line: ask again in a few seconds */
+  pending: boolean
+}
+
 export interface Discussion {
   /** Top-level comments, oldest first; with cardId, those on one card of the note */
   comments: CommentConnection
