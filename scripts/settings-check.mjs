@@ -46,6 +46,8 @@ const csp = home.headers.get('content-security-policy') ?? ''
 const directive = (name) => csp.split(';').map((d) => d.trim()).find((d) => d.startsWith(`${name} `)) ?? ''
 ok(directive('frame-ancestors') === "frame-ancestors 'none'" && directive('object-src') === "object-src 'none'" && directive('base-uri') === "base-uri 'self'", 'the web sends a Content Security Policy that refuses framing, plugins and a changed base', csp.slice(0, 80))
 ok(!directive('script-src').includes("'unsafe-eval'"), 'built pages never allow eval')
+const connectTo = directive('connect-src').split(' ').slice(1)
+ok(connectTo.length > 1 && !connectTo.some((o) => ['https:', 'http:', 'ws:', 'wss:', '*'].includes(o)), 'pages connect only to the site, the API, storage and sign-in, not anywhere', connectTo.join(' '))
 ok(/max-age=\d{7,}/.test(home.headers.get('strict-transport-security') ?? ''), 'the web asks for HTTPS for a year (HSTS)')
 ok(home.headers.get('x-content-type-options') === 'nosniff' && !!home.headers.get('referrer-policy') && !home.headers.get('x-powered-by'), 'nosniff, a referrer policy and no X-Powered-By')
 

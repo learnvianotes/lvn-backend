@@ -50,8 +50,11 @@ It is skipped on the AWS emulator, as CloudFront is.
 - Scripts come from the site and Google sign-in (Google, gstatic, Firebase auth) only.
 - Plugins (`object-src 'none'`), a changed base URL, forms posting elsewhere and being framed
   (`frame-ancestors 'none'`) are refused. Frames are Google sign-in's only.
-- Images, media and connections allow any HTTPS origin, because files come by pre-signed URL from the environment's
-  storage. Plain HTTP and WebSocket are added only where the site itself runs on HTTP (the local environment).
+- Connections (`connect-src`) go only to the site, the API and its live updates, storage
+  (`NEXT_PUBLIC_STORAGE_ORIGINS`, set by the deploy scripts), Google sign-in and Sentry, so an injected script has
+  nowhere else to send what it reads. Without storage origins (development, tests) they go anywhere.
+- Images and media allow any HTTPS origin: they come by pre-signed URL from the environment's storage, the URL being
+  the permission. Plain HTTP and WebSocket are added only where the site itself runs on HTTP (the local environment).
   `upgrade-insecure-requests` is on everywhere else.
 
 **Reader links last 15 minutes, and the readers renew them.** `noteFile` signs its URL for the default 15 minutes.

@@ -321,6 +321,11 @@ export const webConfigSchema = z.object({
   NEXT_PUBLIC_LINKEDIN_AUTHORIZE_URL: z.url().optional(),
   /** Sentry DSN for browser and server errors (§16.5); off without it. A DSN is public by design. */
   NEXT_PUBLIC_SENTRY_DSN: httpUrl.optional(),
+  /**
+   * Where pre-signed storage URLs point, space-separated origins (ADR-0090): the browser may connect there (uploads, PDF
+   * ranges) and nowhere else beyond the site, the API and sign-in. Unset, the policy allows any origin (development).
+   */
+  NEXT_PUBLIC_STORAGE_ORIGINS: z.string().min(1).optional(),
 })
 export type WebConfig = z.infer<typeof webConfigSchema>
 
