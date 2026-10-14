@@ -109,7 +109,8 @@ export class AiTasksService {
         result = def.result(heard, source.title)
       } else if (task === 'TRANSLATE') {
         // In plain text, piece by piece, each checked to be in the language (ADR-0086).
-        const material = await this.material.forTask(cards, { noteId: artifact.noteId, ownerId: artifact.ownerId, private: isPrivate, attach: false })
+        // The words alone: "Photo 1:" is not part of the note to translate.
+        const material = await this.material.forTask(cards, { noteId: artifact.noteId, ownerId: artifact.ownerId, private: isPrivate, attach: false, labels: false })
         read = material.read
         let body = material.parts.join('\n\n')
         if (!body.trim()) throw Errors.validation('Nothing in this note’s photos, PDFs or recordings could be read. A scanned PDF becomes notes with Convert PDF.')

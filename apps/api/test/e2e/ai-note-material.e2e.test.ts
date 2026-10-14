@@ -76,11 +76,12 @@ describe('AI reads a note’s photos, PDFs and recordings', () => {
     expect(summary.asked.content).toContain('Photo 2:\n## Page 2')
     expect(summary.asked.content).toContain('PDF 1:\nOsmosis moves water\nacross a membrane.')
 
-    // Another task: the photos are not read again.
+    // Another task: the photos are not read again. A translation gets their words alone, without "Photo 2:".
     const translated = await done({ noteId, task: 'TRANSLATE', language: 'HINDI' })
     expect(translated.status).toBe('READY')
     expect(reads).toBe(2)
-    expect(translated.asked.content).toContain('Photo 2:\n## Page 2')
+    expect(translated.asked.content).toContain('## Page 2\n\nWater crosses the membrane.')
+    expect(translated.asked.content).not.toContain('Photo 2:')
 
     // A quick note kept into the note: its words stand for the photos and the PDF from then on.
     const quick = await done({ noteId, task: 'QUICK_NOTE' })

@@ -6,6 +6,7 @@ import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { ENTITLEMENTS, type Entitlements } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
+import { mendAll } from '../domain/escapes'
 import { ProviderError, UnsupportedInput, type ChatMessage } from '../domain/provider'
 import { AiProviders, type Target } from './ai-providers'
 import { PromptLibrary } from './prompts'
@@ -257,7 +258,8 @@ function parseAs<T>(schema: z.ZodType<T>, text: string): { success: true; value:
   } catch {
     return { success: false, problem: 'it is not valid JSON' }
   }
-  const result = schema.safeParse(json)
+  // Backslashes the model left unescaped (\text read as a tab) are mended before the answer is checked (ADR-0086).
+  const result = schema.safeParse(mendAll(json))
   if (result.success) return { success: true, value: result.data }
   return { success: false, problem: result.error.issues.slice(0, 3).map((i) => `${i.path.join('.') || 'the answer'}: ${i.message}`).join('; ') }
 }

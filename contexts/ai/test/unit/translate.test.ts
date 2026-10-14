@@ -35,3 +35,10 @@ describe('translation', () => {
     expect(plainSymbols('Area is $\\pi r^2$ and $\\frac{a}{b}$')).toBe('Area is $\\pi r^2$ and $\\frac{a}{b}$')
   })
 })
+
+describe('answers with unescaped backslashes', () => {
+  it('are mended wherever the model writes them', async () => {
+    const { mendAll } = await import('../../src/domain/escapes')
+    expect(mendAll({ summary: 'makes $\text{CO}_2$ and water', points: ['A $\rightarrow$ B', 'tab\tstays'] })).toEqual({ summary: 'makes $\\text{CO}_2$ and water', points: ['A $\\rightarrow$ B', 'tab\tstays'] })
+  })
+})

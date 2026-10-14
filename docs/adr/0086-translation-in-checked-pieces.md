@@ -39,6 +39,10 @@ Replaying the request against the local model (gemma4 on Ollama) showed three ca
   - real mathematics is left as it is.
 
   Readings already kept are made plain as they are read.
+- **Every structured answer is mended.** The gateway turns a control character that is followed by the rest of a
+  LaTeX command back into the command before checking the answer (`mendAll`). This mends `$	ext{CO}_2$` in a summary,
+  for example.
+- **A translation gets the note's words alone**, without the "Photo 1:" labels other tasks see (ADR-0085).
 
 ## Consequences
 

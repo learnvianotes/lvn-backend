@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { z } from 'zod'
 import { CardType } from '@lvn/contracts/domain'
 import type { NewCard, PageVision } from '@lvn-backend/facades'
+import { mendEscapes } from '../domain/escapes'
 import { doc, inline, valid } from '../domain/tasks'
 import { AiGateway } from './ai-gateway'
 
@@ -56,13 +57,12 @@ const SYMBOLS: Record<string, string> = {
 
 /**
  * Words with the LaTeX a model slips into ordinary text made plain (ADR-0086): `$\rightarrow$` becomes →, `$\text{8 km}$`
- * becomes 8 km. A backslash the model failed to escape in its JSON (`\t` of `\text` read as a tab) is mended first.
+ * becomes 8 km. A backslash the model failed to escape in its JSON (`\t` of `\text` read as a tab) is mended first
+ * (mendEscapes).
  * Real mathematics (powers, fractions, anything else) is left as it is.
  */
 export function plainSymbols(text: string): string {
-  // eslint-disable-next-line no-control-regex -- mending the backspace a model's unescaped \b became
-  const mended = text.replace(/\t(ext\{)/g, '\\t$1').replace(/\r(ightarrow)/g, '\\r$1').replace(/\f(rac\{)/g, '\\f$1').replace(/\x08(eta|ullet)/g, '\\b$1')
-  return mended.replace(/\$([^$\n]{1,120})\$/g, (whole, inner: string) => {
+  return mendEscapes(text).replace(/\$([^$\n]{1,120})\$/g, (whole, inner: string) => {
     const plain = inner
       .replace(/\\(?:text|mathrm|textbf|mathbf)\{([^{}]*)\}/g, '$1')
       .replace(/\\([A-Za-z]+)\s?/g, (cmd, name: string) => SYMBOLS[name] ?? cmd)

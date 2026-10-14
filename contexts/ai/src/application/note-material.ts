@@ -43,17 +43,18 @@ export class NoteMaterial {
    * A task's material in the cards' order. A quick note (`attach`) sends up to IMAGES_TOGETHER photos with the request,
    * as the model sees them; otherwise every photo is read into words. `read` is the photos and PDFs it read, by file.
    */
-  async forTask(cards: Card[], reader: Reader & { attach: boolean }): Promise<{ parts: string[]; images: string[]; read: string[] }> {
-    const media = await this.ofMedia(cards, reader, reader.attach ? IMAGES_TOGETHER : 0)
+  async forTask(cards: Card[], reader: Reader & { attach: boolean; labels?: boolean }): Promise<{ parts: string[]; images: string[]; read: string[] }> {
+    const media = await this.ofMedia(cards, reader, reader.attach ? IMAGES_TOGETHER : 0, reader.labels ?? true)
     const parts = cards.flatMap((c) => (MEDIA.has(c.type) ? (media.texts.has(c.id) ? [media.texts.get(c.id)!] : []) : [wordsOf(c)]))
     return { parts, images: media.attach.length ? await this.media.images(media.attach.map((c) => fileOf(c)!)) : [], read: media.read }
   }
 
   /**
-   * What each photo, PDF and recording card says, by card, labelled ("Photo 2:", "PDF 1:", "Recording 1:"). When there
-   * are `attachUpTo` photos or fewer, they are not read but returned in `attach`, to go with the request.
+   * What each photo, PDF and recording card says, by card, labelled ("Photo 2:", "PDF 1:", "Recording 1:") unless a
+   * translation asks for the words alone. When there are `attachUpTo` photos or fewer, they are not read but returned
+   * in `attach`, to go with the request.
    */
-  async ofMedia(cards: Card[], reader: Reader, attachUpTo = 0): Promise<{ texts: Map<string, string>; attach: Card[]; read: string[] }> {
+  async ofMedia(cards: Card[], reader: Reader, attachUpTo = 0, labels = true): Promise<{ texts: Map<string, string>; attach: Card[]; read: string[] }> {
     const inWords = await this.keptInNote(reader.noteId, cards)
     const photos = cards.filter((c) => c.type === CardType.IMAGE && !!fileOf(c) && !inWords.has(fileOf(c)!)).slice(0, MAX_IMAGES)
     const files = cards.filter((c) => c.type === CardType.FILE && !!fileOf(c) && !inWords.has(fileOf(c)!)).slice(0, MAX_PDFS)
@@ -69,11 +70,11 @@ export class NoteMaterial {
       if (photos.includes(c) && !attach.length) {
         const text = await this.media.readPhoto(fileOf(c)!, who)
         photo++
-        if (text.trim()) texts.set(c.id, `Photo ${photo}:\n${text}`)
+        if (text.trim()) texts.set(c.id, labels ? `Photo ${photo}:\n${text}` : text)
       } else if (files.includes(c)) {
         const text = await this.media.pdfText(fileOf(c)!)
-        if (text) texts.set(c.id, `PDF ${++pdf}:\n${text}`)
-      } else if (said.has(c.id)) texts.set(c.id, `Recording ${++recording}:\n${said.get(c.id)!}`)
+        if (text) texts.set(c.id, labels ? `PDF ${++pdf}:\n${text}` : text)
+      } else if (said.has(c.id)) texts.set(c.id, labels ? `Recording ${++recording}:\n${said.get(c.id)!}` : said.get(c.id)!)
     }
     return { texts, attach, read: [...photos, ...files].map((c) => fileOf(c)!) }
   }
