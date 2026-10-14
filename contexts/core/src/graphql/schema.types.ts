@@ -97,9 +97,44 @@ export interface AddWeeklyTaskInput {
   plan?: string | null
 }
 
+/** A contest as its writers see it */
+export interface AdminContest {
+  id: string
+  title: string
+  subjectId: string | null
+  subjectTitle: string | null
+  opensAt: Date
+  closesAt: Date
+  minutes: number
+  questionCount: number
+  published: boolean
+  questions: Array<AdminContestQuestion>
+  /** How many have started it */
+  attempts: number
+}
+
+export interface AdminContestPayload {
+  contest: AdminContest | null
+  userErrors: Array<UserError>
+}
+
+export interface AdminContestQuestion {
+  id: string
+  prompt: string
+  choices: Array<ContestChoice>
+  correctChoiceId: string
+  explanation: string
+}
+
 export interface AnswerClassroomInviteInput {
   inviteId: string
   accept: boolean
+}
+
+export interface AnswerContestQuestionInput {
+  attemptId: string
+  questionId: string
+  choiceId: string
 }
 
 export interface AnswerDoubtInput {
@@ -475,6 +510,108 @@ export interface ConnectRepositoryAppInput {
   installationId: string
   code: string
 }
+
+export interface Contest {
+  id: string
+  title: string
+  subjectTitle: string | null
+  opensAt: Date
+  closesAt: Date
+  minutes: number
+  /** Questions each attempt gets */
+  questionCount: number
+  state: ContestState
+  /** Participants as a milestone (1,000+, 2,000+…); null below the first */
+  participantsMilestone: number | null
+  /** The viewer's attempt, if they started one */
+  viewerAttempt: ContestAttempt | null
+}
+
+export interface ContestAttempt {
+  id: string
+  startedAt: Date
+  /** When it is marked as it stands */
+  deadline: Date
+  submittedAt: Date | null
+  /** Submitted, or past its deadline */
+  finished: boolean
+  /** Once finished */
+  score: number | null
+  total: number
+  /** In the order drawn for the viewer, each with its choices in the viewer's order */
+  questions: Array<ContestAttemptQuestion>
+  /** The viewer's best share right (0–100) on this subject's contests, once finished */
+  personalBest: number | null
+  /** For an adult who asked, once the window has closed; null otherwise */
+  band: ContestBand | null
+}
+
+export interface ContestAttemptIdInput {
+  attemptId: string
+}
+
+export interface ContestAttemptQuestion {
+  id: string
+  prompt: string
+  choices: Array<ContestChoice>
+  myChoiceId: string | null
+  /** Only once the attempt is finished */
+  correctChoiceId: string | null
+  /** Only once the attempt is finished */
+  explanation: string | null
+}
+
+/** Where an adult's finished attempt falls among adults' (ADR-0082); never given to anyone under 18 */
+export type ContestBand = 'TOP_10' | 'TOP_25' | 'TOP_50'
+
+export interface ContestChoice {
+  id: string
+  text: string
+}
+
+export interface ContestIdInput {
+  id: string
+}
+
+export interface ContestInput {
+  /** Leave out to create one */
+  id?: string | null
+  title: string
+  subjectId?: string | null
+  opensAt: Date
+  closesAt: Date
+  minutes: number
+  questionCount: number
+  questions: Array<ContestQuestionInput>
+}
+
+export interface ContestPayload {
+  contest: Contest | null
+  userErrors: Array<UserError>
+}
+
+export interface ContestQuestionInput {
+  prompt: string
+  /** 2–6 choices, in order */
+  choices: Array<string>
+  /** The index of the right choice */
+  correct: number
+  explanation: string
+}
+
+export interface ContestSettings {
+  /** See a band among adults after a contest closes */
+  showBands: boolean
+  /** Only adults may */
+  canShowBands: boolean
+}
+
+export interface ContestSettingsPayload {
+  settings: ContestSettings | null
+  userErrors: Array<UserError>
+}
+
+export type ContestState = 'UPCOMING' | 'OPEN' | 'CLOSED'
 
 export interface Contribution {
   /** Points from what others did with the person's public work; never below 0 */
@@ -1173,6 +1310,34 @@ export interface MutationReactArgs {
   input: ReactInput
 }
 
+export interface MutationStartContestArgs {
+  input: StartContestInput
+}
+
+export interface MutationAnswerContestQuestionArgs {
+  input: AnswerContestQuestionInput
+}
+
+export interface MutationSubmitContestArgs {
+  input: ContestAttemptIdInput
+}
+
+export interface MutationSetContestBandsArgs {
+  input: SetContestBandsInput
+}
+
+export interface MutationSaveContestArgs {
+  input: ContestInput
+}
+
+export interface MutationPublishContestArgs {
+  input: ContestIdInput
+}
+
+export interface MutationDeleteContestArgs {
+  input: ContestIdInput
+}
+
 export interface MutationSetAchievementsShownArgs {
   input: SetAchievementsShownInput
 }
@@ -1520,6 +1685,10 @@ export interface QueryForYouFeedArgs {
 export interface QueryTrendingFeedArgs {
   first?: number | null
   after?: string | null
+}
+
+export interface QueryContestArgs {
+  id: string
 }
 
 export interface QueryMyPointsArgs {
@@ -2071,6 +2240,10 @@ export interface SetClassroomRoleInput {
   role: ClassroomRole
 }
 
+export interface SetContestBandsInput {
+  show: boolean
+}
+
 export interface SetGroupRepositoryInput {
   groupId: string
   /** https://github.com/<owner>/<repo> or https://gitlab.com/<namespace>/<project>; empty unlinks */
@@ -2102,6 +2275,10 @@ export interface SetRhythmPlanInput {
 
 export interface SetRhythmSharingInput {
   share: boolean
+}
+
+export interface StartContestInput {
+  contestId: string
 }
 
 export interface StartFocusSessionInput {

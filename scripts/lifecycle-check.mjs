@@ -456,6 +456,19 @@ if (opt('--vm')) {
   const posted = back.createGroupPost?.post
   const toldLifted = await eventually(() => moderated(D, 'RESTORED', 'USER'))
   ok(appealedCase?.appeal?.message === 'It was for the class.' && !!appealedCase.suspendedUntil && !!posted && toldLifted, 'D appeals once, the admin lifts the suspension, D is told and posts again', JSON.stringify({ appealedCase, back, toldLifted }))
+  // Weekly contests (ADR-0082): the admin writes and publishes one that is open now; B takes it, sees no answer key
+  // while answering, and every answer explained once it is submitted.
+  {
+    const now = Date.now()
+    const questions = [1, 2, 3].map((n) => ({ prompt: `Lifecycle question ${n}?`, choices: ['Right', 'Wrong'], correct: 0, explanation: `Because ${n}.` }))
+    const saved = (await gql('mutation ($input: ContestInput!) { saveContest(input: $input) { contest { id } userErrors { message } } }', { input: { title: `Lifecycle contest ${WORD}`, opensAt: new Date(now - 60_000).toISOString(), closesAt: new Date(now + 3_600_000).toISOString(), minutes: 10, questionCount: 3, questions } }, admin.token)).saveContest
+    const published = (await gql('mutation ($input: ContestIdInput!) { publishContest(input: $input) { contest { published } userErrors { message } } }', { input: { id: saved.contest?.id } }, admin.token)).publishContest
+    const ATTEMPT = 'viewerAttempt { id finished score total questions { id choices { id text } correctChoiceId explanation } }'
+    const started = (await gql(`mutation ($input: StartContestInput!) { startContest(input: $input) { contest { state ${ATTEMPT} } userErrors { message } } }`, { input: { contestId: saved.contest?.id } }, B.token)).startContest.contest?.viewerAttempt
+    for (const q of started?.questions ?? []) await gql('mutation ($input: AnswerContestQuestionInput!) { answerContestQuestion(input: $input) { userErrors { message } } }', { input: { attemptId: started.id, questionId: q.id, choiceId: q.choices.find((c) => c.text === 'Right').id } }, B.token)
+    const done = (await gql(`mutation ($input: ContestAttemptIdInput!) { submitContest(input: $input) { contest { ${ATTEMPT} } } }`, { input: { attemptId: started?.id } }, B.token)).submitContest.contest?.viewerAttempt
+    ok(published.contest?.published && started?.questions.length === 3 && started.questions.every((q) => q.correctChoiceId === null) && done?.finished && done.score === 3 && done.questions.every((q) => q.explanation), 'the admin publishes a contest; B takes it without the answer key, and sees every answer explained after', JSON.stringify({ saved: saved.userErrors, published: published.userErrors, score: done?.score }))
+  }
 }
 
 // Media (ADR-0041): processed after the upload by the worker, scanned by the environment's ClamAV.
