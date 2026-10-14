@@ -46,6 +46,20 @@ export interface NoteAccess {
    * first, at most `take`. `withQuiz` keeps those whose published version has a quiz card (ADR-0071).
    */
   publicOnTopics(viewerId: string, topicIds: string[], options: { withQuiz?: boolean; take: number }): Promise<PublicTopicNote[]>
+  /**
+   * For You (ADR-0076): public notes on any of these topics, published and not held back, neither `viewerId`'s own nor
+   * by `excludeOwners`; newest published first, before the (at, id) cursor; at most `take`.
+   */
+  publicOnTopicsPage(viewerId: string, topicIds: string[], excludeOwners: string[], before: { at: Date; id: string } | null, take: number): Promise<PublicTopicPage[]>
+  /** Of these notes, the strictly public ones (published, not held back, not trashed), with their owners, in the order given. */
+  publicAmong(noteIds: string[]): Promise<{ noteId: string; ownerId: string }[]>
+}
+
+export interface PublicTopicPage {
+  noteId: string
+  /** When it was published */
+  at: Date
+  topicIds: string[]
 }
 
 export interface ReadableNote {

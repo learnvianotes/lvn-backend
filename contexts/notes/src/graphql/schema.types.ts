@@ -394,6 +394,8 @@ export interface Note {
   pdfConversion?: PdfConversion | null
   /** Owner only; null for everyone else */
   moderation?: NoteModeration | null
+  /** Its first picture as the viewer sees it (ADR-0076): a card's preview in Community; null without one */
+  previewPicture?: MediaFile | null
   /** The owner's and editors' highlights, in page order (empty for readers); only those on one PDF with `fileId` */
   highlights?: Array<PdfHighlight>
   /** The viewer saved it to come back to (ADR-0076); private to them. False for visitors */

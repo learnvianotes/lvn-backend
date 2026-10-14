@@ -1,0 +1,4 @@
+extend type Note {
+  "Its first picture as the viewer sees it (ADR-0076): a card's preview in Community; null without one"
+  previewPicture: MediaFile
+}

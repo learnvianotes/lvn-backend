@@ -2177,6 +2177,8 @@ model Comment {
 
   @@index([targetType, targetId, parentId, createdAt])
   @@index([parentId, createdAt])
+  /// Trending (ADR-0076): comments of the last days
+  @@index([targetType, createdAt])
   @@index([authorId])
   @@schema("core")
 }
@@ -2210,6 +2212,8 @@ model Reaction {
   @@id([targetType, targetId, userId])
   @@index([targetType, targetId, kind])
   @@index([userId])
+  /// Trending (ADR-0076): reactions of the last days
+  @@index([targetType, createdAt])
   @@schema("core")
 }
 

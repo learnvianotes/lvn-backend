@@ -388,6 +388,21 @@ export interface CommentTargetInput {
 
 export type CommentTargetType = 'NOTE' | 'GROUP_POST' | 'CLASSROOM_POST' | 'RESOURCE'
 
+export interface CommunityConnection {
+  edges: Array<CommunityEdge>
+  pageInfo: PageInfo
+  /** For You: the topics it follows (the viewer's interests, upcoming exams and recent reading); empty when there are none, null for one that is gone */
+  basedOn: Array<Topic | null>
+}
+
+export interface CommunityEdge {
+  cursor: string
+  /** Null when the viewer can no longer read it */
+  node: Note | null
+  /** For You: the viewer's topic it is on */
+  topic: Topic | null
+}
+
 export interface CoreProblemMark {
   problemId: string
   mark: ProblemMark
@@ -1346,6 +1361,16 @@ export interface QueryClassroomByCodeArgs {
 
 export interface QueryDiscussionArgs {
   target: CommentTargetInput
+}
+
+export interface QueryForYouFeedArgs {
+  first?: number | null
+  after?: string | null
+}
+
+export interface QueryTrendingFeedArgs {
+  first?: number | null
+  after?: string | null
 }
 
 export interface QueryExamArgs {

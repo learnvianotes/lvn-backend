@@ -6,9 +6,16 @@ enum YearOfStudy { YEAR_1 YEAR_2 YEAR_3 YEAR_4 YEAR_5 POSTGRADUATE GRADUATED SCH
 type StudentProfile {
   department: String
   yearOfStudy: YearOfStudy
-  "Viewer only. Topics arrive with notes (Phase 2), which will add the resolved `interests`."
+  "Viewer only: the topics they chose"
   interestTopicIds: [UUID!]
+  "Viewer only: the topics they chose, for Community's For You (ADR-0076); null for a topic that is gone"
+  interests: [Topic]
   showOnProfile: Boolean!
+}
+
+"A topic of notes, resolved by notes"
+type Topic @key(fields: "id", resolvable: false) {
+  id: UUID!
 }
 
 "Omitted fields stay as they are; null clears a field"

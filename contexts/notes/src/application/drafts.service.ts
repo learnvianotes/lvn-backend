@@ -276,6 +276,28 @@ export class DraftsService {
     return result
   }
 
+  /** Each note's first picture as the viewer sees it — the draft's for its editors, the published version's for readers (ADR-0076). */
+  async firstPictures(notes: OpenedNote[]): Promise<Map<string, string>> {
+    const result = new Map<string, string>()
+    const drafts = notes.filter((o) => o.access !== 'READER').map((o) => o.note.id)
+    if (drafts.length) {
+      const rows = await this.db.$queryRaw<{ noteId: string; content: unknown }[]>`
+        SELECT DISTINCT ON ("noteId") "noteId", "content" FROM "notes"."Card"
+        WHERE "noteId" = ANY(${drafts}::uuid[]) AND "deletedAt" IS NULL AND "type" = 'image'
+        ORDER BY "noteId", "position", "id"`
+      for (const r of rows) {
+        const fileId = (r.content as { fileId?: string } | null)?.fileId
+        if (fileId) result.set(r.noteId, fileId)
+      }
+    }
+    for (const o of notes.filter((n) => n.access === 'READER' && n.note.publishedVersionId)) {
+      const first = (await this.versionSnapshot(o.note.publishedVersionId!)).find((c) => c.type === 'image')
+      const fileId = (first?.content as { fileId?: string } | undefined)?.fileId
+      if (fileId) result.set(o.note.id, fileId)
+    }
+    return result
+  }
+
   /** The headings, for navigation (§6.3: metadata and outline first, cards after). */
   async outline(opened: OpenedNote) {
     const headings =

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { Action, can } from '@lvn/contracts/domain'
-import type { NoteAccess, NoteReach, PlaceShare, PublicTopicNote, ReadableNote, StudyCard } from '@lvn-backend/facades'
+import type { NoteAccess, NoteReach, PlaceShare, PublicTopicNote, PublicTopicPage, ReadableNote, StudyCard } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { noteFacts, visibleNotesWhere, type NoteAccessRow } from '../domain/note-access'
 import { NotesService } from './notes.service'
@@ -82,6 +82,30 @@ export class NoteAccessFacade implements NoteAccess {
       .filter((n) => !options.withQuiz || ((n.publishedVersion?.cards ?? []) as { type: string }[]).some((c) => c.type === 'quiz'))
       .slice(0, options.take)
       .map((n) => ({ noteId: n.id, title: n.publishedVersion?.title ?? '', topicIds: n.topics.map((t) => t.topicId) }))
+  }
+
+  async publicOnTopicsPage(viewerId: string, topicIds: string[], excludeOwners: string[], before: { at: Date; id: string } | null, take: number): Promise<PublicTopicPage[]> {
+    if (!topicIds.length) return []
+    const rows = await this.db.note.findMany({
+      where: {
+        AND: [
+          visibleNotesWhere(null),
+          { ownerId: { notIn: [viewerId, ...excludeOwners] }, topics: { some: { topicId: { in: topicIds } } } },
+          ...(before ? [{ OR: [{ publishedAt: { lt: before.at } }, { publishedAt: before.at, id: { lt: before.id } }] }] : []),
+        ],
+      },
+      select: { id: true, publishedAt: true, topics: { select: { topicId: true } } },
+      orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
+      take,
+    })
+    return rows.map((n) => ({ noteId: n.id, at: n.publishedAt!, topicIds: n.topics.map((t) => t.topicId) }))
+  }
+
+  async publicAmong(noteIds: string[]): Promise<{ noteId: string; ownerId: string }[]> {
+    if (!noteIds.length) return []
+    const rows = await this.db.note.findMany({ where: { AND: [visibleNotesWhere(null), { id: { in: noteIds } }] }, select: { id: true, ownerId: true } })
+    const byId = new Map(rows.map((n) => [n.id, n.ownerId]))
+    return noteIds.flatMap((id) => (byId.has(id) ? [{ noteId: id, ownerId: byId.get(id)! }] : []))
   }
 
   async showcaseProblem(noteId: string, groupId: string): Promise<string | null> {

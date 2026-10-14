@@ -446,8 +446,10 @@ export interface SignUpInput {
 export interface StudentProfile {
   department: string | null
   yearOfStudy: YearOfStudy | null
-  /** Viewer only. Topics arrive with notes (Phase 2), which will add the resolved `interests`. */
+  /** Viewer only: the topics they chose */
   interestTopicIds: Array<string> | null
+  /** Viewer only: the topics they chose, for Community's For You (ADR-0076); null for a topic that is gone */
+  interests: Array<Topic | null> | null
   showOnProfile: boolean
 }
 
@@ -486,6 +488,11 @@ export type TeacherSkillSource = 'MANUAL'
 
 /** Where the viewer stands as a teacher (ADR-0073) */
 export type TeacherStatus = 'NONE' | 'PENDING' | 'VERIFIED' | 'DECLINED'
+
+/** A topic of notes, resolved by notes */
+export interface Topic {
+  id: string
+}
 
 /** Omitted fields stay as they are; null clears a field */
 export interface UpdateProfileInput {
