@@ -81,6 +81,15 @@ describe('security: abuse', () => {
       expect(res.body.errors[0].extensions).toMatchObject({ code: 'VALIDATION' })
     })
 
+    it('refuses batched operations, and counts every alias towards complexity (OWASP GraphQL Cheat Sheet)', async () => {
+      const post = (body: unknown) => request(t.app.getHttpServer()).post('/graphql').set('content-type', 'application/json').send(body)
+      const batched = await post([{ query: '{ termsVersion }' }, { query: '{ termsVersion }' }])
+      expect(batched.status).toBe(400)
+      const aliases = await post({ query: `{ ${Array.from({ length: MAX_COMPLEXITY + 1 }, (_, i) => `a${i}: termsVersion`).join(' ')} }` })
+      expect(aliases.status).toBe(400)
+      expect(aliases.body.errors[0].message).toMatch(/too complex/)
+    })
+
     it('caps list sizes whatever `first` asks for', async () => {
       const db = t.app.get(PrismaService)
       const ids = Array.from({ length: 105 }, () => newId())
