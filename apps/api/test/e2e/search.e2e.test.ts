@@ -188,6 +188,13 @@ describe.each(['postgres', 'typesense'] as const)('search on %s', (provider) => 
       expect(await noteTitles('dijkstra', stranger.token, { topicId: topic.id })).toEqual([])
       // Filters alone list what they allow, newest first.
       expect(await noteTitles('', friend.token, { topicId: topic.id })).toEqual(['Graph exam notes'])
+      // Any of several topics, as an exam's notes are found (ADR-0076); at most 20.
+      const other = await db.topic.findFirstOrThrow({ where: { origin: 'CURATED', id: { not: topic.id } } })
+      expect(await noteTitles('', friend.token, { topicIds: [other.id, topic.id] })).toEqual(['Graph exam notes'])
+      expect(await noteTitles('dijkstra', friend.token, { topicIds: [other.id] })).toEqual([])
+      expect(await noteTitles('', stranger.token, { topicIds: [topic.id] })).toEqual([])
+      const many = (await db.topic.findMany({ where: { origin: 'CURATED' }, take: 21, select: { id: true } })).map((x) => x.id)
+      expect((await find('', friend.token, { filters: { topicIds: many }, scopes: ['NOTES'] })).errors?.[0]?.message).toBe('Filter by at most 20 topics.')
       expect((await find('', undefined, { filters: { authorId: owner.id }, scopes: ['NOTES'] })).data!.notes.map((h) => h.note.title)).toEqual(['Graph visualiser project', "Dijkstra's algorithm"])
     })
 

@@ -39,6 +39,8 @@ const PURPOSES: Partial<Record<FilePurposeKind, PurposeRule>> = {
   AVATAR: { parentType: 'AVATAR', mimeTypes: IMAGES, maxBytes: UploadLimits.image, restricted: false },
   // ADR-0074: a resource's cover picture, uploaded before the resource is sent and attached to it then.
   COVER: { parentType: 'RESOURCE', mimeTypes: IMAGES, maxBytes: 2 * 1024 ** 2, restricted: false },
+  // ADR-0076: a group's picture, uploaded by one of its admins and attached when the group is saved.
+  GROUP_PICTURE: { parentType: 'GROUP', mimeTypes: IMAGES, maxBytes: 2 * 1024 ** 2, restricted: false },
   VERIFICATION_DOCUMENT: { parentType: 'VERIFICATION_REQUEST', mimeTypes: [...IMAGES, 'application/pdf'], maxBytes: UploadLimits.document, restricted: true },
 }
 

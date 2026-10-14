@@ -7,7 +7,7 @@ import { PrismaService } from '@lvn-backend/prisma-base'
 import { visibleNotesWhere } from '../domain/note-access'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
 import type { NoteFilters } from './search-filters'
-import { lead, MAX_NOTES, noteFiltersWhere, placesOf, PostgresSearchProvider, TypesenseSearchProvider, type Found, type SearchProvider, type SearchQuery, type SearchScope } from './search-providers'
+import { lead, MAX_NOTES, noteFiltersWhere, placesOf, PostgresSearchProvider, TypesenseSearchProvider, type Found, type SearchProvider, type SearchQuery, type SearchScope, MAX_TOPICS } from './search-providers'
 import { fuse, HYBRID_DEPTH, SEMANTIC_SEARCH, type SemanticSearch } from './search-ranking'
 
 export { MATCH_END, MATCH_START, type SearchScope } from './search-providers'
@@ -26,7 +26,7 @@ export function queryTerms(query: string): string[] {
 /** Ties a cursor to the search it continues, so a page of one search is never read as another's. */
 const searchKey = (terms: string[], f: NoteFilters) =>
   createHash('sha256')
-    .update(JSON.stringify([terms, f.kinds ?? [], f.subjectId ?? '', f.topicId ?? '', f.authorId ?? '', f.sources ?? []]))
+    .update(JSON.stringify([terms, f.kinds ?? [], f.subjectId ?? '', f.topicId ?? '', [...(f.topicIds ?? [])].sort(), f.authorId ?? '', f.sources ?? []]))
     .digest('base64url')
     .slice(0, 12)
 
@@ -118,8 +118,9 @@ export class SearchService {
     const text = query.trim()
     if (text.length > 100) throw Errors.validation('Search for at most 100 characters.', ['query'])
     const f = filters ?? {}
+    if ((f.topicIds?.length ?? 0) > MAX_TOPICS) throw Errors.validation(`Filter by at most ${MAX_TOPICS} topics.`, ['filters', 'topicIds'])
     const terms = queryTerms(text)
-    const filtered = !!(f.kinds?.length || f.subjectId || f.topicId || f.authorId || f.sources?.length)
+    const filtered = !!(f.kinds?.length || f.subjectId || f.topicId || f.topicIds?.length || f.authorId || f.sources?.length)
     const empty = { notes: [], notesTotal: 0, people: [], topics: [], groups: [], classrooms: [], resources: [], notesCursor: null }
     if (!terms.length && !filtered) return empty
     const key = searchKey(terms, f)

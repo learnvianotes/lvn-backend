@@ -21,6 +21,8 @@ input SearchFilters {
   subjectId: UUID
   "Notes about this topic"
   topicId: UUID
+  "Notes about any of these topics, at most 20 (an exam's topics, ADR-0076)"
+  topicIds: [UUID!]
   "Notes by this person"
   authorId: UUID
   "Any of these sources; signed out, only PUBLIC gives anything"

@@ -47,6 +47,8 @@ describe('search filters', () => {
     it('narrows by kind, subject, topic and author', () => {
       expect(noteFiltersFilter({}, viewer)).toBe('')
       expect(noteFiltersFilter({ kinds: ['BLOG', 'POST'], subjectId: 's1', topicId: 't1', authorId: 'a1' }, viewer)).toBe('kind:=[BLOG,POST] && subjectIds:=`s1` && topicIds:=`t1` && ownerId:=`a1`')
+      // Any of several topics (an exam's, ADR-0076).
+      expect(noteFiltersFilter({ topicIds: ['t1', 't2'] }, viewer)).toBe('topicIds:=[`t1`,`t2`]')
     })
     it('tells own, shared and public notes apart', () => {
       expect(noteFiltersFilter({ sources: ['MINE'] }, viewer)).toBe('(ownerId:=`v1`)')

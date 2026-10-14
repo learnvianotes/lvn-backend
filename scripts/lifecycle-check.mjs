@@ -293,6 +293,18 @@ if (opt('--vm')) {
   ok(await eventually(() => readsPlan(C)), 'a note shared to the group is read by its members')
   const outside = await gql('query ($id: UUID!) { group(id: $id) { name posts { edges { node { id } } } sharedNotes { edges { node { id } } } } }', { id: groupId }, B.token)
   ok(!(await readsPlan(B)) && outside.group.posts === null && outside.group.sharedNotes === null, 'and not by B, who is not in it: B sees the name only')
+  // The group's picture (ADR-0076): A, its admin, uploads one and sets it; C, a member, sees it from storage.
+  {
+    const bytes = png(640, 360)
+    const r = await gql('mutation ($input: CreateUploadIntentInput!) { createUploadIntent(input: $input) { intent { fileId uploadUrl uploadHeaders { name value } } userErrors { message } } }', { input: { fileName: 'group.png', mimeType: 'image/png', sizeBytes: bytes.length, purpose: 'GROUP_PICTURE' } }, A.token)
+    const intent = r.createUploadIntent.intent
+    const put = intent ? await fetch(intent.uploadUrl, { method: 'PUT', headers: Object.fromEntries(intent.uploadHeaders.map((h) => [h.name, h.value])), body: bytes }) : null
+    if (intent) await gql('mutation ($id: UUID!) { completeUpload(fileId: $id) { ok } }', { id: intent.fileId }, A.token)
+    const set = intent ? (await gql('mutation ($input: UpdateGroupInput!) { updateGroup(input: $input) { group { pictureUrl } userErrors { message } } }', { input: { groupId, pictureFileId: intent.fileId } }, A.token)).updateGroup : null
+    const seen = (await gql('query ($id: UUID!) { group(id: $id) { pictureUrl } }', { id: groupId }, C.token)).group.pictureUrl
+    const served = seen ? await fetch(seen) : null
+    ok(!!put?.ok && !!set?.group?.pictureUrl && served?.ok === true && (served.headers.get('content-type') ?? '').startsWith('image/'), 'the group’s admin sets its picture; a member sees it, served from storage', set?.userErrors[0]?.message ?? r.createUploadIntent.userErrors[0]?.message)
+  }
 
   // Classrooms (ADR-0046): teacher A starts a class; student D asks with its code and A lets them in; A's
   // announcement reaches D; a note shared to the class is read by D and not by B; A and C, who are no longer connected,
@@ -578,6 +590,10 @@ if (opt('--vm') && (await gql('{ aiStatus { available } }')).aiStatus.available)
     if (!weak.length) await new Promise((r) => setTimeout(r, 500))
   }
   const exam = made?.exam ? (await gql('query ($id: UUID!) { exam(id: $id) { readiness topics { accuracy } tasks { day } } }', { id: made.exam.id }, A.token)).exam : null
+  // Exams' Notes tab (ADR-0076): notes on the exam's topics, here A's own note given the topic above.
+  if (topic) await gql('mutation ($input: UpdateNoteDraftInput!) { updateNoteDraft(input: $input) { userErrors { message } } }', { input: { noteId: id, topicIds: [topic.id] } }, A.token)
+  const onTopics = async () => (await gql('query ($f: SearchFilters) { search(query: "", scopes: [NOTES], filters: $f, first: 20) { notes { note { id } } } }', { f: { topicIds: topic ? [topic.id] : [] } }, A.token)).search.notes.map((h) => h.note.id)
+  ok(!!topic && (await eventually(async () => (await onTopics()).includes(id), 15_000)), 'the exam’s Notes find A’s note on its topic')
   ok(!!topic && !!made?.exam && made.exam.tasks.length === 1 && weak.some((w) => w.key === `topic:${topic.id}` && w.reason === 'LOW_ACCURACY') && exam?.topics[0]?.accuracy === 0, 'A sets an exam a month away on a topic; a wrong quiz answer makes it weak and counts in Readiness', JSON.stringify({ topic: topic?.title, error: made?.userErrors[0]?.message, weak, exam }))
 }
 

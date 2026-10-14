@@ -652,6 +652,8 @@ export interface Group {
   privacy: GroupPrivacy
   /** A private group always approves members, whatever was chosen */
   joinPolicy: GroupJoinPolicy
+  /** The group's picture, valid for 15 minutes (ADR-0076); null without one */
+  pictureUrl: string | null
   owner: User
   memberCount: number
   viewerRole: GroupRole | null
@@ -1996,6 +1998,10 @@ export interface UpdateGroupInput {
   description?: string | null
   privacy?: GroupPrivacy | null
   joinPolicy?: GroupJoinPolicy | null
+  /** A new picture: an uploaded file (purpose GROUP_PICTURE) of the admin's own (ADR-0076) */
+  pictureFileId?: string | null
+  /** Takes the picture away */
+  removePicture?: boolean | null
 }
 
 export interface UpdateResourceInput {
