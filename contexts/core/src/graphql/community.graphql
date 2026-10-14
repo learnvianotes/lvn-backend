@@ -1,0 +1,23 @@
+# Community's For You and Trending (ADR-0076): public notes, blogs, posts and projects.
+
+type CommunityEdge {
+  cursor: String!
+  "Null when the viewer can no longer read it"
+  node: Note
+  "For You: the viewer's topic it is on"
+  topic: Topic
+}
+
+type CommunityConnection {
+  edges: [CommunityEdge!]!
+  pageInfo: PageInfo!
+  "For You: the topics it follows (the viewer's interests, upcoming exams and recent reading); empty when there are none, null for one that is gone"
+  basedOn: [Topic]!
+}
+
+extend type Query {
+  "Public notes on the viewer's topics, newest published first"
+  forYouFeed(first: Int, after: String): CommunityConnection!
+  "The public notes most reacted to and discussed in the last week, each person counted once, never the note's owner"
+  trendingFeed(first: Int, after: String): CommunityConnection!
+}

@@ -177,3 +177,39 @@ What the slices settled:
     onto the card's data as it is in the document.
   - On public pages, the app's frame arriving with the session mounted the page again (an unsubscribe link's answer
     vanished). The frame now keeps the page in place.
+
+## Implementation notes (UI-d; 2026-10-14)
+
+- **Saved notes (item 5).**
+  - Anyone can save a note they can read, their own included. A note they can no longer read leaves the list and
+    comes back if that changes: made private, trashed, held by moderators, unshared or blocked.
+  - Saving is private: no count is shown, and no one sees who saved what.
+  - The web's Bookmarks opens `/saved`, with saved notes, then saved resources. `/resources/saved` redirects there,
+    and so does the phone's old route.
+  - A visitor's Save on a public note is a link to sign in.
+- **For You's topics.** For You uses three sources:
+  - the topics the person follows, which they choose in Account (web) or Settings (phone);
+  - their upcoming exams' topics;
+  - for an adult, what they read in the last two weeks.
+
+  A child account's feed uses only the first two (ADR-0026). Each card's chip is the person's own topic it matched.
+  With no topics, For You leads to choosing some or adding an exam.
+- **Trending counts people, not clicks.**
+  - A person counts once per note, whether they reacted, commented or both, and the owner never counts.
+  - Only visible comments count: not hidden, not deleted, not held for moderators, and not private to a class.
+  - Ties go to the most recent activity, with at most 100 notes. Pages go by position, so the apps drop a note
+    already shown.
+  - A note made private, or by someone blocked, leaves.
+- **Public notes only.** Both feeds list public notes: notes, blogs, posts and projects. Group posts stay in their
+  groups, and Activity keeps them, under "Your groups and classes".
+- **Cards.**
+  - The picture is the note's first picture, as the viewer would see it. Without one, a gradient for its kind.
+  - The reactions are the viewer's own. Other people's counts are milestones, as on the note (ADR-0027).
+  - Comments open the note's Discussions.
+  - The topic chip opens the topic's notes: search on the web, Explore on the phone.
+- **Community opens on For You** on both apps; Following, Activity and groups and classes stay beside it.
+- **Found on the way.**
+  - Two queries of the profile with different fields replaced each other's data in the apps' cache. `StudentProfile`
+    now merges.
+  - The exams and recommendations tests assumed the calendar day was the learning day. They now allow for the hours
+    from midnight to 04:00, when the calendar is a day ahead.

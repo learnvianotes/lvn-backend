@@ -15,6 +15,7 @@ const toProfile = (p: ProfileRow, own: boolean): StudentProfile => ({
   department: p.department,
   yearOfStudy: p.yearOfStudy,
   interestTopicIds: own ? p.interestTopicIds : null,
+  interests: own ? p.interestTopicIds.map((id) => ({ __typename: 'Topic', id })) : null,
   showOnProfile: p.showOnProfile,
 })
 

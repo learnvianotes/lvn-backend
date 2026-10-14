@@ -35,6 +35,7 @@ import { NoteAiFacade } from './application/note-ai.facade'
 import { ContributorsService } from './application/contributors.service'
 import { FollowingFeedService } from './application/following-feed.service'
 import { FeedsResolver } from './graphql/feeds.resolver'
+import { NotePreviewResolver } from './graphql/preview.resolver'
 import { NoteSavesService } from './application/note-saves.service'
 import { NoteSavesResolver } from './graphql/saves.resolver'
 import { NoteContributorsResolver } from './graphql/contributors.resolver'
@@ -107,6 +108,7 @@ export class NotesModule {
         ContributorsService,
         FollowingFeedService,
         FeedsResolver,
+        NotePreviewResolver,
         NoteSavesService,
         NoteSavesResolver,
         NoteContributorsResolver,

@@ -21,6 +21,9 @@ describe('Recommendations', () => {
   }
   const recs = async (token: string) => (await app.gql<{ recommendations: Rec[] }>(RECS, {}, token)).data!.recommendations
   const today = () => new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 10)
+  // Countdowns count calendar days; plans go by learning days, which start at 04:00. From midnight to 04:00 the
+  // calendar is a day ahead, so an exam dated from the learning day is a day nearer (P7b, ADR-0070).
+  const lag = () => (new Date().toISOString().slice(0, 10) === today() ? 0 : 1)
   const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
   const track = (token: string, events: object[]) =>
     app.gql('mutation ($input: TrackEventsInput!) { trackEvents(input: $input) { accepted } }', { input: { timeZone: 'UTC', events: events.map((e) => ({ id: randomUUID(), clientTs: new Date().toISOString(), platform: 'WEB', ...e })) } }, token)
@@ -57,7 +60,7 @@ describe('Recommendations', () => {
     const list = await recs(me.token)
     const exam = list.filter((r) => r.kind === 'EXAM_TOPIC')
     expect(exam.map((r) => r.topicKey).sort()).toEqual([`topic:${a!.id}`, `topic:${b!.id}`].sort())
-    expect(exam[0]).toMatchObject({ reason: 'On your plan for Networks, in 5 days', topicTitle: expect.any(String) })
+    expect(exam[0]).toMatchObject({ reason: `On your plan for Networks, in ${5 - lag()} days`, topicTitle: expect.any(String) })
     expect(exam.every((r) => r.score >= 80 && r.score <= 100)).toBe(true)
     // An exam topic is not recommended twice, though it is weak too (not revisited).
     expect(list.filter((r) => r.topicKey === `topic:${a!.id}`)).toHaveLength(1)

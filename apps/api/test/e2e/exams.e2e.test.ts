@@ -22,6 +22,9 @@ describe('Exams', () => {
     return { id: u.id, token: tokenFor(app.config, u.id) }
   }
   const today = () => new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 10) // learning day in UTC (04:00 rollover)
+  // Countdowns count calendar days; plans go by learning days, which start at 04:00. From midnight to 04:00 the
+  // calendar is a day ahead, so an exam dated from the learning day is a day nearer (P7b, ADR-0070).
+  const lag = () => (new Date().toISOString().slice(0, 10) === today() ? 0 : 1)
   const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
   const create = (token: string, input: { name: string; date: string; topicIds: string[] }) =>
     app.gql<{ createExam: { exam: Exam | null; userErrors: { message: string; code: string }[] } }>(`mutation ($input: CreateExamInput!) { createExam(input: $input) { exam ${EXAM} userErrors { message code } } }`, { input }, token)
@@ -55,7 +58,7 @@ describe('Exams', () => {
 
     // A month away, so no topic is weak yet for want of a visit (that starts 14 days before).
     const made = (await create(me.token, { name: 'Operating Systems', date: addDays(today(), 30), topicIds: [a!.id, b!.id] })).data!.createExam.exam!
-    expect(made).toMatchObject({ name: 'Operating Systems', daysLeft: 30, readiness: 0, target: 80, targetToday: 0 })
+    expect(made).toMatchObject({ name: 'Operating Systems', daysLeft: 30 - lag(), readiness: 0, target: 80, targetToday: 0 })
     expect(made.topics.map((t) => t.key)).toEqual([`topic:${a!.id}`, `topic:${b!.id}`])
     expect(made.topics[0]).toMatchObject({ title: a!.title, recall: null, accuracy: null, mastery: 0, topic: { id: a!.id } })
     // Two topics over thirty days: the 15th and the 30th, the day before the exam.
@@ -129,7 +132,7 @@ describe('Exams', () => {
     type R = { rhythm: { today: { items: { kind: string; done: number; total: number; title: string | null; topicKey: string | null }[] }; suggestion: { plannedDays: number; examName: string; daysLeft: number } | null } }
     const before = (await app.gql<R>(RHYTHM, {}, me.token)).data!.rhythm
     expect(before.today.items).toEqual(expect.arrayContaining([{ kind: 'PLAN_TASK', done: 0, total: 1, title: 'Quiz day', topicKey: null }, { kind: 'WEAK_TOPIC', done: 0, total: 1, title: a!.title, topicKey: `topic:${a!.id}` }]))
-    expect(before.suggestion).toEqual({ plannedDays: 5, examName: 'Quiz day', daysLeft: 1 })
+    expect(before.suggestion).toEqual({ plannedDays: 5, examName: 'Quiz day', daysLeft: 1 - lag() })
     await track(me.token, [{ type: 'TIME_SPENT', durationMs: 660_000, topicKeys: [`topic:${a!.id}`], metadata: { activity: 'FOCUS' } }])
     await eventually(async () => (await exams(me.token))[0]!.tasks[0]!.done)
     expect((await exams(me.token))[0]!.tasks[0]).toMatchObject({ today: true, done: true })
