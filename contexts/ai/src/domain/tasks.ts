@@ -3,6 +3,7 @@ import { CardType, type AiTaskType } from '@lvn/contracts/domain'
 import { parseCardContent } from '@lvn/contracts/validation'
 import type { NewCard } from '@lvn-backend/facades'
 import type { TextChange } from './clean-up'
+import { titled } from './translate'
 
 export type AiLanguage = 'ENGLISH' | 'HINDI' | 'TELUGU'
 export const LANGUAGE_NAMES: Record<AiLanguage, string> = { ENGLISH: 'English', HINDI: 'Hindi', TELUGU: 'Telugu' }
@@ -21,6 +22,8 @@ export interface TaskDef<T> {
   result(out: T, title: string): TaskResult
   /** Reads only the note's code cards (EXPLAIN_CODE) */
   codeOnly?: true
+  /** Answered in plain text, not JSON (TRANSLATE, ADR-0086) */
+  plain?: true
   /** Hears one audio or video card (TRANSCRIBE), or also sees the note's photos (QUICK_NOTE) (ADR-0062) */
   input?: 'AUDIO' | 'IMAGES'
   /** Only on a note the person may edit: their own rough material (QUICK_NOTE), or its words to mend (CLEAN_UP) */
@@ -51,7 +54,6 @@ const summary = z.object({ summary: z.string().min(1), keyPoints: z.array(z.stri
 const concepts = z.object({ concepts: z.array(z.object({ term: z.string().min(1), explanation: z.string().min(1) })).min(1).max(15) })
 const explanation = z.object({ explanation: z.string().min(1) })
 const questions = z.object({ questions: z.array(z.object({ question: z.string().min(1), answer: z.string().min(1) })).min(1).max(10) })
-const translation = z.object({ title: z.string(), text: z.string().min(1) })
 const mistakes = z.object({ mistakes: z.array(z.object({ quote: z.string(), problem: z.string().min(1), fix: z.string().min(1) })).max(15) })
 const code = z.object({ explanation: z.string().min(1), steps: z.array(z.string().min(1)).max(12) })
 const flashcards = z.object({ cards: z.array(z.object({ front: z.string().min(1), back: z.string().min(1) })).min(1).max(20) })
@@ -86,7 +88,18 @@ export const TASKS: { [K in AiTaskType]: TaskDef<unknown> } = {
     schema: questions,
     result: (o: z.infer<typeof questions>) => ({ markdown: o.questions.map((q, i) => `${i + 1}. ${q.question.trim()}\n\n   *Answer:* ${q.answer.trim()}`).join('\n\n') }),
   },
-  TRANSLATE: { task: 'TRANSLATE', kind: 'TEXT', prompt: 'translate', schema: translation, result: (o: z.infer<typeof translation>) => ({ markdown: `${o.title.trim() ? `## ${o.title.trim()}\n\n` : ''}${o.text.trim()}` }) },
+  // Plain text in pieces, each checked to be in the language (ADR-0086): the service puts them together.
+  TRANSLATE: {
+    task: 'TRANSLATE',
+    kind: 'TEXT',
+    prompt: 'translate',
+    schema: z.string().min(1),
+    plain: true,
+    result: (o: string) => {
+      const { title, text } = titled(o)
+      return { markdown: `${title ? `## ${title}\n\n` : ''}${text}` }
+    },
+  },
   FIND_MISTAKES: {
     task: 'FIND_MISTAKES',
     kind: 'TEXT',

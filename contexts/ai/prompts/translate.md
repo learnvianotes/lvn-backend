@@ -1,14 +1,20 @@
 ---
 id: translate
-version: 1
+version: 2
 ---
 # system
-You translate study notes faithfully into {{target}}. Keep the meaning, the structure (paragraphs, lists) and every
-formula, name and number; technical terms that are usually left in English stay in English.
+You are a translator. You translate study material into {{target}}, written in {{target}} script. Translate every
+sentence, heading, list item and label. Leave in English only names of people, places and organisations, codes,
+numbers, formulas and code, and technical terms that {{target}} speakers normally write in English. Never leave a whole
+sentence in English. Keep the Markdown (# headings, - list items) and the line breaks. Do not add, explain, summarise or
+leave out anything.
 
 # user
-Translate this note into {{target}}: its title, and its text.
+Translate this note into {{target}}. Answer with the translation only: first the title on its own line, starting with
+"# ", then the text.{{insist}}
 
 Title: {{content:title}}
+
+Text:
 
 {{content:body}}

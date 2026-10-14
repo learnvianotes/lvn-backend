@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { z } from 'zod'
 import { CardType } from '@lvn/contracts/domain'
 import type { NewCard, PageVision } from '@lvn-backend/facades'
+import { mendEscapes } from '../domain/escapes'
 import { doc, inline, valid } from '../domain/tasks'
 import { AiGateway } from './ai-gateway'
 
@@ -47,23 +48,47 @@ export function blocksToCards(blocks: z.infer<typeof block>[]): NewCard[] {
 /** The words of a page's blocks, to compare with the OCR's. */
 export const blocksText = (blocks: z.infer<typeof block>[]) => blocks.map((b) => [b.text, ...(b.items ?? []), ...(b.rows ?? []).flat()].join(' ')).join('\n')
 
+/** Symbols the model writes as LaTeX in ordinary text, as the characters they are. */
+const SYMBOLS: Record<string, string> = {
+  rightarrow: '→', to: '→', leftarrow: '←', Rightarrow: '⇒', Leftarrow: '⇐', leftrightarrow: '↔', uparrow: '↑', downarrow: '↓',
+  cdot: '·', times: '×', div: '÷', pm: '±', approx: '≈', neq: '≠', ne: '≠', le: '≤', leq: '≤', ge: '≥', geq: '≥', infty: '∞',
+  degree: '°', circ: '°', quad: ' ', qquad: ' ', ldots: '…', dots: '…', bullet: '•', checkmark: '✓', star: '★',
+}
+
+/**
+ * Words with the LaTeX a model slips into ordinary text made plain (ADR-0086): `$\rightarrow$` becomes →, `$\text{8 km}$`
+ * becomes 8 km. A backslash the model failed to escape in its JSON (`\t` of `\text` read as a tab) is mended first
+ * (mendEscapes).
+ * Real mathematics (powers, fractions, anything else) is left as it is.
+ */
+export function plainSymbols(text: string): string {
+  return mendEscapes(text).replace(/\$([^$\n]{1,120})\$/g, (whole, inner: string) => {
+    const plain = inner
+      .replace(/\\(?:text|mathrm|textbf|mathbf)\{([^{}]*)\}/g, '$1')
+      .replace(/\\([A-Za-z]+)\s?/g, (cmd, name: string) => SYMBOLS[name] ?? cmd)
+      .replace(/\s+/g, ' ')
+      .trim()
+    return /[\\^_{}]/.test(plain) ? whole : plain
+  })
+}
+
 /** A page's blocks as Markdown, for the model to read again: a quick note of many photos (ADR-0084). */
 export const blocksMarkdown = (blocks: z.infer<typeof block>[]) =>
   blocks
     .map((b) => {
       switch (b.kind) {
         case 'heading':
-          return `${'#'.repeat(b.level ?? 2)} ${b.text}`
+          return `${'#'.repeat(b.level ?? 2)} ${plainSymbols(b.text)}`
         case 'list':
-          return (b.items?.length ? b.items : b.text.split('\n')).map((i, n) => `${b.ordered ? `${n + 1}.` : '-'} ${i.trim()}`).join('\n')
+          return (b.items?.length ? b.items : b.text.split('\n')).map((i, n) => `${b.ordered ? `${n + 1}.` : '-'} ${plainSymbols(i.trim())}`).join('\n')
         case 'formula':
           return `$$${b.text.trim()}$$`
         case 'table':
-          return (b.rows ?? []).map((r) => `| ${r.join(' | ')} |`).join('\n')
+          return (b.rows ?? []).map((r) => `| ${r.map(plainSymbols).join(' | ')} |`).join('\n')
         case 'code':
           return `\`\`\`${b.language ?? ''}\n${b.text}\n\`\`\``
         default:
-          return b.text
+          return plainSymbols(b.text)
       }
     })
     .filter((s) => s.trim())
