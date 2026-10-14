@@ -62,6 +62,11 @@ export class GroupsResolver {
     return effectivePolicy(g)
   }
 
+  @ResolveField('pictureUrl')
+  pictureUrl(@Parent() g: GroupParent) {
+    return this.groups.pictureUrl(g)
+  }
+
   @ResolveField('owner')
   owner(@Parent() g: GroupParent) {
     return userRef(g.ownerId)
@@ -117,7 +122,10 @@ export class GroupsResolver {
   }
 
   @Mutation('updateGroup')
-  updateGroup(@Args('input') input: { groupId: string; name?: string | null; description?: string | null; privacy?: 'PUBLIC' | 'PRIVATE' | null; joinPolicy?: 'OPEN' | 'APPROVAL' | null }, @CurrentViewer() viewer: Viewer) {
+  updateGroup(
+    @Args('input') input: { groupId: string; name?: string | null; description?: string | null; privacy?: 'PUBLIC' | 'PRIVATE' | null; joinPolicy?: 'OPEN' | 'APPROVAL' | null; pictureFileId?: string | null; removePicture?: boolean | null },
+    @CurrentViewer() viewer: Viewer,
+  ) {
     return this.payload(viewer.userId, async () => (await this.groups.update(viewer.userId, input.groupId, input), input.groupId))
   }
 

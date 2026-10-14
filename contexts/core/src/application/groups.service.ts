@@ -3,7 +3,7 @@ import { Action, can, GroupJoinPolicy, GroupPrivacy, GroupRole as Role, GroupTyp
 import { docSchema, docText } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { AUDIT, ENTITLEMENTS, PEOPLE, POLICY, type Audit, type Entitlements, type People, type Policy } from '@lvn-backend/facades'
+import { AUDIT, ENTITLEMENTS, FILES, PEOPLE, POLICY, type Audit, type Entitlements, type Files, type People, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { MentionsService } from './mentions.service'
@@ -46,6 +46,7 @@ export class GroupsService {
     @Inject(PEOPLE) private readonly people: People,
     @Inject(AUDIT) private readonly audit: Audit,
     @Inject(EVENT_BUS) private readonly events: EventBus,
+    @Inject(FILES) private readonly files: Files,
   ) {}
 
   async actor(userId: string): Promise<Actor> {
@@ -144,17 +145,40 @@ export class GroupsService {
     return id
   }
 
-  async update(actorId: string, groupId: string, input: { name?: string | null; description?: string | null; privacy?: 'PUBLIC' | 'PRIVATE' | null; joinPolicy?: 'OPEN' | 'APPROVAL' | null }): Promise<void> {
+  async update(
+    actorId: string,
+    groupId: string,
+    input: { name?: string | null; description?: string | null; privacy?: 'PUBLIC' | 'PRIVATE' | null; joinPolicy?: 'OPEN' | 'APPROVAL' | null; pictureFileId?: string | null; removePicture?: boolean | null },
+  ): Promise<void> {
     const { group, resource, actor } = await this.require(actorId, groupId)
     if (!can(actor, Action.GROUP_MANAGE, resource)) throw Errors.forbidden('Only the group’s admins change its settings.')
     const { name, description } = this.clean(input.name ?? group.name, input.description === undefined ? group.description : input.description)
     const privacy = input.privacy ?? group.privacy
     const joinPolicy = privacy === 'PRIVATE' ? 'APPROVAL' : (input.joinPolicy ?? group.joinPolicy)
-    await this.db.group.update({ where: { id: groupId }, data: { name, description, privacy, joinPolicy } })
+    // The picture (ADR-0076): an upload of the admin's own, attached here; the old one goes when replaced or removed.
+    let pictureFileId = group.pictureFileId
+    if (input.pictureFileId && input.pictureFileId !== group.pictureFileId) {
+      await this.files.attach([input.pictureFileId], actorId, 'GROUP_PICTURE', { type: 'GROUP', id: groupId })
+      pictureFileId = input.pictureFileId
+    } else if (input.removePicture) {
+      pictureFileId = null
+    }
+    await this.db.group.update({ where: { id: groupId }, data: { name, description, privacy, joinPolicy, pictureFileId } })
+    if (group.pictureFileId && group.pictureFileId !== pictureFileId) await this.files.delete([group.pictureFileId]).catch(() => undefined)
     // What search finds of a group (ADR-0056): its name, description and who may find it.
     await this.events.publish('GroupUpdated', { groupId })
     if (privacy !== group.privacy || joinPolicy !== group.joinPolicy) {
       await this.audit.record({ actorId, action: 'group.settings', targetType: 'GROUP', targetId: groupId, metadata: { fromPrivacy: group.privacy, fromJoinPolicy: group.joinPolicy, privacy, joinPolicy } })
+    }
+  }
+
+  /** A read URL for a group's picture, for whoever may see the group; null without one or when it cannot be read. */
+  async pictureUrl(group: { pictureFileId: string | null }): Promise<string | null> {
+    if (!group.pictureFileId) return null
+    try {
+      return (await this.files.readUrl(group.pictureFileId)).url
+    } catch {
+      return null
     }
   }
 

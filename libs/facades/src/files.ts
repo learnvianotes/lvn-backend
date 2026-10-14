@@ -4,8 +4,8 @@
  */
 export const FILES = Symbol('FILES')
 
-export type FileParentKind = 'NOTE' | 'CARD' | 'GROUP_POST' | 'RESOURCE' | 'AVATAR' | 'VERIFICATION_REQUEST' | 'IMPORT_JOB' | 'DATA_EXPORT'
-export type FilePurposeKind = 'ATTACHMENT' | 'COVER' | 'VOICE_NOTE' | 'AVATAR' | 'IMPORT' | 'EXPORT' | 'VERIFICATION_DOCUMENT'
+export type FileParentKind = 'NOTE' | 'CARD' | 'GROUP_POST' | 'RESOURCE' | 'AVATAR' | 'VERIFICATION_REQUEST' | 'IMPORT_JOB' | 'DATA_EXPORT' | 'GROUP'
+export type FilePurposeKind = 'ATTACHMENT' | 'COVER' | 'VOICE_NOTE' | 'AVATAR' | 'IMPORT' | 'EXPORT' | 'VERIFICATION_DOCUMENT' | 'GROUP_PICTURE'
 
 export interface FileSummary {
   id: string

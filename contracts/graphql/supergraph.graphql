@@ -1767,6 +1767,7 @@ enum FilePurpose
   IMPORT @join__enumValue(graph: NOTES)
   EXPORT @join__enumValue(graph: NOTES)
   VERIFICATION_DOCUMENT @join__enumValue(graph: NOTES)
+  GROUP_PICTURE @join__enumValue(graph: NOTES)
 }
 
 type FocusSession
@@ -1854,6 +1855,9 @@ type Group
 
   """A private group always approves members, whatever was chosen"""
   joinPolicy: GroupJoinPolicy! @join__field(graph: CORE)
+
+  """The group's picture, valid for 15 minutes (ADR-0076); null without one"""
+  pictureUrl: String @join__field(graph: CORE)
   owner: User! @join__field(graph: CORE)
   memberCount: Int! @join__field(graph: CORE)
   viewerRole: GroupRole @join__field(graph: CORE)
@@ -5018,6 +5022,11 @@ input SearchFilters
   """Notes about this topic"""
   topicId: UUID
 
+  """
+  Notes about any of these topics, at most 20 (an exam's topics, ADR-0076)
+  """
+  topicIds: [UUID!]
+
   """Notes by this person"""
   authorId: UUID
 
@@ -5645,6 +5654,14 @@ input UpdateGroupInput
   description: String
   privacy: GroupPrivacy
   joinPolicy: GroupJoinPolicy
+
+  """
+  A new picture: an uploaded file (purpose GROUP_PICTURE) of the admin's own (ADR-0076)
+  """
+  pictureFileId: UUID
+
+  """Takes the picture away"""
+  removePicture: Boolean
 }
 
 """

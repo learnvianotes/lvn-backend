@@ -125,7 +125,7 @@ export interface CreateUploadIntentInput {
 export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE'
 
 /** What an upload is for: AVATAR, VERIFICATION_DOCUMENT, and ATTACHMENT (a picture, video, audio or PDF for a note you can edit, given as parentId). Other purposes arrive with their features. */
-export type FilePurpose = 'ATTACHMENT' | 'COVER' | 'VOICE_NOTE' | 'AVATAR' | 'IMPORT' | 'EXPORT' | 'VERIFICATION_DOCUMENT'
+export type FilePurpose = 'ATTACHMENT' | 'COVER' | 'VOICE_NOTE' | 'AVATAR' | 'IMPORT' | 'EXPORT' | 'VERIFICATION_DOCUMENT' | 'GROUP_PICTURE'
 
 /** The viewer's folder; nested up to 5 levels */
 export interface Folder {
@@ -750,6 +750,8 @@ export interface SearchFilters {
   subjectId?: string | null
   /** Notes about this topic */
   topicId?: string | null
+  /** Notes about any of these topics, at most 20 (an exam's topics, ADR-0076) */
+  topicIds?: Array<string> | null
   /** Notes by this person */
   authorId?: string | null
   /** Any of these sources; signed out, only PUBLIC gives anything */

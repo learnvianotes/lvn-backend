@@ -541,6 +541,8 @@ enum FileParentType {
   IMPORT_JOB
   /// ADR-0018: a data export archive
   DATA_EXPORT
+  /// ADR-0076: a group's picture
+  GROUP
 
   @@schema("notes")
 }
@@ -553,6 +555,8 @@ enum FilePurpose {
   IMPORT
   EXPORT
   VERIFICATION_DOCUMENT
+  /// ADR-0076: a group's picture, uploaded by an admin and attached to the group then
+  GROUP_PICTURE
 
   @@schema("notes")
 }
@@ -1821,6 +1825,8 @@ model Group {
   removedReason  String?
   /// Project workspaces (ADR-0048): the PUBLIC PROJECT note that credits the team; cross-context reference to notes.Note
   showcaseNoteId String?            @db.Uuid
+  /// ADR-0076: the group's picture, set by its admins; cross-context reference to notes.FileObject (GROUP_PICTURE)
+  pictureFileId  String?            @db.Uuid
   members        GroupMember[]
   requests       GroupJoinRequest[]
   posts          GroupPost[]
