@@ -49,9 +49,12 @@ describe('worker', () => {
     await infra?.stop()
   })
 
-  it('schedules the daily purge of decided verification documents', async () => {
+  it('schedules the daily purge of decided verification documents and the deletion of accounts past their grace', async () => {
     const schedulers = await app.get(Queues).queue(USERS_MAINTENANCE_QUEUE).getJobSchedulers()
-    expect(schedulers.map((s) => [s.key, s.pattern, s.tz])).toEqual([['purge-verification-documents', '15 3 * * *', 'UTC']])
+    expect(schedulers.map((s) => [s.key, s.pattern, s.tz]).sort()).toEqual([
+      ['delete-accounts', '20 3 * * *', 'UTC'],
+      ['purge-verification-documents', '15 3 * * *', 'UTC'],
+    ])
   })
 
   it('purges documents decided more than 30 days ago when the job runs', async () => {
