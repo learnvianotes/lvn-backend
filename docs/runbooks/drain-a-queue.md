@@ -10,26 +10,32 @@ idempotent (§9.2), so a job run twice does no harm.
 
 ## Look
 
+The worker's CLI talks to BullMQ directly, so it works while the worker is stopped. On the local environment, in the
+worker's container; on AWS, `aws ecs execute-command` into a worker task with the same command.
+
 ```bash
-# Local environment: counts per queue
-infra/local-vm/vm.sh ssh 'docker exec lvn-local-redis sh -c "for q in ai.tasks notes.media notes.search comms.email; do echo \$q \$(redis-cli LLEN bull:\$q:wait) waiting \$(redis-cli ZCARD bull:\$q:failed) failed; done"'
-# A failed job's reason
-infra/local-vm/vm.sh ssh 'docker exec lvn-local-redis redis-cli HGET bull:ai.tasks:<jobId> failedReason'
+# Every queue's waiting, delayed, active and failed jobs
+infra/local-vm/vm.sh ssh 'docker exec lvn-local-worker node apps/worker/dist/cli.js queues'
+# The last 20 failed jobs of a queue, with their reasons
+infra/local-vm/vm.sh ssh 'docker exec lvn-local-worker node apps/worker/dist/cli.js queue:failed ai.tasks'
 ```
 
-On AWS, the worker's `/metrics` exposes `bullmq_queue_jobs{queue,state}`, and Grafana's queues dashboard shows the
-same.
+Prometheus has the same counts as `lvn_queue_backlog{queue,state}` and the outcomes as `lvn_queue_jobs_total`, on
+Grafana's SLO dashboard (ADR-0089).
 
 ## Act
 
-- **Retry the failed jobs** once the cause is fixed. Retry a queue's failed jobs with BullMQ's `retryJobs` from the
-  worker shell: `node -e "new (require('bullmq').Queue)('ai.tasks',{connection:{url:process.env.REDIS_URL}}).retryJobs({state:'failed'})"`.
-- **Pause a queue** while a dependency is down, so jobs wait instead of failing: `.pause()` on the same Queue. Resume
-  with `.resume()`.
-- **Drop a poisoned job** (it fails every time and blocks nothing else, but fills the failed set): `.getJob(id)` then
-  `.remove()`. Record its id and reason in the incident log first.
+Each with `node apps/worker/dist/cli.js` in the worker's container:
+
+- **Retry the failed jobs** once the cause is fixed: `queue:retry <queue>`.
+- **Pause a queue** while a dependency is down, so jobs wait instead of failing: `queue:pause <queue>`, then
+  `queue:resume <queue>`.
+- **Run a scheduled job now** (housekeeping after an outage, or to check one): `queue:run <queue> <job>`, e.g.
+  `queue:run users.maintenance delete-accounts`.
+- **Drop a poisoned job** (it fails every time and blocks nothing else, but fills the failed set): note its id and
+  reason from `queue:failed` in the incident log, then remove it with BullMQ's `getJob(id)` and `remove()`.
 - **Empty a queue** only when its jobs are recomputed anyway: `notes.search` (reindex instead), `core.engagement`
-  (the next learning event queues it again). Use `.obliterate({force:true})`. Never empty `comms.email` or
+  (the next learning event queues it again). Use BullMQ's `obliterate({ force: true })`. Never empty `comms.email` or
   `users.export`; people are waiting for those.
 - **Before a deploy that changes a job's data shape**: pause the queue, deploy, resume. The new worker reads the old
   jobs as the old shape, so a job must accept both for one release.
