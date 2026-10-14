@@ -12,6 +12,7 @@ import { contextModules, SUBGRAPHS, TOKEN_AUDIENCE } from './contexts'
 import { facades } from './facades'
 import { buildRequestContext } from './graphql/request-context'
 import { SuspendedRefusals } from './graphql/suspended-refusals'
+import { GitHubWebhookController } from '@lvn-backend/core'
 import { HealthController } from './health/health.controller'
 
 export { TOKEN_AUDIENCE }
@@ -47,7 +48,8 @@ export class AppModule {
           introspection: config.APP_ENV === 'development',
         }),
       ],
-      controllers: [HealthController],
+      // ADR-0078: GitHub App deliveries arrive here (404 until the App is configured).
+      controllers: [HealthController, GitHubWebhookController],
       // A suspended person's refused change says why (ADR-0053).
       providers: [{ provide: APP_INTERCEPTOR, useClass: SuspendedRefusals }],
     }

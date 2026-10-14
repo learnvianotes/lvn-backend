@@ -112,6 +112,22 @@ const auth = z.object({
   GITLAB_API_URL: z.url().optional(),
   /** Optional: a token with no scopes, for GitHub's higher rate limit on public repository details (ADR-0048). */
   GITHUB_TOKEN: z.string().min(1).optional(),
+  /**
+   * ADR-0078: the GitHub App for repository activity in project workspaces, off until the owner creates it. All or
+   * none: its id and slug, private key (PEM; `\n` for line breaks), webhook secret, and OAuth client for confirming
+   * who installed it; GITHUB_APP_URL is GitHub's web origin (https://github.com).
+   */
+  GITHUB_APP_ID: z.string().min(1).optional(),
+  GITHUB_APP_SLUG: z.string().min(1).optional(),
+  GITHUB_APP_PRIVATE_KEY: z
+    .string()
+    .min(1)
+    .optional()
+    .transform((s) => s?.replace(/\\n/g, '\n')),
+  GITHUB_APP_WEBHOOK_SECRET: z.string().min(16).optional(),
+  GITHUB_APP_CLIENT_ID: z.string().min(1).optional(),
+  GITHUB_APP_CLIENT_SECRET: z.string().min(1).optional(),
+  GITHUB_APP_URL: z.url().optional(),
   /** Resources (ADR-0074): Open Library's API (https://openlibrary.org) for books by ISBN; without it ISBNs are not looked up. */
   OPEN_LIBRARY_URL: z.url().optional(),
   /** Open Library's covers (https://covers.openlibrary.org): a book's cover is copied into storage from here. */
@@ -154,6 +170,15 @@ const providersConfigured = (
     need(!!c.LINKEDIN_API_URL, 'LINKEDIN_API_URL', 'required when LINKEDIN_CLIENT_ID is set')
   }
   if (c.GITHUB_CLIENT_ID || c.LINKEDIN_CLIENT_ID) need(c.OAUTH_REDIRECT_URIS.length > 0, 'OAUTH_REDIRECT_URIS', 'required when GitHub or LinkedIn sign-in is on')
+}
+
+/** ADR-0078: the GitHub App is all or nothing, and it needs GitHub's API and web origin. */
+const githubAppConfigured = (c: Record<string, unknown>, ctx: z.RefinementCtx) => {
+  const keys = ['GITHUB_APP_ID', 'GITHUB_APP_SLUG', 'GITHUB_APP_PRIVATE_KEY', 'GITHUB_APP_WEBHOOK_SECRET', 'GITHUB_APP_CLIENT_ID', 'GITHUB_APP_CLIENT_SECRET', 'GITHUB_APP_URL']
+  const set = keys.filter((k) => c[k])
+  if (!set.length) return
+  for (const k of keys) if (!c[k]) ctx.addIssue({ code: 'custom', path: [k], message: 'required when the GitHub App is configured (all of GITHUB_APP_* or none)' })
+  if (!c.GITHUB_API_URL) ctx.addIssue({ code: 'custom', path: ['GITHUB_API_URL'], message: 'required when the GitHub App is configured' })
 }
 
 /**
@@ -246,7 +271,7 @@ const apiShape = backendBase
   .extend(ai.shape)
   .extend(analytics.shape)
 
-export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(searchConfigured).superRefine(aiConfigured).superRefine(analyticsConfigured).superRefine(safeFetchConfigured)
+export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(githubAppConfigured).superRefine(searchConfigured).superRefine(aiConfigured).superRefine(analyticsConfigured).superRefine(safeFetchConfigured)
 export type ApiConfig = z.infer<typeof apiConfigSchema>
 
 /**
@@ -261,6 +286,7 @@ export const workerConfigSchema = apiShape
   })
   .superRefine(mailTransportConfigured)
   .superRefine(providersConfigured)
+  .superRefine(githubAppConfigured)
   .superRefine(searchConfigured)
   .superRefine(aiConfigured)
   .superRefine(analyticsConfigured)

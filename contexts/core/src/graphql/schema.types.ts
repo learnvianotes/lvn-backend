@@ -32,7 +32,7 @@ export interface ActivityItem {
   key: string
   kind: ActivityKind
   at: Date
-  /** Who posted, asked or shared */
+  /** Who posted, asked or shared; null for REPOSITORY */
   actor: User | null
   group: Group | null
   classroom: Classroom | null
@@ -44,9 +44,11 @@ export interface ActivityItem {
   doubt: Doubt | null
   /** SHARED_NOTE: null when the viewer can no longer read it */
   note: Note | null
+  /** REPOSITORY: a commit, pull request or issue in a workspace's repository (ADR-0078) */
+  repositoryEvent: RepositoryEvent | null
 }
 
-export type ActivityKind = 'GROUP_POST' | 'IDEA' | 'DOUBT' | 'CLASS_ANNOUNCEMENT' | 'SHARED_NOTE'
+export type ActivityKind = 'GROUP_POST' | 'IDEA' | 'DOUBT' | 'CLASS_ANNOUNCEMENT' | 'SHARED_NOTE' | 'REPOSITORY'
 
 export interface AddCommentInput {
   target: CommentTargetInput
@@ -401,6 +403,13 @@ export interface CommunityEdge {
   node: Note | null
   /** For You: the viewer's topic it is on */
   topic: Topic | null
+}
+
+/** From GitHub's return to the setup page: the install link's state, the installation and the person's code */
+export interface ConnectRepositoryAppInput {
+  state: string
+  installationId: string
+  code: string
 }
 
 export interface CoreProblemMark {
@@ -802,6 +811,14 @@ export interface GroupRepository {
   stars: number | null
   pushedAt: Date | null
   refreshedAt: Date | null
+  /** Members, for a GitHub repository while the GitHub App is set up here (ADR-0078); null otherwise */
+  app: RepositoryApp | null
+  /** Members: the repository's commits, pull requests and issues from the GitHub App, newest first; null for others */
+  events: Array<RepositoryEvent> | null
+}
+
+export interface GroupRepositoryEventsArgs {
+  first?: number | null
 }
 
 export type GroupRole = 'OWNER' | 'ADMIN' | 'MODERATOR' | 'MEMBER' | 'MENTOR'
@@ -1261,6 +1278,14 @@ export interface MutationSetGroupRepositoryArgs {
   input: SetGroupRepositoryInput
 }
 
+export interface MutationConnectRepositoryAppArgs {
+  input: ConnectRepositoryAppInput
+}
+
+export interface MutationDisconnectRepositoryAppArgs {
+  input: GroupIdInput
+}
+
 export interface MutationInviteMentorArgs {
   input: InviteMentorInput
 }
@@ -1568,6 +1593,30 @@ export interface ReportContentInput {
 export type ReportEntityType = 'NOTE' | 'USER' | 'COMMENT' | 'GROUP_POST' | 'CLASSROOM_POST' | 'DOUBT' | 'GROUP' | 'RESOURCE'
 
 export type ReportReason = 'HARASSMENT' | 'SEXUAL' | 'SELF_HARM' | 'HATE' | 'SPAM' | 'COPYRIGHT' | 'OTHER'
+
+export interface RepositoryApp {
+  /** The App is connected: the repository's activity comes to the workspace */
+  connected: boolean
+  /** The workspace's admins, while not connected: where to install the App (for an hour) */
+  installUrl: string | null
+}
+
+/** What happened in the repository: never code, only the title, who, where and when (ADR-0078) */
+export interface RepositoryEvent {
+  id: string
+  kind: RepositoryEventKind
+  /** pushed, opened, closed, merged or reopened */
+  action: string
+  /** A commit's first line, or a pull request's or issue's title */
+  title: string
+  number: number | null
+  /** A GitHub login, not a LearnViaNotes person */
+  authorLogin: string | null
+  url: string
+  at: Date
+}
+
+export type RepositoryEventKind = 'PUSH' | 'PULL_REQUEST' | 'ISSUE'
 
 export type RepositoryProvider = 'GITHUB' | 'GITLAB'
 

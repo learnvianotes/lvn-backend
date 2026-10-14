@@ -3,14 +3,15 @@ import { NOTE_ACCESS, PEOPLE, type NoteAccess, type People } from '@lvn-backend/
 import { decodeCursor, pageSize } from '@lvn-backend/graphql'
 import { PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 
-export type ActivityKind = 'GROUP_POST' | 'IDEA' | 'DOUBT' | 'CLASS_ANNOUNCEMENT' | 'SHARED_NOTE'
+export type ActivityKind = 'GROUP_POST' | 'IDEA' | 'DOUBT' | 'CLASS_ANNOUNCEMENT' | 'SHARED_NOTE' | 'REPOSITORY'
 
 export interface ActivityItem {
   /** The source's id (a post, doubt, announcement, or the shared note) */
   id: string
   kind: ActivityKind
   at: Date
-  actorId: string
+  /** Null for a repository event: its author is a GitHub login, not a person here (ADR-0078) */
+  actorId: string | null
   groupId: string | null
   classroomId: string | null
   /** The row behind it, for the GraphQL types that render it */
@@ -18,6 +19,7 @@ export interface ActivityItem {
   announcement?: Prisma.ClassroomPostGetPayload<object>
   doubt?: Prisma.DoubtGetPayload<object>
   noteId?: string
+  repositoryEvent?: Prisma.RepositoryEventGetPayload<object>
 }
 
 const PLACES = 200
@@ -53,11 +55,14 @@ export class ActivityService {
     if (!groupIds.length && !classroomIds.length) return { items: [], size }
     const authors = { notIn: [viewerId, ...blocked] }
 
-    const [posts, doubts, announcements, shares] = await Promise.all([
+    const eventPage = before ? { OR: [{ at: { lt: before.at } }, { at: before.at, id: { lt: before.id } }] } : {}
+    const [posts, doubts, announcements, shares, repositoryEvents] = await Promise.all([
       groupIds.length ? this.db.groupPost.findMany({ where: { groupId: { in: groupIds }, deletedAt: null, moderation: 'OK', authorId: authors, ...page }, orderBy: order, take }) : [],
       groupIds.length ? this.db.doubt.findMany({ where: { groupId: { in: groupIds }, deletedAt: null, moderation: 'OK', authorId: authors, ...page }, orderBy: order, take }) : [],
       classroomIds.length ? this.db.classroomPost.findMany({ where: { classroomId: { in: classroomIds }, deletedAt: null, moderation: 'OK', authorId: authors, ...page }, orderBy: order, take }) : [],
       this.notes.placeShares(viewerId, { groupIds, classroomIds }, before, take),
+      // ADR-0078: the workspaces' repositories, from the GitHub App.
+      groupIds.length ? this.db.repositoryEvent.findMany({ where: { groupId: { in: groupIds }, ...eventPage }, orderBy: [{ at: 'desc' }, { id: 'desc' }], take }) : [],
     ])
     const items: ActivityItem[] = [
       ...posts.map((p): ActivityItem => ({ id: p.id, kind: p.kind === 'IDEA' ? 'IDEA' : 'GROUP_POST', at: p.createdAt, actorId: p.authorId, groupId: p.groupId, classroomId: null, post: p })),
@@ -66,6 +71,7 @@ export class ActivityService {
       ...shares
         .filter((s) => s.sharedBy !== viewerId && !blocked.includes(s.sharedBy))
         .map((s): ActivityItem => ({ id: s.noteId, kind: 'SHARED_NOTE', at: s.at, actorId: s.sharedBy, groupId: s.groupId, classroomId: s.classroomId, noteId: s.noteId })),
+      ...repositoryEvents.map((e): ActivityItem => ({ id: e.id, kind: 'REPOSITORY', at: e.at, actorId: null, groupId: e.groupId, classroomId: null, repositoryEvent: e })),
     ]
     items.sort((a, b) => b.at.getTime() - a.at.getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
     return { items: items.slice(0, take), size }

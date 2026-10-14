@@ -36,13 +36,14 @@ export class ActivityResolver {
         return {
           ...i,
           key: `${i.kind}:${i.groupId ?? i.classroomId}:${i.id}`,
-          actor: userRef(i.actorId),
+          actor: i.actorId ? userRef(i.actorId) : null,
           group: gv ? { ...gv.group, view: gv } : null,
           classroom: cv ? { ...cv.classroom, view: cv } : null,
           post: i.post ? post(i.post, viewer.userId, !!gv?.can.moderate) : null,
           announcement: i.announcement ? { id: i.announcement.id, author: userRef(i.announcement.authorId), body: i.announcement.body, createdAt: i.announcement.createdAt, viewerCanDelete: !!cv?.can.post, ...moderationFor(i.announcement, viewer.userId) } : null,
           doubt: doubt ? { row: doubt.doubt, can: doubt.can } : null,
           note: i.noteId ? { __typename: 'Note', id: i.noteId } : null,
+          repositoryEvent: i.repositoryEvent ?? null,
         }
       }),
     )

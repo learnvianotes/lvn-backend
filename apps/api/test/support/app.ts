@@ -107,7 +107,7 @@ export async function createTestApp(overrides: Record<string, string> = {}, opti
     level: config.LOG_LEVEL,
     destination: { write: (line: string) => void (lines.push(line), process.env.LVN_TEST_LOGS && process.stdout.write(line)) },
   })
-  const app = moduleRef.createNestApplication({ logger: new PinoNestLogger(logger) })
+  const app = moduleRef.createNestApplication({ logger: new PinoNestLogger(logger), rawBody: true })
   // Each test app is its own client network (behind one trusted proxy), so per-network sign-in limits in the shared
   // Redis never add up across test files or runs. A test can still send its own X-Forwarded-For.
   const network = `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`
