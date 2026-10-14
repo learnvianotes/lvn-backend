@@ -21,3 +21,7 @@ brings the channel, so the list of open items is visible in every run.
 | Depth, complexity, pagination caps and rate limits reject abuse | GraphQL gateway, list queries | `abuse.security.test.ts` |
 | Spoofed MIME, oversized and EICAR uploads are rejected or quarantined | upload flow | `files.security.test.ts` |
 | Brute force and credential stuffing are rate-limited; refresh-token reuse revokes the family | sign-in, refresh | `abuse.security.test.ts` |
+| A waiting resource is its submitter's and the moderators' alone, a rejected one too (Phase 7 exit) | a resource by id, the catalogue, search, its discussion; saving, commenting, reporting and recommending it | `resources.security.test.ts`, with the resources rows of `matrix.security.test.ts` |
+| No commerce surface: nothing prices, sells, stocks or carts anything (Phase 7 exit) | every type, field, argument and value of the schema; the resource table's columns | `resources.security.test.ts`, `e2e/resources.e2e.test.ts` |
+| Links people give are never fetched from this machine or a private network (SSRF) | resource previews and pictures, skills import pages and their robots.txt, GitHub names | `resources.security.test.ts`, `e2e/resources.e2e.test.ts`, `libs/safe-fetch` tests |
+| GitHub deliveries count only with a good signature, and once | `POST /webhooks/github` | `e2e/github-app.e2e.test.ts` |
