@@ -160,6 +160,9 @@ resource "docker_container" "postgres" {
   restart  = "unless-stopped"
   log_opts = local.log_opts
   env      = ["POSTGRES_USER=lvn", "POSTGRES_PASSWORD=${random_password.postgres.result}", "POSTGRES_DB=lvn"]
+  # Query statistics for the performance review (Phase 9, as the AWS module's parameter group): the slowest queries by
+  # total time, read with `CREATE EXTENSION pg_stat_statements` once (docs/runbooks/on-call.md).
+  command = ["postgres", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=top"]
   networks_advanced {
     name    = docker_network.this.id
     aliases = ["postgres"]

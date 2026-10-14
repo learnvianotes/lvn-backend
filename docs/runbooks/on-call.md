@@ -15,7 +15,7 @@ A 30-day 99.9 % budget is 43 minutes of errors.
 
 ## Alerts
 
-Defined in `infra/monitoring/prometheus/rules.yml` (ADR-0089). Locally, Alertmanager emails them to Mailpit; on AWS,
+Defined in `infra/terraform/monitoring/rules.yml` (ADR-0089). Locally, Alertmanager emails them to Mailpit; on AWS,
 to the on-call address the owner chooses.
 
 | Alert | When | Severity | First look |
@@ -39,9 +39,30 @@ alerts.
 ## When paged
 
 1. Acknowledge (reply to the alert email; on AWS, the SNS subscription).
-2. Open the SLO dashboard (Grafana, `:3001` on the local environment): errors, latency, queues, last deploy.
+2. Open the SLO dashboard (Grafana at `<public url>/grafana`; its admin password is the Terraform output
+   `grafana_admin_password`): errors, latency, queues, last deploy.
 3. If a deploy in the last hour lines up, roll back (`roll-back.md`), then investigate.
 4. Otherwise: database (`restore.md` if data is damaged), Redis (`drain-a-queue.md`), a provider down (AI, mail,
    push: pause its queue).
 5. Leak or abuse: `leakage-report.md`, `moderation.md`.
 6. Write down what happened in `docs/incidents/` the same day.
+
+## Slow queries
+
+Postgres keeps statistics of every statement (`pg_stat_statements`: preloaded on the local environment and by the AWS
+module's parameter group). Once per database:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+```
+
+The top 20 by total time, then the plan of one:
+
+```sql
+SELECT round(total_exec_time) AS total_ms, calls, round(mean_exec_time::numeric, 2) AS mean_ms, left(query, 120)
+FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 20;
+EXPLAIN (ANALYZE, BUFFERS) <the query, with real values>;
+```
+
+A sequential scan of a large table, or a sort without an index, wants an index in a migration. `SELECT
+pg_stat_statements_reset();` starts a fresh window.
