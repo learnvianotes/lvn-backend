@@ -8,6 +8,7 @@ import { NotesService } from './application/notes.service'
 import { NoteImportService } from './application/note-import.service'
 import { NotesExport } from './application/notes-export'
 import { NotesMaintenance } from './application/notes-maintenance'
+import { NotesAccountErasure } from './application/account-erasure'
 import { OrganiseService } from './application/organise.service'
 import { PdfConversionService } from './application/pdf-conversion.service'
 import { MediaProcessingService } from './application/media-processing.service'
@@ -67,6 +68,7 @@ export class NotesModule {
         JsonScalar,
         FilesService,
         AttachmentsService,
+        NotesAccountErasure,
         NoteModerationService,
         NotesService,
         DraftsService,

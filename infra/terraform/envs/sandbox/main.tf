@@ -122,6 +122,7 @@ module "service" {
 
 module "edge" {
   source       = "../../modules/edge"
+  providers    = { aws = aws, aws.us_east_1 = aws.us_east_1 }
   name         = var.name
   alb_arn      = module.service.alb_arn
   alb_dns_name = module.service.alb_dns_name

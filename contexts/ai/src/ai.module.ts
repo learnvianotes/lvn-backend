@@ -14,6 +14,7 @@ import { NoteMaterial } from './application/note-material'
 import { AiPageVision } from './application/page-vision'
 import { AiSkillsReader } from './application/skills-reader'
 import { AiDailyLines } from './application/daily-lines'
+import { AiAccountErasure } from './application/account-erasure'
 import { PromptLibrary } from './application/prompts'
 import { AiResolver } from './graphql/ai.resolver'
 import { AiSettingsResolver } from './graphql/ai-settings.resolver'
@@ -50,6 +51,7 @@ export class AiModule {
         AiPageVision,
         AiSkillsReader,
         AiDailyLines,
+        AiAccountErasure,
         AskService,
         PublicPipeline,
         AiEmbeddings,

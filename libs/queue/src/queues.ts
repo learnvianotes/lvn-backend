@@ -1,6 +1,11 @@
 import { Global, Logger, Module, type DynamicModule, type OnApplicationShutdown } from '@nestjs/common'
+import { metrics } from '@opentelemetry/api'
 import { reportError, withJobContext } from '@lvn-backend/observability'
 import { Queue, Worker, type ConnectionOptions, type Job } from 'bullmq'
+
+const meter = metrics.getMeter('lvn-queue')
+/** The job SLO's numerator and denominator (§16.4, ADR-0089): jobs finished, by queue and outcome. */
+const finished = meter.createCounter('lvn.queue.jobs', { description: 'Jobs finished, by queue and outcome: completed, or failed after their last attempt' })
 
 export type JobHandler = (data: unknown, job: Job) => Promise<unknown>
 
@@ -13,6 +18,7 @@ export class Queues implements OnApplicationShutdown {
   private readonly queues = new Map<string, Queue>()
   private readonly workers: Worker[] = []
   private readonly connection: ConnectionOptions
+  private observing = false
 
   constructor(redisUrl: string) {
     const url = new URL(redisUrl)
@@ -54,13 +60,33 @@ export class Queues implements OnApplicationShutdown {
       },
       { connection: this.connection, concurrency },
     )
+    worker.on('completed', () => finished.add(1, { queue: queueName, outcome: 'completed' }))
     worker.on('failed', (job, err) => {
       this.log.error(`${queueName}/${job?.name ?? '?'} failed: ${err.message}`)
       // Retries are expected; only a job that has used up its attempts is an error to report.
-      if (!job || job.attemptsMade >= (job.opts.attempts ?? 1)) reportError(err, { queue: queueName, jobId: job?.id, job: job?.name })
+      if (!job || job.attemptsMade >= (job.opts.attempts ?? 1)) {
+        reportError(err, { queue: queueName, jobId: job?.id, job: job?.name })
+        finished.add(1, { queue: queueName, outcome: 'failed' })
+      }
     })
     this.workers.push(worker)
+    this.observeBacklog()
     return worker
+  }
+
+  /**
+   * What waits in the queues this process runs, read when metrics are collected: `lvn.queue.backlog` by queue and state
+   * (waiting, delayed, active, failed), for the backlog alert and the queues dashboard (ADR-0089).
+   */
+  private observeBacklog(): void {
+    if (this.observing) return
+    this.observing = true
+    meter.createObservableGauge('lvn.queue.backlog', { description: 'Jobs in a queue, by state' }).addCallback(async (result) => {
+      for (const name of new Set(this.workers.map((w) => w.name))) {
+        const counts = await this.queue(name).getJobCounts('waiting', 'delayed', 'active', 'failed').catch(() => null)
+        if (counts) for (const [state, n] of Object.entries(counts)) result.observe(n, { queue: name, state })
+      }
+    })
   }
 
   async onApplicationShutdown(): Promise<void> {

@@ -164,12 +164,14 @@ describe('the PDF reader', () => {
   })
 
   describe('reading links', () => {
-    it('open the PDF for an hour, by ranges, for people who may see it', async () => {
+    it('open the PDF for 15 minutes, by ranges, for people who may see it; the reader asks again after (ADR-0090)', async () => {
       const { noteId, pdf } = await pdfNote('Reading')
       const draftOnly = await upload(t, owner.token, 'ATTACHMENT', 'application/pdf', SAMPLES.pdf, 'later.pdf', noteId)
       const link = await noteFile(owner.token, noteId, pdf)
       expect(link).toMatchObject({ id: pdf, mimeType: 'application/pdf', fileName: 'Cell_biology chapter 3.pdf' })
-      expect(new Date(link!.expiresAt).getTime() - Date.now()).toBeGreaterThan(55 * 60_000)
+      const lives = new Date(link!.expiresAt).getTime() - Date.now()
+      expect(lives).toBeGreaterThan(14 * 60_000)
+      expect(lives).toBeLessThanOrEqual(15 * 60_000)
       const part = await fetch(link!.url, { headers: { Range: 'bytes=0-4' } })
       expect(part.status).toBe(206)
       expect(await part.text()).toBe('%PDF-')

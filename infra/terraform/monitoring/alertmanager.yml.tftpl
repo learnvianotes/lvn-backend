@@ -1,0 +1,16 @@
+# Alertmanager for the local environment (ADR-0089): every alert by email, through Mailpit here (SES in the sandbox).
+global:
+  smtp_smarthost: mailpit:1025
+  smtp_from: LearnViaNotes alerts <alerts@${domain}>
+  smtp_require_tls: false
+route:
+  receiver: on-call
+  group_by: [alertname, queue]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+receivers:
+  - name: on-call
+    email_configs:
+      - to: ${to}
+        send_resolved: true

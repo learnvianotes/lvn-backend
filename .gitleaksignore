@@ -1,0 +1,12 @@
+# gitleaks findings reviewed in Phase 9 (ADR-0090) and accepted: none is a secret.
+# Test fixtures: made-up encryption secrets for AI keys.
+f7706ff7febe41023bea3db3a544084d991b3b0b:apps/api/test/e2e/ai-settings.e2e.test.ts:generic-api-key:19
+f7706ff7febe41023bea3db3a544084d991b3b0b:contexts/ai/test/integration/providers.test.ts:generic-api-key:25
+# Terraform passes a generated key by reference (tls_private_key.jwt), not a value.
+0a11ffd76d7b044989c75c8ba28cfa096a4a7785:infra/terraform/envs/sandbox/main.tf:generic-api-key:12
+de1ed8a7888719dd3f1724f448762a6eadf4d7e6:infra/terraform/envs/local/main.tf:generic-api-key:40
+# HashiCorp's public package-signing key fingerprint.
+de1ed8a7888719dd3f1724f448762a6eadf4d7e6:infra/local-vm/vm.sh:generic-api-key:40
+# Truncated PEM headers in a config test ("MIIB"), not keys.
+25e2d2c7efb06578d4574f7041dedce54f7cdf9c:contracts/test/unit/config/config.test.ts:private-key:3
+25e2d2c7efb06578d4574f7041dedce54f7cdf9c:contracts/test/unit/config/config.test.ts:private-key:47

@@ -1,8 +1,9 @@
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import request from 'supertest'
-import { MAX_COMPLEXITY, MAX_DEPTH } from '@lvn-backend/graphql'
+import { MAX_COMPLEXITY, MAX_DEPTH, OPERATIONS_PER_MINUTE } from '@lvn-backend/graphql'
 import { createTestApp, type TestApp } from '../support/app'
 import { seedActors, type Actors } from './support/actors'
+import { seedUser, tokenFor } from '../support/seed'
 
 /**
  * §17.1: depth, complexity, pagination caps and rate limits reject abuse; brute force and credential stuffing are
@@ -56,6 +57,37 @@ describe('security: abuse', () => {
         expect(res.status).toBe(400)
         expect(res.errors?.[0]?.extensions.code).toBe('VALIDATION')
       }
+    })
+
+    it(`lets a signed-in person send ${OPERATIONS_PER_MINUTE} operations a minute, then answers 429 with Retry-After (ADR-0090)`, async () => {
+      const person = await seedUser(t.app)
+      const token = tokenFor(t.config, person.id)
+      const ask = () => request(t.app.getHttpServer()).post('/graphql').set('content-type', 'application/json').set('authorization', `Bearer ${token}`).send({ query: '{ viewer { id } }' })
+      for (let sent = 0; sent < OPERATIONS_PER_MINUTE; sent += 50) {
+        const answers = await Promise.all(Array.from({ length: Math.min(50, OPERATIONS_PER_MINUTE - sent) }, ask))
+        expect(answers.every((a) => a.status === 200)).toBe(true)
+      }
+      const refused = await ask()
+      expect(refused.status).toBe(429)
+      expect(Number(refused.headers['retry-after'])).toBeGreaterThan(0)
+      expect(refused.body.errors[0].extensions).toMatchObject({ code: 'RATE_LIMITED' })
+      // Everyone else carries on.
+      expect((await t.gql<{ viewer: { id: string } }>('{ viewer { id } }', {}, actors.a.token)).data?.viewer).toBeTruthy()
+    }, 60_000)
+
+    it('answers a subscription sent over HTTP with 400, not a failure (found by ZAP, Phase 9)', async () => {
+      const res = await request(t.app.getHttpServer()).post('/graphql').set('content-type', 'application/json').set('authorization', `Bearer ${actors.a.token}`).send({ query: 'subscription { live { kind id at } }' })
+      expect(res.status).toBe(400)
+      expect(res.body.errors[0].extensions).toMatchObject({ code: 'VALIDATION' })
+    })
+
+    it('refuses batched operations, and counts every alias towards complexity (OWASP GraphQL Cheat Sheet)', async () => {
+      const post = (body: unknown) => request(t.app.getHttpServer()).post('/graphql').set('content-type', 'application/json').send(body)
+      const batched = await post([{ query: '{ termsVersion }' }, { query: '{ termsVersion }' }])
+      expect(batched.status).toBe(400)
+      const aliases = await post({ query: `{ ${Array.from({ length: MAX_COMPLEXITY + 1 }, (_, i) => `a${i}: termsVersion`).join(' ')} }` })
+      expect(aliases.status).toBe(400)
+      expect(aliases.body.errors[0].message).toMatch(/too complex/)
     })
 
     it('caps list sizes whatever `first` asks for', async () => {

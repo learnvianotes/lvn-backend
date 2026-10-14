@@ -1,5 +1,6 @@
 import { getNamedType, isEnumType, isInputObjectType, type GraphQLInputType, type GraphQLSchema } from 'graphql'
 import { PrismaService } from '@lvn-backend/prisma-base'
+import { RateLimiter } from '@lvn-backend/redis'
 import { createTestApp, type TestApp } from '../support/app'
 import { tokenFor } from '../support/seed'
 import { roleOf, seedActors, type Actors } from './support/actors'
@@ -43,6 +44,8 @@ describe('security: roles', () => {
     expect(all.length).toBeGreaterThan(20)
     for (const role of ['TEACHER', 'PLATFORM_ADMIN']) {
       for (const uuid of [actors.a.id, actors.teacher.id]) {
+        // Each round is a fresh minute for the per-person limit (ADR-0090), which this test is not about.
+        await t.app.get(RateLimiter).reset(`gql:${actors.a.id}`)
         for (const m of all) {
           if (m.name === 'signOut' && !(role === 'PLATFORM_ADMIN' && uuid === actors.teacher.id)) continue
           const { query, variables } = operationFor(m, { uuid, enums: { GlobalRole: role } })

@@ -11,8 +11,6 @@ import { FilesService } from './files.service'
 import { NotesService, type OpenedNote } from './notes.service'
 
 const PDF = 'application/pdf'
-/** A reading session outlasts the 15 minutes of a card's read URL: pdf.js keeps fetching ranges of the file. */
-const READER_URL_TTL_SECONDS = 60 * 60
 
 export type HighlightRow = Prisma.NoteHighlightGetPayload<object>
 
@@ -81,7 +79,8 @@ export class PdfReaderService {
   async noteFile(viewerId: string | null, noteId: string, fileId: string): Promise<MediaFile | null> {
     const opened = await this.notes.open(viewerId, noteId)
     if (!opened || !(await this.visibleFile(opened, fileId))) return null
-    const signed = (await this.files.readUrls([fileId], { ttlSeconds: READER_URL_TTL_SECONDS })).get(fileId)
+    // 15 minutes, as every read URL (§17.1): the readers ask again when it expires mid-session (ADR-0090).
+    const signed = (await this.files.readUrls([fileId])).get(fileId)
     return signed ? mediaFileOf(signed) : null
   }
 

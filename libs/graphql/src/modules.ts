@@ -5,7 +5,7 @@ import { Module, type DynamicModule, type InjectionToken, type Type } from '@nes
 import { GraphQLModule } from '@nestjs/graphql'
 import { composeSupergraph } from './compose'
 import { formatError } from './errors'
-import { limitsPlugin } from './limits'
+import { limitsPlugin, rateLimitPlugin, type RateCheck } from './limits'
 import { DateTimeScalar, UuidScalar } from './scalars'
 import { SubgraphRegistry } from './subgraph-registry'
 
@@ -58,6 +58,9 @@ export interface GraphqlOptions {
   context: { inject?: InjectionToken[]; useFactory: (...deps: any[]) => RequestContextFactory }
   /** Introspection and the landing page: development only. */
   introspection: boolean
+  /** The per-person request limit (ADR-0090), built from injected providers; none when absent (subgraph tests). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Nest's factory signature
+  rateLimit?: { inject?: InjectionToken[]; useFactory: (...deps: any[]) => RateCheck }
 }
 
 /** Composes the in-process subgraphs and executes against them directly. */
@@ -76,14 +79,14 @@ export function graphqlModules(options: GraphqlOptions): DynamicModule[] {
   const names = options.subgraphs.map((s) => s.name)
   const gateway = GraphQLModule.forRootAsync<ApolloGatewayDriverConfig>({
     driver: ApolloGatewayDriver,
-    inject: options.context.inject ?? [],
+    inject: [...(options.context.inject ?? []), ...(options.rateLimit?.inject ?? [])],
     useFactory: (...deps: unknown[]) => ({
       server: {
         path: '/graphql',
-        context: options.context.useFactory(...deps),
+        context: options.context.useFactory(...deps.slice(0, options.context.inject?.length ?? 0)),
         formatError,
         introspection: options.introspection,
-        plugins: [limitsPlugin()],
+        plugins: [limitsPlugin(), ...(options.rateLimit ? [rateLimitPlugin(options.rateLimit.useFactory(...deps.slice(options.context.inject?.length ?? 0)))] : [])],
         csrfPrevention: true,
         includeStacktraceInErrorResponses: false,
       },

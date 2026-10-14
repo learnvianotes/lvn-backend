@@ -31,6 +31,8 @@ import { TeacherStatusResolver, VerificationResolver } from './graphql/verificat
 import { UserReferenceResolver } from './graphql/user-reference.resolver'
 import { ViewerResolver } from './graphql/viewer.resolver'
 import { USERS_CONFIG, type UsersConfig } from './users.config'
+import { AccountDeletionService } from './application/account-deletion.service'
+import { AccountResolver } from './graphql/account.resolver'
 
 /**
  * The `users` bounded context (spec §6.1) — Postgres schema `users`.
@@ -68,6 +70,8 @@ export class UsersModule {
         ProfileService,
         ConsentService,
         DataExportService,
+        AccountDeletionService,
+        AccountResolver,
         LegacyService,
         SocialService,
         TeacherProfileService,
@@ -86,7 +90,7 @@ export class UsersModule {
         TermsResolver,
         DataResolver,
       ],
-      exports: [PolicyService, EntitlementService, UsersMaintenance, DataExportService, SkillsImportService],
+      exports: [PolicyService, EntitlementService, UsersMaintenance, DataExportService, SkillsImportService, AccountDeletionService],
     }
   }
 }

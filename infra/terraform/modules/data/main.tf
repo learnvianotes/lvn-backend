@@ -87,6 +87,19 @@ resource "aws_elasticache_replication_group" "this" {
   security_group_ids         = [var.security_group_id]
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
-  # BullMQ needs keys kept, not evicted.
-  parameter_group_name = "default.redis7"
+  # BullMQ needs keys kept, not evicted (ADR-0089): default.redis7 evicts (volatile-lru).
+  parameter_group_name     = aws_elasticache_parameter_group.this[0].name
+  snapshot_retention_limit = 7
+  snapshot_window          = "21:00-22:00"
+}
+
+resource "aws_elasticache_parameter_group" "this" {
+  count       = var.aws_emulator ? 0 : 1
+  name        = "${var.name}-redis7"
+  family      = "redis7"
+  description = "LearnViaNotes ${var.name}: BullMQ needs every key kept"
+  parameter {
+    name  = "maxmemory-policy"
+    value = "noeviction"
+  }
 }

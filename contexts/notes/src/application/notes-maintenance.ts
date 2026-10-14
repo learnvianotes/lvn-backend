@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { NOTE_LIMITS } from '@lvn/contracts/validation'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { AttachmentsService } from './attachments.service'
+import { FilesService } from './files.service'
 
 /**
  * Nightly housekeeping of the notes context (§9.1 `housekeeping`), run by apps/worker. Both jobs are idempotent.
@@ -11,7 +12,13 @@ export class NotesMaintenance {
   constructor(
     private readonly db: PrismaService,
     private readonly attachments: AttachmentsService,
+    private readonly files: FilesService,
   ) {}
+
+  /** §9.2 `orphan-s3` (ADR-0088): uploads never completed or never attached. */
+  purgeOrphanFiles(now = new Date()): Promise<number> {
+    return this.files.purgeOrphans(now)
+  }
 
   /**
    * §4.3: public notes keep every published version; other notes keep their newest 50 versions. Conflict and

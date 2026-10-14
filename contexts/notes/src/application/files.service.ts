@@ -229,7 +229,26 @@ export class FilesService implements Files {
         expiresAt: file.expiresAt,
       },
     })
+    // Scanned and sized like an upload (ADR-0088): a cover copied from a link, a file inside an import. A restricted
+    // file (a person's own data export) is never served to anyone else.
+    if (!file.restricted) await this.events.publish('FileReady', { fileId: id, ownerId, mimeType: file.mimeType })
     return id
+  }
+
+  /**
+   * The nightly `orphan-s3` job (§9.2, ADR-0088): uploads never completed (PENDING past their expiry) and files never
+   * attached a day after upload (a cover for a resource never submitted, a picture for a post never written). At most
+   * 1,000 a night; the rest the next night.
+   */
+  async purgeOrphans(now = new Date()): Promise<number> {
+    const dayAgo = new Date(now.getTime() - 86_400_000)
+    const orphans = await this.db.fileObject.findMany({
+      where: { deletedAt: null, OR: [{ status: 'PENDING', expiresAt: { lt: now } }, { status: { not: 'PENDING' }, parentId: null, createdAt: { lt: dayAgo } }] },
+      select: { id: true },
+      take: 1_000,
+    })
+    if (orphans.length) await this.delete(orphans.map((f) => f.id))
+    return orphans.length
   }
 
   /**

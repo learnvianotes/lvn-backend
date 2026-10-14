@@ -23,6 +23,8 @@ type User @key(fields: "id") {
   verificationMethod: VerificationMethod
   globalRole: GlobalRole!
   createdAt: DateTime!
+  "Viewer only: when the account will be deleted, if its owner asked (ADR-0088)"
+  deletionScheduledFor: DateTime
 }
 
 type Query {

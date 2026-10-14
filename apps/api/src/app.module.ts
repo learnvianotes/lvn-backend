@@ -1,12 +1,12 @@
 import { Module, type DynamicModule } from '@nestjs/common'
 import { APP_INTERCEPTOR } from '@nestjs/core'
 import type { ApiConfig } from '@lvn-backend/config'
-import { AccessTokenVerifier } from '@lvn-backend/auth-guard'
+import { AccessTokenVerifier, type RequestContext } from '@lvn-backend/auth-guard'
 import { EventBusModule } from '@lvn-backend/event-bus'
-import { graphqlModules } from '@lvn-backend/graphql'
+import { graphqlModules, OPERATIONS_PER_MINUTE } from '@lvn-backend/graphql'
 import { PrismaModule } from '@lvn-backend/prisma-base'
 import { QueueModule } from '@lvn-backend/queue'
-import { RedisModule, SessionRevocations } from '@lvn-backend/redis'
+import { RateLimiter, RedisModule, SessionRevocations } from '@lvn-backend/redis'
 import { StorageModule } from '@lvn-backend/storage'
 import { contextModules, SUBGRAPHS, TOKEN_AUDIENCE } from './contexts'
 import { facades } from './facades'
@@ -46,6 +46,17 @@ export class AppModule {
           subgraphs: SUBGRAPHS,
           context: { inject: [SessionRevocations], useFactory: (revocations: SessionRevocations) => buildRequestContext(verifier, revocations) },
           introspection: config.APP_ENV === 'development',
+          // ADR-0090: each signed-in person's operations, counted in Redis across every API instance.
+          rateLimit: {
+            inject: [RateLimiter],
+            useFactory: (limiter: RateLimiter) => async (ctx: unknown) => {
+              const viewer = (ctx as RequestContext).viewer
+              if (!viewer) return null
+              // Redis down is not a reason to refuse everyone: the edge still stops floods.
+              const hit = await limiter.hit(`gql:${viewer.userId}`, { max: OPERATIONS_PER_MINUTE, windowSeconds: 60 }).catch(() => null)
+              return !hit || hit.allowed ? null : hit.retryAfter
+            },
+          },
         }),
       ],
       // ADR-0078: GitHub App deliveries arrive here (404 until the App is configured).

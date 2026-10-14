@@ -54,6 +54,7 @@ docker image inspect "$web_image" >/dev/null 2>&1 || docker build -t "$web_image
   --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID="${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}" \
   --build-arg NEXT_PUBLIC_FIREBASE_APP_ID="${NEXT_PUBLIC_FIREBASE_APP_ID:-}" \
   --build-arg NEXT_PUBLIC_SENTRY_DSN="${NEXT_PUBLIC_SENTRY_DSN:-}" \
+  --build-arg NEXT_PUBLIC_STORAGE_ORIGINS="${TF_VAR_s3_public_url:?set TF_VAR_s3_public_url in envs/local/.env}" \
   "$web"
 docker image inspect "$engine_image" >/dev/null 2>&1 || docker build -t "$engine_image" "$backend/workers/pdf-engine"
 for image in "$api_image" "$web_image" "$engine_image"; do
