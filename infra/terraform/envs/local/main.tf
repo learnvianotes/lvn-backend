@@ -12,6 +12,11 @@ locals {
     awscli    = "amazon/aws-cli:2.37.10"
     clamav    = "clamav/clamav:1.5.4"
     typesense = "typesense/typesense:30.2"
+    # Monitoring (ADR-0089).
+    otelcol      = "otel/opentelemetry-collector-contrib:0.111.0"
+    prometheus   = "prom/prometheus:v2.55.1"
+    alertmanager = "prom/alertmanager:v0.27.0"
+    grafana      = "grafana/grafana:11.3.1"
   }
   apps    = var.api_image == "" ? 0 : 1
   web     = var.web_image == "" ? 0 : 1
@@ -24,7 +29,8 @@ locals {
   optional = {
     FIREBASE_PROJECT_ID         = var.firebase_project_id
     SENTRY_DSN                  = var.sentry_dsn
-    OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_otlp_endpoint
+    # The local collector (ADR-0089) unless another endpoint is given.
+    OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_otlp_endpoint != "" ? var.otel_exporter_otlp_endpoint : "http://otel-collector:4318"
   }
   # docs/architecture/env.md, as in envs/sandbox; the differences are the endpoints and SMTP instead of SES.
   backend_environment = merge(
@@ -144,7 +150,7 @@ resource "docker_network" "this" {
 }
 
 resource "docker_volume" "this" {
-  for_each = toset(["postgres", "s3", "clamav", "typesense"])
+  for_each = toset(["postgres", "s3", "clamav", "typesense", "redis", "prometheus", "grafana"])
   name     = "${var.name}-${each.key}"
 }
 
@@ -175,10 +181,17 @@ resource "docker_container" "redis" {
   image    = docker_image.this["redis"].image_id
   restart  = "unless-stopped"
   log_opts = local.log_opts
-  command  = ["redis-server", "--requirepass", random_password.redis.result]
+  # BullMQ keeps its jobs in Redis (ADR-0089): nothing may be evicted (noeviction: a full Redis refuses writes, which
+  # is seen, instead of dropping a job, which is not), and the append-only file, synced every second, keeps queued jobs
+  # through a restart. The cap stays well inside the VM's memory.
+  command  = ["redis-server", "--requirepass", random_password.redis.result, "--maxmemory", "512mb", "--maxmemory-policy", "noeviction", "--appendonly", "yes", "--appendfsync", "everysec"]
   networks_advanced {
     name    = docker_network.this.id
     aliases = ["redis"]
+  }
+  volumes {
+    volume_name    = docker_volume.this["redis"].name
+    container_path = "/data"
   }
   healthcheck {
     # redis-cli reads the password from REDISCLI_AUTH.
@@ -443,6 +456,6 @@ resource "docker_container" "proxy" {
   }
   upload {
     file    = "/etc/caddy/Caddyfile"
-    content = templatefile("${path.module}/Caddyfile.tftpl", { api = join(" ", [for i in range(var.api_instances) : "api-${i + 1}:4000"]), web = "web:3000" })
+    content = templatefile("${path.module}/Caddyfile.tftpl", { api = join(" ", [for i in range(var.api_instances) : "api-${i + 1}:4000"]), web = "web:3000", grafana = "grafana:3000" })
   }
 }

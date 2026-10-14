@@ -114,3 +114,9 @@ variable "ai_monthly_budget_micro_usd" {
   type    = number
   default = 5000000
 }
+
+variable "alert_email" {
+  description = "Where Alertmanager sends alerts (ADR-0089); on this environment it lands in Mailpit"
+  type        = string
+  default     = "on-call@learnvianotes.local"
+}

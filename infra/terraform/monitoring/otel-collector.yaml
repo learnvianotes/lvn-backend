@@ -1,0 +1,29 @@
+# OpenTelemetry Collector for the local environment (ADR-0089): the API and worker send OTLP here; metrics are kept for
+# Prometheus to scrape, with the resource (service.name) as labels. Traces are counted and dropped: a trace store is
+# the sandbox's (AWS X-Ray or Grafana Tempo), not this VM's.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+processors:
+  batch: {}
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+  debug:
+    verbosity: basic
+    sampling_initial: 1
+    sampling_thereafter: 1000
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

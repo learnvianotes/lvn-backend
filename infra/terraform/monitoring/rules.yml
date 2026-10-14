@@ -1,0 +1,67 @@
+# The SLOs of §16.4 as recording and alerting rules (ADR-0089, docs/runbooks/on-call.md). Burn-rate alerts follow the
+# Google SRE workbook's multiwindow, multi-burn-rate scheme for a 99.9 % availability objective (budget 0.1 %).
+groups:
+  - name: lvn-slo-recording
+    rules:
+      - record: lvn:api_requests:rate5m
+        expr: sum(rate(http_server_request_duration_seconds_count{service_name="lvn-api"}[5m]))
+      - record: lvn:api_errors:rate5m
+        expr: sum(rate(http_server_request_duration_seconds_count{service_name="lvn-api",http_response_status_code=~"5.."}[5m])) or vector(0)
+      - record: lvn:api_requests:rate30m
+        expr: sum(rate(http_server_request_duration_seconds_count{service_name="lvn-api"}[30m]))
+      - record: lvn:api_errors:rate30m
+        expr: sum(rate(http_server_request_duration_seconds_count{service_name="lvn-api",http_response_status_code=~"5.."}[30m])) or vector(0)
+      - record: lvn:api_requests:rate1h
+        expr: sum(rate(http_server_request_duration_seconds_count{service_name="lvn-api"}[1h]))
+      - record: lvn:api_errors:rate1h
+        expr: sum(rate(http_server_request_duration_seconds_count{service_name="lvn-api",http_response_status_code=~"5.."}[1h])) or vector(0)
+      - record: lvn:api_requests:rate6h
+        expr: sum(rate(http_server_request_duration_seconds_count{service_name="lvn-api"}[6h]))
+      - record: lvn:api_errors:rate6h
+        expr: sum(rate(http_server_request_duration_seconds_count{service_name="lvn-api",http_response_status_code=~"5.."}[6h])) or vector(0)
+      - record: lvn:api_latency:p95_5m
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="lvn-api"}[5m])))
+      - record: lvn:jobs:failed_ratio1h
+        expr: (sum(increase(lvn_queue_jobs_total{outcome="failed"}[1h])) or vector(0)) / clamp_min(sum(increase(lvn_queue_jobs_total[1h])), 1)
+  - name: lvn-slo-alerts
+    rules:
+      - alert: ApiErrorBudgetFastBurn
+        expr: (lvn:api_errors:rate1h / lvn:api_requests:rate1h) > (14.4 * 0.001) and (lvn:api_errors:rate5m / lvn:api_requests:rate5m) > (14.4 * 0.001)
+        labels: { severity: page }
+        annotations:
+          summary: "API errors are spending the month's error budget 14 times too fast"
+          runbook: docs/runbooks/on-call.md
+      - alert: ApiErrorBudgetSlowBurn
+        expr: (lvn:api_errors:rate6h / lvn:api_requests:rate6h) > (6 * 0.001) and (lvn:api_errors:rate30m / lvn:api_requests:rate30m) > (6 * 0.001)
+        labels: { severity: page }
+        annotations:
+          summary: "API errors are spending the month's error budget 6 times too fast"
+          runbook: docs/runbooks/on-call.md
+      - alert: ApiLatencyHigh
+        expr: lvn:api_latency:p95_5m > 0.3
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "API p95 above 300 ms for 15 minutes"
+          runbook: docs/runbooks/on-call.md
+      - alert: QueueBacklog
+        expr: max by (queue) (lvn_queue_backlog{state="waiting"}) > 1000
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.queue }} has more than 1,000 jobs waiting"
+          runbook: docs/runbooks/drain-a-queue.md
+      - alert: JobsFailing
+        expr: lvn:jobs:failed_ratio1h > 0.005
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "More than 0.5 % of jobs failed in the last hour"
+          runbook: docs/runbooks/drain-a-queue.md
+      - alert: TargetDown
+        expr: up{job="otel-collector"} == 0 or absent_over_time(target_info{service_name="lvn-api"}[5m]) or absent_over_time(target_info{service_name="lvn-worker"}[5m])
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "The API, the worker or the collector has not reported for 5 minutes"
+          runbook: docs/runbooks/on-call.md

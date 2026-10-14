@@ -1,6 +1,5 @@
 # The entrance, as CloudFront and the load balancer are in the sandbox: one origin, /graphql, /health/* and /webhooks/*
-# (GitHub App deliveries, ADR-0078) to the API,
-# everything else to the web. Caddy replaces any X-Forwarded-For a client sends with the address it sees.
+# (GitHub App deliveries, ADR-0078) to the API, /grafana to the SLO dashboard (ADR-0089), everything else to the web. Caddy replaces any X-Forwarded-For a client sends with the address it sees.
 {
 	admin off
 	auto_https off
@@ -15,6 +14,10 @@
 			health_uri /health/ready
 			health_interval 5s
 		}
+	}
+	# The SLO dashboard (ADR-0089), behind Grafana's own sign-in.
+	handle /grafana* {
+		reverse_proxy ${grafana}
 	}
 	handle {
 		reverse_proxy ${web}
