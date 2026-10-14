@@ -15,7 +15,7 @@ export { AiEmbeddings } from './application/ai-embeddings'
 /** Study aids for public notes (ADR-0061). */
 export { PIPELINE_TASKS, PublicPipeline } from './application/public-pipeline'
 /** Recordings and photos for the model (ADR-0062). */
-export { MAX_IMAGES, MAX_SECONDS, PIECE_SECONDS } from './application/media-input'
+export { IMAGES_TOGETHER, MAX_IMAGES, MAX_PDFS, MAX_SECONDS, PIECE_SECONDS } from './application/media-input'
 /** PDF pages the vision model reads again (ADR-0063): the PAGE_VISION facade. */
 export { AiPageVision } from './application/page-vision'
 /** Teachers' public pages read into Skills tab items (ADR-0077): the SKILLS_READER facade. */
