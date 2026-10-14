@@ -27,11 +27,12 @@ export class NoteAccessFacade implements NoteAccess {
   }
 
   async studyCards(viewerId: string, chosenNoteIds: string[]): Promise<StudyCard[]> {
-    // Owners and editors study the draft.
-    const editing = await this.db.note.findMany({
-      where: { deletedAt: null, OR: [{ ownerId: viewerId }, { shares: { some: { userId: viewerId, role: 'EDITOR' } } }] },
-      select: { id: true, title: true },
-    })
+    // Owners and editors study the draft. Two indexed reads: an OR of owner and share made Postgres scan every note.
+    const [owned, shared] = await Promise.all([
+      this.db.note.findMany({ where: { ownerId: viewerId, deletedAt: null }, select: { id: true, title: true } }),
+      this.db.noteShare.findMany({ where: { userId: viewerId, role: 'EDITOR', note: { deletedAt: null } }, select: { note: { select: { id: true, title: true } } } }),
+    ])
+    const editing = [...new Map([...owned, ...shared.map((s) => s.note)].map((n) => [n.id, n])).values()]
     const mine = new Set(editing.map((n) => n.id))
     const titles = new Map(editing.map((n) => [n.id, n.title]))
     const drafts = await this.db.card.findMany({ where: { noteId: { in: [...mine] }, type: 'flashcard' }, orderBy: [{ noteId: 'asc' }, { position: 'asc' }] })

@@ -126,7 +126,12 @@ export class SyncService {
    */
   async pull(userId: string, since: string | null | undefined, after: string | null | undefined, first: number | null | undefined) {
     const size = Math.min(Math.max(first ?? 20, 1), SYNC_LIMITS.notesPerPull)
-    const scope: Prisma.NoteWhereInput = { OR: [{ ownerId: userId }, { shares: { some: { userId } } }] }
+    // The notes the person owns or was shared, by id: an OR of owner and share made Postgres scan every note.
+    const [owned, sharedIds] = await Promise.all([
+      this.db.note.findMany({ where: { ownerId: userId }, select: { id: true } }).then((rows) => rows.map((n) => n.id)),
+      this.db.noteShare.findMany({ where: { userId }, select: { noteId: true } }).then((rows) => rows.map((s) => s.noteId)),
+    ])
+    const scope: Prisma.NoteWhereInput = { id: { in: [...new Set([...owned, ...sharedIds])] } }
     const page = decodeCursor(after, 2) as [string, string] | null
     const start = page ?? (decodeCursor(since, 2) as [string, string] | null)
     const from = start ? new Date(new Date(start[0]).getTime() - (page ? 0 : OVERLAP_MS)) : null
@@ -142,7 +147,8 @@ export class SyncService {
       if (!opened) continue
       notes.push({ opened, cards: (await this.allCards(opened)).map((c) => ({ ...c, noteId: row.id })) })
     }
-    const live = await this.db.note.findMany({ where: { OR: [{ ownerId: userId }, { AND: [visibleNotesWhere(userId), { shares: { some: { userId } } }] }] }, select: { id: true } })
+    const visibleShared = sharedIds.length ? await this.db.note.findMany({ where: { AND: [visibleNotesWhere(userId), { id: { in: sharedIds } }] }, select: { id: true } }) : []
+    const live = [...new Set([...owned, ...visibleShared.map((n) => n.id)])].map((id) => ({ id }))
     const last = rows.slice(0, size).at(-1)
     const cursor = last ? encodeCursor([last.updatedAt.toISOString(), last.id]) : (after ?? since ?? null)
     return { notes, liveNoteIds: live.map((n) => n.id), cursor, hasMore: rows.length > size }
