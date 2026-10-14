@@ -75,6 +75,8 @@ export class BuddiesService implements OnModuleInit {
     const open = new Map(sessions.filter((s) => s.startedAt.getTime() + (s.plannedMinutes + s.breakMinutes) * 60_000 > now.getTime()).map((s) => [s.userId, s]))
     const topicTitles = new Map((await this.topics.usable(userId, [...open.values()].flatMap((s) => (s.topicKey?.startsWith('topic:') ? [s.topicKey.slice(6)] : [])))).map((t) => [t.key, t.title]))
     const buddies = []
+    // The pair's goal together (ADR-0081): both weeks, which buddies already see of each other.
+    const mine = buddyIds.length ? await this.rhythm.weekSummary(userId, now) : null
     for (const l of visible.filter((x) => x.status === 'ACCEPTED')) {
       const id = other(l)
       const s = open.get(id)
@@ -88,6 +90,7 @@ export class BuddiesService implements OnModuleInit {
         topicTitle: s?.topicKey ? (topicTitles.get(s.topicKey) ?? (s.topicKey.startsWith('core:') ? coreName(s.topicKey) : null)) : null,
         meetUrl: s?.meetUrl ?? null,
         ...week,
+        together: { countedDays: week.countedDays + (mine?.countedDays ?? 0), target: week.target + (mine?.target ?? 0) },
       })
     }
     return {

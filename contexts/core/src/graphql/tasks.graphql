@@ -1,0 +1,88 @@
+# Weekly tasks and the class goal (ADR-0081): goals a person picks for their Rhythm week, and a class's pooled goal.
+
+enum WeeklyTaskKind {
+  "Flashcards graded"
+  REVIEWS
+  "Quiz answers, on a topic or any"
+  QUIZ_ANSWERS
+  "Learning minutes on a topic"
+  TOPIC_MINUTES
+}
+
+type WeeklyTask {
+  id: UUID!
+  kind: WeeklyTaskKind!
+  target: Int!
+  topicId: UUID
+  topicTitle: String
+  "When and where, in the person's words"
+  plan: String
+  "This week so far, from what learning recorded"
+  progress: Int!
+  done: Boolean!
+}
+
+type WeeklyTasks {
+  "The Monday of the person's Rhythm week (YYYY-MM-DD)"
+  weekStart: String!
+  tasks: [WeeklyTask!]!
+  "Tasks a week may hold"
+  max: Int!
+}
+
+"A task worth setting this week, and why"
+type TaskSuggestion {
+  kind: WeeklyTaskKind!
+  target: Int!
+  topicId: UUID
+  topicTitle: String
+  why: String!
+}
+
+type WeeklyTaskPayload {
+  task: WeeklyTask
+  userErrors: [UserError!]!
+}
+
+input AddWeeklyTaskInput {
+  kind: WeeklyTaskKind!
+  target: Int!
+  "Needed for TOPIC_MINUTES; optional for QUIZ_ANSWERS"
+  topicId: UUID
+  "When and where (at most 140 characters)"
+  plan: String
+}
+
+input UpdateWeeklyTaskInput {
+  id: UUID!
+  target: Int
+  "An empty plan clears it"
+  plan: String
+}
+
+input WeeklyTaskIdInput {
+  id: UUID!
+}
+
+input SetClassGoalInput {
+  classroomId: UUID!
+  on: Boolean!
+  "Counted days for the class this week; leave it out to size it from the class's recent weeks"
+  target: Int
+}
+
+extend type Query {
+  "The viewer's tasks this week, with how far each has come"
+  weeklyTasks: WeeklyTasks!
+  "Tasks worth setting this week: the next exam's weakest topic, weak topics, flashcards due"
+  taskSuggestions: [TaskSuggestion!]!
+}
+
+extend type Mutation {
+  "Adds a task to this week (at most three)"
+  addWeeklyTask(input: AddWeeklyTaskInput!): WeeklyTaskPayload!
+  updateWeeklyTask(input: UpdateWeeklyTaskInput!): WeeklyTaskPayload!
+  removeWeeklyTask(input: WeeklyTaskIdInput!): OkPayload!
+  "Teachers turn their class's goal on or off"
+  setClassGoal(input: SetClassGoalInput!): OkPayload!
+}

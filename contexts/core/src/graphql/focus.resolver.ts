@@ -70,7 +70,7 @@ export class ClassroomInsightsResolver {
   @ResolveField('rhythmRing')
   async rhythmRing(@Parent() c: ClassroomParent, @CurrentViewer() viewer: Viewer) {
     const ring = await this.insights.ring(viewer.userId, c.id)
-    return ring ? { ...ring, people: ring.people.map((p) => ({ ...p, user: userRef(p.userId) })) } : null
+    return ring ? { ...ring, people: ring.people.map((p) => ({ ...p, user: userRef(p.userId) })), goal: ring.goal ? { ...ring.goal, parts: ring.goal.parts?.map((p) => ({ ...p, user: userRef(p.userId) })) ?? null } : null } : null
   }
 
   @ResolveField('performance')
