@@ -47,7 +47,7 @@ const text = (s) => ({ doc: { type: 'doc', content: [{ type: 'paragraph', conten
 const uuid = () => 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g, () => ((Math.random() * 16) | 0).toString(16))
 const TOPICS = ['Dijkstra shortest paths', 'Binary heaps', 'Process scheduling', 'Deadlocks', 'TCP handshake', 'Normal forms', 'Dynamic programming', 'Paging and TLBs']
 
-// Accounts, each with a few notes, one of them public: what a learner already has.
+// Accounts, each with a few notes: what a learner already has.
 export function setup() {
   const terms = gql(null, 'Terms', 'query Terms { termsVersion }').json('data.termsVersion')
   const run = Date.now()
@@ -59,15 +59,12 @@ export function setup() {
     const token = res.json('data.signUp.session.accessToken')
     if (!token) continue
     const notes = []
-    for (const [n, topic] of TOPICS.slice(0, 3).entries()) {
+    // New accounts are not verified, so they cannot publish: the public pages read are the environment's own.
+    for (const topic of TOPICS.slice(0, 3)) {
       const id = gql(token, 'CreateNote', 'mutation CreateNote($input: CreateNoteInput!) { createNote(input: $input) { note { id } } }', {
         input: { title: `${topic} (${i})`, cards: [{ id: uuid(), type: 'text', position: 'a0', content: text(`${topic}: what I learned, in my own words. `.repeat(8)) }] },
       }).json('data.createNote.note.id')
       notes.push(id)
-      if (n === 0) {
-        gql(token, 'Publish', 'mutation Publish($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId: id } })
-        gql(token, 'Visibility', 'mutation Visibility($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { id slug } } }', { input: { noteId: id, visibility: 'PUBLIC' } })
-      }
     }
     learners.push({ token, notes })
   }
