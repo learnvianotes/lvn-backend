@@ -46,6 +46,36 @@ export function isIntrospectionOnly(document: DocumentNode, operationName?: stri
  */
 const refuse = (message: string) => new GraphQLError(message, { extensions: { code: ErrorCode.VALIDATION, http: { status: 400 } } })
 
+/** Operations one signed-in person may send a minute (§17.1, ADR-0090): ten a second, far above what a session needs. */
+export const OPERATIONS_PER_MINUTE = 600
+
+/**
+ * Says whether a request may run: null when it may, else the seconds until it may (§17.1, ADR-0090). Given by the app,
+ * which keeps the counts (Redis).
+ */
+export type RateCheck = (contextValue: unknown) => Promise<number | null>
+
+/**
+ * Refuses a signed-in person's operations past OPERATIONS_PER_MINUTE with RATE_LIMITED, HTTP 429 and Retry-After,
+ * before any resolver runs. Floods by address are the edge's to stop (AWS WAF), as one address may be a whole campus.
+ */
+export function rateLimitPlugin(check: RateCheck): ApolloServerPlugin {
+  return {
+    async requestDidStart() {
+      return {
+        async didResolveOperation({ document, request, contextValue }) {
+          if (isIntrospectionOnly(document, request.operationName)) return
+          const retryAfter = await check(contextValue)
+          if (retryAfter === null) return
+          throw new GraphQLError(`Too many requests. Try again in ${retryAfter} seconds.`, {
+            extensions: { code: ErrorCode.RATE_LIMITED, retryAfter, http: { status: 429, headers: new Map([['retry-after', String(retryAfter)]]) } },
+          })
+        },
+      }
+    },
+  }
+}
+
 /** Rejects too-deep or too-complex operations before any resolver runs. */
 export function limitsPlugin(): ApolloServerPlugin {
   return {

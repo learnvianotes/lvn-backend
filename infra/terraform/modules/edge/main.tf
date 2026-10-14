@@ -56,9 +56,92 @@ data "aws_cloudfront_origin_request_policy" "all_viewer" {
   name  = "Managed-AllViewer"
 }
 
+# The edge's firewall (ADR-0090): floods from one address stop here, before the API, which limits each signed-in person
+# itself (one address may be a whole campus, so the per-address limit is generous). AWS's managed rules block common
+# exploits and known bad inputs. CloudFront firewalls live in us-east-1.
+resource "aws_wafv2_web_acl" "edge" {
+  count    = var.aws_emulator ? 0 : 1
+  provider = aws.us_east_1
+  name     = "${var.name}-edge"
+  scope    = "CLOUDFRONT"
+  default_action {
+    allow {}
+  }
+  rule {
+    name     = "api-flood-per-address"
+    priority = 1
+    action {
+      block {}
+    }
+    statement {
+      rate_based_statement {
+        # Requests in any 5 minutes from one address to /graphql: about 33 a second.
+        limit                 = var.api_requests_per_address_per_5_minutes
+        aggregate_key_type    = "IP"
+        evaluation_window_sec = 300
+        scope_down_statement {
+          byte_match_statement {
+            search_string         = "/graphql"
+            positional_constraint = "STARTS_WITH"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.name}-api-flood"
+      sampled_requests_enabled   = true
+    }
+  }
+  dynamic "rule" {
+    for_each = { "AWSManagedRulesCommonRuleSet" = 2, "AWSManagedRulesKnownBadInputsRuleSet" = 3 }
+    content {
+      name     = rule.key
+      priority = rule.value
+      override_action {
+        none {}
+      }
+      statement {
+        managed_rule_group_statement {
+          vendor_name = "AWS"
+          name        = rule.key
+          # Note uploads go straight to S3; GraphQL bodies with long notes must not trip the body-size rule.
+          dynamic "rule_action_override" {
+            for_each = rule.key == "AWSManagedRulesCommonRuleSet" ? ["SizeRestrictions_BODY"] : []
+            content {
+              name = rule_action_override.value
+              action_to_use {
+                count {}
+              }
+            }
+          }
+        }
+      }
+      visibility_config {
+        cloudwatch_metrics_enabled = true
+        metric_name                = "${var.name}-${rule.key}"
+        sampled_requests_enabled   = true
+      }
+    }
+  }
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "${var.name}-edge"
+    sampled_requests_enabled   = true
+  }
+}
+
 resource "aws_cloudfront_distribution" "this" {
   enabled         = true
   comment         = var.name
+  web_acl_id      = var.aws_emulator ? null : aws_wafv2_web_acl.edge[0].arn
   price_class     = var.price_class
   http_version    = "http2and3"
   is_ipv6_enabled = true

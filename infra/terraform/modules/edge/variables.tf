@@ -21,3 +21,9 @@ variable "aws_emulator" {
   type        = bool
   default     = false
 }
+
+variable "api_requests_per_address_per_5_minutes" {
+  description = "The edge's flood limit for /graphql from one address (ADR-0090); a campus behind one address stays well under it"
+  type        = number
+  default     = 10000
+}

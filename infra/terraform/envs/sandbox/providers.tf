@@ -17,3 +17,12 @@ provider "aws" {
     tags = { Project = "learnvianotes", Environment = var.environment, ManagedBy = "terraform" }
   }
 }
+
+# CloudFront's firewall and certificates live in us-east-1 (ADR-0090).
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+  default_tags {
+    tags = { Project = "learnvianotes", Environment = var.environment, ManagedBy = "terraform" }
+  }
+}
