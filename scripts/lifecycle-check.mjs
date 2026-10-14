@@ -714,6 +714,29 @@ if (opt('--vm')) {
   ok(removed.ok && gone === null, 'G deletes it, and it is gone for everyone', JSON.stringify([removed, gone]))
 }
 
+// Account deletion (ADR-0088): H asks with the password and DELETE. The 14 days are wound back in the database and the
+// nightly job is run now with the worker's CLI: H's private note goes, the public one stays by "Deleted user", and H
+// cannot sign in again.
+if (opt('--vm')) {
+  const H = await signUp('h')
+  sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'INSTITUTIONAL_EMAIL' WHERE id = '${H.id}'`)
+  const write = async (title) => (await gql('mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } } }', { input: { title: `${title} ${WORD}`, cards: [{ id: newId(), type: 'text', position: 'a0', content: text(`${title}, in H's words.`) }] } }, H.token)).createNote.note.id
+  const diary = await write('Diary')
+  const shared = await write('Graphs explained')
+  await gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId: shared } }, H.token)
+  await gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { id } } }', { input: { noteId: shared, visibility: 'PUBLIC' } }, H.token)
+  const asked = (await gql('mutation ($input: RequestAccountDeletionInput!) { requestAccountDeletion(input: $input) { deletionScheduledFor userErrors { message } } }', { input: { password: `lifecycle passphrase ${stamp}`, confirm: 'DELETE' } }, H.token)).requestAccountDeletion
+  const days = asked.deletionScheduledFor ? Math.round((new Date(asked.deletionScheduledFor).getTime() - Date.now()) / 86_400_000) : null
+  ok(days === 14, 'H asks to delete the account with the password and DELETE: it goes in 14 days', JSON.stringify(asked))
+  sql(`UPDATE users.\\"User\\" SET \\"deletionRequestedAt\\" = now() - interval '15 days' WHERE id = '${H.id}'`)
+  execFileSync(opt('--vm'), ['ssh', 'docker exec lvn-local-worker node apps/worker/dist/cli.js queue:run users.maintenance delete-accounts'], { stdio: 'pipe' })
+  const value = (statement) => execFileSync(opt('--vm'), ['ssh', `docker exec lvn-local-postgres psql -U lvn -d lvn -tAc "${statement}"`], { stdio: 'pipe' }).toString().trim()
+  const erased = await eventually(async () => value(`SELECT count(*) FROM notes.\\"Note\\" WHERE id = '${diary}'`) === '0', 60_000)
+  const kept = (await gql('query ($id: UUID!) { note(id: $id) { title owner { displayName handle } } }', { id: shared })).note
+  const again = (await gql('mutation ($input: SignInInput!) { signIn(input: $input) { session { accessToken } userErrors { message } } }', { input: { email: H.email, password: `lifecycle passphrase ${stamp}` } }).catch((e) => ({ signIn: { session: null, userErrors: [{ message: e.message }] } }))).signIn
+  ok(erased && kept?.owner.displayName === 'Deleted user' && /^deleted-/.test(kept.owner.handle) && !again.session, 'after 14 days the job deletes H\'s private note, keeps the public one by "Deleted user", and H cannot sign in', JSON.stringify([erased, kept, again.userErrors]))
+}
+
 console.log(`1..${n}`)
 if (failed) {
   console.log(`# ${failed} of ${n} checks failed`)
