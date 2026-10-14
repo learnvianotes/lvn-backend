@@ -126,7 +126,9 @@ ok(latest?.category === 'SHARE' && latest.note?.id === id && latest.actor?.id ==
 const vis = await gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { visibility slug moderation { state } } userErrors { message } } }', { input: { noteId: id, visibility: 'PUBLIC' } }, A.token)
 const slug = vis.changeNoteVisibility.note?.slug
 ok(vis.changeNoteVisibility.note?.visibility === 'PUBLIC', 'A makes it public', vis.changeNoteVisibility.userErrors[0]?.message ?? vis.changeNoteVisibility.note?.moderation?.state)
-// Community (ADR-0076): A gives the note a topic B follows, so it is in B's For You; B's reaction puts it in Trending.
+// Community (ADR-0076): A gives the note a topic B follows, so it is in B's For You. On the local environment, where
+// accounts are verified by SQL, a verified reader's reaction puts it in Trending (reacting needs a verified account).
+let trended = false
 {
   const topic = (await gql('query ($q: String!) { examTopicOptions(query: $q) { id } }', { q: 'array' }, A.token)).examTopicOptions[0]
   if (topic) {
@@ -135,9 +137,14 @@ ok(vis.changeNoteVisibility.note?.visibility === 'PUBLIC', 'A makes it public', 
     const forYou = (await gql('{ forYouFeed(first: 50) { edges { node { id } } basedOn { id } } }', {}, B.token)).forYouFeed
     ok(forYou.edges.some((e) => e.node?.id === id) && forYou.basedOn.some((t) => t?.id === topic.id), 'B follows its topic: it is in B\'s For You', JSON.stringify(forYou.basedOn))
   }
-  await gql('mutation ($input: ReactInput!) { react(input: $input) { userErrors { message } } }', { input: { kind: 'HELPFUL', target: { type: 'NOTE', id } } }, B.token)
-  const trending = (await gql('{ trendingFeed(first: 100) { edges { node { id } } } }', {}, A.token)).trendingFeed.edges.map((e) => e.node?.id)
-  ok(trending.includes(id), 'B reacts to it: it is trending')
+  if (opt('--vm')) {
+    const fan = await signUp('t')
+    sql(`UPDATE users.\\"User\\" SET \\"verifiedAt\\" = now(), \\"verificationMethod\\" = 'INSTITUTIONAL_EMAIL' WHERE id = '${fan.id}'`)
+    const reacted = (await gql('mutation ($input: ReactInput!) { react(input: $input) { userErrors { message } } }', { input: { kind: 'HELPFUL', target: { type: 'NOTE', id } } }, fan.token)).react
+    const trending = (await gql('{ trendingFeed(first: 100) { edges { node { id } } } }', {}, A.token)).trendingFeed.edges.map((e) => e.node?.id)
+    trended = trending.includes(id)
+    ok(trended, 'a reader reacts to it: it is trending', reacted.userErrors[0]?.message)
+  }
 }
 // Saved notes (ADR-0076): B saves it to come back to; only B's list has it, and A cannot tell.
 const savedNoteIds = async (token) => (await gql('{ savedNotes { edges { node { id } } } }', {}, token)).savedNotes.edges.map((e) => e.node.id)
@@ -217,7 +224,7 @@ ok(await eventually(async () => [301, 308].includes((await page(path)).status)),
 // Private again.
 await gql('mutation ($input: ChangeNoteVisibilityInput!) { changeNoteVisibility(input: $input) { note { visibility } } }', { input: { noteId: id, visibility: 'PRIVATE' } }, A.token)
 ok(!(await savedNoteIds(B.token)).includes(id), 'made private, it leaves B\'s Saved')
-ok(!(await gql('{ trendingFeed(first: 100) { edges { node { id } } } }', {}, A.token)).trendingFeed.edges.some((e) => e.node?.id === id), 'and it leaves Trending')
+if (trended) ok(!(await gql('{ trendingFeed(first: 100) { edges { node { id } } } }', {}, A.token)).trendingFeed.edges.some((e) => e.node?.id === id), 'and it leaves Trending')
 ok(await eventually(async () => (await page(path2)).status === 404), 'made private, its page is gone')
 ok(!(await found()), 'and search no longer finds it')
 ok(await eventually(async () => !(await page('/sitemap.xml')).body.includes(id)), 'and the sitemap no longer lists it')
