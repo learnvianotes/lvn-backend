@@ -45,7 +45,7 @@ const home = await fetch(`${base}/`)
 const csp = home.headers.get('content-security-policy') ?? ''
 const directive = (name) => csp.split(';').map((d) => d.trim()).find((d) => d.startsWith(`${name} `)) ?? ''
 ok(directive('frame-ancestors') === "frame-ancestors 'none'" && directive('object-src') === "object-src 'none'" && directive('base-uri') === "base-uri 'self'", 'the web sends a Content Security Policy that refuses framing, plugins and a changed base', csp.slice(0, 80))
-ok(!/unsafe-eval/.test(directive('script-src')), 'built pages never allow eval')
+ok(!directive('script-src').includes("'unsafe-eval'"), 'built pages never allow eval')
 ok(/max-age=\d{7,}/.test(home.headers.get('strict-transport-security') ?? ''), 'the web asks for HTTPS for a year (HSTS)')
 ok(home.headers.get('x-content-type-options') === 'nosniff' && !!home.headers.get('referrer-policy') && !home.headers.get('x-powered-by'), 'nosniff, a referrer policy and no X-Powered-By')
 
