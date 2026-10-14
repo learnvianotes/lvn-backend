@@ -90,6 +90,8 @@ export class RobotsCache {
       const res = await this.fetcher.fetch({ url: `${origin}/robots.txt`, accept: 'text/plain', maxBytes: 500_000, types: /.*/ })
       return parseRobots(res.body.toString('utf8'))
     } catch (err) {
+      // An address that is never fetched is the caller's answer, not the site's rules.
+      if (err instanceof SafeFetchError && (err.code === 'BLOCKED' || err.code === 'INVALID_URL')) throw err
       if (err instanceof SafeFetchError && err.code === 'HTTP' && err.status !== undefined && err.status >= 400 && err.status < 500) return 'ALL'
       return 'NONE'
     }

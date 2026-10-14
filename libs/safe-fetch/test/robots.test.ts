@@ -60,6 +60,12 @@ Disallow: /*.pdf$
       status = 503
       expect(await new RobotsCache(fetcher(), 'LearnViaNotes').allows(`${base}/yes`)).toBe(false)
     })
+
+    it('refuses a private address as such, never as the site’s rules', async () => {
+      const robots = new RobotsCache(new SafeFetcher({ userAgent: 'LearnViaNotes-test', timeoutMs: 1_000 }), 'LearnViaNotes')
+      await expect(robots.allows('http://169.254.169.254/latest/meta-data/')).rejects.toMatchObject({ code: 'BLOCKED', message: 'That address is not on the public internet.' })
+      await expect(robots.allows(`${base}/yes`)).rejects.toMatchObject({ code: 'BLOCKED' })
+    })
   })
 })
 
