@@ -25,3 +25,7 @@ brings the channel, so the list of open items is visible in every run.
 | No commerce surface: nothing prices, sells, stocks or carts anything (Phase 7 exit) | every type, field, argument and value of the schema; the resource table's columns | `resources.security.test.ts`, `e2e/resources.e2e.test.ts` |
 | Links people give are never fetched from this machine or a private network (SSRF) | resource previews and pictures, skills import pages and their robots.txt, GitHub names | `resources.security.test.ts`, `e2e/resources.e2e.test.ts`, `libs/safe-fetch` tests |
 | GitHub deliveries count only with a good signature, and once | `POST /webhooks/github` | `e2e/github-app.e2e.test.ts` |
+| Anything ranked leaves minors out by default (Phase 8 exit) | contest bands: never given to an under-18 and never counting one, whatever is stored | `engagement.security.test.ts`, `e2e/contests.e2e.test.ts` |
+| A minor's achievements and level are never shown to others; nobody's are by default | `User.achievements`, `User.contribution` | `engagement.security.test.ts` |
+| Points cannot be farmed | oneself, accounts under a week old, unverified or blocked ones, one person more than five times a week, the same action twice | `engagement.security.test.ts`, `e2e/engagement.e2e.test.ts` |
+| No company features (Phase 8 exit) | every type, field, argument and value of the schema: companies, jobs, hiring, careers, referrals, interviews | `engagement.security.test.ts` |
