@@ -34,7 +34,8 @@ has one, and the word DELETE. It then:
 - emails the person the date their account will go.
 
 `cancelAccountDeletion` clears the request any time before that date. `User.deletionScheduledFor` (viewer only) is the
-request plus 14 days. Web and phone show it with Cancel on every page until then.
+request plus 14 days. Until then the web shows it on every signed-in page and the phone above its tabs, each with Keep my
+account, which cancels.
 
 **Deleting.** The nightly `delete-accounts` job takes every account past its 14 days. For each, the users context
 first:
