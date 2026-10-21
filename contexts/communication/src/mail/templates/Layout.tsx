@@ -1,8 +1,8 @@
 import { Body, Container, Head, Hr, Html, Preview, Section, Text } from '@react-email/components'
 import type { ReactNode } from 'react'
 
-/** Brand palette (lvn-backend docs/design/ui-reference.md): indigo #4F46E5 on a quiet background. */
-export const brand = { primary: '#4F46E5', text: '#1E1B2E', muted: '#5F5F73', background: '#F7F7FB', card: '#FFFFFF', border: '#E4E4EC' }
+/** Brand palette (lvn-backend docs/design/ui-reference.md, ADR-0094): the brand blue #2563EB on a quiet background. */
+export const brand = { primary: '#2563EB', text: '#111827', muted: '#5B6475', background: '#F6F8FB', card: '#FFFFFF', border: '#E3E8EF' }
 
 /** The frame every LearnViaNotes email shares: wordmark, one card, a quiet footer. */
 export function Layout({ preview, children }: { preview: string; children: ReactNode }) {

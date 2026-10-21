@@ -168,7 +168,7 @@ export class DataExportService {
   private readme(name: string, at: Date, counts: Record<string, number>, omitted: string[], files: ExportFile[]): string {
     const notes = files.filter((f) => f.path.endsWith('/index.md'))
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Your LearnViaNotes data</title>
-<style>body{font:16px/1.5 system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;color:#1c1a3a}code{background:#eef;padding:0 .25rem;border-radius:4px}li{margin:.2rem 0}</style></head><body>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;color:#111827}code{background:#f1f4f8;padding:0 .25rem;border-radius:4px}li{margin:.2rem 0}</style></head><body>
 <h1>Your LearnViaNotes data</h1>
 <p>Prepared for ${html(name)} on ${html(at.toUTCString())}.</p>
 <p>${counts.notes ?? 0} notes, ${counts.versions ?? 0} versions and ${counts.media ?? 0} files.</p>

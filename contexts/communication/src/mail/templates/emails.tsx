@@ -1,6 +1,6 @@
 import { Button, Heading, Text } from '@react-email/components'
 import type { MailTemplates } from '@lvn-backend/facades'
-import { Layout, button, muted, paragraph } from './Layout'
+import { Layout, brand, button, muted, paragraph } from './Layout'
 
 const heading = { fontSize: 20, fontWeight: 700, margin: '0 0 12px' }
 
@@ -79,7 +79,7 @@ export function ClassroomPost({ displayName, teacherName, classroomName, text, l
       <Text style={paragraph}>
         Hi {displayName}, {teacherName} posted an announcement:
       </Text>
-      <Text style={{ ...paragraph, whiteSpace: 'pre-line', borderLeft: '3px solid #4F46E5', paddingLeft: 12 }}>{text}</Text>
+      <Text style={{ ...paragraph, whiteSpace: 'pre-line', borderLeft: `3px solid ${brand.primary}`, paddingLeft: 12 }}>{text}</Text>
       <Button href={link} style={button}>
         Open the class
       </Button>
