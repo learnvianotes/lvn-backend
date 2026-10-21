@@ -55,7 +55,7 @@ describe('data export', () => {
     const zip = unzipSync(new Uint8Array(await (await fetch(ready!.downloadUrl!)).arrayBuffer()))
     const paths = Object.keys(zip)
     const dir = `notes/NOTE/heaps-${noteId.slice(-8)}`
-    expect(paths).toEqual(expect.arrayContaining(['README.html', 'manifest.json', `${dir}/index.md`, `${dir}/note.json`, `${dir}/media/${fileId.slice(-8)}-heap.png`, 'data/users/account.json', 'data/core/study-progress.json']))
+    expect(paths).toEqual(expect.arrayContaining(['README.html', 'manifest.json', `${dir}/index.md`, `${dir}/note.json`, `${dir}/media/${fileId.slice(-8)}-heap.png`, 'data/users/account.json', 'data/users/consents.json', 'data/learning/events.json', 'data/core/study-progress.json']))
     const md = strFromU8(zip[`${dir}/index.md`]!)
     expect(md).toMatch(/^---\ntitle: Heaps\nid: [0-9a-f-]+\nkind: NOTE\nvisibility: PRIVATE\ntags:\n {2}- dsa\n/)
     expect(md).toContain('# Heaps\n\n## Binary heap\n\n**Smallest on top**\n\n![A heap](media/')
@@ -64,7 +64,9 @@ describe('data export', () => {
     expect(note.draft).toHaveLength(3)
     expect(zip[`${dir}/media/${fileId.slice(-8)}-heap.png`]).toEqual(SAMPLES.png)
     const account = JSON.parse(strFromU8(zip['data/users/account.json']!)) as Record<string, unknown>
-    expect(account).toMatchObject({ id: me.id, displayName: 'Asha Rao' })
+    // The age record (ADR-0017, ADR-0091): the date of birth and when registration finished, beside the consents.
+    expect(account).toMatchObject({ id: me.id, displayName: 'Asha Rao', dateOfBirth: expect.stringMatching(/^2004-05-01/) })
+    expect(account).toHaveProperty('registrationCompletedAt')
     expect(account).not.toHaveProperty('passwordHash')
     // The manifest's checksums match the files.
     const manifest = JSON.parse(strFromU8(zip['manifest.json']!)) as { counts: Record<string, number>; files: { path: string; sha256: string }[] }
