@@ -332,6 +332,11 @@ export const webConfigSchema = z.object({
    * ranges) and nowhere else beyond the site, the API and sign-in. Unset, the policy allows any origin (development).
    */
   NEXT_PUBLIC_STORAGE_ORIGINS: z.string().min(1).optional(),
+  /**
+   * Google Analytics 4 measurement id (ADR-0092), e.g. G-XXXXXXXXXX: loaded only after the visitor allows it. Unset, no
+   * analytics, banner or setting at all.
+   */
+  NEXT_PUBLIC_GA_MEASUREMENT_ID: z.string().regex(/^G-[A-Z0-9]+$/, 'must be a GA4 measurement id, G-…').optional(),
 })
 export type WebConfig = z.infer<typeof webConfigSchema>
 

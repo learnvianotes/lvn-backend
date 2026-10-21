@@ -170,6 +170,12 @@ describe('webConfigSchema', () => {
     expect(c.NEXT_PUBLIC_APP_ENV).toBe('development')
     expect(() => loadConfig(webConfigSchema, { NEXT_PUBLIC_SITE_URL: 'https://www.learnvianotes.in' })).toThrow(/NEXT_PUBLIC_API_URL/)
   })
+
+  it('takes only a GA4 measurement id for Google Analytics (ADR-0092)', () => {
+    const base = { NEXT_PUBLIC_SITE_URL: 'https://www.learnvianotes.in', NEXT_PUBLIC_API_URL: 'https://api.learnvianotes.in/graphql' }
+    expect(loadConfig(webConfigSchema, { ...base, NEXT_PUBLIC_GA_MEASUREMENT_ID: 'G-AB12CD34' }).NEXT_PUBLIC_GA_MEASUREMENT_ID).toBe('G-AB12CD34')
+    expect(() => loadConfig(webConfigSchema, { ...base, NEXT_PUBLIC_GA_MEASUREMENT_ID: 'UA-1234-1' })).toThrow(/NEXT_PUBLIC_GA_MEASUREMENT_ID/)
+  })
 })
 
 describe('telemetry', () => {

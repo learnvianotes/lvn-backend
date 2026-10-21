@@ -67,6 +67,7 @@ if ! pushed "$web_repo" "$web_tag"; then
     --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID="${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}" \
     --build-arg NEXT_PUBLIC_FIREBASE_APP_ID="${NEXT_PUBLIC_FIREBASE_APP_ID:-}" \
     --build-arg NEXT_PUBLIC_SENTRY_DSN="${NEXT_PUBLIC_SENTRY_DSN:-}" \
+    --build-arg NEXT_PUBLIC_GA_MEASUREMENT_ID="${NEXT_PUBLIC_GA_MEASUREMENT_ID:-}" \
     --build-arg NEXT_PUBLIC_STORAGE_ORIGINS="https://*.s3.$region.amazonaws.com https://s3.$region.amazonaws.com" \
     "$web"
   docker push "$web_repo:$web_tag"

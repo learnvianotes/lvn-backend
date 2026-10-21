@@ -45,6 +45,7 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0036](../adr/0036-local-vm-environment.md) | Until the AWS sandbox exists, a `local` environment runs the sandbox's shape on a VM on the dev machine: Debian under QEMU/KVM, Terraform in the VM (Docker provider, local state), the same images, migration step and single entrance; `pnpm smoke` and a live Playwright spec check it. (§16.1, §16.2, §18) |
 | [0040](../adr/0040-pdf-reader-and-study-notes.md) | PDF reader for making notes: the PDF next to its note, cards that remember their page (`anchor` in card content), highlights for the owner and editors, `studyPdf` under the fork rule; pdf.js on web and phone. (§4.1, §4.4, §8, §12, §13, §18) |
 | [0091](../adr/0091-adults-only-accounts.md) | Accounts for adults only while `ACCOUNT_MINIMUM_AGE` is 18 (the College/Interview launch): sign-up refuses with `UNDER_MINIMUM_AGE`, an unfinished provider account whose own confirmed answer is younger is erased, nothing else is deleted. (§6.2, §7, §15.2) |
+| [0092](../adr/0092-opt-in-google-analytics-on-the-web.md) | Google Analytics 4 on the web only where `NEXT_PUBLIC_GA_MEASUREMENT_ID` is set and only after the visitor allows it; the choice syncs across tabs; path-only page views. (§15.2) |
 
 **Errata (owner-approved, 2026-10-08).** Wording conflicts inside v2, corrected in place and marked *[Erratum E#]*:
 E1 role-brief sections · E2 three repositories, not a monorepo · E3 AI prompts path · E4 web/mobile own repositories,
@@ -637,7 +638,7 @@ A student community with public content and minors needs human moderation and a 
 | Data residency | One primary region per deployment (India: `ap-south-1`); no cross-region replication of personal data except encrypted backups |
 | Retention | Learning events raw 24 months then aggregated; audit log 7 years; AI usage 12 months; logs 30 days |
 | Encryption | TLS 1.2+ in transit; AES-256 at rest for RDS, S3, ElastiCache; application-level encryption for OAuth refresh tokens |
-| Cookies / tracking | No third-party trackers on the student app; analytics is first-party and pseudonymous |
+| Cookies / tracking | No third-party trackers on the student app; analytics is first-party and pseudonymous *[Amended: ADR-0092 — the web may run Google Analytics 4 where `NEXT_PUBLIC_GA_MEASUREMENT_ID` is set, only after the visitor allows it; path-only page views, ads always denied]* |
 | Copyright | DMCA/takedown flow via `reportContent(reason: COPYRIGHT)`; repeat-infringer policy |
 
 Product analytics never receives note content, and AI providers never receive user identity (section 10.1).

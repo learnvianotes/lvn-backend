@@ -26,6 +26,7 @@ Validated in lvn-web `lib/env.ts` until `@lvn/contracts/config` is published (AD
 | `NEXT_PUBLIC_LINKEDIN_CLIENT_ID`, `NEXT_PUBLIC_LINKEDIN_AUTHORIZE_URL` | no | — (LinkedIn off) | — | app id, `https://www.linkedin.com/oauth/v2/authorization` | same | LinkedIn consent page (PKCE) |
 | `NEXT_PUBLIC_SENTRY_DSN` | no | — (off) | — | the web project's DSN | same | Browser and server errors (§16.5); a DSN is public by design |
 | `NEXT_PUBLIC_STORAGE_ORIGINS` | no | — (any origin) | — | `https://*.s3.<region>.amazonaws.com` | same | Where pre-signed storage URLs point, space-separated; the Content Security Policy's `connect-src` allows only these besides the site, the API and sign-in (ADR-0090) |
+| `NEXT_PUBLIC_GA_MEASUREMENT_ID` | no | — (no analytics) | — | optional, a test property | the GA4 property, `G-…` | Google Analytics 4, loaded only after the visitor allows it (ADR-0092) |
 | `API_INTERNAL_URL` | no | `NEXT_PUBLIC_API_URL` | — | the API's address inside the VPC | same | Server-only: where server rendering (public note pages, sitemap) calls the API |
 | `REVALIDATE_SECRET` | no | — (on-demand refresh off) | — | secret, ≥ 32 characters | same | Server-only: the API's calls to `/api/revalidate` must carry it; the same value as the API's |
 
