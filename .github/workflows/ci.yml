@@ -1,11 +1,11 @@
-# lvn-backend CI (spec §16.4): every pull request and main. Integration and e2e tests start their own Postgres, Redis,
-# S3 and Mailpit containers (Testcontainers) on the runner's Docker.
+# lvn-backend CI (spec §16.4, ADR-0093): every push and pull request. Integration and e2e tests start their own Postgres,
+# Redis, S3 and Mailpit containers (Testcontainers) on the runner's Docker.
 name: ci
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: ['**']
 
 concurrency:
   group: ci-${{ github.ref }}

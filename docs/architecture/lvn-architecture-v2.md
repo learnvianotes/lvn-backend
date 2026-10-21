@@ -46,6 +46,7 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0040](../adr/0040-pdf-reader-and-study-notes.md) | PDF reader for making notes: the PDF next to its note, cards that remember their page (`anchor` in card content), highlights for the owner and editors, `studyPdf` under the fork rule; pdf.js on web and phone. (§4.1, §4.4, §8, §12, §13, §18) |
 | [0091](../adr/0091-adults-only-accounts.md) | Accounts for adults only while `ACCOUNT_MINIMUM_AGE` is 18 (the College/Interview launch): sign-up refuses with `UNDER_MINIMUM_AGE`, an unfinished provider account whose own confirmed answer is younger is erased, nothing else is deleted. (§6.2, §7, §15.2) |
 | [0092](../adr/0092-opt-in-google-analytics-on-the-web.md) | Google Analytics 4 on the web only where `NEXT_PUBLIC_GA_MEASUREMENT_ID` is set and only after the visitor allows it; the choice syncs across tabs; path-only page views. (§15.2) |
+| [0093](../adr/0093-releases-from-release-branches-and-tags.md) | Checks on every push; the sandbox from release branches, production from `v*` tags (both repositories); each web build only its own Firebase project; production builds refuse blank legal details. (§16.4) |
 
 **Errata (owner-approved, 2026-10-08).** Wording conflicts inside v2, corrected in place and marked *[Erratum E#]*:
 E1 role-brief sections · E2 three repositories, not a monorepo · E3 AI prompts path · E4 web/mobile own repositories,
@@ -710,7 +711,7 @@ Start small and measured; every step below is triggered by a metric, not by anti
 
 ### 16.4 CI/CD
 
-Every PR: format, lint, type-check, unit + component tests, integration tests with Testcontainers, GraphQL schema diff, build all apps, `gitleaks`, dependency audit, Lighthouse CI on public routes. `main` merge: build images, deploy to sandbox, run Playwright + Maestro E2E against sandbox, migration dry-run against a sandbox snapshot. Production: manual approval → migration task → rolling deploy → smoke tests → automatic rollback on failed health or error-rate spike.
+Every PR: format, lint, type-check, unit + component tests, integration tests with Testcontainers, GraphQL schema diff, build all apps, `gitleaks`, dependency audit, Lighthouse CI on public routes. `main` merge: build images, deploy to sandbox, run Playwright + Maestro E2E against sandbox, migration dry-run against a sandbox snapshot. Production: manual approval → migration task → rolling deploy → smoke tests → automatic rollback on failed health or error-rate spike. *[Amended: ADR-0093 — checks on every push; the sandbox deploys from lvn-web `release/**` branches and production only from `v*` tags in both repositories, through `deploy.sh`; the manual approval is the `production` GitHub environment's reviewer; each web build uses only its own Firebase project, and a production build refuses blank legal details]*
 
 ### 16.5 Observability and operations
 
