@@ -1,4 +1,4 @@
-import { ageOn, dateOfBirthSchema, displayNameSchema, emailSchema, handleBase, isRestrictedMinor } from '../../src/domain/rules'
+import { ageOn, dateOfBirthSchema, displayNameSchema, emailSchema, handleBase, isBelowMinimumAge, isRestrictedMinor } from '../../src/domain/rules'
 
 const d = (s: string) => new Date(`${s}T00:00:00Z`)
 
@@ -28,6 +28,19 @@ describe('isRestrictedMinor (§15.2)', () => {
 
   it('treats an unknown date of birth as restricted', () => {
     expect(isRestrictedMinor(null, 18, false, on)).toBe(true)
+  })
+})
+
+describe('isBelowMinimumAge (ADR-0091)', () => {
+  const on = d('2026-10-21')
+  it('refuses until the birthday that reaches the minimum', () => {
+    expect(isBelowMinimumAge(d('2008-10-22'), 18, on)).toBe(true)
+    expect(isBelowMinimumAge(d('2008-10-21'), 18, on)).toBe(false)
+    expect(isBelowMinimumAge(d('1990-01-01'), 18, on)).toBe(false)
+  })
+
+  it('refuses nobody when the minimum is 0', () => {
+    expect(isBelowMinimumAge(d('2020-01-01'), 0, on)).toBe(false)
   })
 })
 

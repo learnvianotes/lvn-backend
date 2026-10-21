@@ -8,9 +8,11 @@ import {
   dateOfBirthSchema,
   displayNameSchema,
   emailSchema,
+  isBelowMinimumAge,
   LIMITS,
   RESET_PASSWORD_TTL_MINUTES,
   TERMS_VERSION,
+  UNDER_MINIMUM_AGE_MESSAGE,
   VERIFY_EMAIL_TTL_HOURS,
 } from '../domain/rules'
 import { clientNetwork } from '../domain/network'
@@ -56,6 +58,8 @@ export class AuthService {
     const email = parseField(emailSchema, input.email, 'email')
     const displayName = parseField(displayNameSchema, input.displayName, 'displayName')
     const dateOfBirth = parseField(dateOfBirthSchema, input.dateOfBirth, 'dateOfBirth')
+    // ADR-0091: too young for an account — nothing is created or kept.
+    if (isBelowMinimumAge(dateOfBirth, this.config.accountMinimumAge)) throw Errors.underMinimumAge(UNDER_MINIMUM_AGE_MESSAGE, ['input', 'dateOfBirth'])
     if (input.acceptedTermsVersion !== TERMS_VERSION) {
       throw Errors.validation('Accept the current Terms and Privacy Policy to continue.', ['input', 'acceptedTermsVersion'])
     }

@@ -59,6 +59,17 @@ export function ageOn(dateOfBirth: Date, on: Date = new Date()): number {
 }
 
 /**
+ * ADR-0091: whether a date of birth is too young for an account at all. 0 means no minimum. Only the outcome matters to
+ * the caller; the refusal never says where the line is before the person has answered.
+ */
+export function isBelowMinimumAge(dateOfBirth: Date, minimumAge: number, on = new Date()): boolean {
+  return minimumAge > 0 && ageOn(dateOfBirth, on) < minimumAge
+}
+
+/** What a refused person reads (web and phone show it, and remember the refusal on the device for a day). */
+export const UNDER_MINIMUM_AGE_MESSAGE = 'Sorry, you can’t create an account. LearnViaNotes accounts are only for adults; you can still read the public notes without one.'
+
+/**
  * A minor without verified guardian or institutional consent (§15.2): private notes and classroom content only, no
  * public publishing, no DMs, no behavioural recommendations. Unknown date of birth (registration not finished) is
  * treated as restricted.
