@@ -98,18 +98,12 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with: { terraform_version: 1.9.8 }
       - run: terraform fmt -check -recursive
-      - name: Validate the sandbox root (no backend, no credentials)
-        working-directory: infra/terraform/envs/sandbox
-        run: terraform init -backend=false -input=false && terraform validate
       - name: Validate the local environment root (Docker on its VM, ADR-0036)
         working-directory: infra/terraform/envs/local
         run: terraform init -backend=false -input=false && terraform validate
-      - name: Validate the state bootstrap
-        working-directory: infra/terraform/bootstrap
-        run: terraform init -backend=false -input=false && terraform validate
       - name: Deploy scripts (shellcheck)
         working-directory: infra
-        run: shellcheck -x -P SCRIPTDIR scripts/deploy.sh scripts/deploy-local.sh local-vm/vm.sh terraform/run.sh terraform/bootstrap.sh terraform/lib.sh lightsail/deploy.sh lightsail/lvn.sh lightsail/new-secrets.sh
+        run: shellcheck -x -P SCRIPTDIR scripts/deploy-local.sh local-vm/vm.sh terraform/run.sh terraform/lib.sh lightsail/deploy.sh lightsail/lvn.sh lightsail/new-secrets.sh
       - name: The Lightsail stack parses (ADR-0096)
         working-directory: infra/lightsail
         run: |

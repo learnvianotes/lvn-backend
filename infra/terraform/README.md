@@ -1,29 +1,19 @@
-# Infrastructure (Terraform)
+# Infrastructure (Terraform): the local environment
 
-The sandbox of spec §16.1–16.2 on AWS, with no domain of its own and every setting in one `.env` (ADR-0035). The site
-and API are served at CloudFront's `https://<id>.cloudfront.net` address. Production will be the same modules in its
-own account with production sizes.
+Beta and production run on Lightsail with Docker Compose (ADR-0096): `infra/lightsail/` and
+`docs/runbooks/lightsail.md`. Terraform remains for the local environment only, the lab on a VM on this machine
+(ADR-0036). The AWS modules, the sandbox and emulated roots and the state bootstrap were retired with ADR-0096; they
+are in git history at `c568538`.
 
 ```text
-envs/sandbox   root module of the sandbox; settings in envs/sandbox/.env (template .env.example)
-envs/local     the local environment on a VM until the sandbox exists (ADR-0036); settings in envs/local/.env
-envs/emulated  settings only: the sandbox's root module against Moto, an AWS stand-in on its own VM (ADR-0066)
-bootstrap      the bucket for the Terraform state (once per account)
-modules/network   VPC; public and private subnets; optional NAT; security groups CloudFront → ALB → tasks → data
-modules/data      RDS PostgreSQL 16 (TLS only, generated password) and ElastiCache Redis 7 (encrypted)
-modules/storage   private, versioned, encrypted S3: files, and identity documents under their own KMS key (ADR-0019)
-modules/secrets   Secrets Manager entries with the generated values (database, Redis, JWT keys, code secret)
-modules/mail      the SES sender identity and the permission to send as it
-modules/service   ECR, ECS Fargate (api, worker, web, one-off migrate), internal ALB with /graphql → api
-modules/edge      CloudFront with HTTPS on its default address, reaching the ALB through a VPC origin
-run.sh, bootstrap.sh, lib.sh   wrappers that load envs/<env>/.env
-../scripts/deploy.sh           build, push, migrate, roll out
-../scripts/deploy-local.sh     the same for the local environment
-../local-vm/vm.sh              the local environment's VM (LVN_VM_ENV=emulated: the AWS stand-in's)
-../scripts/aws-stand-in.sh     the sandbox's Terraform against the AWS stand-in
+envs/local     the local environment's root module; settings in envs/local/.env (template .env.example)
+monitoring     Prometheus, Alertmanager, Grafana and the OpenTelemetry collector's settings (ADR-0089)
+run.sh, lib.sh wrappers that load envs/local/.env and keep the state in the VM
+../scripts/deploy-local.sh   images → VM, terraform apply in the VM: services, buckets, migration, apps; fails unless ready
+../local-vm/vm.sh            the local environment's VM
 ```
 
-## The local environment (no AWS account yet)
+## The local environment
 
 ADR-0036. The sandbox's shape — the same images, generated secrets, a migration step, one entrance for web and API —
 on a Debian VM on this machine, with Terraform and Docker inside the VM and the state kept there. It needs QEMU with
@@ -47,86 +37,3 @@ pnpm smoke http://127.0.0.1:8080 --mailpit http://127.0.0.1:8025
 `vm.sh stop` shuts the VM down and `vm.sh up` starts it again with everything in place; `vm.sh destroy` deletes its
 disk. The web build bakes in `TF_VAR_public_url`, so deploy again after changing it. Phones use the development build
 pointed at that URL (it allows plain HTTP); for Google sign-in on the web, add its host to Firebase's authorized domains.
-
-## The AWS stand-in (no AWS account yet)
-
-ADR-0066. The sandbox's own Terraform — `bootstrap`, `envs/sandbox` and every module — applied to
-[Moto](https://github.com/getmoto/moto), an AWS emulator, in a small VM of its own (2 CPUs, 3 GB). Nothing runs there:
-Moto records what Terraform asks for and answers like AWS, so a change to the modules can be planned, applied and
-destroyed before it meets a real account. The apps run on the local environment, not here.
-
-```bash
-cp infra/terraform/envs/emulated/.env.example infra/terraform/envs/emulated/.env   # set LVN_VM_DIR if you like
-infra/scripts/aws-stand-in.sh up          # first run: the VM (~3 min), Moto, the state bucket, terraform init
-infra/scripts/aws-stand-in.sh plan        # also apply | destroy | output | state …  (run.sh emulated …, in the VM)
-infra/scripts/aws-stand-in.sh check       # fmt, validate, apply everything, destroy everything
-infra/scripts/aws-stand-in.sh down         # stop the VM; Moto forgets the emulated account
-```
-
-| What | Where |
-| --- | --- |
-| Moto's API, and its dashboard at `/moto-api/` | `http://localhost:4566` (this machine only) |
-| A shell in the VM | `infra/scripts/aws-stand-in.sh ssh` (then `docker logs moto`) |
-| The AWS CLI against it | `AWS_ENDPOINT_URL=http://localhost:4566 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test aws …` |
-
-Moto keeps the account in memory: after `down` (or `reset`), `up` creates the state bucket again and the sandbox
-starts empty. `TF_VAR_aws_emulator=true` swaps the few pieces Moto cannot create, only in this env: a plain custom
-origin for CloudFront's VPC origin, the managed CloudFront policies by id, no ElastiCache (a placeholder host in
-`REDIS_URL`); the budget is left out. Those are checked only by the first real apply (ADR-0066 lists the gaps). A plan
-right after an apply is not empty: Moto reads some attributes back with defaults (RDS, CloudFront, SES); that is the
-emulator, not drift.
-
-## The sandbox on AWS: what you need
-
-- An AWS account and a CLI profile with administrator rights in it (`aws configure sso` or `aws configure`).
-- AWS CLI v2, Terraform 1.9 or later, Docker, `jq`, and lvn-web checked out next to lvn-backend.
-- An email address you own, for sending mail. SES sends it a verification link.
-- For Google sign-in: the Firebase project id and its web app config.
-
-A brand-new AWS account may refuse to create CloudFront distributions until AWS Support verifies it: open a free
-"Account and billing" case if `apply` reports "Your account must be verified before you can add new CloudFront
-resources".
-
-## First time
-
-```bash
-cp infra/terraform/envs/sandbox/.env.example infra/terraform/envs/sandbox/.env   # fill in the empty values
-infra/terraform/bootstrap.sh sandbox        # the encrypted state bucket
-infra/terraform/run.sh sandbox init
-infra/scripts/deploy.sh sandbox             # infrastructure, images, migrations, services (CloudFront takes ~10 min)
-```
-
-Then:
-
-1. Click the verification link SES sent to `TF_VAR_mail_from_address`. Until SES production access is granted (SES
-   console → Request production access) mail goes only to verified addresses, 200 a day.
-2. Add the CloudFront host (`run.sh sandbox output -raw public_url`) to Firebase → Authentication → Settings →
-   Authorized domains.
-3. For the app: put `EXPO_PUBLIC_WEB_URL=<public_url>` and `EXPO_PUBLIC_API_URL=<public_url>/graphql` in lvn-mobile's
-   `env/sandbox.local.env` and build it (`pnpm build:android sandbox`).
-
-## Every deploy
-
-`infra/scripts/deploy.sh sandbox` (refuses uncommitted changes unless `--allow-dirty`). It deploys only released code
-(ADR-0093): the sandbox needs lvn-web on a `release/**` branch or a `v*` tag, production a `v*` tag on both
-repositories' HEADs; lvn-web's `deploy.yml` runs it on exactly those pushes. Images are tagged by commit and
-kept in SSM Parameter Store, so `run.sh sandbox apply` on its own changes infrastructure without touching what runs.
-Rollback: write the previous tag to the SSM parameters (`run.sh sandbox output image_tag_parameters`) and apply.
-
-## Secrets and state
-
-Terraform generates the database password, the JWT key pair and the code HMAC secret and stores them in Secrets
-Manager, so they are also in the state. The state bucket is private, encrypted and versioned; anyone who can read it
-can read those secrets. Rotating one: `run.sh sandbox apply -replace=tls_private_key.jwt` (for example), then deploy.
-
-## Cost
-
-As sized, roughly US$110–160 a month in `ap-south-1`: the NAT gateway (about a quarter of it), the ALB, two small
-Fargate services and a worker, RDS `db.t4g.micro`, ElastiCache `cache.t4g.micro`. `TF_VAR_nat_gateway=false` drops
-the NAT gateway; `TF_VAR_budget_alert_email` sets a monthly budget alert. Check with the AWS Pricing Calculator.
-
-## Not yet here
-
-WAF rules (§16.2), the OpenTelemetry collector and its backends (the apps export when
-`TF_VAR_otel_exporter_otlp_endpoint` is set), and a deploy workflow in GitHub Actions (needs an OIDC role).
-`terraform fmt -check` and `validate` run in CI.

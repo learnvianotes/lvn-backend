@@ -32,7 +32,7 @@ locals {
     # The local collector (ADR-0089) unless another endpoint is given.
     OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_otlp_endpoint != "" ? var.otel_exporter_otlp_endpoint : "http://otel-collector:4318"
   }
-  # docs/architecture/env.md, as in envs/sandbox; the differences are the endpoints and SMTP instead of SES.
+  # docs/architecture/env.md, as on Lightsail (ADR-0096); the differences are the endpoints and SMTP instead of Resend.
   backend_environment = merge(
     {
       APP_ENV            = var.environment
@@ -234,8 +234,8 @@ resource "docker_container" "s3" {
 }
 
 # Uploads from the web: browsers PUT to pre-signed URLs with content-type and x-amz-meta-* headers. RustFS 1.0.1 does not
-# match listed AllowedHeaders (any requested header failed the preflight), so the local rule allows all headers; the
-# sandbox's S3 keeps the narrow list (modules/storage).
+# match listed AllowedHeaders (any requested header failed the preflight), so the local rule allows all headers; on
+# Lightsail, R2 keeps a narrow list (docs/runbooks/lightsail.md).
 locals {
   # Uploads from the web's origin; reads from anywhere, because a read URL is itself the permission and the phone's PDF
   # reader runs in a web view without a web origin (ADR-0040). ExposeHeaders: PDFs load by range requests.
@@ -245,7 +245,7 @@ locals {
   ] })
 }
 
-# The two buckets of envs/sandbox (modules/storage), with the files bucket's CORS rule.
+# The two buckets (on Lightsail they are R2's, ADR-0096), with the files bucket's CORS rule.
 resource "terraform_data" "buckets" {
   triggers_replace = [docker_container.s3.id, local.buckets, local.files_cors]
   provisioner "local-exec" {

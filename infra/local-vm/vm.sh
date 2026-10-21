@@ -8,8 +8,9 @@
 #   infra/local-vm/vm.sh status | stop | destroy
 #   infra/local-vm/vm.sh ssh-command  the ssh command line, for rsync -e (user lvn@127.0.0.1)
 #
-# LVN_VM_ENV=<env> runs another environment's VM with settings from envs/<env>/.env, e.g. `emulated`, the AWS
-# stand-in (ADR-0066). Each needs its own LVN_VM_DIR and LVN_VM_SSH_PORT; a port set to `off` is not forwarded.
+# LVN_VM_ENV=<env> runs another environment's VM with settings from envs/<env>/.env (the AWS stand-in of ADR-0066 used
+# this; it was retired with AWS, ADR-0096). Each needs its own LVN_VM_DIR and LVN_VM_SSH_PORT; a port set to `off` is
+# not forwarded.
 #
 # Needs qemu-system-x86_64 with KVM (/dev/kvm), curl, xz, sha512sum, ssh-keygen and python3 (serves the first-boot
 # configuration to the VM on 127.0.0.1 only).
