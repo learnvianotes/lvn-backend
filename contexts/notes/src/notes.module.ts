@@ -6,6 +6,7 @@ import { NoteModerationService } from './application/moderation.service'
 import { FilesService } from './application/files.service'
 import { NotesService } from './application/notes.service'
 import { NoteImportService } from './application/note-import.service'
+import { LegacyContentImport } from './application/legacy-content'
 import { NotesExport } from './application/notes-export'
 import { NotesMaintenance } from './application/notes-maintenance'
 import { NotesAccountErasure } from './application/account-erasure'
@@ -78,6 +79,7 @@ export class NotesModule {
         NotesExport,
         NoteImportService,
         ImportResolver,
+        LegacyContentImport,
         PublicPages,
         {
           provide: TYPESENSE,
@@ -129,7 +131,7 @@ export class NotesModule {
         ConversionResolver,
         NoteConversionResolver,
       ],
-      exports: [FilesService, NotesMaintenance, NoteModerationService, NoteAccessFacade, TopicsFacade, NoteAiFacade, NoteChunks, NoteRetrievalFacade, SearchIndex, NoteImportService, PdfConversionService, MediaProcessingService],
+      exports: [FilesService, NotesMaintenance, NoteModerationService, NoteAccessFacade, TopicsFacade, NoteAiFacade, NoteChunks, NoteRetrievalFacade, SearchIndex, NoteImportService, LegacyContentImport, PdfConversionService, MediaProcessingService],
     }
   }
 }

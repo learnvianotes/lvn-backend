@@ -49,6 +49,7 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0093](../adr/0093-releases-from-release-branches-and-tags.md) | Checks on every push; the sandbox from release branches, production from `v*` tags (both repositories); each web build only its own Firebase project; production builds refuse blank legal details. (§16.4) |
 | [0096](../adr/0096-lightsail-compose-r2-resend.md) | Launch on Lightsail: one 2 GB VM per environment running the Compose stack (api, worker, web, Postgres 16, Redis 7, Caddy with automatic HTTPS), R2 for files and backups, Resend for email, GHCR images deployed over SSH from release branches (beta) and `v*` tags (production); AWS retired. (§2, §16.1, §16.2, §16.4) |
 | [0097](../adr/0097-uploads-off-for-launch.md) | Uploads off by configuration for the launch (`UPLOADS_ENABLED`, default false); `Query.uploadsEnabled` lets clients hide upload controls; turning them on needs the scanner and, for PDFs, the PDF engine. (§8.1) |
+| [0098](../adr/0098-old-site-content-into-public-notes.md) | The old site's study content (757 topics, 150 Sheet 150 problems) from its Firestore into the curated catalogue and PUBLIC notes of the LearnViaNotes account: `content:import-legacy`, read-only service account, idempotent (`notes.LegacyContentItem`), dry run; accounts are not imported. (§4.1) |
 
 **Errata (owner-approved, 2026-10-08).** Wording conflicts inside v2, corrected in place and marked *[Erratum E#]*:
 E1 role-brief sections · E2 three repositories, not a monorepo · E3 AI prompts path · E4 web/mobile own repositories,
@@ -204,7 +205,7 @@ User ──< Note ──< Card (ordered blocks)
             │  └── Attachment ──> FileObject (S3 metadata)
             │        └── NoteHighlight (PDF reader)   [Added: ADR-0040]
             └── forkedFromNoteId / forkedFromVersionId
-Subject ──< Topic (hierarchical, platform-curated + user-proposed)
+Subject ──< Topic (hierarchical, platform-curated + user-proposed)   [Amended: ADR-0098 — the old site's topics and Sheet 150 problems are PUBLIC notes of the LearnViaNotes account, each on its curated topic]
 Note ──< NoteTopic >── Topic
 Folder (per user, nested) ──< Note
 Tag (per user) ──< NoteTag >── Note
