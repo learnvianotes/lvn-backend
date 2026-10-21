@@ -4617,6 +4617,11 @@ type Query
   """Teachers: invites to mentor waiting for an answer"""
   myMentorInvites: [MentorInviteItem!]! @join__field(graph: CORE)
 
+  """
+  ADR-0097: whether people may upload files here. Off, clients hide every upload control and createUploadIntent answers UNAVAILABLE.
+  """
+  uploadsEnabled: Boolean! @join__field(graph: NOTES)
+
   """A conversion the viewer asked for"""
   pdfConversion(id: UUID!): PdfConversion @join__field(graph: NOTES)
   pdfPagesThisMonth: PdfPagesUsage! @join__field(graph: NOTES)

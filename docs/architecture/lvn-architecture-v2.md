@@ -47,6 +47,7 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0091](../adr/0091-adults-only-accounts.md) | Accounts for adults only while `ACCOUNT_MINIMUM_AGE` is 18 (the College/Interview launch): sign-up refuses with `UNDER_MINIMUM_AGE`, an unfinished provider account whose own confirmed answer is younger is erased, nothing else is deleted. (§6.2, §7, §15.2) |
 | [0092](../adr/0092-opt-in-google-analytics-on-the-web.md) | Google Analytics 4 on the web only where `NEXT_PUBLIC_GA_MEASUREMENT_ID` is set and only after the visitor allows it; the choice syncs across tabs; path-only page views. (§15.2) |
 | [0093](../adr/0093-releases-from-release-branches-and-tags.md) | Checks on every push; the sandbox from release branches, production from `v*` tags (both repositories); each web build only its own Firebase project; production builds refuse blank legal details. (§16.4) |
+| [0097](../adr/0097-uploads-off-for-launch.md) | Uploads off by configuration for the launch (`UPLOADS_ENABLED`, default false); `Query.uploadsEnabled` lets clients hide upload controls; turning them on needs the scanner and, for PDFs, the PDF engine. (§8.1) |
 
 **Errata (owner-approved, 2026-10-08).** Wording conflicts inside v2, corrected in place and marked *[Erratum E#]*:
 E1 role-brief sections · E2 three repositories, not a monorepo · E3 AI prompts path · E4 web/mobile own repositories,
@@ -404,7 +405,7 @@ Each store has one job. PostgreSQL is the only source of truth; Redis holds noth
 
 ### 8.1 Upload flow
 
-1. Client calls `createUploadIntent(input: {fileName, mimeType, sizeBytes, purpose, parentId})`. Backend checks permission on the parent, quota and limits, and returns a pre-signed PUT URL (10 min) plus a `FileObject` in `PENDING` state.
+1. Client calls `createUploadIntent(input: {fileName, mimeType, sizeBytes, purpose, parentId})`. Backend checks permission on the parent, quota and limits, and returns a pre-signed PUT URL (10 min) plus a `FileObject` in `PENDING` state. *[Amended: ADR-0097 — only while `UPLOADS_ENABLED` is true (default false: the launch runs without uploads); `Query.uploadsEnabled` tells clients, which hide every upload control when it is false]*
 2. Client uploads directly to S3.
 3. Client calls `completeUpload(fileId)`. Backend verifies the object exists, checks magic bytes and size, sets `READY`, and enqueues processing (image resize to 3 sizes, video transcode to H.264 720p, audio normalise, PDF text extraction, malware scan with ClamAV).
 4. Reads use pre-signed GET URLs (15 min) issued only after `PolicyService.can(user, 'read', parent)`. Public note media is served through CloudFront with signed cookies on the public note page.

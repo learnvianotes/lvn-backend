@@ -63,8 +63,9 @@ locals {
       # Public note pages refresh when a note changes (P2d): the API calls the web container directly.
       WEB_REVALIDATE_URL = "http://web:3000/api/revalidate"
       REVALIDATE_SECRET  = random_password.revalidate.result
-      # Upload scans (ADR-0041).
-      CLAMAV_URL = "tcp://clamav:3310"
+      # Upload scans (ADR-0041). The local environment keeps uploads on (ADR-0097: off by default) for the live checks.
+      CLAMAV_URL      = "tcp://clamav:3310"
+      UPLOADS_ENABLED = "true"
       # Project workspaces' repository cards (ADR-0048): the providers' public APIs, no token.
       GITHUB_API_URL = "https://api.github.com"
       GITLAB_API_URL = "https://gitlab.com/api/v4"

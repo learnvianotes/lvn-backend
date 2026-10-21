@@ -81,6 +81,7 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | api, worker | no (secret) | — | Local credentials; on AWS the task role is used instead |
 | `S3_FORCE_PATH_STYLE` | api, worker | no | `false` | `true` for RustFS |
 | `S3_BUCKET` | api, worker | yes | — | Uploads and media (§8) |
+| `UPLOADS_ENABLED` | api, worker | no | `false` | People may upload files (ADR-0097). Off, `createUploadIntent` answers UNAVAILABLE and the clients hide every upload control (`Query.uploadsEnabled`); `true` in development and the local environment |
 | `S3_RESTRICTED_BUCKET` | api, worker | yes | — | Identity documents (ADR-0019) and old-site snapshots (ADR-0023), own encryption key, never behind the CDN |
 | `MAIL_FROM` | api, worker | yes | — | Sender, e.g. `LearnViaNotes <no-reply@learnvianotes.in>` |
 | `MAIL_TRANSPORT` | api, worker | yes | — | `smtp` (Mailpit locally), `ses` (AWS, sent with the task role — ADR-0035) or `resend` |

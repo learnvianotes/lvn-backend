@@ -22,7 +22,7 @@ import { SearchService } from './application/search.service'
 import { Typesense } from './infrastructure/typesense'
 import { SyncService } from './application/sync.service'
 import { SharingService } from './application/sharing.service'
-import { FilesResolver } from './graphql/files.resolver'
+import { FilesResolver, UploadsResolver } from './graphql/files.resolver'
 import { ImportResolver } from './graphql/import.resolver'
 import { CardResolver } from './graphql/media.resolver'
 import { NotesResolver, NoteVersionResolver } from './graphql/notes.resolver'
@@ -97,6 +97,7 @@ export class NotesModule {
         SyncService,
         SyncResolver,
         FilesResolver,
+        UploadsResolver,
         CardResolver,
         NotesResolver,
         UserNotesResolver,

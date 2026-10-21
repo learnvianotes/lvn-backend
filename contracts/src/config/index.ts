@@ -47,6 +47,11 @@ const storage = z.object({
   S3_FORCE_PATH_STYLE: flag.default(false),
   S3_BUCKET: z.string().min(3),
   S3_RESTRICTED_BUCKET: z.string().min(3),
+  /**
+   * ADR-0097: whether people may upload files (pictures, PDFs, recordings, imports, avatars, documents). Off by default:
+   * the launch runs without uploads; files the server makes itself (data exports, covers) are not uploads.
+   */
+  UPLOADS_ENABLED: flag.default(false),
 })
 
 /**

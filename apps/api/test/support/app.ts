@@ -52,6 +52,8 @@ export async function testEnv(overrides: Record<string, string> = {}): Promise<R
     JWT_ISSUER: 'http://localhost:4000',
     WEB_URL: 'http://localhost:3000',
     TRUST_PROXY_HOPS: '1',
+    // The suites exercise uploads; their default is off (ADR-0097), checked in uploads.e2e.test.ts.
+    UPLOADS_ENABLED: 'true',
     ...secrets,
     ...overrides,
   }

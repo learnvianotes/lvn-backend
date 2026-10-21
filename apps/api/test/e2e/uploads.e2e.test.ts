@@ -1,6 +1,7 @@
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { Storage } from '@lvn-backend/storage'
-import { createTestApp, type TestApp } from '../support/app'
+import { apiConfigSchema, loadConfig } from '@lvn/contracts/config'
+import { createTestApp, testEnv, type TestApp } from '../support/app'
 import { complete, createIntent, put, SAMPLES, upload } from '../support/flows'
 import { seedUser, tokenFor } from '../support/seed'
 
@@ -100,4 +101,36 @@ describe('uploads', () => {
     const res = await t.gql('mutation { createUploadIntent(input: { fileName: "a", mimeType: "image/png", sizeBytes: 1, purpose: AVATAR }) { intent { fileId } } }')
     expect(res.errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
   })
+})
+
+/** ADR-0097: with uploads off (the default) nobody can upload, and clients can ask so they hide the controls. */
+describe('uploads switched off', () => {
+  let t: TestApp
+  let token: string
+
+  beforeAll(async () => {
+    t = await createTestApp({ UPLOADS_ENABLED: 'false' })
+    token = tokenFor(t.config, (await seedUser(t.app)).id)
+  })
+
+  afterAll(() => t.close())
+
+  it('says so to anyone who asks, signed in or not', async () => {
+    expect((await t.gql('{ uploadsEnabled }')).data).toEqual({ uploadsEnabled: false })
+    expect((await t.gql('{ uploadsEnabled }', {}, token)).data).toEqual({ uploadsEnabled: false })
+  })
+
+  it('refuses every upload intent before anything is stored', async () => {
+    const db = t.app.get(PrismaService)
+    const before = await db.fileObject.count()
+    const { intent, userErrors } = await createIntent(t, token, { fileName: 'me.png', mimeType: 'image/png', sizeBytes: SAMPLES.png.length, purpose: 'AVATAR' })
+    expect(intent).toBeNull()
+    expect(userErrors).toEqual([expect.objectContaining({ code: 'UNAVAILABLE', message: expect.stringMatching(/Uploads are off/) })])
+    expect(await db.fileObject.count()).toBe(before)
+  })
+})
+
+it('uploads are off unless UPLOADS_ENABLED is true (ADR-0097)', async () => {
+  const { UPLOADS_ENABLED: _on, ...env } = await testEnv()
+  expect(loadConfig(apiConfigSchema, env).UPLOADS_ENABLED).toBe(false)
 })
