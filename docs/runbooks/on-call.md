@@ -15,8 +15,9 @@ A 30-day 99.9 % budget is 43 minutes of errors.
 
 ## Alerts
 
-Defined in `infra/terraform/monitoring/rules.yml` (ADR-0089). Locally, Alertmanager emails them to Mailpit; on AWS,
-to the on-call address the owner chooses.
+Defined in `infra/terraform/monitoring/rules.yml` (ADR-0089). Locally, Alertmanager emails them to Mailpit. The
+Lightsail VMs run no monitoring stack (no room in 2 GB, ADR-0096): until the owner picks Grafana Cloud or another
+service, an uptime check on `<public url>/health/ready` is the page, and `lvn.sh status` on the VM the first look.
 
 | Alert | When | Severity | First look |
 | --- | --- | --- | --- |
@@ -25,7 +26,7 @@ to the on-call address the owner chooses.
 | `ApiLatencyHigh` | p95 above 300 ms for 15 min | ticket | Slow routes on the dashboard; `pg_stat_statements` top queries |
 | `QueueBacklog` | A queue's waiting jobs above 1,000 for 15 min, or growing for 30 min | ticket | `drain-a-queue.md` |
 | `JobsFailing` | Failed jobs above 0.5 % over 1 h | ticket | The failed reason (`drain-a-queue.md`) |
-| `TargetDown` | The API or worker not scraped for 5 min | page | `docker ps` / ECS events; restart; `roll-back.md` |
+| `TargetDown` | The API or worker not scraped for 5 min | page | `docker ps`, or `lvn.sh status` on Lightsail; restart; `roll-back.md` |
 | `AiBudget80` | AI spend at 80 % of the month (§10.4, the app's own email) | ticket | AI settings: lower limits or raise the budget |
 
 **Page** means now, day or night. **Ticket** means the next working day.
@@ -38,9 +39,10 @@ alerts.
 
 ## When paged
 
-1. Acknowledge (reply to the alert email; on AWS, the SNS subscription).
-2. Open the SLO dashboard (Grafana at `<public url>/grafana`; its admin password is the Terraform output
-   `grafana_admin_password`): errors, latency, queues, last deploy.
+1. Acknowledge (reply to the alert email).
+2. Open the SLO dashboard (locally, Grafana at `<public url>/grafana`; its admin password is the Terraform output
+   `grafana_admin_password`): errors, latency, queues, last deploy. On Lightsail: `lvn.sh status` and
+   `docker compose logs --tail 200 api worker` in `/opt/lvn`.
 3. If a deploy in the last hour lines up, roll back (`roll-back.md`), then investigate.
 4. Otherwise: database (`restore.md` if data is damaged), Redis (`drain-a-queue.md`), a provider down (AI, mail,
    push: pause its queue).
@@ -49,8 +51,8 @@ alerts.
 
 ## Slow queries
 
-Postgres keeps statistics of every statement (`pg_stat_statements`: preloaded on the local environment and by the AWS
-module's parameter group). Once per database:
+Postgres keeps statistics of every statement (`pg_stat_statements`: preloaded on the local environment and by the Lightsail
+stack's Postgres command, `infra/lightsail/compose.yaml`). Once per database:
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;

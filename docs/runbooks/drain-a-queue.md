@@ -11,7 +11,8 @@ idempotent (§9.2), so a job run twice does no harm.
 ## Look
 
 The worker's CLI talks to BullMQ directly, so it works while the worker is stopped. On the local environment, in the
-worker's container; on AWS, `aws ecs execute-command` into a worker task with the same command.
+worker's container; on Lightsail, as the deploy user in `/opt/lvn`, `docker compose exec worker node apps/worker/dist/cli.js …`
+with the same arguments.
 
 ```bash
 # Every queue's waiting, delayed, active and failed jobs
