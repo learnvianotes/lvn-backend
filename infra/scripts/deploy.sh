@@ -8,6 +8,9 @@
 #
 #   infra/scripts/deploy.sh sandbox [--allow-dirty]
 # Needs: AWS CLI v2 (profile from .env), Terraform >= 1.9, Docker, git; lvn-web checked out next to lvn-backend (or LVN_WEB_DIR).
+#
+# Releases (ADR-0093): production only when both repositories' HEADs carry a v* tag; the sandbox only from an lvn-web
+# release/** branch or a v* tag. lvn-web's .github/workflows/deploy.yml runs this on those pushes.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -23,6 +26,22 @@ out() { tf output -raw "$1"; }
 
 load_env "$env"
 [ -d "$web" ] || { echo "lvn-web not found at $web (set LVN_WEB_DIR)" >&2; exit 1; }
+
+release_tag() { git -C "$1" tag --points-at HEAD --list 'v*' | head -n 1; }
+case "$env" in
+  production)
+    for repo in "$backend" "$web"; do
+      [ -n "$(release_tag "$repo")" ] || { echo "production deploys only from a v* tag: $repo's HEAD has none (ADR-0093)" >&2; exit 1; }
+    done
+    ;;
+  sandbox)
+    branch=$(git -C "$web" symbolic-ref --short -q HEAD || true)
+    case "$branch" in
+      release/*) ;;
+      *) [ -n "$(release_tag "$web")" ] || { echo "the sandbox deploys only from an lvn-web release/** branch or a v* tag, not ${branch:-a detached HEAD} (ADR-0093)" >&2; exit 1; } ;;
+    esac
+    ;;
+esac
 
 # Images are tagged by commit and never overwritten (ECR tags are immutable); uncommitted changes need --allow-dirty.
 tag_of() {
@@ -67,6 +86,7 @@ if ! pushed "$web_repo" "$web_tag"; then
     --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID="${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}" \
     --build-arg NEXT_PUBLIC_FIREBASE_APP_ID="${NEXT_PUBLIC_FIREBASE_APP_ID:-}" \
     --build-arg NEXT_PUBLIC_SENTRY_DSN="${NEXT_PUBLIC_SENTRY_DSN:-}" \
+    --build-arg NEXT_PUBLIC_GA_MEASUREMENT_ID="${NEXT_PUBLIC_GA_MEASUREMENT_ID:-}" \
     --build-arg NEXT_PUBLIC_STORAGE_ORIGINS="https://*.s3.$region.amazonaws.com https://s3.$region.amazonaws.com" \
     "$web"
   docker push "$web_repo:$web_tag"

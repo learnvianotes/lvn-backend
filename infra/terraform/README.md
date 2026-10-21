@@ -107,7 +107,9 @@ Then:
 
 ## Every deploy
 
-`infra/scripts/deploy.sh sandbox` (refuses uncommitted changes unless `--allow-dirty`). Images are tagged by commit and
+`infra/scripts/deploy.sh sandbox` (refuses uncommitted changes unless `--allow-dirty`). It deploys only released code
+(ADR-0093): the sandbox needs lvn-web on a `release/**` branch or a `v*` tag, production a `v*` tag on both
+repositories' HEADs; lvn-web's `deploy.yml` runs it on exactly those pushes. Images are tagged by commit and
 kept in SSM Parameter Store, so `run.sh sandbox apply` on its own changes infrastructure without touching what runs.
 Rollback: write the previous tag to the SSM parameters (`run.sh sandbox output image_tag_parameters`) and apply.
 

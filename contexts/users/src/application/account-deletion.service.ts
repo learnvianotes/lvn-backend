@@ -71,6 +71,19 @@ export class AccountDeletionService {
     return { deleted: due.length, announced: recent.length }
   }
 
+  /**
+   * ADR-0091: an account a sign-in provider created whose own registration answer was below the minimum age. It never
+   * finished registering, so it holds nothing; it goes now, without the grace, and every context is told as usual. A
+   * finished account is never erased this way.
+   */
+  async eraseRefused(userId: string): Promise<void> {
+    const user = await this.db.user.findUnique({ where: { id: userId }, select: { registrationCompletedAt: true, deletedAt: true } })
+    if (!user || user.deletedAt || user.registrationCompletedAt) return
+    await this.audit.record({ actorId: userId, action: 'account.refused.under_minimum_age', targetType: 'USER', targetId: userId })
+    await this.erase(userId, new Date())
+    await this.events.publish('UserDeleted', { userId })
+  }
+
   /** The users context's part: every row about the person goes; the user row stays as "Deleted user". */
   private async erase(userId: string, now: Date): Promise<void> {
     await this.sessions.revokeAll(userId)

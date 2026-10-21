@@ -12,8 +12,9 @@ migration.
 
 1. Find the previous good commit: the last `Deployed …` line in the deploy log, or `aws ecs describe-task-definition`
    on the previous revision.
-2. `git -C lvn-backend checkout <commit>` (and lvn-web if the web changed), then `infra/scripts/deploy.sh <env>`. The
-   images exist, so nothing is rebuilt; the migrate step finds nothing to do.
+2. Check out the previous release (ADR-0093: production deploys only from `v*` tags in both repositories, the sandbox
+   only from an lvn-web `release/**` branch or tag): `git -C lvn-backend checkout v<previous>` and the same in lvn-web,
+   then `infra/scripts/deploy.sh <env>`. The images exist, so nothing is rebuilt; the migrate step finds nothing to do.
 3. Faster, without a checkout: `aws ecs update-service --cluster <name> --service api --task-definition <previous
    revision>`, then the same for worker and web.
 4. `pnpm smoke <url>`; watch p95 and the error rate for 15 minutes.

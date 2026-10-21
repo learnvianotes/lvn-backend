@@ -168,7 +168,7 @@ export class DataExportService {
   private readme(name: string, at: Date, counts: Record<string, number>, omitted: string[], files: ExportFile[]): string {
     const notes = files.filter((f) => f.path.endsWith('/index.md'))
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Your LearnViaNotes data</title>
-<style>body{font:16px/1.5 system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;color:#1c1a3a}code{background:#eef;padding:0 .25rem;border-radius:4px}li{margin:.2rem 0}</style></head><body>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;color:#111827}code{background:#f1f4f8;padding:0 .25rem;border-radius:4px}li{margin:.2rem 0}</style></head><body>
 <h1>Your LearnViaNotes data</h1>
 <p>Prepared for ${html(name)} on ${html(at.toUTCString())}.</p>
 <p>${counts.notes ?? 0} notes, ${counts.versions ?? 0} versions and ${counts.media ?? 0} files.</p>
@@ -177,7 +177,7 @@ export class DataExportService {
 <li><code>notes/&lt;kind&gt;/&lt;note&gt;/index.md</code> — each note as Markdown, with its details at the top. Other note apps open these.</li>
 <li><code>notes/&lt;kind&gt;/&lt;note&gt;/note.json</code> — every card exactly as stored, with every published version. Import this archive into LearnViaNotes to bring the notes back.</li>
 <li><code>notes/&lt;kind&gt;/&lt;note&gt;/media/</code> — pictures, video, audio and files from the notes.</li>
-<li><code>data/</code> — your account, sign-ins, consents, study progress, reports and activity, as JSON.</li>
+<li><code>data/</code> — everything else we hold about you, as JSON: your account with your date of birth and when you registered (<code>data/users/account.json</code>), the Terms and Privacy Policy versions you accepted (<code>data/users/consents.json</code>), your sign-ins, study progress, reports, the activity log, and every learning activity event (<code>data/learning/events.json</code>).</li>
 <li><code>manifest.json</code> — every file with its size and SHA-256 checksum.</li>
 </ul>
 ${omitted.length ? `<h2>Not included</h2><ul>${omitted.map((o) => `<li>${html(o)}</li>`).join('')}</ul>` : ''}

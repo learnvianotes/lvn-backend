@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { PrismaService } from '@lvn-backend/prisma-base'
 import { Mailbox } from '@lvn-backend/testing'
 import request from 'supertest'
 import { createTestApp, infra, type TestApp } from '../support/app'
@@ -29,6 +30,13 @@ const signUpInput = (over: Record<string, unknown> = {}) => ({
   acceptedTermsVersion: '2026-10-08',
   ...over,
 })
+
+/** The date `years` ago today (UTC), as the sign-up forms send it. */
+const yearsAgo = (years: number) => {
+  const d = new Date()
+  d.setUTCFullYear(d.getUTCFullYear() - years)
+  return d.toISOString().slice(0, 10)
+}
 
 type SignUpResult = { signUp: { session: { accessToken: string; refreshToken: string | null; user: { id: string; email: string; emailVerified: boolean; registrationComplete: boolean; verified: boolean; handle: string } } | null; userErrors: { field: string[] | null; message: string; code: string }[] } }
 
@@ -111,6 +119,20 @@ describe('auth', () => {
       const res = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput(over) })
       expect(res.data!.signUp.session).toBeNull()
       expect(res.data!.signUp.userErrors).toEqual([{ code: 'VALIDATION', field, message: expect.stringMatching(message) }])
+    })
+
+    it('refuses a date of birth below the minimum age and stores nothing (ADR-0091)', async () => {
+      const input = signUpInput({ dateOfBirth: yearsAgo(17) })
+      const res = await t.gql<SignUpResult>(SIGN_UP, { input })
+      expect(res.data!.signUp.session).toBeNull()
+      expect(res.data!.signUp.userErrors).toEqual([{ code: 'UNDER_MINIMUM_AGE', field: ['input', 'dateOfBirth'], message: expect.stringMatching(/only for adults/) }])
+      expect(await t.app.get(PrismaService).user.findUnique({ where: { email: input.email } })).toBeNull()
+    })
+
+    it('lets someone in on their eighteenth birthday', async () => {
+      const res = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput({ dateOfBirth: yearsAgo(18) }) })
+      expect(res.data!.signUp.userErrors).toEqual([])
+      expect(res.data!.signUp.session).not.toBeNull()
     })
 
     it('refuses an email that already has an account, in any letter case', async () => {

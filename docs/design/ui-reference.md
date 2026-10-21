@@ -17,26 +17,30 @@ They are **references, not specs**: anything they show that the architecture spe
 - **Name:** LearnViaNotes — app name, web title, store listing, emails — always written in full in headers, with
   "Notes" in the brand colour. Development builds are "LearnViaNotes Dev" and "LearnViaNotes Sandbox".
 - **Logo (2026-10-08):** an open notebook with smooth curved pages, note lines, a check ("learned") and a small spark
-  ("insight") on the indigo gradient tile. One set of shapes, `logo-paths.json`, lives in lvn-mobile
+  ("insight") on the blue gradient tile *[ADR-0094: was indigo]*. One set of shapes, `logo-paths.json`, lives in lvn-mobile
   (`assets/brand/`, renders the app icon, adaptive/monochrome icons and splash) and lvn-web (`branding/`, renders the
   favicons and PWA icons); both copies stay identical until the shapes move into `@lvn/contracts`.
-- **Feel:** light, soft and rounded; lavender-tinted backgrounds, white cards, one indigo accent, warm illustrations,
-  dark night-sky hero cards for focus and live moments.
+- **Feel:** light, soft and rounded; cool, quiet backgrounds, white cards, one blue accent, warm illustrations,
+  dark night-sky hero cards for focus and live moments. **No purple, lavender, indigo or violet anywhere** (owner,
+  2026-10-21, ADR-0094); the board's indigo is replaced by the brand blue.
 - **Tokens** (read off the boards; confirm against the source files):
 
 | Token | Light | Dark | Use |
 | --- | --- | --- | --- |
-| `accent` | `#4F46E5` | `#818CF8` | Primary buttons, active tab, links |
-| `accent-soft` | `#EEF2FF` | `#1E1B4B` | Chips, selected rows, icon tiles |
-| `bg` | `#F7F7FB` | `#0E0E12` | Page background |
-| `surface` | `#FFFFFF` | `#17171C` | Cards, sheets |
-| `fg` / `muted` | `#1E1B2E` / `#5F5F73` | `#F4F4F5` / `#A1A1AA` | Text |
-| `border` | `#E6E6EF` | `#2C2C35` | Card and input borders |
+| `accent` | `#2563EB` | `#60A5FA` | Primary buttons, active tab, links |
+| `accent-soft` | `#EFF6FF` | `#172554` | Chips, selected rows, icon tiles |
+| `bg` | `#F6F8FB` | `#0D1117` | Page background |
+| `surface` / `surface-2` | `#FFFFFF` / `#F1F4F8` | `#161B22` / `#1F2630` | Cards, sheets |
+| `fg` / `muted` | `#111827` / `#5B6475` | `#F4F4F5` / `#A1A1AA` | Text |
+| `border` | `#E3E8EF` | `#2D3440` | Card and input borders |
+| definitions | teal `#0F766E` | `#5EEAD4` | Definition cards |
 | streak / exam / success | orange `#F97316`, red `#EF4444`, green `#16A34A` | lighter tints | Status tiles |
-| hero dark | `#1C1A3A` → `#2B2560` | same | Focus mode, live room, contest cards |
+| hero dark | `#0B1220` → `#1E3A8A` | same | Focus mode, live room, contest cards |
 
-  Radius: 12 px controls, 16 px cards, full pills for chips. Type: Inter (already in lvn-web). Contrast: every
-  text/background pair must pass WCAG 2.1 AA (§12.2) — `accent` on `accent-soft` is 5.6:1 (light) and 5.4:1 (dark); the lowest pair is 5.4:1.
+  *[ADR-0094: the board's indigo tokens are replaced by these.]* Radius: 12 px controls, 16 px cards, full pills for
+  chips. Type: Inter (already in lvn-web). Contrast: every text/background pair must pass WCAG 2.1 AA (§12.2):
+  `accent` on `accent-soft` is 4.75:1 (light) and 5.8:1 (dark), and the lowest pair is `accent` on `surface-2`, at
+  4.7:1.
 
 ## Screen inventory → spec
 

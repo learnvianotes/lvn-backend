@@ -33,6 +33,7 @@ export const Errors = {
   conflict: (message: string, field?: string[]) => new AppError(ErrorCode.CONFLICT, message, field),
   rateLimited: (retryAfter: number, message = 'Too many attempts. Try again later.') => new AppError(ErrorCode.RATE_LIMITED, message, undefined, retryAfter),
   unavailable: (message: string) => new AppError(ErrorCode.UNAVAILABLE, message),
+  underMinimumAge: (message: string, field?: string[]) => new AppError(ErrorCode.UNDER_MINIMUM_AGE, message, field),
 }
 
 /** An AppError as a payload entry. */
@@ -41,15 +42,16 @@ export const toUserError = (e: AppError): UserError => ({ code: e.code, message:
 type Body<P> = Omit<P, 'userErrors'>
 
 /**
- * Runs a mutation body and turns expected failures (VALIDATION, CONFLICT, NOT_FOUND, RATE_LIMITED, UNAVAILABLE) into the payload's
- * `userErrors`; UNAUTHENTICATED, FORBIDDEN and anything unexpected still throw, so clients handle them in one place.
+ * Runs a mutation body and turns expected failures (VALIDATION, CONFLICT, NOT_FOUND, RATE_LIMITED, UNAVAILABLE,
+ * UNDER_MINIMUM_AGE) into the payload's `userErrors`; UNAUTHENTICATED, FORBIDDEN and anything unexpected still throw, so
+ * clients handle them in one place.
  * `P` is the payload type, e.g. `withUserErrors<AuthPayload>(…)`.
  */
 export async function withUserErrors<P extends { userErrors: UserError[] }>(run: () => Promise<Body<P>>, empty: Body<P>): Promise<P> {
   try {
     return { ...(await run()), userErrors: [] } as unknown as P
   } catch (e) {
-    if (e instanceof AppError && (e.code === ErrorCode.VALIDATION || e.code === ErrorCode.CONFLICT || e.code === ErrorCode.NOT_FOUND || e.code === ErrorCode.RATE_LIMITED || e.code === ErrorCode.UNAVAILABLE)) {
+    if (e instanceof AppError && (e.code === ErrorCode.VALIDATION || e.code === ErrorCode.CONFLICT || e.code === ErrorCode.NOT_FOUND || e.code === ErrorCode.RATE_LIMITED || e.code === ErrorCode.UNAVAILABLE || e.code === ErrorCode.UNDER_MINIMUM_AGE)) {
       return { ...empty, userErrors: [toUserError(e)] } as unknown as P
     }
     throw e

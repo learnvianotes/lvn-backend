@@ -82,7 +82,7 @@ describe('security: abuse', () => {
     })
 
     it('refuses batched operations, and counts every alias towards complexity (OWASP GraphQL Cheat Sheet)', async () => {
-      const post = (body: unknown) => request(t.app.getHttpServer()).post('/graphql').set('content-type', 'application/json').send(body)
+      const post = (body: string | object) => request(t.app.getHttpServer()).post('/graphql').set('content-type', 'application/json').send(body)
       const batched = await post([{ query: '{ termsVersion }' }, { query: '{ termsVersion }' }])
       expect(batched.status).toBe(400)
       const aliases = await post({ query: `{ ${Array.from({ length: MAX_COMPLEXITY + 1 }, (_, i) => `a${i}: termsVersion`).join(' ')} }` })

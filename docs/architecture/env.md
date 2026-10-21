@@ -21,11 +21,12 @@ Validated in lvn-web `lib/env.ts` until `@lvn/contracts/config` is published (AD
 | `NEXT_DIST_DIR` | no | `.next` | — | — | — | Build output folder; Playwright builds to `.next-e2e` so it never clobbers `next dev` |
 | `NEXT_PUBLIC_API_URL` | yes | — | `http://localhost:4000/graphql` | `<CloudFront address>/graphql` | `https://api.learnvianotes.in/graphql` | The API's GraphQL gateway |
 | `NEXT_PUBLIC_LIVE_URL` | no | derived from `NEXT_PUBLIC_API_URL` in development; otherwise no live updates | `ws://localhost:4000/graphql/live` | `<CloudFront address, wss>/graphql/live` | `wss://api.learnvianotes.in/graphql/live` | Live updates over graphql-ws (ADR-0042) |
-| `NEXT_PUBLIC_FIREBASE_API_KEY`, `…_AUTH_DOMAIN`, `…_PROJECT_ID`, `…_APP_ID` | no | — (Google off) | — | project values | project values | Google sign-in through Firebase (ADR-0007); public identifiers, not secrets |
+| `NEXT_PUBLIC_FIREBASE_API_KEY`, `…_AUTH_DOMAIN`, `…_PROJECT_ID`, `…_APP_ID` | no | — (Google off) | — | the test project's (`learnvianotes-test`) | the production project's | Google sign-in through Firebase (ADR-0007); public identifiers, not secrets. A production build must use the production project and any other build must not (lvn-web `config/firebase-projects.json`, ADR-0093) |
 | `NEXT_PUBLIC_GITHUB_CLIENT_ID`, `NEXT_PUBLIC_GITHUB_AUTHORIZE_URL` | no | — (GitHub off) | — | app id, `https://github.com/login/oauth/authorize` | same | GitHub consent page (PKCE) |
 | `NEXT_PUBLIC_LINKEDIN_CLIENT_ID`, `NEXT_PUBLIC_LINKEDIN_AUTHORIZE_URL` | no | — (LinkedIn off) | — | app id, `https://www.linkedin.com/oauth/v2/authorization` | same | LinkedIn consent page (PKCE) |
 | `NEXT_PUBLIC_SENTRY_DSN` | no | — (off) | — | the web project's DSN | same | Browser and server errors (§16.5); a DSN is public by design |
 | `NEXT_PUBLIC_STORAGE_ORIGINS` | no | — (any origin) | — | `https://*.s3.<region>.amazonaws.com` | same | Where pre-signed storage URLs point, space-separated; the Content Security Policy's `connect-src` allows only these besides the site, the API and sign-in (ADR-0090) |
+| `NEXT_PUBLIC_GA_MEASUREMENT_ID` | no | — (no analytics) | — | optional, a test property | the GA4 property, `G-…` | Google Analytics 4, loaded only after the visitor allows it (ADR-0092) |
 | `API_INTERNAL_URL` | no | `NEXT_PUBLIC_API_URL` | — | the API's address inside the VPC | same | Server-only: where server rendering (public note pages, sitemap) calls the API |
 | `REVALIDATE_SECRET` | no | — (on-demand refresh off) | — | secret, ≥ 32 characters | same | Server-only: the API's calls to `/api/revalidate` must carry it; the same value as the API's |
 
@@ -91,6 +92,7 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `WEB_URL` | api | yes | — | lvn-web origin for links in emails and OAuth redirects |
 | `CODE_HMAC_SECRET` | api | yes (secret, ≥ 32 chars) | — | HMAC key for short codes (institutional email) |
 | `DIGITAL_CONSENT_AGE` | api | no | `18` | Below it an account needs guardian or institutional consent or is a restricted minor (§15.2; 18 under DPDP) |
+| `ACCOUNT_MINIMUM_AGE` | api | no | `18` | Below it no account is created: sign-up refuses, and a provider account's under-age answer erases it (ADR-0091). `0` lets everyone register (minors restricted by `DIGITAL_CONSENT_AGE`) |
 | `PASSWORD_BREACH_API_URL` | api | no | — (check off) | k-anonymity range API, `https://api.pwnedpasswords.com/range` (§7.1) |
 | `FIREBASE_PROJECT_ID` | api | no | — (Google off) | Project whose ID tokens `signInWithGoogle` accepts (ADR-0007); no service account needed to verify |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | api | no (secret) | — (GitHub off) | OAuth app for `oauthExchange` |

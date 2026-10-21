@@ -91,6 +91,12 @@ const auth = z.object({
    * 18 under India's DPDP Act (the default for learnvianotes.in), 16 in parts of the EU, at least 13 everywhere.
    */
   DIGITAL_CONSENT_AGE: z.coerce.number().int().min(13).max(21).default(18),
+  /**
+   * ADR-0091: the youngest age that may create an account. Below it sign-up refuses, and an account a sign-in provider
+   * created is erased when its own (confirmed) answer is younger. 18 for the College/Interview launch; 0 lets everyone
+   * in, minors then restricted as DIGITAL_CONSENT_AGE says (§15.2, the School track).
+   */
+  ACCOUNT_MINIMUM_AGE: z.coerce.number().int().min(0).max(21).default(18),
   /** ADR-0037: extra `REASON: phrase` lines for the rule-based moderation scorer; the built-in spam phrases apply without it. */
   MODERATION_WORDS_FILE: z.string().min(1).optional(),
   /** The web app's on-demand revalidation endpoint (`<web>/api/revalidate`): public note pages refresh when a note changes. Off without it. */
@@ -326,6 +332,11 @@ export const webConfigSchema = z.object({
    * ranges) and nowhere else beyond the site, the API and sign-in. Unset, the policy allows any origin (development).
    */
   NEXT_PUBLIC_STORAGE_ORIGINS: z.string().min(1).optional(),
+  /**
+   * Google Analytics 4 measurement id (ADR-0092), e.g. G-XXXXXXXXXX: loaded only after the visitor allows it. Unset, no
+   * analytics, banner or setting at all.
+   */
+  NEXT_PUBLIC_GA_MEASUREMENT_ID: z.string().regex(/^G-[A-Z0-9]+$/, 'must be a GA4 measurement id, G-…').optional(),
 })
 export type WebConfig = z.infer<typeof webConfigSchema>
 

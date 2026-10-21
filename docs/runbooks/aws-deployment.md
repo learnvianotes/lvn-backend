@@ -255,7 +255,9 @@ cp infra/terraform/envs/sandbox/.env.example infra/terraform/envs/sandbox/.env  
 infra/terraform/bootstrap.sh sandbox                          # encrypted, versioned state bucket
 infra/terraform/run.sh sandbox init
 
-# Every deploy: images tagged by commit, migrations as a one-off task, then a rolling update
+# Every deploy: images tagged by commit, migrations as a one-off task, then a rolling update. The sandbox deploys an
+# lvn-web release/** branch (or a v* tag); production only v* tags in both repositories (ADR-0093). lvn-web's
+# .github/workflows/deploy.yml runs this on those pushes.
 infra/scripts/deploy.sh sandbox                               # first apply: CloudFront takes about 10 minutes
 ```
 

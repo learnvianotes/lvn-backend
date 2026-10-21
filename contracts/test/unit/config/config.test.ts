@@ -74,6 +74,8 @@ describe('apiConfigSchema (Phase 1)', () => {
   it('defaults the digital consent age to 18 (DPDP) and bounds it', () => {
     expect(loadConfig(apiConfigSchema, valid).DIGITAL_CONSENT_AGE).toBe(18)
     expect(loadConfig(apiConfigSchema, { ...valid, DIGITAL_CONSENT_AGE: '16' }).DIGITAL_CONSENT_AGE).toBe(16)
+    expect(loadConfig(apiConfigSchema, valid).ACCOUNT_MINIMUM_AGE).toBe(18)
+    expect(loadConfig(apiConfigSchema, { ...valid, ACCOUNT_MINIMUM_AGE: '0' }).ACCOUNT_MINIMUM_AGE).toBe(0)
     expect(() => loadConfig(apiConfigSchema, { ...valid, DIGITAL_CONSENT_AGE: '10' })).toThrow(/DIGITAL_CONSENT_AGE/)
   })
 
@@ -167,6 +169,12 @@ describe('webConfigSchema', () => {
     const c = loadConfig(webConfigSchema, { NEXT_PUBLIC_SITE_URL: 'https://www.learnvianotes.in', NEXT_PUBLIC_API_URL: 'https://api.learnvianotes.in/graphql', NEXT_PUBLIC_FEEDBACK_URL: '' })
     expect(c.NEXT_PUBLIC_APP_ENV).toBe('development')
     expect(() => loadConfig(webConfigSchema, { NEXT_PUBLIC_SITE_URL: 'https://www.learnvianotes.in' })).toThrow(/NEXT_PUBLIC_API_URL/)
+  })
+
+  it('takes only a GA4 measurement id for Google Analytics (ADR-0092)', () => {
+    const base = { NEXT_PUBLIC_SITE_URL: 'https://www.learnvianotes.in', NEXT_PUBLIC_API_URL: 'https://api.learnvianotes.in/graphql' }
+    expect(loadConfig(webConfigSchema, { ...base, NEXT_PUBLIC_GA_MEASUREMENT_ID: 'G-AB12CD34' }).NEXT_PUBLIC_GA_MEASUREMENT_ID).toBe('G-AB12CD34')
+    expect(() => loadConfig(webConfigSchema, { ...base, NEXT_PUBLIC_GA_MEASUREMENT_ID: 'UA-1234-1' })).toThrow(/NEXT_PUBLIC_GA_MEASUREMENT_ID/)
   })
 })
 
