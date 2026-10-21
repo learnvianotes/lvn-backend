@@ -1,6 +1,6 @@
 # ADR-0093: Releases — checks on every push, the sandbox from release branches, production from `v*` tags
 
-- Status: Accepted (owner decision, 2026-10-20, made for the old app's launch build and carried to the rewrite)
+- Status: Accepted (owner decision, 2026-10-20, made for the old app's launch build and carried to the rewrite); the deploy mechanism amended by ADR-0096 (Lightsail over SSH instead of deploy.sh on AWS; beta in place of the sandbox)
 - Date: 2026-10-21
 - Deciders: Backend, Web agents; owner
 - Spec sections: §16.4 (CI/CD: "`main` merge: build images, deploy to sandbox …; Production: manual approval → …")

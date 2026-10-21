@@ -1,0 +1,119 @@
+# Deploys lvn-backend to its Lightsail VM (ADR-0096) — the only way the beta and production backends change.
+#
+#   push to release/**   → beta         GitHub environment "beta"         (https://beta.learnvianotes.in)
+#   push a tag v*        → production   GitHub environment "production"   (give it a required reviewer)
+#
+# The backend image is built once per commit and pushed to GHCR (ghcr.io/<owner>/lvn-backend:<sha>); a tag on a commit
+# beta already runs reuses that image. infra/lightsail/deploy.sh then installs the stack on the VM over SSH, writes its
+# settings from the environment's secrets and variables, runs `docker compose pull && docker compose up -d` there and
+# fails unless every service is healthy and the site answers over HTTPS. lvn-web's deploy.yml ships the web image the
+# same way. Every secret and variable is listed in docs/runbooks/lightsail.md; values reach the script through env,
+# never written into its text.
+name: deploy
+
+on:
+  push:
+    branches: ['release/**']
+    tags: ['v*']
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-${{ github.ref_type == 'tag' && 'production' || 'beta' }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: cp .env.example .env
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm lint
+
+  image:
+    needs: check
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.name.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: name
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "image=ghcr.io/${OWNER,,}/lvn-backend:${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: exists
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+        run: |
+          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then echo "found=true" >> "$GITHUB_OUTPUT"; else echo "found=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.exists.outputs.found != 'true'
+        uses: docker/setup-buildx-action@v3
+      - if: steps.exists.outputs.found != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/api.Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.name.outputs.image }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: image
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_type == 'tag' && 'production' || 'beta' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy (fails unless the stack is healthy)
+        run: infra/lightsail/deploy.sh
+        env:
+          LVN_ENV: ${{ github.ref_type == 'tag' && 'production' || 'beta' }}
+          LVN_API_IMAGE: ${{ needs.image.outputs.image }}
+          # The VM
+          LVN_DEPLOY_HOST: ${{ secrets.LVN_DEPLOY_HOST }}
+          LVN_DEPLOY_SSH_KEY: ${{ secrets.LVN_DEPLOY_SSH_KEY }}
+          LVN_SSH_KNOWN_HOSTS: ${{ secrets.LVN_SSH_KNOWN_HOSTS }}
+          LVN_GHCR_USER: ${{ vars.LVN_GHCR_USER }}
+          LVN_GHCR_TOKEN: ${{ secrets.LVN_GHCR_TOKEN }}
+          # The site
+          LVN_PUBLIC_URL: ${{ vars.LVN_PUBLIC_URL }}
+          LVN_SITE_HOSTS: ${{ vars.LVN_SITE_HOSTS }}
+          LVN_ACME_EMAIL: ${{ vars.LVN_ACME_EMAIL }}
+          LVN_APP_ENV: ${{ vars.LVN_APP_ENV }}
+          LVN_UPLOADS_ENABLED: ${{ vars.LVN_UPLOADS_ENABLED }}
+          LVN_FIREBASE_PROJECT_ID: ${{ vars.LVN_FIREBASE_PROJECT_ID }}
+          # Email (Resend) and storage (Cloudflare R2)
+          LVN_MAIL_FROM: ${{ vars.LVN_MAIL_FROM }}
+          LVN_RESEND_API_KEY: ${{ secrets.LVN_RESEND_API_KEY }}
+          LVN_R2_ENDPOINT: ${{ vars.LVN_R2_ENDPOINT }}
+          LVN_R2_BUCKET: ${{ vars.LVN_R2_BUCKET }}
+          LVN_R2_RESTRICTED_BUCKET: ${{ vars.LVN_R2_RESTRICTED_BUCKET }}
+          LVN_R2_BACKUP_BUCKET: ${{ vars.LVN_R2_BACKUP_BUCKET }}
+          LVN_R2_ACCESS_KEY_ID: ${{ secrets.LVN_R2_ACCESS_KEY_ID }}
+          LVN_R2_SECRET_ACCESS_KEY: ${{ secrets.LVN_R2_SECRET_ACCESS_KEY }}
+          # The stack's own secrets
+          LVN_POSTGRES_PASSWORD: ${{ secrets.LVN_POSTGRES_PASSWORD }}
+          LVN_REDIS_PASSWORD: ${{ secrets.LVN_REDIS_PASSWORD }}
+          LVN_JWT_PRIVATE_KEY: ${{ secrets.LVN_JWT_PRIVATE_KEY }}
+          LVN_JWT_PUBLIC_KEY: ${{ secrets.LVN_JWT_PUBLIC_KEY }}
+          LVN_CODE_HMAC_SECRET: ${{ secrets.LVN_CODE_HMAC_SECRET }}
+          LVN_REVALIDATE_SECRET: ${{ secrets.LVN_REVALIDATE_SECRET }}
+          LVN_AI_KEYS_SECRET: ${{ secrets.LVN_AI_KEYS_SECRET }}
+          # Optional
+          LVN_SENTRY_DSN: ${{ vars.LVN_SENTRY_DSN }}
+          LVN_BACKEND_EXTRA_ENV: ${{ secrets.LVN_BACKEND_EXTRA_ENV }}

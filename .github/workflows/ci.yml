@@ -109,7 +109,14 @@ jobs:
         run: terraform init -backend=false -input=false && terraform validate
       - name: Deploy scripts (shellcheck)
         working-directory: infra
-        run: shellcheck -x -P SCRIPTDIR scripts/deploy.sh scripts/deploy-local.sh local-vm/vm.sh terraform/run.sh terraform/bootstrap.sh terraform/lib.sh
+        run: shellcheck -x -P SCRIPTDIR scripts/deploy.sh scripts/deploy-local.sh local-vm/vm.sh terraform/run.sh terraform/bootstrap.sh terraform/lib.sh lightsail/deploy.sh lightsail/lvn.sh lightsail/new-secrets.sh
+      - name: The Lightsail stack parses (ADR-0096)
+        working-directory: infra/lightsail
+        run: |
+          mkdir -p env && touch env/backend.env env/web.env
+          printf 'LVN_API_IMAGE=a\nLVN_WEB_IMAGE=w\nLVN_POSTGRES_PASSWORD=p\nLVN_REDIS_PASSWORD=r\nLVN_SITE_HOSTS=h\nLVN_CANONICAL_HOST=h\nLVN_ACME_EMAIL=e\nCOMPOSE_PROFILES=web\n' > .env
+          docker compose config --quiet
+          docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" -e LVN_SITE_HOSTS=beta.example.org -e LVN_CANONICAL_HOST=beta.example.org -e LVN_ACME_EMAIL=ops@example.org caddy:2.11.7-alpine caddy validate --config /etc/caddy/Caddyfile
 
   secrets:
     runs-on: ubuntu-latest

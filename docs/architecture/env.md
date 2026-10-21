@@ -25,7 +25,7 @@ Validated in lvn-web `lib/env.ts` until `@lvn/contracts/config` is published (AD
 | `NEXT_PUBLIC_GITHUB_CLIENT_ID`, `NEXT_PUBLIC_GITHUB_AUTHORIZE_URL` | no | — (GitHub off) | — | app id, `https://github.com/login/oauth/authorize` | same | GitHub consent page (PKCE) |
 | `NEXT_PUBLIC_LINKEDIN_CLIENT_ID`, `NEXT_PUBLIC_LINKEDIN_AUTHORIZE_URL` | no | — (LinkedIn off) | — | app id, `https://www.linkedin.com/oauth/v2/authorization` | same | LinkedIn consent page (PKCE) |
 | `NEXT_PUBLIC_SENTRY_DSN` | no | — (off) | — | the web project's DSN | same | Browser and server errors (§16.5); a DSN is public by design |
-| `NEXT_PUBLIC_STORAGE_ORIGINS` | no | — (any origin) | — | `https://*.s3.<region>.amazonaws.com` | same | Where pre-signed storage URLs point, space-separated; the Content Security Policy's `connect-src` allows only these besides the site, the API and sign-in (ADR-0090) |
+| `NEXT_PUBLIC_STORAGE_ORIGINS` | no | — (any origin) | — | the R2 endpoint's origin (`LVN_R2_ENDPOINT`, lvn-web's deploy.yml) | same | Where pre-signed storage URLs point, space-separated; the Content Security Policy's `connect-src` allows only these besides the site, the API and sign-in (ADR-0090, ADR-0096) |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | no | — (no analytics) | — | optional, a test property | the GA4 property, `G-…` | Google Analytics 4, loaded only after the visitor allows it (ADR-0092) |
 | `API_INTERNAL_URL` | no | `NEXT_PUBLIC_API_URL` | — | the API's address inside the VPC | same | Server-only: where server rendering (public note pages, sitemap) calls the API |
 | `REVALIDATE_SECRET` | no | — (on-demand refresh off) | — | secret, ≥ 32 characters | same | Server-only: the API's calls to `/api/revalidate` must carry it; the same value as the API's |
@@ -76,15 +76,15 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `TRUST_PROXY_HOPS` | api | no | `0` | Proxies in front of the API whose `X-Forwarded-For` is trusted for the client address used by rate limits: `0` locally, `1` behind the ALB, `2` behind CloudFront + ALB. Higher than the real number lets clients choose their address |
 | `WORKER_HEALTH_PORT` | worker | no | `4001` | `/health/live` for the ECS health check |
 | `LEGACY_FIREBASE_PROJECT_ID` | worker | no | — | Old Firebase project read once by `pnpm --filter @lvn-backend/worker legacy:snapshot` (ADR-0023); credentials from `GOOGLE_APPLICATION_CREDENTIALS` (a read-only service account in Secrets Manager) |
-| `S3_ENDPOINT` | api, worker | no | — (AWS) | S3-compatible endpoint; `http://localhost:59000` for RustFS locally (ADR-0032); unset on AWS |
-| `S3_REGION` | api, worker | yes | — | `us-east-1` locally; `ap-south-1` in India deployments (§15.2) |
+| `S3_ENDPOINT` | api, worker | no | — | S3-compatible endpoint: `http://localhost:59000` for RustFS locally (ADR-0032); Cloudflare R2's `https://<account>.r2.cloudflarestorage.com` on Lightsail (ADR-0096) |
+| `S3_REGION` | api, worker | yes | — | `us-east-1` locally; `auto` for R2 (ADR-0096) |
 | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | api, worker | no (secret) | — | Local credentials; on AWS the task role is used instead |
-| `S3_FORCE_PATH_STYLE` | api, worker | no | `false` | `true` for RustFS |
+| `S3_FORCE_PATH_STYLE` | api, worker | no | `false` | `true` for RustFS and R2 |
 | `S3_BUCKET` | api, worker | yes | — | Uploads and media (§8) |
 | `UPLOADS_ENABLED` | api, worker | no | `false` | People may upload files (ADR-0097). Off, `createUploadIntent` answers UNAVAILABLE and the clients hide every upload control (`Query.uploadsEnabled`); `true` in development and the local environment |
 | `S3_RESTRICTED_BUCKET` | api, worker | yes | — | Identity documents (ADR-0019) and old-site snapshots (ADR-0023), own encryption key, never behind the CDN |
 | `MAIL_FROM` | api, worker | yes | — | Sender, e.g. `LearnViaNotes <no-reply@learnvianotes.in>` |
-| `MAIL_TRANSPORT` | api, worker | yes | — | `smtp` (Mailpit locally), `ses` (AWS, sent with the task role — ADR-0035) or `resend` |
+| `MAIL_TRANSPORT` | api, worker | yes | — | `smtp` (Mailpit locally), `resend` (Lightsail, ADR-0096) or `ses` (kept in the code; its AWS deployment was retired) |
 | `SMTP_URL` | api, worker | when `smtp` | — | `smtp://localhost:51025` for Mailpit |
 | `RESEND_API_KEY` | api, worker | when `resend` (secret) | — | Resend API key |
 | `SES_REGION` | api, worker | when `ses` | — | Region of the SES identity `MAIL_FROM` uses |
@@ -161,3 +161,8 @@ LinkedIn has no app variable: it does not redirect to app schemes.
 `GOOGLE_SERVICES_JSON` (build time, not `EXPO_PUBLIC_`): path of the variant's Firebase Android config,
 `firebase/<variant>/google-services.json` (git-ignored), applied with the Google Services Gradle plugin 4.5.0 when the
 file exists. Phase 3 (ADR-0021) adds `GOOGLE_SERVICE_INFO_PLIST`, its iOS counterpart, with FCM.
+
+## Lightsail deployments (ADR-0096)
+
+The environments above are set on each VM by lvn-backend's `infra/lightsail/deploy.sh` from the GitHub environment's
+secrets and variables (`LVN_*`); docs/runbooks/lightsail.md lists them and what each becomes.

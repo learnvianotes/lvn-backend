@@ -5,39 +5,38 @@ When: data was lost or corrupted (a bad migration, a mistaken delete, a broken d
 
 ## What is backed up
 
-| Data | AWS (sandbox, prod) | Local environment (ADR-0036) |
+| Data | Lightsail (beta, production — ADR-0096) | Local environment (ADR-0036) |
 | --- | --- | --- |
-| Postgres | RDS automated backups: 7 days, point-in-time restore to any second (`backup_retention_period`) | `infra/scripts/backup-local.sh`: a nightly `pg_dump -Fc` into `/var/lib/lvn-backups` in the VM, 7 kept |
-| Files (S3) | Versioned buckets: an overwritten or deleted object keeps its old version 30 days (1 for restricted) | The same script copies both buckets beside the dump |
-| Redis | Daily snapshots, 7 kept (ADR-0089). Queues and sessions only: losing Redis signs people out and drops waiting jobs, never notes | Append-only file in its volume |
-| Typesense | Not backed up: it is rebuilt from Postgres (`reindexSearch`, §11) | Same |
+| Postgres | `lvn.sh backup`: a daily `pg_dump -Fc` (03:00 IST, cron of the deploy user), the last 3 in `/opt/lvn/backups`, every one in the environment's R2 backup bucket (its lifecycle rule keeps 30 days) | `infra/scripts/backup-local.sh`: a nightly `pg_dump -Fc` into `/var/lib/lvn-backups` in the VM, 7 kept |
+| Files | R2 buckets. Uploads are off at launch (ADR-0097); with them on, keep R2's object versioning or a copy job (not built) | The same script copies both buckets beside the dump |
+| Redis | Append-only file in its volume. Queues and sessions only: losing Redis signs people out and drops waiting jobs, never notes | Append-only file in its volume |
+| Typesense | Not run on Lightsail (search on Postgres) | Not backed up: it is rebuilt from Postgres (`reindexSearch`, §11) |
 
-## Restore on AWS
+## Restore on Lightsail
 
-1. **Stop writes.** Scale the api and worker services to 0: `aws ecs update-service --cluster <name> --service api
-   --desired-count 0`, then the same for the worker. The web shows the maintenance page while the API is down.
-2. **Restore Postgres to a new instance**, at the moment before the damage: `aws rds restore-db-instance-to-point-in-time
-   --source-db-instance-identifier <name> --target-db-instance-identifier <name>-restored --restore-time <UTC ISO>`.
-   Wait for `available`.
-3. **Check the copy.** Connect through the bastion task (`infra/scripts/aws-stand-in.sh psql` in the stand-in), then
-   compare counts against what you expect:
+On the VM (`ssh deploy@<host>`, in `/opt/lvn`):
+
+1. **Get the dump.** The last three are in `backups/`. Older ones come from the R2 backup bucket, under `<env>/`:
+   `docker run --rm --env-file env/backup.env -v "$PWD/backups:/backups" rclone/rclone:1.68.2 copy
+   r2:<bucket>/<env>/lvn-<stamp>.dump /backups/`.
+2. **Check it first** without touching the live data: `docker compose exec -T postgres createdb -U lvn lvn_check`,
+   then `docker compose exec -T postgres pg_restore -U lvn -d lvn_check --no-owner < backups/lvn-<stamp>.dump`. Compare
+   counts:
 
    ```sql
    select count(*) from notes."Note";
    select count(*) from users."User" where "deletedAt" is null;
    select max("updatedAt") from notes."Note";
    ```
-4. **Swap.** Point `DATABASE_URL` in Secrets Manager at the restored instance: update `<name>/DATABASE_URL`, or rename
-   the instances so the old name points to the copy. Then redeploy with `infra/scripts/deploy.sh <env>`, which runs
-   migrations (a no-op on a copy of the same schema).
-5. **Files.** Restore a deleted object by deleting its delete marker: `aws s3api delete-object --bucket <files>
-   --key <key> --version-id <marker id>`. A whole prefix: list versions with `aws s3api list-object-versions --prefix
-   <env>/<ownerId>/`.
-6. **Search.** As a platform admin, run `reindexSearch` from the admin page, then compare search counts.
-7. **Start again.** Scale api and worker back (min 2 api). Run `pnpm smoke <url>` and `node
-   scripts/lifecycle-check.mjs <url>`.
-8. **Write it up** in the incident log: what was lost between the restore point and the stop, and who must be told
-   (§16.6: a personal-data loss may need notice within 72 hours; see `leakage-report.md`).
+
+   Then `docker compose exec -T postgres dropdb -U lvn lvn_check`.
+3. **Restore.** `./lvn.sh restore backups/lvn-<stamp>.dump` stops the api and worker, restores into `lvn` (`--clean`),
+   starts them, and fails unless everything is healthy again.
+4. **A lost VM.** Make a new one (docs/runbooks/lightsail.md, "What Infra provisions"), point DNS at it, deploy both
+   repositories (the GitHub environments hold every secret), then copy the dump to it and run step 3.
+5. **Check.** `pnpm smoke <url>` and `node scripts/lifecycle-check.mjs <url>`.
+6. **Write it up** in the incident log: what was lost between the dump and the stop, and who must be told (§16.6: a
+   personal-data loss may need notice within 72 hours; see `leakage-report.md`).
 
 ## Restore on the local environment
 
