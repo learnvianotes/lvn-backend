@@ -75,7 +75,7 @@ describe('note visibility: the single-note rule and the list query agree', () =>
   ])('%s sees the same notes either way', async (_, id) => {
     for (const verified of [true, false]) {
       const a = id ? actor(id, verified) : null
-      // The study-note migrations also publish notes. This check is the matrix on the rows created above.
+      // Only the notes this test created. The check is the matrix on those rows.
       const created = notes.map((n) => n.id)
       const listed = new Set((await db.note.findMany({ where: { AND: [visibleNotesWhere(id), { id: { in: created } }] }, select: { id: true } })).map((n) => n.id))
       // Lists leave the trash out; the owner reaches trashed notes through the trash view.

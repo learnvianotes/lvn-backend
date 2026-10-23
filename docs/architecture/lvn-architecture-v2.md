@@ -49,7 +49,7 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0093](../adr/0093-releases-from-release-branches-and-tags.md) | Checks on every push; the sandbox from release branches, production from `v*` tags (both repositories); each web build only its own Firebase project; production builds refuse blank legal details. (§16.4) |
 | [0096](../adr/0096-lightsail-compose-r2-resend.md) | Launch on Lightsail: one 2 GB VM per environment running the Compose stack (api, worker, web, Postgres 16, Redis 7, Caddy with automatic HTTPS), R2 for files and backups, Resend for email, GHCR images deployed over SSH from release branches (beta) and `v*` tags (production); AWS retired. (§2, §16.1, §16.2, §16.4) |
 | [0097](../adr/0097-uploads-off-for-launch.md) | Uploads off by configuration for the launch (`UPLOADS_ENABLED`, default false); `Query.uploadsEnabled` lets clients hide upload controls; turning them on needs the scanner and, for PDFs, the PDF engine. (§8.1) |
-| [0098](../adr/0098-old-site-content-into-public-notes.md) | The old site's study content (757 topics, 150 Sheet 150 problems) from its Firestore into the curated catalogue and PUBLIC notes of the LearnViaNotes account: `content:import-legacy`, read-only service account, idempotent (`notes.LegacyContentItem`), dry run; accounts are not imported. (§4.1) |
+| [0098](../adr/0098-old-site-content-into-public-notes.md) | The old site's study content (757 topics, 150 Sheet 150 problems) is Markdown in `content/study`, synced on deploy into PUBLIC notes. Topics are found by slug; `notes.LegacyContentItem` keeps it idempotent. The Firestore content import is retired. Accounts are not imported (ADR-0023). (§4.1) |
 | [0099](../adr/0099-college-id-verification.md) | A student asks a platform admin to verify them with one college ID card. The switch is admin data, off until turned on, and is not `UPLOADS_ENABLED`. The card is in the restricted bucket, admin-only via a 5-minute signed URL, and deleted when the request is decided. Approval is the existing `DOCUMENTS` verification. (§7, §8.1, §15.2) |
 | [0100](../adr/0100-unified-google-and-email-accounts.md) | One account for Google and email. Link a provider only when both the provider and the existing account have verified that email. An email sign-up for an existing provider account attaches the password after `verifyEmail`. Google is off unless `FIREBASE_PROJECT_ID` is set and an admin has left it on (`AppSetting` `google_sign_in`). (§7, §7.1) |
 
@@ -207,7 +207,7 @@ User ──< Note ──< Card (ordered blocks)
             │  └── Attachment ──> FileObject (S3 metadata)
             │        └── NoteHighlight (PDF reader)   [Added: ADR-0040]
             └── forkedFromNoteId / forkedFromVersionId
-Subject ──< Topic (hierarchical, platform-curated + user-proposed)   [Amended: ADR-0098 — the old site's topics and Sheet 150 problems are PUBLIC notes of the LearnViaNotes account, each on its curated topic]
+Subject ──< Topic (hierarchical, platform-curated + user-proposed)   [Amended: ADR-0098 — the old site's topics and Sheet 150 problems are PUBLIC notes, each filed on the curated topic with that subject and topic slug]
 Note ──< NoteTopic >── Topic
 Folder (per user, nested) ──< Note
 Tag (per user) ──< NoteTag >── Note

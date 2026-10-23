@@ -180,8 +180,10 @@ don't need it.
    ```
 4. Each run ends with `Deployed …` only when every service is healthy and the site answers over HTTPS. Then check
    `https://beta.learnvianotes.in`: sign up with a real address and confirm that the email arrives.
-5. Bring the old site's subjects, topics and Sheet 150 problems across as public notes: `legacy-content.md`
-   (ADR-0098). It needs the read-only Firestore key and the LearnViaNotes account.
+5. Study notes are not a separate import. The migrate container runs `scripts/migrate-and-sync.mjs`, which applies
+   migrations and then upserts `content/study` (ADR-0098, `legacy-content.md`). No Firestore key and no extra command.
+   Before the first deploy that includes this sync, run the checks in that runbook: production is seeded by the
+   deploy itself.
 
 ## Every deploy
 

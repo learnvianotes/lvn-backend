@@ -1,66 +1,79 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { parseStudyPage, renderStudyPage } from '../../src/domain/study-page'
 
-const migrations = path.resolve(__dirname, '../../../../prisma/migrations')
+const root = path.resolve(__dirname, '../../../..')
+const content = path.join(root, 'content/study')
+const ANALYSIS = 'e5ba2811-3113-7344-b6f5-0ec9a0e57cda'
 
-/** SQL with comments and string literals removed, so note bodies that mention DELETE are not commands. */
-function commands(sql: string): string {
-  let out = ''
-  let i = 0
-  let inString = false
-  while (i < sql.length) {
-    const c = sql[i]
-    if (!inString && c === '-' && sql[i + 1] === '-') {
-      while (i < sql.length && sql[i] !== '\n') i += 1
-      continue
-    }
-    if (!inString && c === "'") {
-      inString = true
-      i += 1
-      continue
-    }
-    if (inString && c === "'") {
-      if (sql[i + 1] === "'") {
-        i += 2
-        continue
-      }
-      inString = false
-      i += 1
-      continue
-    }
-    if (!inString) out += c
-    i += 1
+function pages(dir: string): string[] {
+  const out: string[] = []
+  for (const name of readdirSync(dir)) {
+    if (name === 'README.md') continue
+    const full = path.join(dir, name)
+    if (statSync(full).isDirectory()) out.push(...pages(full))
+    else if (name.endsWith('.md')) out.push(full)
   }
   return out
 }
 
-/**
- * The study notes are a migration, not a manual import (ADR-0098). This fails when that migration stops inserting
- * the catalogue and the 907 public notes, or starts deleting rows.
- */
-describe('study note migrations', () => {
-  const names = readdirSync(migrations)
-    .filter((name) => name.includes('study_notes'))
-    .sort()
-  const sql = names.map((name) => readFileSync(path.join(migrations, name, 'migration.sql'), 'utf8')).join('\n')
-  const issued = commands(sql)
+/** The catalogue is Markdown, synced by slug and key. It must not come back as a migration that deletes rows. */
+describe('study note pages', () => {
+  const files = pages(content)
+  const sync = readFileSync(path.join(root, 'contexts/notes/src/application/study-content-sync.ts'), 'utf8')
+  const publisher = readFileSync(path.join(root, 'contexts/users/src/domain/study-publisher.ts'), 'utf8')
 
-  it('ships the catalogue and one insert per study note', () => {
-    expect(names[0]).toBe('20261109090000_study_notes_catalogue')
-    expect(names).toHaveLength(11)
-    expect(sql.match(/INSERT INTO "notes"\."Subject"/g)).toHaveLength(1)
-    expect(sql.match(/INSERT INTO "notes"\."Note"/g)).toHaveLength(907)
-    expect(sql.match(/SET "publishedVersionId" = /g)).toHaveLength(907)
-    expect(sql).toContain("'dsa-basics'")
-    expect(sql).toContain("'019a118c-f480-7000-8000-000000000001'")
-    expect(sql).toContain('ON CONFLICT DO NOTHING')
+  it('has one page per seeded note, and the page round-trips', () => {
+    expect(files).toHaveLength(907)
+    const ids = new Set<string>()
+    const keys = new Set<string>()
+    for (const file of files) {
+      const source = readFileSync(file, 'utf8')
+      const page = parseStudyPage(source, path.relative(content, file))
+      const [subject, topic, name] = path.relative(content, file).split(path.sep)
+      expect(page.subject).toBe(subject)
+      expect(page.topic).toBe(topic)
+      expect(name).toMatch(/^\d{2}-[a-z0-9-]+\.md$/)
+      expect(ids.has(page.id)).toBe(false)
+      expect(keys.has(page.key)).toBe(false)
+      ids.add(page.id)
+      keys.add(page.key)
+      const again = parseStudyPage(renderStudyPage(page), file)
+      expect(again).toMatchObject({ id: page.id, key: page.key, title: page.title, slug: page.slug, subject, topic })
+      expect(again.cards).toEqual(page.cards)
+    }
+    expect(ids.has(ANALYSIS)).toBe(true)
+    expect(keys.has('topic:dsa-basics/analysis')).toBe(true)
   })
 
-  it('only inserts, and publishes a note that is still the seed stub', () => {
-    expect(issued).not.toMatch(/\bTRUNCATE\b/)
-    expect(issued).not.toMatch(/\bDELETE\b/)
-    expect(issued).not.toMatch(/\bDROP\b/)
-    expect(issued).not.toMatch(/UPDATE "users"/)
-    expect(issued.match(/UPDATE "notes"\."Note"/g)).toHaveLength(907)
+  it('looks topics up by slug and does not wipe rows or invent credentials', () => {
+    expect(readdirSync(path.join(root, 'prisma/migrations')).some((name) => name.includes('study_notes'))).toBe(false)
+    expect(sync).toContain('row.subject.slug')
+    expect(sync).not.toContain('01a118cf-4802-7dcd-94da-1b32ee2f97fe')
+    expect(sync).not.toMatch(/\bTRUNCATE\b/)
+    expect(sync).not.toMatch(/user\.update\(/)
+    expect(sync).not.toMatch(/note\.delete\(/)
+    expect(sync).toContain('noteTopic.deleteMany')
+    expect(sync).toContain("const STUDY_PUBLISHER_EMAIL = 'publisher@learnvianotes.invalid'")
+    expect(sync).toContain("const STUDY_PUBLISHER_ID = '019a118c-f480-7000-8000-000000000001'")
+    expect(publisher).toContain("export const STUDY_PUBLISHER_EMAIL = 'publisher@learnvianotes.invalid'")
+    expect(publisher).toContain("export const STUDY_PUBLISHER_ID = '019a118c-f480-7000-8000-000000000001'")
+    expect(sync).not.toContain('1990-01-01')
+    expect(sync).not.toContain('verificationMethod:')
+    expect(sync).not.toContain('dateOfBirth:')
+  })
+
+  it('keeps the retired generator from rewriting migrations', () => {
+    const script = path.join(root, 'scripts/generate-study-seed.mjs')
+    const source = readFileSync(script, 'utf8')
+    expect(source).not.toContain("from 'node:fs'")
+    expect(source).not.toContain('rmSync')
+    expect(source).not.toContain('writeFileSync')
+    const before = readdirSync(path.join(root, 'prisma/migrations')).sort()
+    const ran = spawnSync(process.execPath, [script], { cwd: root, encoding: 'utf8' })
+    expect(ran.status).toBe(1)
+    expect(ran.stderr).toMatch(/retired/)
+    expect(readdirSync(path.join(root, 'prisma/migrations')).sort()).toEqual(before)
   })
 })

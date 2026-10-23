@@ -338,7 +338,7 @@ resource "terraform_data" "migrate" {
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
     environment = { DATABASE_URL = local.backend_environment.DATABASE_URL }
-    command     = "docker run --rm --network ${docker_network.this.name} -e DATABASE_URL ${var.api_image} node node_modules/prisma/build/index.js migrate deploy"
+    command     = "docker run --rm --network ${docker_network.this.name} -e DATABASE_URL ${var.api_image} node scripts/migrate-and-sync.mjs"
   }
   depends_on = [docker_container.postgres]
 }

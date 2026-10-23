@@ -87,7 +87,7 @@ describe('search: the Typesense filter and the read predicate agree', () => {
     ['someone who blocked the owner', blocker, [owner]],
     ['an anonymous visitor', null, []],
   ] as const)('%s finds the same notes either way', async (_, viewerId, blockedIds) => {
-    // The study-note migrations also publish notes, which this file never sends to Typesense.
+    // Only the notes this test created. This file never sends any other note to Typesense.
     const listed = await db.note.findMany({ where: { AND: [visibleNotesWhere(viewerId), published, { id: { in: ids } }, ...(blockedIds.length ? [{ ownerId: { notIn: [...blockedIds] } }] : [])] }, select: { id: true } })
     const filter = visibleNotesFilter({ viewerId, blockedIds: [...blockedIds], ...(await placesOf(db, viewerId)) })
     const [found] = await ts.multiSearch<{ id: string }>([{ collection, q: '*', filter_by: filter, per_page: 250, include_fields: 'id' }], 5_000)
