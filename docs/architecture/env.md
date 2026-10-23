@@ -166,3 +166,6 @@ file exists. Phase 3 (ADR-0021) adds `GOOGLE_SERVICE_INFO_PLIST`, its iOS counte
 
 The environments above are set on each VM by lvn-backend's `infra/lightsail/deploy.sh` from the GitHub environment's
 secrets and variables (`LVN_*`); docs/runbooks/lightsail.md lists them and what each becomes.
+
+Backups are not part of that deploy and need no variable here: the host's own `/opt/lvn/backup.sh` (Infra's, not in
+this repository) dumps the database at 02:30 IST with a backup-only R2 token read from `/opt/lvn/backup-r2.env`.

@@ -7,14 +7,14 @@
 #   lvn.sh ready [seconds]             wait until every service is healthy and the site answers through Caddy over
 #                                      HTTPS; exits non-zero (with the failing services' state and logs) otherwise
 #   lvn.sh status                      services, health and memory
-#   lvn.sh backup                      pg_dump to backups/, then to the R2 backup bucket when env/backup.env names one
 #   lvn.sh restore <dump file>         stop the api and worker, restore the database from a dump, start them again
 #
+# Backups are the host's own /opt/lvn/backup.sh (Infra's, 02:30 IST), not this script (docs/runbooks/lightsail.md).
 # After `up`, plain `docker compose pull && docker compose up -d` in /opt/lvn does the same as `up` without the checks.
 set -euo pipefail
 
 cd "$(dirname "$(readlink -f "$0")")"
-mkdir -p env backups
+mkdir -p env
 compose() { docker compose "$@"; }
 die() { echo "lvn.sh: $*" >&2; exit 1; }
 # A setting from env/*.env, without the single quotes deploy.sh writes around values.
@@ -112,28 +112,6 @@ status() {
   free -m
 }
 
-# Daily (deploy.sh installs the cron line when env/backup.env exists): a custom-format dump, the last 3 kept here, every
-# one copied to the R2 backup bucket, whose lifecycle rule decides how long they stay (docs/runbooks/lightsail.md).
-backup() {
-  local stamp file
-  stamp=$(date -u +%Y%m%dT%H%M%SZ)
-  file="backups/lvn-$stamp.dump"
-  compose exec -T postgres pg_dump -U lvn -d lvn -Fc > "$file.part"
-  mv "$file.part" "$file"
-  # shellcheck disable=SC2012 # our own names (lvn-<UTC stamp>.dump), newest first
-  ls -1t backups/lvn-*.dump | tail -n +4 | xargs -r rm -f
-  if [ -f env/backup.env ]; then
-    local bucket prefix
-    bucket=$(value LVN_BACKUP_BUCKET)
-    prefix=$(value LVN_BACKUP_PREFIX)
-    docker run --rm --memory 128m --env-file env/backup.env -v "$PWD/backups:/backups:ro" rclone/rclone:1.68.2 \
-      copyto "/backups/lvn-$stamp.dump" "r2:$bucket/${prefix:-lvn}/lvn-$stamp.dump"
-    echo "backup: $file → r2:$bucket/${prefix:-lvn}/"
-  else
-    echo "backup: $file (kept on the VM only: env/backup.env names no R2 bucket)"
-  fi
-}
-
 restore() {
   local file=${1:?restore <dump file>}
   [ -f "$file" ] || die "no such file: $file"
@@ -148,7 +126,6 @@ case "${1:-}" in
   up) up ;;
   ready) assemble; ready "${2:-300}" ;;
   status) status ;;
-  backup) backup ;;
   restore) restore "${2:-}" ;;
-  *) sed -n '2,15p' "$0"; exit 64 ;;
+  *) sed -n '2,13p' "$0"; exit 64 ;;
 esac
