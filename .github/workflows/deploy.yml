@@ -62,7 +62,7 @@ jobs:
       - if: steps.exists.outputs.found != 'true'
         uses: docker/setup-buildx-action@v3
       - if: steps.exists.outputs.found != 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/docker/api.Dockerfile
