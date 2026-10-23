@@ -63,5 +63,4 @@ unchanged: a restricted minor cannot upload a card and is told to ask a teacher.
   admin turns it on. Teacher vouch and a college email keep working either way.
 - The card is not scanned by the media pipeline. Admins open the original. Scanning without making copies can be
   added later, when ClamAV is running, without putting the card on the public upload path.
-- `@lvn/contracts` is **0.63.0**. Open PR #17 (`feat/admin-ai-all-models`) also publishes 0.63.0. Whichever merges
-  second must take the next version.
+- `@lvn/contracts` is **0.64.0**. `0.63.0` already shipped with the AI connection models change (PR #17).

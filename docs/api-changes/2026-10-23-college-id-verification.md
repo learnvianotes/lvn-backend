@@ -1,13 +1,12 @@
 # College ID verification
 
 - Date: 2026-10-23
-- Package: `@lvn/contracts` 0.63.0
+- Package: `@lvn/contracts` 0.64.0
 - Spec: ADR-0099 (amends ADR-0019, ADR-0097)
 - Breaking: no (additive). `VerificationRequest` gains `collegeIdCard`.
 
-**Version collision.** `main` was 0.62.0. This PR publishes **0.63.0**. Open PR
-[learnvianotes/lvn-backend#17](https://github.com/learnvianotes/lvn-backend/pull/17) (`feat/admin-ai-all-models`)
-also publishes 0.63.0. Whichever merges second has to bump again before it merges.
+**Version.** `0.63.0` already shipped with the AI connection models change
+(`docs/api-changes/2026-10-23-ai-connection-models.md`, PR #17). This change is **0.64.0**.
 
 ## What changes for clients
 
