@@ -3,6 +3,7 @@ import { Mailbox } from '@lvn-backend/testing'
 import request from 'supertest'
 import { createTestApp, infra, type TestApp } from '../support/app'
 import { OAuthStub } from '../support/oauth-stub'
+import { seedUser, tokenFor } from '../support/seed'
 
 /** Provider sign-in, account linking, registration details and the institutional email (ADR-0007, ADR-0017). */
 
@@ -11,11 +12,12 @@ const REDIRECT = 'http://localhost:3000/oauth/callback'
 const VERIFIER = 'v'.repeat(43)
 
 const GOOGLE = `mutation ($t: String!) { signInWithGoogle(input: { idToken: $t }) {
-  session { accessToken user { id email emailVerified registrationComplete displayName } } userErrors { field message code } } }`
+  session { accessToken user { id email emailVerified registrationComplete displayName globalRole signInMethods } } userErrors { field message code } } }`
 const EXCHANGE = `mutation ($input: OAuthExchangeInput!) { oauthExchange(input: $input) {
   session { accessToken user { id email displayName emailVerified registrationComplete } } userErrors { field message code } } }`
-const SIGN_UP = `mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken user { id } } userErrors { field message code } } }`
-const SIGN_IN = `mutation ($input: SignInInput!) { signIn(input: $input) { session { accessToken } userErrors { code } } }`
+const SIGN_UP = `mutation ($input: SignUpInput!) { signUp(input: $input) { emailLinkPending session { accessToken user { id } } userErrors { field message code } } }`
+const SIGN_IN = `mutation ($input: SignInInput!) { signIn(input: $input) { session { accessToken user { id } } userErrors { code } } }`
+const VERIFY = `mutation ($t: String!) { verifyEmail(input: { token: $t }) { ok userErrors { code message } } }`
 const COMPLETE = `mutation ($input: CompleteRegistrationInput!) { completeRegistration(input: $input) { ok userErrors { field message code } } }`
 const VIEWER = `{ viewer { id verified verificationMethod registrationComplete restrictedMinor institutionalEmail institutionalEmailStatus institution { name verified } } }`
 const SET_INST = `mutation ($e: String!) { setInstitutionalEmail(input: { email: $e }) { ok userErrors { field message code } } }`
@@ -26,7 +28,7 @@ let seq = 0
 const unique = (prefix: string) => `${prefix}${Date.now().toString(36)}${seq++}`
 const terms = '2026-10-08'
 
-type Payload<K extends string> = Record<K, { session: { accessToken: string; user: Record<string, unknown> } | null; userErrors: { field: string[] | null; message: string; code: string }[] }>
+type Payload<K extends string> = Record<K, { emailLinkPending?: boolean; session: { accessToken: string; user: Record<string, unknown> } | null; userErrors: { field: string[] | null; message: string; code: string }[] }>
 type Ok<K extends string> = Record<K, { ok: boolean; userErrors: { field: string[] | null; message: string; code: string }[] }>
 
 describe('provider sign-in and registration', () => {
@@ -118,30 +120,141 @@ describe('provider sign-in and registration', () => {
       expect(res.errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
     })
 
-    it('links to an existing account by verified email and keeps its verified password', async () => {
+    it('links Google to an existing verified email and keeps the password, role, name and sessions', async () => {
       const email = `${unique('link')}@example.com`
       const password = 'my own long password'
       const signUp = await request(t.app.getHttpServer()).post('/graphql').send({
         query: SIGN_UP,
         variables: { input: { email, password, displayName: 'Ravi', dateOfBirth: '2002-01-01', acceptedTermsVersion: terms } },
       })
-      const userId = signUp.body.data.signUp.session.user.id
-      await t.app.get(PrismaService).user.update({ where: { id: userId }, data: { emailVerifiedAt: new Date() } })
-      const g = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${unique('uid')}:${email}` })
-      expect(g.data!.signInWithGoogle.session!.user.id).toBe(userId)
-      expect((await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password } })).data!.signIn.session).not.toBeNull()
+      const userId = signUp.body.data.signUp.session.user.id as string
+      const accessToken = signUp.body.data.signUp.session.accessToken as string
+      const db = t.app.get(PrismaService)
+      await db.user.update({ where: { id: userId }, data: { emailVerifiedAt: new Date(), globalRole: 'TEACHER' } })
+      const before = await db.user.count()
+      const g = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${unique('uid')}: ${email.toUpperCase()} :Someone Else` })
+      expect(g.data!.signInWithGoogle.session!.user).toMatchObject({ id: userId, displayName: 'Ravi', globalRole: 'TEACHER', emailVerified: true })
+      expect((await t.gql<{ viewer: { signInMethods: string[] } }>('{ viewer { signInMethods } }', {}, g.data!.signInWithGoogle.session!.accessToken)).data!.viewer.signInMethods).toEqual(['EMAIL', 'GOOGLE'])
+      expect(await db.user.count()).toBe(before)
+      expect(await db.oAuthAccount.count({ where: { userId, provider: 'GOOGLE' } })).toBe(1)
+      expect((await t.gql<{ viewer: { id: string } }>(VIEWER, {}, accessToken)).data!.viewer.id).toBe(userId)
+      expect((await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password } })).data!.signIn.session!.user.id).toBe(userId)
+
+      const stranger = await seedUser(t.app, { verified: true })
+      const seen = await t.gql<{ userByHandle: { signInMethods: string[] | null } | null }>(
+        `query ($h: String!) { userByHandle(handle: $h) { signInMethods } }`,
+        { h: (await db.user.findUniqueOrThrow({ where: { id: userId }, select: { handle: true } })).handle },
+        tokenFor(t.config, stranger.id),
+      )
+      expect(seen.data!.userByHandle!.signInMethods).toBeNull()
     })
 
-    it('defeats account pre-hijacking: an unverified password on the email is dropped when Google proves ownership', async () => {
+    it('does not link Google to an account whose email is not verified, and does not create another user', async () => {
       const email = `${unique('victim')}@example.com`
+      const password = 'attacker chosen password'
       const attacker = await t.gql<Payload<'signUp'>>(SIGN_UP, {
-        input: { email, password: 'attacker chosen password', displayName: 'Not the owner', dateOfBirth: '2000-01-01', acceptedTermsVersion: terms },
+        input: { email, password, displayName: 'Not the owner', dateOfBirth: '2000-01-01', acceptedTermsVersion: terms },
       })
       const attackerToken = attacker.data!.signUp.session!.accessToken
+      const userId = attacker.data!.signUp.session!.user.id as string
+      const db = t.app.get(PrismaService)
+      const before = await db.user.count()
       const g = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${unique('uid')}:${email}` })
-      expect(g.data!.signInWithGoogle.session!.user.id).toBe(attacker.data!.signUp.session!.user.id)
-      expect((await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password: 'attacker chosen password' } })).data!.signIn.session).toBeNull()
-      expect((await t.gql(VIEWER, {}, attackerToken)).data).toEqual({ viewer: null })
+      expect(g.data!.signInWithGoogle.session).toBeNull()
+      expect(g.data!.signInWithGoogle.userErrors[0]).toMatchObject({ code: 'VALIDATION', message: expect.stringMatching(/not verified/) })
+      expect(await db.user.count()).toBe(before)
+      expect(await db.oAuthAccount.count({ where: { userId } })).toBe(0)
+      const user = await db.user.findUniqueOrThrow({ where: { id: userId } })
+      expect(user.emailVerifiedAt).toBeNull()
+      expect(user.passwordHash).not.toBeNull()
+      expect((await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password } })).data!.signIn.session).not.toBeNull()
+      expect((await t.gql<{ viewer: { id: string } }>(VIEWER, {}, attackerToken)).data!.viewer.id).toBe(userId)
+    })
+
+    it('refuses a Google token whose email is not verified, and stores nothing', async () => {
+      const email = `${unique('nv')}@gmail.com`
+      const db = t.app.get(PrismaService)
+      const before = await db.user.count()
+      const res = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google-unverified:${unique('uid')}:${email}` })
+      expect(res.data!.signInWithGoogle.session).toBeNull()
+      expect(res.data!.signInWithGoogle.userErrors[0]!.message).toMatch(/no verified email/)
+      expect(await db.user.count()).toBe(before)
+      expect(await db.user.findUnique({ where: { email } })).toBeNull()
+    })
+
+    it('attaches a password to an existing Google account only after the emailed link is used', async () => {
+      const email = `${unique('both')}@gmail.com`
+      const password = 'a long enough passphrase'
+      const g = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${unique('uid')}:${email}:Meera Iyer` })
+      const googleToken = g.data!.signInWithGoogle.session!.accessToken
+      const userId = g.data!.signInWithGoogle.session!.user.id as string
+      const db = t.app.get(PrismaService)
+      const before = await db.user.count()
+      const form = { email, password, displayName: 'Other Name', dateOfBirth: '2001-03-09', acceptedTermsVersion: terms }
+
+      const young = new Date()
+      young.setUTCFullYear(young.getUTCFullYear() - 16)
+      const minor = await t.gql<Payload<'signUp'>>(SIGN_UP, { input: { ...form, dateOfBirth: young.toISOString().slice(0, 10) } })
+      expect(minor.data!.signUp.userErrors[0]!.code).toBe('UNDER_MINIMUM_AGE')
+      expect(await db.user.findUnique({ where: { id: userId }, select: { passwordHash: true, deletedAt: true, displayName: true } })).toMatchObject({
+        passwordHash: null,
+        deletedAt: null,
+        displayName: 'Meera Iyer',
+      })
+
+      const pending = await t.gql<Payload<'signUp'>>(SIGN_UP, { input: { ...form, email: ` ${email.toUpperCase()} ` } })
+      expect(pending.data!.signUp).toMatchObject({ session: null, emailLinkPending: true, userErrors: [] })
+      expect(await db.user.count()).toBe(before)
+      expect((await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password } })).data!.signIn.session).toBeNull()
+
+      const sent = await mail.latestTo(email)
+      expect(sent.subject).toBe('Add a password to your account')
+      const token = new URL(/href="([^"]+\/verify\?token=[^"]+)"/.exec(sent.html)![1]!.replace(/&amp;/g, '&')).searchParams.get('token')!
+      expect((await t.gql<{ verifyEmail: { ok: boolean } }>(VERIFY, { t: token })).data!.verifyEmail.ok).toBe(true)
+
+      const signedIn = await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password } })
+      expect(signedIn.data!.signIn.session!.user.id).toBe(userId)
+      expect((await t.gql<{ viewer: { id: string; displayName: string; signInMethods: string[]; registrationComplete: boolean } }>(
+        `{ viewer { id displayName signInMethods registrationComplete } }`,
+        {},
+        googleToken,
+      )).data!.viewer).toEqual({ id: userId, displayName: 'Meera Iyer', signInMethods: ['EMAIL', 'GOOGLE'], registrationComplete: false })
+
+      const again = await t.gql<Payload<'signUp'>>(SIGN_UP, { input: { ...form, password: 'a different long password' } })
+      expect(again.data!.signUp.emailLinkPending).toBe(false)
+      expect(again.data!.signUp.userErrors[0]).toMatchObject({ code: 'CONFLICT', field: ['input', 'email'] })
+      expect((await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password } })).data!.signIn.session!.user.id).toBe(userId)
+    })
+  })
+
+  describe('Google switch (ADR-0100)', () => {
+    const SET = `mutation ($enabled: Boolean!) { setGoogleSignInEnabled(input: { enabled: $enabled }) { settings { googleConfigured googleEnabled } userErrors { code } } }`
+
+    it('lets a platform admin turn Google off while Firebase stays configured, and back on', async () => {
+      const admin = await seedUser(t.app, { globalRole: 'PLATFORM_ADMIN', verified: true })
+      const adminToken = tokenFor(t.config, admin.id, undefined, ['PLATFORM_ADMIN'])
+      const student = await seedUser(t.app, { verified: true })
+      const studentToken = tokenFor(t.config, student.id)
+      try {
+        expect((await t.gql(`{ authSettings { googleConfigured googleEnabled } }`)).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
+        expect((await t.gql(`{ authSettings { googleConfigured googleEnabled } }`, {}, studentToken)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+        expect((await t.gql<{ authSettings: { googleConfigured: boolean; googleEnabled: boolean } }>(`{ authSettings { googleConfigured googleEnabled } }`, {}, adminToken)).data!.authSettings).toEqual({
+          googleConfigured: true,
+          googleEnabled: true,
+        })
+
+        const off = await t.gql<{ setGoogleSignInEnabled: { settings: { googleConfigured: boolean; googleEnabled: boolean } } }>(SET, { enabled: false }, adminToken)
+        expect(off.data!.setGoogleSignInEnabled.settings).toEqual({ googleConfigured: true, googleEnabled: false })
+        expect((await t.gql<{ signInOptions: { google: boolean } }>('{ signInOptions { google } }')).data!.signInOptions.google).toBe(false)
+        const refused = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${unique('uid')}:${unique('off')}@gmail.com` })
+        expect(refused.data!.signInWithGoogle.session).toBeNull()
+        expect(refused.data!.signInWithGoogle.userErrors[0]!.message).toMatch(/not available/)
+        expect((await t.gql(SET, { enabled: true }, studentToken)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+      } finally {
+        const on = await t.gql<{ setGoogleSignInEnabled: { settings: { googleEnabled: boolean } } }>(SET, { enabled: true }, adminToken)
+        expect(on.data!.setGoogleSignInEnabled.settings.googleEnabled).toBe(true)
+        expect((await t.gql<{ signInOptions: { google: boolean } }>('{ signInOptions { google } }')).data!.signInOptions.google).toBe(true)
+      }
     })
   })
 
@@ -290,5 +403,31 @@ describe('provider sign-in and registration', () => {
     it('requires a session', async () => {
       expect((await t.gql(SET_INST, { e: 'a@iitb.ac.in' })).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
     })
+  })
+})
+
+describe('Google sign-in when Firebase is not configured', () => {
+  let app: TestApp
+
+  beforeAll(async () => {
+    app = await createTestApp()
+  })
+
+  afterAll(() => app.close())
+
+  it('turns itself off and still reports the admin switch separately from the missing project', async () => {
+    expect((await app.gql('{ signInOptions { emailPassword google } }')).data).toEqual({ signInOptions: { emailPassword: true, google: false } })
+    const refused = await app.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${unique('uid')}:person@gmail.com` })
+    expect(refused.data!.signInWithGoogle.session).toBeNull()
+    expect(refused.data!.signInWithGoogle.userErrors[0]).toMatchObject({ code: 'VALIDATION', message: expect.stringMatching(/not available/) })
+
+    const admin = await seedUser(app.app, { globalRole: 'PLATFORM_ADMIN', verified: true })
+    const settings = await app.gql<{ authSettings: { googleConfigured: boolean; googleEnabled: boolean } }>(
+      '{ authSettings { googleConfigured googleEnabled } }',
+      {},
+      tokenFor(app.config, admin.id, undefined, ['PLATFORM_ADMIN']),
+    )
+    expect(settings.data!.authSettings).toEqual({ googleConfigured: false, googleEnabled: true })
+    expect((await app.gql<{ signInOptions: { google: boolean } }>('{ signInOptions { google } }')).data!.signInOptions.google).toBe(false)
   })
 })

@@ -19,15 +19,43 @@ type Institution {
   verified: Boolean!
 }
 
-"Which sign-in methods this deployment offers"
+"Which sign-in methods this deployment offers. Read this before drawing the buttons."
 type SignInOptions {
   emailPassword: Boolean!
+  "False when FIREBASE_PROJECT_ID is unset, or a platform admin has turned Google sign-in off"
   google: Boolean!
   github: Boolean!
   linkedin: Boolean!
 }
 
+"A way this account can sign in. EMAIL is a password; the others are linked provider identities (ADR-0100)."
+enum SignInMethod {
+  EMAIL
+  GOOGLE
+  GITHUB
+  LINKEDIN
+}
+
+"Whether Google sign-in can run. The Firebase project id is an environment variable; the switch is AppSetting google_sign_in (ADR-0100)."
+type AuthSettings {
+  "FIREBASE_PROJECT_ID is set. The id itself is not returned."
+  googleConfigured: Boolean!
+  "Platform-admin switch (AppSetting google_sign_in, default on). Google is offered only when this is true and googleConfigured is true."
+  googleEnabled: Boolean!
+}
+
+type AuthSettingsPayload {
+  settings: AuthSettings
+  userErrors: [UserError!]!
+}
+
+input SetGoogleSignInEnabledInput {
+  enabled: Boolean!
+}
+
 extend type User {
+  "Viewer only (ADR-0100): ways this account can sign in. Null for anyone else, so account settings can list them."
+  signInMethods: [SignInMethod!]
   "Viewer only (ADR-0017): the confirmed address, or the one waiting for its code"
   institutionalEmail: String
   "Viewer only"
@@ -69,9 +97,13 @@ input VerifyInstitutionalEmailInput {
 
 extend type Query {
   signInOptions: SignInOptions!
+  "Platform admins. Google's on/off switch and whether a Firebase project is configured."
+  authSettings: AuthSettings!
 }
 
 extend type Mutation {
+  "Platform admins. Turns Google sign-in on or off without a deploy. Does nothing until FIREBASE_PROJECT_ID is set."
+  setGoogleSignInEnabled(input: SetGoogleSignInEnabledInput!): AuthSettingsPayload!
   signInWithGoogle(input: SignInWithGoogleInput!): AuthPayload!
   oauthExchange(input: OAuthExchangeInput!): AuthPayload!
   completeRegistration(input: CompleteRegistrationInput!): OkPayload!

@@ -74,14 +74,16 @@ export const NO_MAIL_DOMAINS = new Set(['nomail.example', 'dead-college.edu'])
 const fakeMx: MxLookup = { acceptsMail: async (domain) => !NO_MAIL_DOMAINS.has(domain) }
 
 /**
- * Fake Google ID tokens: `google:<uid>:<email>[:<name>]` is a valid Google sign-in with a verified email; anything else
- * is refused, as Firebase would refuse a forged token.
+ * Fake Google ID tokens: `google:<uid>:<email>[:<name>]` is a valid Google sign-in with a verified email.
+ * `google-unverified:<uid>:<email>` is a token Firebase would hand back with `email_verified` false. Anything else is
+ * refused, as Firebase would refuse a forged token.
  */
 export const fakeGoogle: GoogleIdTokens = {
   verify: async (token) => {
     const [kind, uid, email, name] = token.split(':')
-    if (kind !== 'google' || !uid || !email) return null
-    return { provider: 'GOOGLE', providerUserId: uid, email, emailVerified: true, name: name ?? null }
+    const unverified = kind === 'google-unverified'
+    if ((kind !== 'google' && !unverified) || !uid || !email) return null
+    return { provider: 'GOOGLE', providerSubject: uid, email, emailVerified: !unverified, name: name ?? null }
   },
 }
 

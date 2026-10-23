@@ -39,12 +39,16 @@ export class AuthResolver {
 
   @Mutation('signUp')
   signUp(@Args() { input }: MutationSignUpArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
-    return withUserErrors<AuthPayload>(async () => ({ session: await deliverSession(ctx, this.cookie, this.users, await this.auth.signUp(input, deviceOf(ctx), ctx.requestId)) }), { session: null })
+    return withUserErrors<AuthPayload>(async () => {
+      const result = await this.auth.signUp(input, deviceOf(ctx), ctx.requestId)
+      if (result.status === 'emailLinkPending') return { session: null, emailLinkPending: true }
+      return { session: await deliverSession(ctx, this.cookie, this.users, result.session), emailLinkPending: false }
+    }, { session: null, emailLinkPending: false })
   }
 
   @Mutation('signIn')
   signIn(@Args() { input }: MutationSignInArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
-    return withUserErrors<AuthPayload>(async () => ({ session: await deliverSession(ctx, this.cookie, this.users, await this.auth.signIn(input.email, input.password, deviceOf(ctx), ctx.req.ip)) }), { session: null })
+    return withUserErrors<AuthPayload>(async () => ({ session: await deliverSession(ctx, this.cookie, this.users, await this.auth.signIn(input.email, input.password, deviceOf(ctx), ctx.req.ip)), emailLinkPending: false }), { session: null, emailLinkPending: false })
   }
 
   @Mutation('refreshSession')
@@ -52,7 +56,7 @@ export class AuthResolver {
     const token = input.refreshToken ?? ctx.req.cookies?.[REFRESH_COOKIE]
     if (!token) throw Errors.unauthenticated('Your session has ended. Sign in again.')
     try {
-      return { session: await deliverSession(ctx, this.cookie, this.users, await this.sessions.refresh(token)), userErrors: [] }
+      return { session: await deliverSession(ctx, this.cookie, this.users, await this.sessions.refresh(token)), emailLinkPending: false, userErrors: [] }
     } catch (e) {
       if (!input.refreshToken) ctx.res.clearCookie(REFRESH_COOKIE, this.cookie)
       throw e

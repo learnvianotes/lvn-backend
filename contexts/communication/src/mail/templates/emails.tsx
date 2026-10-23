@@ -15,6 +15,17 @@ export function VerifyEmail({ displayName, link }: MailTemplates['verifyEmail'])
   )
 }
 
+export function LinkEmail({ displayName, link }: MailTemplates['linkEmail']) {
+  return (
+    <Layout preview="Add a password to your LearnViaNotes account">
+      <Heading as="h1" style={heading}>Add a password</Heading>
+      <Text style={paragraph}>Hi {displayName}, someone asked to sign in with a password on the account that already uses this email. If it was you, confirm and the password will be added. Your other sign-in methods stay as they are.</Text>
+      <Button href={link} style={button}>Add password</Button>
+      <Text style={muted}>The link works once and expires in 24 hours. If you did not ask for this, ignore this email. Nothing changes.</Text>
+    </Layout>
+  )
+}
+
 export function ResetPassword({ displayName, link, expiresInMinutes }: MailTemplates['resetPassword']) {
   return (
     <Layout preview="Reset your LearnViaNotes password">
