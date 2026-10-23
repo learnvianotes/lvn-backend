@@ -15,7 +15,7 @@ export class UsersMaintenance {
     return this.deletion.deleteDue(now)
   }
 
-  /** ADR-0019: identity documents are deleted 30 days after the decision. Returns how many requests were purged. */
+  /** ADR-0019: identity documents are deleted 30 days after the decision. A college ID card left stored after its decision is deleted on the same run (ADR-0099). Returns how many requests were purged. */
   purgeVerificationDocuments(now = new Date()): Promise<number> {
     return this.verification.purgeDecidedDocuments(now)
   }

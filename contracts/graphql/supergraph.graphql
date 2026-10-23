@@ -1792,6 +1792,19 @@ input CreateNoteInput
   topicIds: [UUID!]
 }
 
+input CreateStudentIdUploadInput
+  @join__type(graph: USERS)
+{
+  """Shown to the reviewing admin; never part of the storage key"""
+  fileName: String!
+
+  """image/jpeg, image/png, image/webp or application/pdf"""
+  mimeType: String!
+
+  """At most 5 MB (5242880)"""
+  sizeBytes: Int!
+}
+
 input CreateUploadIntentInput
   @join__type(graph: NOTES)
 {
@@ -3499,6 +3512,29 @@ type Mutation
   cancelAccountDeletion: AccountDeletionPayload! @join__field(graph: USERS)
 
   """
+  Signed in, unverified, no request already waiting. UNAVAILABLE while the switch is off — nothing is stored.
+  """
+  createStudentIdUploadIntent(input: CreateStudentIdUploadInput!): StudentIdUploadPayload! @join__field(graph: USERS)
+
+  """
+  Signed in. One pending account-verification request at a time; three requests a week. UNAVAILABLE while the switch is off.
+  """
+  submitStudentIdVerification(input: SubmitStudentIdVerificationInput!): StudentIdVerificationPayload! @join__field(graph: USERS)
+
+  """
+  The student withdraws their own pending college-ID request. The card is deleted.
+  """
+  withdrawStudentIdVerification(requestId: UUID!): OkPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins. Approval sets the account verified with method DOCUMENTS. The card is deleted either way. A reason is optional.
+  """
+  reviewStudentIdVerification(input: ReviewStudentIdVerificationInput!): StudentIdVerificationPayload! @join__field(graph: USERS)
+
+  """Platform admins. Does not change UPLOADS_ENABLED. Off is the default."""
+  setStudentIdVerificationEnabled(enabled: Boolean!): OkPayload! @join__field(graph: USERS)
+
+  """
   Ask for an archive of everything about you: notes as Markdown and JSON with their files, and your account data. One a day; you are emailed when it is ready
   """
   requestDataExport: DataExportPayload! @join__field(graph: USERS)
@@ -4693,6 +4729,29 @@ type Query
   """
   termsVersion: String! @join__field(graph: USERS)
 
+  """
+  Public. False until a platform admin turns it on. Clients hide the college-ID control while it is false. Independent of uploadsEnabled.
+  """
+  studentIdVerificationEnabled: Boolean! @join__field(graph: USERS)
+
+  """
+  Signed in: the viewer's latest college-ID request, or null if they have never sent one.
+  """
+  myStudentIdVerification: StudentIdVerificationRequest @join__field(graph: USERS)
+
+  """
+  Platform admins: pending college-ID requests, oldest first. `after` is the last id seen.
+  """
+  studentIdVerificationQueue(first: Int, after: UUID): [StudentIdVerificationRequest!]! @join__field(graph: USERS)
+
+  """
+  Platform admins: a 5-minute link to the card. Every view is written to the audit log. The student, and every other non-admin, is refused.
+  """
+  studentIdCardUrl(requestId: UUID!): SignedUrl! @join__field(graph: USERS)
+
+  """Platform admins: the switch and when it last changed."""
+  studentIdVerificationSettings: StudentIdVerificationSettings! @join__field(graph: USERS)
+
   """Your latest data exports, newest first"""
   myDataExports: [DataExport!]! @join__field(graph: USERS)
   signInOptions: SignInOptions! @join__field(graph: USERS)
@@ -5439,6 +5498,16 @@ enum ReviewState
   RELEARNING @join__enumValue(graph: CORE)
 }
 
+input ReviewStudentIdVerificationInput
+  @join__type(graph: USERS)
+{
+  requestId: UUID!
+  approve: Boolean!
+
+  """Optional. Shown to the student when you reject."""
+  reason: String
+}
+
 input ReviewVerificationRequestInput
   @join__type(graph: USERS)
 {
@@ -5987,6 +6056,63 @@ input StartFocusSessionInput
 }
 
 """
+A short-lived upload of one college ID card. PUT the bytes to uploadUrl with exactly these headers within 10 minutes, then call submitStudentIdVerification. Do not call completeUpload.
+"""
+type StudentIdUpload
+  @join__type(graph: USERS)
+{
+  fileId: UUID!
+  uploadUrl: String!
+  uploadHeaders: [StudentIdUploadHeader!]!
+  expiresAt: DateTime!
+}
+
+type StudentIdUploadHeader
+  @join__type(graph: USERS)
+{
+  name: String!
+  value: String!
+}
+
+type StudentIdUploadPayload
+  @join__type(graph: USERS)
+{
+  upload: StudentIdUpload
+  userErrors: [UserError!]!
+}
+
+type StudentIdVerificationPayload
+  @join__type(graph: USERS)
+{
+  request: StudentIdVerificationRequest
+  userErrors: [UserError!]!
+}
+
+"""
+The student's own view of a college-ID request. `card` is null except for a platform admin, and null once the card has been deleted.
+"""
+type StudentIdVerificationRequest
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  status: VerificationRequestStatus!
+  message: String
+  createdAt: DateTime!
+  decidedAt: DateTime
+  reason: String
+  requester: User!
+  card: VerificationDocument
+}
+
+"""Platform admins. `updatedAt` is null until someone changes the switch."""
+type StudentIdVerificationSettings
+  @join__type(graph: USERS)
+{
+  enabled: Boolean!
+  updatedAt: DateTime
+}
+
+"""
 Department and year are shown to others only if showOnProfile; interests stay private
 """
 type StudentProfile
@@ -6061,6 +6187,14 @@ input SubmitResourceInput
 
   """Else the preview's imageUrl, copied into storage"""
   imageUrl: String
+}
+
+input SubmitStudentIdVerificationInput
+  @join__type(graph: USERS)
+{
+  """The fileId from createStudentIdUploadIntent, after the PUT"""
+  fileId: UUID!
+  message: String
 }
 
 type SyncedNote
@@ -6719,6 +6853,11 @@ type VerificationRequest
   Platform admins only; open one with verificationDocumentUrl (every view is audited)
   """
   documents: [VerificationDocument!]!
+
+  """
+  True when the proof is one college ID card (ADR-0099). Deleted when the request is decided or withdrawn.
+  """
+  collegeIdCard: Boolean!
 }
 
 type VerificationRequestPayload

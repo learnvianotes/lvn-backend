@@ -1466,6 +1466,17 @@ input CreateNoteInput {
   topicIds: [UUID!]
 }
 
+input CreateStudentIdUploadInput {
+  """Shown to the reviewing admin; never part of the storage key"""
+  fileName: String!
+
+  """image/jpeg, image/png, image/webp or application/pdf"""
+  mimeType: String!
+
+  """At most 5 MB (5242880)"""
+  sizeBytes: Int!
+}
+
 input CreateUploadIntentInput {
   """Shown to people; never part of the storage key"""
   fileName: String!
@@ -2626,6 +2637,11 @@ type Mutation {
   createGroup(input: CreateGroupInput!): GroupPayload!
   createGroupPost(input: CreateGroupPostInput!): GroupPostPayload!
   createNote(input: CreateNoteInput!): NotePayload!
+
+  """
+  Signed in, unverified, no request already waiting. UNAVAILABLE while the switch is off — nothing is stored.
+  """
+  createStudentIdUploadIntent(input: CreateStudentIdUploadInput!): StudentIdUploadPayload!
   createUploadIntent(input: CreateUploadIntentInput!): UploadIntentPayload!
 
   """Platform admins"""
@@ -2836,6 +2852,11 @@ type Mutation {
   reviewGroupJoinRequest(input: ReviewGroupJoinRequestInput!): GroupPayload!
 
   """
+  Platform admins. Approval sets the account verified with method DOCUMENTS. The card is deleted either way. A reason is optional.
+  """
+  reviewStudentIdVerification(input: ReviewStudentIdVerificationInput!): StudentIdVerificationPayload!
+
+  """
   Teachers: requests addressed to them. Platform admins: all, including documents.
   """
   reviewVerificationRequest(input: ReviewVerificationRequestInput!): VerificationRequestPayload!
@@ -2912,6 +2933,9 @@ type Mutation {
   """
   setRhythmSharing(input: SetRhythmSharingInput!): OkPayload!
 
+  """Platform admins. Does not change UPLOADS_ENABLED. Off is the default."""
+  setStudentIdVerificationEnabled(enabled: Boolean!): OkPayload!
+
   """
   Share with one person, or change their role; a PRIVATE note becomes SHARED
   """
@@ -2959,6 +2983,11 @@ type Mutation {
   Sends a resource to moderators (verified adults; 10 a day, 20 waiting at most)
   """
   submitResource(input: SubmitResourceInput!): ResourcePayload!
+
+  """
+  Signed in. One pending account-verification request at a time; three requests a week. UNAVAILABLE while the switch is off.
+  """
+  submitStudentIdVerification(input: SubmitStudentIdVerificationInput!): StudentIdVerificationPayload!
 
   """Apply a device's outbox in order (at most 100 operations)"""
   syncPush(ops: [SyncOpInput!]!): SyncPushPayload!
@@ -3008,6 +3037,11 @@ type Mutation {
   """Returns the person who was asked"""
   withdrawConnectionRequest(input: ConnectionRequestInput!): PersonPayload!
   withdrawGroupJoinRequest(input: JoinRequestIdInput!): GroupPayload!
+
+  """
+  The student withdraws their own pending college-ID request. The card is deleted.
+  """
+  withdrawStudentIdVerification(requestId: UUID!): OkPayload!
   withdrawVerificationRequest(requestId: UUID!): OkPayload!
 }
 
@@ -3864,6 +3898,11 @@ type Query {
   The viewer's account standing: a suspension and recent warnings (ADR-0053)
   """
   myStanding: AccountStanding!
+
+  """
+  Signed in: the viewer's latest college-ID request, or null if they have never sent one.
+  """
+  myStudentIdVerification: StudentIdVerificationRequest
   myTags: [Tag!]!
 
   """Signed in: the viewer's latest application to teach (ADR-0073)"""
@@ -3952,6 +3991,24 @@ type Query {
   """Notes other people shared with the viewer, most recently changed first"""
   sharedWithMe(after: String, first: Int): NoteConnection!
   signInOptions: SignInOptions!
+
+  """
+  Platform admins: a 5-minute link to the card. Every view is written to the audit log. The student, and every other non-admin, is refused.
+  """
+  studentIdCardUrl(requestId: UUID!): SignedUrl!
+
+  """
+  Public. False until a platform admin turns it on. Clients hide the college-ID control while it is false. Independent of uploadsEnabled.
+  """
+  studentIdVerificationEnabled: Boolean!
+
+  """
+  Platform admins: pending college-ID requests, oldest first. `after` is the last id seen.
+  """
+  studentIdVerificationQueue(after: UUID, first: Int): [StudentIdVerificationRequest!]!
+
+  """Platform admins: the switch and when it last changed."""
+  studentIdVerificationSettings: StudentIdVerificationSettings!
   subject(slug: String!): Subject
   subjects: [Subject!]!
 
@@ -4575,6 +4632,14 @@ enum ReviewState {
   REVIEW
 }
 
+input ReviewStudentIdVerificationInput {
+  approve: Boolean!
+
+  """Optional. Shown to the student when you reject."""
+  reason: String
+  requestId: UUID!
+}
+
 input ReviewVerificationRequestInput {
   approve: Boolean!
 
@@ -5032,6 +5097,51 @@ input StartFocusSessionInput {
 }
 
 """
+A short-lived upload of one college ID card. PUT the bytes to uploadUrl with exactly these headers within 10 minutes, then call submitStudentIdVerification. Do not call completeUpload.
+"""
+type StudentIdUpload {
+  expiresAt: DateTime!
+  fileId: UUID!
+  uploadHeaders: [StudentIdUploadHeader!]!
+  uploadUrl: String!
+}
+
+type StudentIdUploadHeader {
+  name: String!
+  value: String!
+}
+
+type StudentIdUploadPayload {
+  upload: StudentIdUpload
+  userErrors: [UserError!]!
+}
+
+type StudentIdVerificationPayload {
+  request: StudentIdVerificationRequest
+  userErrors: [UserError!]!
+}
+
+"""
+The student's own view of a college-ID request. `card` is null except for a platform admin, and null once the card has been deleted.
+"""
+type StudentIdVerificationRequest {
+  card: VerificationDocument
+  createdAt: DateTime!
+  decidedAt: DateTime
+  id: UUID!
+  message: String
+  reason: String
+  requester: User!
+  status: VerificationRequestStatus!
+}
+
+"""Platform admins. `updatedAt` is null until someone changes the switch."""
+type StudentIdVerificationSettings {
+  enabled: Boolean!
+  updatedAt: DateTime
+}
+
+"""
 Department and year are shown to others only if showOnProfile; interests stay private
 """
 type StudentProfile {
@@ -5094,6 +5204,12 @@ input SubmitResourceInput {
   topicIds: [UUID!]!
   type: ResourceType!
   url: String!
+}
+
+input SubmitStudentIdVerificationInput {
+  """The fileId from createStudentIdUploadIntent, after the PUT"""
+  fileId: UUID!
+  message: String
 }
 
 input SyncOpInput {
@@ -5614,6 +5730,10 @@ enum VerificationPurpose {
 Shown to the requester, the addressed teacher and platform admins. Documents are listed for platform admins only.
 """
 type VerificationRequest {
+  """
+  True when the proof is one college ID card (ADR-0099). Deleted when the request is decided or withdrawn.
+  """
+  collegeIdCard: Boolean!
   createdAt: DateTime!
   decidedAt: DateTime
 

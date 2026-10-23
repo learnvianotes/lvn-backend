@@ -410,6 +410,8 @@ model VerificationRequest {
   status      VerificationRequestStatus @default(PENDING)
   message     String?
   documentIds String[]                  @db.Uuid
+  /// ADR-0099: the one file is a college ID card. Deleted when the request is decided or withdrawn.
+  collegeIdCard Boolean                 @default(false)
   decidedBy   String?                   @db.Uuid
   decidedAt   DateTime?                 @db.Timestamptz(3)
   reason      String?
@@ -420,6 +422,17 @@ model VerificationRequest {
   @@index([userId, createdAt])
   @@index([teacherId, status])
   @@index([status, createdAt])
+  @@index([collegeIdCard, status, createdAt])
+  @@schema("users")
+}
+
+/// ADR-0099: a switch a platform admin changes without a deploy or an environment variable. A missing row means off.
+model AppSetting {
+  key       String   @id
+  enabled   Boolean  @default(false)
+  updatedBy String?  @db.Uuid
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
   @@schema("users")
 }
 
@@ -558,6 +571,8 @@ enum FilePurpose {
   VERIFICATION_DOCUMENT
   /// ADR-0076: a group's picture, uploaded by an admin and attached to the group then
   GROUP_PICTURE
+  /// ADR-0099: a college ID card. Not accepted by createUploadIntent. Restricted bucket only.
+  COLLEGE_ID
 
   @@schema("notes")
 }

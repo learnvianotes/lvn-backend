@@ -1,0 +1,94 @@
+# College ID card verification (ADR-0099). A signed-in student asks platform admins to verify them by sending one
+# photo or PDF of their college ID card. Approval uses the existing verification mechanism (method DOCUMENTS).
+# The card is stored in the restricted bucket and is never public. General uploads (UPLOADS_ENABLED, ADR-0097) do
+# not control this; platform admins do, with setStudentIdVerificationEnabled. While that switch is off, the upload
+# and submit mutations answer UNAVAILABLE and store nothing.
+
+"A short-lived upload of one college ID card. PUT the bytes to uploadUrl with exactly these headers within 10 minutes, then call submitStudentIdVerification. Do not call completeUpload."
+type StudentIdUpload {
+  fileId: UUID!
+  uploadUrl: String!
+  uploadHeaders: [StudentIdUploadHeader!]!
+  expiresAt: DateTime!
+}
+
+type StudentIdUploadHeader {
+  name: String!
+  value: String!
+}
+
+type StudentIdUploadPayload {
+  upload: StudentIdUpload
+  userErrors: [UserError!]!
+}
+
+"The student's own view of a college-ID request. `card` is null except for a platform admin, and null once the card has been deleted."
+type StudentIdVerificationRequest {
+  id: UUID!
+  status: VerificationRequestStatus!
+  message: String
+  createdAt: DateTime!
+  decidedAt: DateTime
+  reason: String
+  requester: User!
+  card: VerificationDocument
+}
+
+type StudentIdVerificationPayload {
+  request: StudentIdVerificationRequest
+  userErrors: [UserError!]!
+}
+
+"Platform admins. `updatedAt` is null until someone changes the switch."
+type StudentIdVerificationSettings {
+  enabled: Boolean!
+  updatedAt: DateTime
+}
+
+input CreateStudentIdUploadInput {
+  "Shown to the reviewing admin; never part of the storage key"
+  fileName: String!
+  "image/jpeg, image/png, image/webp or application/pdf"
+  mimeType: String!
+  "At most 5 MB (5242880)"
+  sizeBytes: Int!
+}
+
+input SubmitStudentIdVerificationInput {
+  "The fileId from createStudentIdUploadIntent, after the PUT"
+  fileId: UUID!
+  message: String
+}
+
+input ReviewStudentIdVerificationInput {
+  requestId: UUID!
+  approve: Boolean!
+  "Optional. Shown to the student when you reject."
+  reason: String
+}
+
+extend type Query {
+  "Public. False until a platform admin turns it on. Clients hide the college-ID control while it is false. Independent of uploadsEnabled."
+  studentIdVerificationEnabled: Boolean!
+  "Signed in: the viewer's latest college-ID request, or null if they have never sent one."
+  myStudentIdVerification: StudentIdVerificationRequest
+  "Platform admins: pending college-ID requests, oldest first. `after` is the last id seen."
+  studentIdVerificationQueue(first: Int, after: UUID): [StudentIdVerificationRequest!]!
+  "Platform admins: a 5-minute link to the card. Every view is written to the audit log. The student, and every other non-admin, is refused."
+  studentIdCardUrl(requestId: UUID!): SignedUrl!
+  "Platform admins: the switch and when it last changed."
+  studentIdVerificationSettings: StudentIdVerificationSettings!
+}
+
+extend type Mutation {
+  "Signed in, unverified, no request already waiting. UNAVAILABLE while the switch is off — nothing is stored."
+  createStudentIdUploadIntent(input: CreateStudentIdUploadInput!): StudentIdUploadPayload!
+  "Signed in. One pending account-verification request at a time; three requests a week. UNAVAILABLE while the switch is off."
+  submitStudentIdVerification(input: SubmitStudentIdVerificationInput!): StudentIdVerificationPayload!
+  "The student withdraws their own pending college-ID request. The card is deleted."
+  withdrawStudentIdVerification(requestId: UUID!): OkPayload!
+  "Platform admins. Approval sets the account verified with method DOCUMENTS. The card is deleted either way. A reason is optional."
+  reviewStudentIdVerification(input: ReviewStudentIdVerificationInput!): StudentIdVerificationPayload!
+  "Platform admins. Does not change UPLOADS_ENABLED. Off is the default."
+  setStudentIdVerificationEnabled(enabled: Boolean!): OkPayload!
+}

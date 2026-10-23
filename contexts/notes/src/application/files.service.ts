@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { UploadLimits } from '@lvn/contracts/domain'
+import { CollegeIdCardLimits, collegeIdFileName, isCollegeIdMimeType, UploadLimits } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { ENTITLEMENTS, POLICY, type Entitlements, type FileParentKind, type FilePurposeKind, type Files, type FileSummary, type Policy } from '@lvn-backend/facades'
@@ -156,6 +156,8 @@ export class FilesService implements Files {
   async completeUpload(ownerId: string, fileId: string): Promise<void> {
     const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
     if (!file || file.ownerId !== ownerId || file.deletedAt) throw Errors.notFound('Upload not found.')
+    // ADR-0099: a college ID card is finished by submitStudentIdVerification, which does not publish FileReady.
+    if (file.purpose === 'COLLEGE_ID') throw Errors.validation('Send the college ID card with your verification request.')
     if (file.status === 'READY') return
     if (file.status !== 'PENDING') throw Errors.validation('This upload cannot be completed. Upload the file again.')
 
@@ -201,11 +203,67 @@ export class FilesService implements Files {
     }))
   }
 
-  async readUrl(fileId: string): Promise<{ url: string; expiresAt: Date }> {
+  async readUrl(fileId: string, opts?: { ttlSeconds?: number }): Promise<{ url: string; expiresAt: Date }> {
     const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
     if (!file || file.status !== 'READY' || file.deletedAt) throw Errors.notFound('File not found.')
     await this.db.fileObject.update({ where: { id: fileId }, data: { accessCount: { increment: 1 }, lastAccessedAt: new Date() } })
-    return this.storage.presignGet(file.bucket, file.storageKey, { expiresInSeconds: READ_URL_TTL_SECONDS, downloadName: file.originalFileName })
+    return this.storage.presignGet(file.bucket, file.storageKey, { expiresInSeconds: opts?.ttlSeconds ?? READ_URL_TTL_SECONDS, downloadName: file.originalFileName })
+  }
+
+  async createCollegeIdUpload(ownerId: string, input: { fileName: string; mimeType: string; sizeBytes: number }) {
+    const fileName = collegeIdFileName(input.fileName)
+    if (!fileName) throw Errors.validation('Give the file a name.', field('fileName'))
+    if (!isCollegeIdMimeType(input.mimeType)) throw Errors.validation('Use a JPEG, PNG, WebP or PDF of your college ID card.', field('mimeType'))
+    if (!Number.isInteger(input.sizeBytes) || input.sizeBytes < 1) throw Errors.validation('The file is empty.', field('sizeBytes'))
+    if (input.sizeBytes > CollegeIdCardLimits.maxBytes) throw Errors.validation('A college ID card can be at most 5 MB.', field('sizeBytes'))
+    await this.assertQuota(ownerId, input.sizeBytes)
+
+    const id = newId()
+    const bucket = this.config.restrictedBucket
+    const storageKey = `${this.config.env}/${ownerId}/${id}/original`
+    await this.db.fileObject.create({
+      data: {
+        id,
+        ownerId,
+        parentType: 'VERIFICATION_REQUEST',
+        parentId: null,
+        purpose: 'COLLEGE_ID',
+        bucket,
+        storageKey,
+        mimeType: input.mimeType,
+        sizeBytes: BigInt(input.sizeBytes),
+        originalFileName: fileName,
+        expiresAt: new Date(Date.now() + PENDING_TTL_MS),
+      },
+    })
+    const put = await this.storage.presignPut(bucket, storageKey, {
+      contentType: input.mimeType,
+      sizeBytes: input.sizeBytes,
+      expiresInSeconds: UPLOAD_URL_TTL_SECONDS,
+      metadata: { 'file-id': id, 'owner-id': ownerId, env: this.config.env },
+    })
+    return { fileId: id, uploadUrl: put.url, uploadHeaders: Object.entries(put.headers).map(([name, value]) => ({ name, value })), expiresAt: put.expiresAt }
+  }
+
+  async finalizeCollegeIdUpload(ownerId: string, fileId: string): Promise<void> {
+    const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
+    if (!file || file.ownerId !== ownerId || file.deletedAt || file.purpose !== 'COLLEGE_ID') throw Errors.validation('Upload the college ID card again, then send the request.', ['input', 'fileId'])
+    if (file.status === 'READY' && !file.parentId) return
+    if (file.status !== 'PENDING' || file.bucket !== this.config.restrictedBucket) throw Errors.validation('Upload the college ID card again, then send the request.', ['input', 'fileId'])
+
+    const object = await this.storage.head(file.bucket, file.storageKey)
+    if (!object) throw Errors.validation('The file has not arrived yet. Upload it, then try again.', ['input', 'fileId'])
+    const fail = async (message: string): Promise<never> => {
+      await this.storage.delete(file.bucket, [file.storageKey])
+      await this.db.fileObject.update({ where: { id: file.id }, data: { status: 'FAILED' } })
+      throw Errors.validation(message, ['input', 'fileId'])
+    }
+    if (object.sizeBytes !== Number(file.sizeBytes)) await fail('The uploaded file is not the size that was declared.')
+    const detected = detectMimeType(await this.storage.firstBytes(file.bucket, file.storageKey))
+    if (!sameKind(file.mimeType, detected)) await fail('The file content does not match its type.')
+
+    // READY, but not FileReady: the media pipeline would write derivative copies of an identity document.
+    await this.db.fileObject.update({ where: { id: file.id }, data: { status: 'READY', detectedMimeType: detected, expiresAt: null } })
   }
 
   async download(fileId: string, toPath: string, variant?: 'audio' | 'medium'): Promise<{ mimeType: string }> {
