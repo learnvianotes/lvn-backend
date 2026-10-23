@@ -7,7 +7,7 @@ import { ENTITLEMENTS, PLATFORM_SETTINGS, fallbackPlatformSettings, type Entitle
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
 import { mendAll } from '../domain/escapes'
-import { ProviderError, UnsupportedInput, type ChatMessage } from '../domain/provider'
+import { HttpProviderError, MODEL_UNSUPPORTED, ProviderError, UnsupportedInput, type ChatMessage } from '../domain/provider'
 import { AiProviders, type Target } from './ai-providers'
 import { PromptLibrary } from './prompts'
 import { aiUsedToday } from './usage-counts'
@@ -42,7 +42,10 @@ export interface Generated<T> {
 }
 
 const RETRIES = [250, 1000]
-/** Consecutive failed calls that open a provider's circuit, and for how long. */
+/**
+ * Consecutive outages that open a provider's circuit, and for how long. Only timeouts, network errors, HTTP 5xx and
+ * 429 count: a 4xx is this request (an unknown model, a shape the model refuses) and must not take the provider down.
+ */
 const TRIP_AFTER = 3
 const OPEN_MS = 30_000
 const BUDGET_CACHE_MS = 60_000
@@ -148,7 +151,7 @@ export class AiGateway {
     } catch (e) {
       if (e instanceof ProviderError) {
         await record(false)
-        throw Errors.unavailable(e instanceof UnsupportedInput ? e.message : 'AI is not answering right now. Try again in a minute.')
+        throw Errors.unavailable(failureText(e, route, this.log))
       }
       throw e
     }
@@ -178,7 +181,7 @@ export class AiGateway {
     } catch (e) {
       if (e instanceof ProviderError) {
         await this.record({ userId: who.userId, task: who.task ?? 'EMBED', model: route.model, promptTokens: 0, completionTokens: 0, ok: false, started, route })
-        throw Errors.unavailable(e instanceof UnsupportedInput ? e.message : 'AI is not answering right now. Try again in a minute.')
+        throw Errors.unavailable(failureText(e, route, this.log))
       }
       throw e
     }
@@ -213,7 +216,8 @@ export class AiGateway {
           await new Promise((r) => setTimeout(r, RETRIES[attempt]))
           continue
         }
-        if (e instanceof ProviderError && !(e instanceof UnsupportedInput)) {
+        // UnsupportedInput and any other 4xx are not outages: leave the circuit alone.
+        if (e instanceof ProviderError && e.retryable) {
           const circuit = this.circuits.get(key) ?? { failures: 0, openUntil: 0 }
           if (++circuit.failures >= TRIP_AFTER) {
             circuit.openUntil = Date.now() + OPEN_MS
@@ -261,6 +265,20 @@ export class AiGateway {
     }
     return this.spend.microUsd >= cap
   }
+}
+
+/**
+ * What a person (and the failed artifact) is told. An outage stays generic. A permanent 400 is named plainly, with the
+ * provider's body left out of the message and the log: it can echo the note.
+ */
+function failureText(e: ProviderError, target: Target, log: Logger): string {
+  if (e instanceof UnsupportedInput) return e.message
+  const status = e instanceof HttpProviderError ? e.status : /\b400\b/.test(e.message) ? 400 : 0
+  if (!e.retryable && status === 400) {
+    log.warn(`AI provider ${target.adapter.name} model ${target.model} rejected the request (HTTP 400): ${MODEL_UNSUPPORTED}`)
+    return MODEL_UNSUPPORTED
+  }
+  return 'AI is not answering right now. Try again in a minute.'
 }
 
 /** The answer as JSON of the schema's shape, or what was wrong with it. */

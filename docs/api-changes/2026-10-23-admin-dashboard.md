@@ -1,11 +1,11 @@
 # Admin dashboard: counts, settings and plan prices
 
 - Date: 2026-10-23
-- Package: `@lvn/contracts` 0.65.0 → **0.68.0**
+- Package: `@lvn/contracts` 0.67.0 → **0.68.0**
 - Spec: ADR-0101; amends ADR-0024 and ADR-0097
 - Breaking: no. New queries and mutations. Existing fields stay.
 
-**Version.** 0.65.0 is the current release. 0.66.0 and 0.67.0 are left for other open work. This change is **0.68.0**.
+**Version.** 0.67.0 shipped with the admin model pickers. This change is **0.68.0** on top of that.
 
 ## What changes for clients
 

@@ -98,6 +98,14 @@ export interface AiConnectionIdInput {
   id: string
 }
 
+/** Every model a connection lists, and the select for each use */
+export interface AiConnectionModels {
+  /** Every model the account lists, sorted by id. Nothing is dropped. */
+  all: Array<AiListedModel>
+  /** One select per use, in a fixed order. A use this app cannot call has an empty list. */
+  pickers: Array<AiModelPicker>
+}
+
 export interface AiConnectionPayload {
   connection: AiConnection | null
   userErrors: Array<UserError>
@@ -141,6 +149,28 @@ export interface AiInsight {
 }
 
 export type AiLanguage = 'ENGLISH' | 'HINDI' | 'TELUGU'
+
+/** One model a connection's account lists */
+export interface AiListedModel {
+  /** The id the provider uses, sent back as chatModel, embedModel or a route's model */
+  id: string
+  kind: AiModelKind
+  /** Pickers that offer this model. Empty: listed under `all`, shown in no select. */
+  supports: Array<AiModelUse>
+}
+
+/** What a listed model is. A picker offers it only when `supports` includes that picker's use. */
+export type AiModelKind = 'CHAT' | 'EMBEDDING' | 'IMAGE' | 'AUDIO' | 'REALTIME' | 'TTS' | 'MODERATION' | 'OTHER'
+
+/** The models one select offers */
+export interface AiModelPicker {
+  use: AiModelUse
+  models: Array<AiListedModel>
+}
+
+/** A select on /admin/ai. IMAGE, TTS, AUDIO, REALTIME and MODERATION stay empty: this app does not call those APIs.
+ * TRANSCRIBE is a recording sent through the chat API, not the audio-transcriptions API. */
+export type AiModelUse = 'CHAT' | 'EMBEDDING' | 'TRANSCRIBE' | 'IMAGE' | 'TTS' | 'AUDIO' | 'REALTIME' | 'MODERATION'
 
 /** Who answers AI calls */
 export type AiProviderKind = 'OLLAMA' | 'OPENAI' | 'ANTHROPIC' | 'GEMINI' | 'OPENAI_COMPATIBLE'
