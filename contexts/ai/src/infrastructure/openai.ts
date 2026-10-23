@@ -25,8 +25,10 @@ const refused = (e: unknown, option: string) => e instanceof HttpProviderError &
 /**
  * OpenAI's Chat Completions and Embeddings API (ADR-0065), spoken by OpenAI, by Gemini's OpenAI-compatible endpoint and
  * by any compatible server: a LiteLLM proxy, OpenRouter, vLLM, Ollama's /v1… Structured answers use `response_format`
- * with the JSON schema; pictures go as data URLs and recordings as `input_audio`. Embeddings are asked for 768
- * numbers and scaled to length 1.
+ * with the JSON schema. This dialect does not force `tool_choice`. A model that refuses JSON-schema answers is asked
+ * for a JSON object, and one that refuses that too is asked for JSON in its instructions; the gateway checks either
+ * way. Pictures go as data URLs and recordings as `input_audio`. Embeddings are asked for 768 numbers and scaled to
+ * length 1.
  */
 export class OpenAiProvider implements AiProviderAdapter {
   constructor(
@@ -97,22 +99,33 @@ export class OpenAiProvider implements AiProviderAdapter {
 
   /**
    * Any model the account lists can answer: one that refuses `temperature` (a reasoning model) is asked again without
-   * it, and one that takes no JSON schema (an older or smaller model) is asked for JSON with the schema in its
-   * instructions; the gateway checks the answer against the schema either way.
+   * it, and one that takes no JSON schema (an older or smaller model) is asked for a JSON object with the schema in
+   * its instructions. One that also refuses a JSON object is asked for JSON with no `response_format`. The gateway
+   * checks the answer against the schema either way. A 400 that none of these can fix is the model's refusal.
    */
   private async send(body: Record<string, unknown>, schema: object | undefined, timeoutMs: number): Promise<Response> {
+    let instructed = false
     for (let attempt = 0; ; attempt++) {
       try {
         return await this.post('/chat/completions', body, timeoutMs)
       } catch (e) {
-        if (attempt >= 2) throw e
+        // temperature, JSON schema and JSON object can each be refused.
+        if (attempt >= 3) throw e
         if (refused(e, 'temperature') && body.temperature !== undefined) {
           delete body.temperature
           continue
         }
-        if (schema && (refused(e, 'json_schema') || refused(e, 'response_format')) && (body.response_format as { type?: string } | undefined)?.type === 'json_schema') {
+        const format = (body.response_format as { type?: string } | undefined)?.type
+        if (schema && format === 'json_schema' && (refused(e, 'json_schema') || refused(e, 'response_format'))) {
           body.response_format = { type: 'json_object' }
-          body.messages = [{ role: 'system', content: `Answer with JSON only, matching this JSON schema: ${JSON.stringify(schema)}` }, ...(body.messages as object[])]
+          if (!instructed) {
+            body.messages = [{ role: 'system', content: `Answer with JSON only, matching this JSON schema: ${JSON.stringify(schema)}` }, ...(body.messages as object[])]
+            instructed = true
+          }
+          continue
+        }
+        if (schema && format === 'json_object' && (refused(e, 'json_object') || refused(e, 'response_format'))) {
+          delete body.response_format
           continue
         }
         throw e

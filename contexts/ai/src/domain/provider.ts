@@ -46,6 +46,12 @@ export interface AiProviderAdapter {
   models?(timeoutMs: number): Promise<string[]>
 }
 
+/**
+ * Shown when a model permanently refuses the shape of the request (HTTP 400). People see it on the failed artifact
+ * instead of an outage message; it names no secret and no note text. Admins see the same words in the worker log.
+ */
+export const MODEL_UNSUPPORTED = 'The selected model doesn’t support this request.'
+
 /** A provider call that failed; `retryable` when trying again may help (timeouts, overload, a network error). */
 export class ProviderError extends Error {
   override name = 'ProviderError'
