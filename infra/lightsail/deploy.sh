@@ -27,7 +27,10 @@ if [ -z "$ref_type" ]; then
   else ref_type=branch ref=$(git -C "$here" symbolic-ref --short -q HEAD || echo 'a detached HEAD'); fi
 fi
 case "$LVN_ENV" in
-  production) [ "$ref_type" = tag ] && [[ $ref == v* ]] || die "production deploys only from a v* tag (ADR-0093), not $ref_type $ref" ;;
+  production)
+    if [ "$ref_type" != tag ] || [[ $ref != v* ]]; then
+      die "production deploys only from a v* tag (ADR-0093), not $ref_type $ref"
+    fi ;;
   beta) { [ "$ref_type" = branch ] && [[ $ref == release/* ]]; } || { [ "$ref_type" = tag ] && [[ $ref == v* ]]; } ||
     die "beta deploys only from a release/** branch or a v* tag (ADR-0093), not $ref_type $ref" ;;
   *) die "LVN_ENV must be beta or production, not $LVN_ENV" ;;
