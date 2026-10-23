@@ -39,6 +39,8 @@ type VerificationRequest {
   teacher: User
   "Platform admins only; open one with verificationDocumentUrl (every view is audited)"
   documents: [VerificationDocument!]!
+  "True when the proof is one college ID card (ADR-0099). Deleted when the request is decided or withdrawn."
+  collegeIdCard: Boolean!
 }
 
 type VerificationDocument {

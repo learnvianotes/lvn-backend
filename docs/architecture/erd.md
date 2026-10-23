@@ -103,9 +103,16 @@ erDiagram
     uuid teacherId "TEACHER method"
     enum status "PENDING | APPROVED | REJECTED | WITHDRAWN"
     text message
+    bool collegeIdCard "ADR-0099: one college ID card, deleted at the decision"
     uuid decidedBy
     timestamptz decidedAt
     text reason
+  }
+  AppSetting {
+    text key PK "student_id_verification (ADR-0099); missing row means off"
+    bool enabled
+    uuid updatedBy
+    timestamptz updatedAt
   }
   InstitutionalEmail {
     uuid userId FK

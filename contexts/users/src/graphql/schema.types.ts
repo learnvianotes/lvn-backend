@@ -53,6 +53,15 @@ export interface ConnectionRequestItem {
   createdAt: Date
 }
 
+export interface CreateStudentIdUploadInput {
+  /** Shown to the reviewing admin; never part of the storage key */
+  fileName: string
+  /** image/jpeg, image/png, image/webp or application/pdf */
+  mimeType: string
+  /** At most 5 MB (5242880) */
+  sizeBytes: number
+}
+
 export interface DataExport {
   id: string
   status: DataExportStatus
@@ -180,6 +189,26 @@ export interface MutationResetPasswordArgs {
 
 export interface MutationRequestAccountDeletionArgs {
   input: RequestAccountDeletionInput
+}
+
+export interface MutationCreateStudentIdUploadIntentArgs {
+  input: CreateStudentIdUploadInput
+}
+
+export interface MutationSubmitStudentIdVerificationArgs {
+  input: SubmitStudentIdVerificationInput
+}
+
+export interface MutationWithdrawStudentIdVerificationArgs {
+  requestId: string
+}
+
+export interface MutationReviewStudentIdVerificationArgs {
+  input: ReviewStudentIdVerificationInput
+}
+
+export interface MutationSetStudentIdVerificationEnabledArgs {
+  enabled: boolean
 }
 
 export interface MutationUpdateProfileArgs {
@@ -359,6 +388,15 @@ export interface ProfilePayload {
   userErrors: Array<UserError>
 }
 
+export interface QueryStudentIdVerificationQueueArgs {
+  first?: number | null
+  after?: string | null
+}
+
+export interface QueryStudentIdCardUrlArgs {
+  requestId: string
+}
+
 export interface QueryUserByHandleArgs {
   handle: string
 }
@@ -456,6 +494,13 @@ export interface RespondToConnectionRequestInput {
   accept: boolean
 }
 
+export interface ReviewStudentIdVerificationInput {
+  requestId: string
+  approve: boolean
+  /** Optional. Shown to the student when you reject. */
+  reason?: string | null
+}
+
 export interface ReviewVerificationRequestInput {
   requestId: string
   approve: boolean
@@ -524,6 +569,47 @@ export interface SkillsImport {
   identities: Array<ExternalIdentity>
 }
 
+/** A short-lived upload of one college ID card. PUT the bytes to uploadUrl with exactly these headers within 10 minutes, then call submitStudentIdVerification. Do not call completeUpload. */
+export interface StudentIdUpload {
+  fileId: string
+  uploadUrl: string
+  uploadHeaders: Array<StudentIdUploadHeader>
+  expiresAt: Date
+}
+
+export interface StudentIdUploadHeader {
+  name: string
+  value: string
+}
+
+export interface StudentIdUploadPayload {
+  upload: StudentIdUpload | null
+  userErrors: Array<UserError>
+}
+
+export interface StudentIdVerificationPayload {
+  request: StudentIdVerificationRequest | null
+  userErrors: Array<UserError>
+}
+
+/** The student's own view of a college-ID request. `card` is null except for a platform admin, and null once the card has been deleted. */
+export interface StudentIdVerificationRequest {
+  id: string
+  status: VerificationRequestStatus
+  message: string | null
+  createdAt: Date
+  decidedAt: Date | null
+  reason: string | null
+  requester: User
+  card: VerificationDocument | null
+}
+
+/** Platform admins. `updatedAt` is null until someone changes the switch. */
+export interface StudentIdVerificationSettings {
+  enabled: boolean
+  updatedAt: Date | null
+}
+
 /** Department and year are shown to others only if showOnProfile; interests stay private */
 export interface StudentProfile {
   department: string | null
@@ -533,6 +619,12 @@ export interface StudentProfile {
   /** Viewer only: the topics they chose, for Community's For You (ADR-0076); null for a topic that is gone */
   interests: Array<Topic | null> | null
   showOnProfile: boolean
+}
+
+export interface SubmitStudentIdVerificationInput {
+  /** The fileId from createStudentIdUploadIntent, after the PUT */
+  fileId: string
+  message?: string | null
 }
 
 export interface TeacherProfile {
@@ -684,6 +776,8 @@ export interface VerificationRequest {
   teacher: User | null
   /** Platform admins only; open one with verificationDocumentUrl (every view is audited) */
   documents: Array<VerificationDocument>
+  /** True when the proof is one college ID card (ADR-0099). Deleted when the request is decided or withdrawn. */
+  collegeIdCard: boolean
 }
 
 export interface VerificationRequestPayload {

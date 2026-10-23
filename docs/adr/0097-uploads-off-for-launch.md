@@ -55,3 +55,7 @@ the upload features stay tested. The API test suites do the same, and one suite 
   photos and PDFs, imports, avatars and document proof. The rest of each screen stays.
 - Once ADR-0095's platform settings are merged, the switch can move to `/admin/settings` (its `uploads` section holds
   the scanner's address today). Until then it is configuration.
+
+**Amended by ADR-0099.** College ID verification does not follow `UPLOADS_ENABLED`. Platform admins turn that path on
+from the app (`setStudentIdVerificationEnabled`); it is off until they do, and turning it on does not enable general
+uploads.
