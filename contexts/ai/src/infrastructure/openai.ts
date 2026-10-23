@@ -47,14 +47,7 @@ export class OpenAiProvider implements AiProviderAdapter {
       // OpenAI's reasoning models take only max_completion_tokens; compatible servers know max_tokens.
       ...(request.maxTokens ? { [this.name === 'OPENAI' ? 'max_completion_tokens' : 'max_tokens']: request.maxTokens } : {}),
     }
-    let res: Response
-    try {
-      res = await this.post('/chat/completions', body, request.timeoutMs)
-    } catch (e) {
-      if (!refused(e, 'temperature') || body.temperature === undefined) throw e
-      delete body.temperature
-      res = await this.post('/chat/completions', body, request.timeoutMs)
-    }
+    const res = await this.send(body, request.schema, request.timeoutMs)
     if (!onDelta) {
       const json = (await res.json()) as Completion
       if (json.error) throw new ProviderError(`${this.name}: ${json.error.message ?? 'error'}`, false)
@@ -100,6 +93,31 @@ export class OpenAiProvider implements AiProviderAdapter {
     const json = (await res.json()) as { data?: { id: string }[] }
     // Gemini names its models "models/…".
     return (json.data ?? []).map((m) => m.id.replace(/^models\//, '')).sort()
+  }
+
+  /**
+   * Any model the account lists can answer: one that refuses `temperature` (a reasoning model) is asked again without
+   * it, and one that takes no JSON schema (an older or smaller model) is asked for JSON with the schema in its
+   * instructions; the gateway checks the answer against the schema either way.
+   */
+  private async send(body: Record<string, unknown>, schema: object | undefined, timeoutMs: number): Promise<Response> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.post('/chat/completions', body, timeoutMs)
+      } catch (e) {
+        if (attempt >= 2) throw e
+        if (refused(e, 'temperature') && body.temperature !== undefined) {
+          delete body.temperature
+          continue
+        }
+        if (schema && (refused(e, 'json_schema') || refused(e, 'response_format')) && (body.response_format as { type?: string } | undefined)?.type === 'json_schema') {
+          body.response_format = { type: 'json_object' }
+          body.messages = [{ role: 'system', content: `Answer with JSON only, matching this JSON schema: ${JSON.stringify(schema)}` }, ...(body.messages as object[])]
+          continue
+        }
+        throw e
+      }
+    }
   }
 
   private url(path: string) {

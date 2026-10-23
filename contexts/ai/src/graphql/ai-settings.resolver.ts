@@ -17,6 +17,11 @@ export class AiSettingsResolver {
     return this.settings.settings(viewer.userId)
   }
 
+  @Query('aiConnectionModels')
+  aiConnectionModels(@Args('input') input: { id: string }, @CurrentViewer() viewer: Viewer) {
+    return this.settings.listModels(viewer.userId, input.id)
+  }
+
   @Mutation('saveAiConnection')
   saveAiConnection(@Args('input') input: ConnectionInput, @CurrentViewer() viewer: Viewer) {
     return withUserErrors<{ connection: Awaited<ReturnType<AiSettingsService['saveConnection']>> | null; userErrors: UserError[] }>(async () => ({ connection: await this.settings.saveConnection(viewer.userId, input) }), { connection: null })

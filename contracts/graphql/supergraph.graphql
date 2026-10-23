@@ -4452,6 +4452,12 @@ type Query
   aiSettings: AiSettings! @join__field(graph: AI)
 
   """
+  Platform admins only: every model the connection's account lists, sorted, for its chat and embedding model fields.
+  Empty when the provider does not list its models, cannot be reached or the key cannot be read. Spends no tokens.
+  """
+  aiConnectionModels(input: AiConnectionIdInput!): [String!]! @join__field(graph: AI)
+
+  """
   One of the viewer's AI results; null when it is not theirs or they can no longer read the note
   """
   aiArtifact(id: UUID!): AiArtifact @join__field(graph: AI)
