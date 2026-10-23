@@ -87,7 +87,8 @@ describe('search: the Typesense filter and the read predicate agree', () => {
     ['someone who blocked the owner', blocker, [owner]],
     ['an anonymous visitor', null, []],
   ] as const)('%s finds the same notes either way', async (_, viewerId, blockedIds) => {
-    const listed = await db.note.findMany({ where: { AND: [visibleNotesWhere(viewerId), published, ...(blockedIds.length ? [{ ownerId: { notIn: [...blockedIds] } }] : [])] }, select: { id: true } })
+    // Only the notes this test created. This file never sends any other note to Typesense.
+    const listed = await db.note.findMany({ where: { AND: [visibleNotesWhere(viewerId), published, { id: { in: ids } }, ...(blockedIds.length ? [{ ownerId: { notIn: [...blockedIds] } }] : [])] }, select: { id: true } })
     const filter = visibleNotesFilter({ viewerId, blockedIds: [...blockedIds], ...(await placesOf(db, viewerId)) })
     const [found] = await ts.multiSearch<{ id: string }>([{ collection, q: '*', filter_by: filter, per_page: 250, include_fields: 'id' }], 5_000)
     expect(found!.hits.map((h) => h.document.id).sort()).toEqual(listed.map((n) => n.id).sort())
@@ -95,7 +96,7 @@ describe('search: the Typesense filter and the read predicate agree', () => {
 
   it('holds only published notes outside the trash, with what the filter needs', async () => {
     const [all] = await ts.multiSearch<Record<string, unknown>>([{ collection, q: '*', per_page: 250 }], 5_000)
-    expect(all!.found).toBe(await db.note.count({ where: published }))
+    expect(all!.found).toBe(await db.note.count({ where: { AND: [published, { id: { in: ids } }] } }))
     const shared = all!.hits.find((h) => (h.document.sharedUserIds as string[]).length)!.document
     expect(shared).toMatchObject({ ownerId: owner, groupIds: expect.arrayContaining([group, deletedGroup]), classroomIds: [classroom] })
     expect((shared.sharedUserIds as string[]).sort()).toEqual([editor, viewer, blocker].sort())

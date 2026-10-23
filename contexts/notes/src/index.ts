@@ -24,8 +24,8 @@ export { SEMANTIC_SEARCH, type SemanticSearch } from './application/search-ranki
 export { NotesExport } from './application/notes-export'
 /** Imports of notes (ADR-0018), run by apps/worker from the notes.import queue. */
 export { NOTES_IMPORT_QUEUE, NoteImportService } from './application/note-import.service'
-/** The old site's study content into notes (ADR-0098), run by apps/worker's `content:import-legacy`. */
-export { firestoreContentSource, LegacyContentImport, type LegacyContentReport, type LegacyContentSource } from './application/legacy-content'
+/** Converts a prepared catalogue into notes (ADR-0098). Deploy reads `content/study` instead; see `study-content-sync`. */
+export { LegacyContentImport, type LegacyContentReport, type LegacyContentSource } from './application/legacy-content'
 export { NOTES_PDF_QUEUE, PDF_ENGINE_QUEUE, PDF_LIMITS, PdfConversionService } from './application/pdf-conversion.service'
 export { IMAGE_SIZES, MediaProcessingService, NOTES_MEDIA_QUEUE, variantKey } from './application/media-processing.service'
 export { clamdScan } from './application/clamav'
