@@ -95,6 +95,26 @@ describe('AI provider settings', () => {
     expect(usage.map((u) => u.provider)).toEqual(['OPENAI', 'OPENAI'])
   })
 
+  it('lists every model a connection’s account has, page after page, for platform admins only and without spending tokens', async () => {
+    const shown = (await settings(app, admin)).data!.aiSettings
+    const claudeId = shown.connections.find((c) => c.label.startsWith('Claude'))!.id
+    const models = (token: string, id = claudeId) => app.gql<{ aiConnectionModels: string[] }>('query ($input: AiConnectionIdInput!) { aiConnectionModels(input: $input) }', { input: { id } }, token)
+    // More than one page of Anthropic's 1000.
+    claude.models = Array.from({ length: 1205 }, (_, i) => `claude-${String(i).padStart(4, '0')}`)
+    const before = claude.requests.length
+    const listed = (await models(admin)).data!.aiConnectionModels
+    expect(listed).toHaveLength(1205)
+    expect(listed.slice(0, 2)).toEqual(['claude-0000', 'claude-0001'])
+    expect(listed.at(-1)).toBe('claude-1204')
+    const asked = claude.requests.slice(before)
+    expect(asked.map((r) => r.path)).toEqual(['/v1/models', '/v1/models'])
+    expect(asked[1]!.query.get('after_id')).toBe('claude-0999')
+    claude.models = ['claude-test']
+    expect((await models(student)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+    expect((await app.gql('query ($input: AiConnectionIdInput!) { aiConnectionModels(input: $input) }', { input: { id: claudeId } })).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
+    expect((await models(admin, '00000000-0000-4000-8000-000000000000')).errors?.[0]?.extensions.code).toBe('NOT_FOUND')
+  })
+
   it('chooses who answers: the defaults, and each task’s route; a route refuses a provider that cannot do the task', async () => {
     const shown = (await settings(app, admin)).data!.aiSettings
     const claudeId = shown.connections.find((c) => c.label.startsWith('Claude'))!.id

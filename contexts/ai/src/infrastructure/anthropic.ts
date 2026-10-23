@@ -1,6 +1,9 @@
 import { HttpProviderError, mediaTypeOf, ProviderError, UnsupportedInput, type AiProviderAdapter, type ChatMessage, type ChatRequest, type ChatResult, type EmbedResult } from '../domain/provider'
 import { callProvider, serverSentEvents } from './http'
 
+/** A guard against a provider that never stops saying there are more models */
+const MAX_MODEL_PAGES = 20
+
 type Block = { type: 'text'; text: string } | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
 
 interface Message {
@@ -59,14 +62,7 @@ export class AnthropicProvider implements AiProviderAdapter {
       ...(schema ? { tools: [{ name: ANSWER_TOOL, description: 'Give the answer in the required format.', input_schema: schema }], tool_choice: { type: 'tool', name: ANSWER_TOOL } } : {}),
       stream,
     }
-    let res: Response
-    try {
-      res = await this.post('/v1/messages', body, request.timeoutMs)
-    } catch (e) {
-      if (!(e instanceof HttpProviderError && e.status === 400 && e.body.includes('temperature')) || body.temperature === undefined) throw e
-      delete body.temperature
-      res = await this.post('/v1/messages', body, request.timeoutMs)
-    }
+    const res = await this.send(body, request.timeoutMs)
     if (!stream) {
       const json = (await res.json()) as Message
       const usage = { promptTokens: json.usage?.input_tokens ?? 0, completionTokens: json.usage?.output_tokens ?? 0 }
@@ -94,10 +90,42 @@ export class AnthropicProvider implements AiProviderAdapter {
     return Promise.reject(new UnsupportedInput('The AI chosen here makes no embeddings.'))
   }
 
+  /** Every model the account lists, page after page (Anthropic gives at most 1000 a page). */
   async models(timeoutMs: number): Promise<string[]> {
-    const res = await callProvider('ANTHROPIC', this.url('/v1/models?limit=1000'), this.headers(), {}, timeoutMs, 'GET')
-    const json = (await res.json()) as { data?: { id: string }[] }
-    return (json.data ?? []).map((m) => m.id).sort()
+    const ids: string[] = []
+    let after: string | null = null
+    for (let page = 0; page < MAX_MODEL_PAGES; page++) {
+      const res = await callProvider('ANTHROPIC', this.url(`/v1/models?limit=1000${after ? `&after_id=${encodeURIComponent(after)}` : ''}`), this.headers(), {}, timeoutMs, 'GET')
+      const json = (await res.json()) as { data?: { id: string }[]; has_more?: boolean; last_id?: string | null }
+      ids.push(...(json.data ?? []).map((m) => m.id))
+      if (!json.has_more || !json.last_id) break
+      after = json.last_id
+    }
+    return [...new Set(ids)].sort()
+  }
+
+  /**
+   * Any model the account lists can answer: a model that refuses `temperature` is asked again without it, and one that
+   * writes fewer tokens than asked for (older Claude models stop at 4096) is asked again for its own maximum.
+   */
+  private async send(body: Record<string, unknown>, timeoutMs: number): Promise<Response> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.post('/v1/messages', body, timeoutMs)
+      } catch (e) {
+        if (attempt >= 2 || !(e instanceof HttpProviderError && e.status === 400)) throw e
+        if (e.body.includes('temperature') && body.temperature !== undefined) {
+          delete body.temperature
+          continue
+        }
+        const cap = e.body.includes('max_tokens') ? Number(/max_tokens:\s*\d+\s*>\s*(\d+)/.exec(e.body)?.[1] ?? 0) : 0
+        if (cap > 0 && cap < (body.max_tokens as number)) {
+          body.max_tokens = cap
+          continue
+        }
+        throw e
+      }
+    }
   }
 
   private url(path: string) {

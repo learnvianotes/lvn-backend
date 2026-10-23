@@ -5,6 +5,8 @@ import { fakeEmbedding, type FakeChatAnswer } from './ollama'
 /** One request a stand-in provider received: its path, headers and JSON body. */
 export interface FakeProviderRequest {
   path: string
+  /** The query string's parameters */
+  query: URLSearchParams
   headers: IncomingMessage['headers']
   body: Record<string, unknown>
 }
@@ -37,7 +39,8 @@ const contentText = (content: unknown): string => (typeof content === 'string' ?
 async function serve(fake: Omit<FakeProvider, 'url' | 'stop'>, handle: (req: FakeProviderRequest, res: ServerResponse) => void, prefix: string): Promise<FakeProvider> {
   const server: Server = createServer(async (req, res) => {
     const raw = await readBody(req)
-    const request: FakeProviderRequest = { path: (req.url ?? '').split('?')[0]!, headers: req.headers, body: raw ? (JSON.parse(raw) as Record<string, unknown>) : {} }
+    const url = new URL(req.url ?? '/', 'http://fake')
+    const request: FakeProviderRequest = { path: url.pathname, query: url.searchParams, headers: req.headers, body: raw ? (JSON.parse(raw) as Record<string, unknown>) : {} }
     fake.requests.push(request)
     handle(request, res)
   })
@@ -91,7 +94,13 @@ export function startFakeAnthropic(): Promise<FakeProvider> {
     fake,
     (req, res) => {
       const json = (status: number, body: unknown) => void res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
-      if (req.path === '/v1/models') return json(200, { data: fake.models.map((id) => ({ id, type: 'model' })), has_more: false })
+      if (req.path === '/v1/models') {
+        // Pages as Anthropic does: `limit` models after `after_id`, with `has_more` and `last_id`.
+        const after = req.query.get('after_id')
+        const from = after ? fake.models.indexOf(after) + 1 : 0
+        const page = fake.models.slice(from, from + Number(req.query.get('limit') ?? 20))
+        return json(200, { data: page.map((id) => ({ id, type: 'model' })), has_more: from + page.length < fake.models.length, first_id: page[0] ?? null, last_id: page.at(-1) ?? null })
+      }
       if (req.path !== '/v1/messages') return void res.writeHead(404).end()
       if (!req.headers['x-api-key']) return json(401, { type: 'error', error: { type: 'authentication_error', message: 'x-api-key header is required' } })
       const answer = fake.answer(req)
