@@ -1,6 +1,6 @@
 # ADR-0035: A domain-free AWS sandbox, configured from one .env
 
-- Status: Accepted (owner direction, 2026-10-08: "Don't think about Domain, focus on configurable .env")
+- Status: Superseded by ADR-0096 (the sandbox is beta on Lightsail; was: Accepted, owner direction, 2026-10-08: "Don't think about Domain, focus on configurable .env")
 - Date: 2026-10-08
 - Deciders: owner; Backend agent
 - Spec sections: §16.1 (Environments), §16.2 (Deployment topology), §7.2 (secrets), §2 (email)

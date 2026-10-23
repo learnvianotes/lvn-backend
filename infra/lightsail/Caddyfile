@@ -1,0 +1,30 @@
+# The entrance on the Lightsail VM (ADR-0096), as the local environment's (envs/local/Caddyfile.tftpl) with real TLS:
+# Caddy gets and renews Let's Encrypt certificates for every host in LVN_SITE_HOSTS (space-separated), and sends every
+# host other than LVN_CANONICAL_HOST there (e.g. learnvianotes.in → www.learnvianotes.in). /graphql (and its WebSocket,
+# /graphql/live), /health/* and /webhooks/* go to the API; everything else to the web. Caddy replaces any
+# X-Forwarded-For a client sends with the address it sees, which is the one hop the API trusts (TRUST_PROXY_HOPS=1).
+{
+	admin off
+	email {$LVN_ACME_EMAIL}
+}
+
+{$LVN_SITE_HOSTS} {
+	encode zstd gzip
+
+	@elsewhere not host {$LVN_CANONICAL_HOST}
+	redir @elsewhere https://{$LVN_CANONICAL_HOST}{uri} permanent
+
+	@api path /graphql /graphql/* /health/* /webhooks/*
+	handle @api {
+		reverse_proxy api:4000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		# The web sets its own security headers (Content Security Policy, HSTS); these cover the API's answers too.
+		X-Content-Type-Options nosniff
+		-Server
+	}
+}

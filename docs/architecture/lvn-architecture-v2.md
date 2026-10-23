@@ -47,6 +47,9 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0091](../adr/0091-adults-only-accounts.md) | Accounts for adults only while `ACCOUNT_MINIMUM_AGE` is 18 (the College/Interview launch): sign-up refuses with `UNDER_MINIMUM_AGE`, an unfinished provider account whose own confirmed answer is younger is erased, nothing else is deleted. (§6.2, §7, §15.2) |
 | [0092](../adr/0092-opt-in-google-analytics-on-the-web.md) | Google Analytics 4 on the web only where `NEXT_PUBLIC_GA_MEASUREMENT_ID` is set and only after the visitor allows it; the choice syncs across tabs; path-only page views. (§15.2) |
 | [0093](../adr/0093-releases-from-release-branches-and-tags.md) | Checks on every push; the sandbox from release branches, production from `v*` tags (both repositories); each web build only its own Firebase project; production builds refuse blank legal details. (§16.4) |
+| [0096](../adr/0096-lightsail-compose-r2-resend.md) | Launch on Lightsail: one 2 GB VM per environment running the Compose stack (api, worker, web, Postgres 16, Redis 7, Caddy with automatic HTTPS), R2 for files and backups, Resend for email, GHCR images deployed over SSH from release branches (beta) and `v*` tags (production); AWS retired. (§2, §16.1, §16.2, §16.4) |
+| [0097](../adr/0097-uploads-off-for-launch.md) | Uploads off by configuration for the launch (`UPLOADS_ENABLED`, default false); `Query.uploadsEnabled` lets clients hide upload controls; turning them on needs the scanner and, for PDFs, the PDF engine. (§8.1) |
+| [0098](../adr/0098-old-site-content-into-public-notes.md) | The old site's study content (757 topics, 150 Sheet 150 problems) from its Firestore into the curated catalogue and PUBLIC notes of the LearnViaNotes account: `content:import-legacy`, read-only service account, idempotent (`notes.LegacyContentItem`), dry run; accounts are not imported. (§4.1) |
 
 **Errata (owner-approved, 2026-10-08).** Wording conflicts inside v2, corrected in place and marked *[Erratum E#]*:
 E1 role-brief sections · E2 three repositories, not a monorepo · E3 AI prompts path · E4 web/mobile own repositories,
@@ -202,7 +205,7 @@ User ──< Note ──< Card (ordered blocks)
             │  └── Attachment ──> FileObject (S3 metadata)
             │        └── NoteHighlight (PDF reader)   [Added: ADR-0040]
             └── forkedFromNoteId / forkedFromVersionId
-Subject ──< Topic (hierarchical, platform-curated + user-proposed)
+Subject ──< Topic (hierarchical, platform-curated + user-proposed)   [Amended: ADR-0098 — the old site's topics and Sheet 150 problems are PUBLIC notes of the LearnViaNotes account, each on its curated topic]
 Note ──< NoteTopic >── Topic
 Folder (per user, nested) ──< Note
 Tag (per user) ──< NoteTag >── Note
@@ -404,7 +407,7 @@ Each store has one job. PostgreSQL is the only source of truth; Redis holds noth
 
 ### 8.1 Upload flow
 
-1. Client calls `createUploadIntent(input: {fileName, mimeType, sizeBytes, purpose, parentId})`. Backend checks permission on the parent, quota and limits, and returns a pre-signed PUT URL (10 min) plus a `FileObject` in `PENDING` state.
+1. Client calls `createUploadIntent(input: {fileName, mimeType, sizeBytes, purpose, parentId})`. Backend checks permission on the parent, quota and limits, and returns a pre-signed PUT URL (10 min) plus a `FileObject` in `PENDING` state. *[Amended: ADR-0097 — only while `UPLOADS_ENABLED` is true (default false: the launch runs without uploads); `Query.uploadsEnabled` tells clients, which hide every upload control when it is false]*
 2. Client uploads directly to S3.
 3. Client calls `completeUpload(fileId)`. Backend verifies the object exists, checks magic bytes and size, sets `READY`, and enqueues processing (image resize to 3 sizes, video transcode to H.264 720p, audio normalise, PDF text extraction, malware scan with ClamAV).
 4. Reads use pre-signed GET URLs (15 min) issued only after `PolicyService.can(user, 'read', parent)`. Public note media is served through CloudFront with signed cookies on the public note page.
@@ -663,9 +666,11 @@ Three fully isolated environments, infrastructure as code, immutable container i
 | Mobile | `com.learnvianotes.dev`, EAS `development` profile | `.sandbox`, EAS `preview`, TestFlight / internal track | store build, EAS `production` |
 | Mobile *[Amended: ADR-0008]* | `com.learnvianotes.dev`, `pnpm android` / `pnpm build:android development` | `com.learnvianotes.sandbox`, `pnpm build:android sandbox`, Play internal track / TestFlight | `com.learnvianotes`, `pnpm build:android production`, store upload by hand |
 
-All configuration is read through `@lvn/contracts/config`, which validates every variable with Zod at process start and fails fast on a missing or malformed value. The canonical list lives in `docs/architecture/env.md` and `.env.example`; CI fails if a variable is used in code but missing from the example. Secrets come from AWS Secrets Manager (injected as ECS task secrets) in sandbox/prod and from git-ignored `.env.local` in dev. Nothing is ever hardcoded.
+*[Amended: ADR-0096 — sandbox and production are "beta" and "production": one Lightsail VM each (2 GB, Mumbai) running the Compose stack (`infra/lightsail`), Cloudflare R2 for files and backups, Resend for email, images in GHCR; the AWS accounts and Terraform are retired; secrets live in the GitHub environments]* All configuration is read through `@lvn/contracts/config`, which validates every variable with Zod at process start and fails fast on a missing or malformed value. The canonical list lives in `docs/architecture/env.md` and `.env.example`; CI fails if a variable is used in code but missing from the example. Secrets come from AWS Secrets Manager (injected as ECS task secrets) in sandbox/prod and from git-ignored `.env.local` in dev. Nothing is ever hardcoded.
 
 ### 16.2 Deployment topology (production)
+
+*[Amended: ADR-0096 — at launch: one Lightsail VM per environment with Caddy (automatic HTTPS) in front of the web and the API, PostgreSQL 16 with pgvector and Redis 7 on the same VM, R2 for files, Resend for email; the diagram below is the scaling target, not the launch]*
 
 ```text
 Route 53 ─► CloudFront ─┬─► S3 (web static assets, public media via signed cookies)

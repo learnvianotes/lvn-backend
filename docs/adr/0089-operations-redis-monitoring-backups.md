@@ -1,6 +1,6 @@
 # ADR-0089: Operations — Redis for queues, monitoring with SLO alerts, backups and the restore drill
 
-- Status: Accepted
+- Status: Accepted; on Lightsail (ADR-0096) Redis runs with the same policy in its 96 MB cap, backups are `lvn.sh backup` to R2, and the monitoring stack stays in the local environment
 - Date: 2026-10-14
 - Deciders: Backend agent; owner
 - Spec sections: §9.1 (BullMQ), §16.4 (SLOs, alerts), §16.5 (runbooks, restore), §18 Phase 9

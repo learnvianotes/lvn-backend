@@ -1,9 +1,20 @@
 import { UseGuards } from '@nestjs/common'
-import { Args, Mutation, Resolver } from '@nestjs/graphql'
+import { Args, Mutation, Query, Resolver } from '@nestjs/graphql'
 import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { withUserErrors } from '@lvn-backend/errors'
 import { FilesService } from '../application/files.service'
 import type { MutationCompleteUploadArgs, MutationCreateUploadIntentArgs, OkPayload, UploadIntentPayload } from './schema.types'
+
+/** ADR-0097: anyone may ask whether uploads are on (the sign-up and note screens decide what to show). */
+@Resolver()
+export class UploadsResolver {
+  constructor(private readonly files: FilesService) {}
+
+  @Query('uploadsEnabled')
+  uploadsEnabled(): boolean {
+    return this.files.uploadsEnabled
+  }
+}
 
 @Resolver()
 @UseGuards(SignedInGuard)

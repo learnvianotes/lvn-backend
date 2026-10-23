@@ -9,6 +9,9 @@ import { detectMimeType, Storage } from '@lvn-backend/storage'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
 import { NotesService } from './notes.service'
 
+/** What an upload attempt reads while uploads are off (ADR-0097). */
+export const UPLOADS_OFF = 'Uploads are off for now. You can still write notes, cards and code.'
+
 const UPLOAD_URL_TTL_SECONDS = 10 * 60
 const READ_URL_TTL_SECONDS = 15 * 60
 /** Intents never completed are cleaned up after a day. */
@@ -83,7 +86,13 @@ export class FilesService implements Files {
     @Inject(NOTES_CONFIG) private readonly config: NotesConfig,
   ) {}
 
+  /** ADR-0097: whether people may upload at all in this environment (clients hide every upload control when not). */
+  get uploadsEnabled(): boolean {
+    return this.config.uploads
+  }
+
   async createUploadIntent(ownerId: string, input: UploadRequest) {
+    if (!this.config.uploads) throw Errors.unavailable(UPLOADS_OFF)
     const actor = await this.policy.actor(ownerId)
     if (!actor) throw Errors.unauthenticated()
     const rule = PURPOSES[input.purpose]

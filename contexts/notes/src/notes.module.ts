@@ -6,6 +6,7 @@ import { NoteModerationService } from './application/moderation.service'
 import { FilesService } from './application/files.service'
 import { NotesService } from './application/notes.service'
 import { NoteImportService } from './application/note-import.service'
+import { LegacyContentImport } from './application/legacy-content'
 import { NotesExport } from './application/notes-export'
 import { NotesMaintenance } from './application/notes-maintenance'
 import { NotesAccountErasure } from './application/account-erasure'
@@ -22,7 +23,7 @@ import { SearchService } from './application/search.service'
 import { Typesense } from './infrastructure/typesense'
 import { SyncService } from './application/sync.service'
 import { SharingService } from './application/sharing.service'
-import { FilesResolver } from './graphql/files.resolver'
+import { FilesResolver, UploadsResolver } from './graphql/files.resolver'
 import { ImportResolver } from './graphql/import.resolver'
 import { CardResolver } from './graphql/media.resolver'
 import { NotesResolver, NoteVersionResolver } from './graphql/notes.resolver'
@@ -78,6 +79,7 @@ export class NotesModule {
         NotesExport,
         NoteImportService,
         ImportResolver,
+        LegacyContentImport,
         PublicPages,
         {
           provide: TYPESENSE,
@@ -97,6 +99,7 @@ export class NotesModule {
         SyncService,
         SyncResolver,
         FilesResolver,
+        UploadsResolver,
         CardResolver,
         NotesResolver,
         UserNotesResolver,
@@ -128,7 +131,7 @@ export class NotesModule {
         ConversionResolver,
         NoteConversionResolver,
       ],
-      exports: [FilesService, NotesMaintenance, NoteModerationService, NoteAccessFacade, TopicsFacade, NoteAiFacade, NoteChunks, NoteRetrievalFacade, SearchIndex, NoteImportService, PdfConversionService, MediaProcessingService],
+      exports: [FilesService, NotesMaintenance, NoteModerationService, NoteAccessFacade, TopicsFacade, NoteAiFacade, NoteChunks, NoteRetrievalFacade, SearchIndex, NoteImportService, LegacyContentImport, PdfConversionService, MediaProcessingService],
     }
   }
 }

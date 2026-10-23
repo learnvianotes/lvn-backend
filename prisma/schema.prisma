@@ -798,6 +798,7 @@ model Note {
   topics           NoteTopic[]
   chunks           NoteChunk[]
   saves            NoteSave[]
+  legacyContent    LegacyContentItem?
 
   @@index([ownerId, deletedAt, draftUpdatedAt(sort: Desc)])
   @@index([folderId])
@@ -1010,6 +1011,24 @@ model NoteImport {
 
   @@index([userId, createdAt])
   @@index([userId, checksum])
+  @@schema("notes")
+}
+
+/// ADR-0098: what the import of the old site's study content wrote, one row per topic or problem of the old site, so a
+/// re-run changes only what changed and leaves alone a note someone has since edited in the app.
+model LegacyContentItem {
+  /// "topic:<subjectId>/<topicId>" or "problem:<subjectId>/<problemId>", as the old site's Firestore named them
+  key        String   @id
+  noteId     String   @unique @db.Uuid
+  /// legacy-content contentHash of the title, topics and cards last written
+  sourceHash String
+  /// The version the import published; another one means the note was edited and published in the app since
+  versionId  String?  @db.Uuid
+  importedAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
   @@schema("notes")
 }
 

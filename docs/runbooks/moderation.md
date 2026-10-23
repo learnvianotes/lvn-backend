@@ -5,8 +5,8 @@ Spec §15.1, ADR-0037. The queue is the web page `/admin/moderation`, open to PL
 ## Make the first platform admin
 
 Roles are never self-selected; later admins are made with `setGlobalRole` by an admin. The first one is set in the
-database. The person signs up normally first, then (local environment shown; on AWS run the same SQL through the
-bastion / RDS query editor):
+database. The person signs up normally first, then (local environment shown; on Lightsail, as the deploy user in
+`/opt/lvn`, run the same SQL with `docker compose exec -T postgres psql -U lvn -d lvn -c "…"`):
 
 ```sh
 infra/local-vm/vm.sh ssh 'docker exec lvn-local-postgres psql -U lvn -d lvn -c "UPDATE users.\"User\" SET \"globalRole\" = '"'"'PLATFORM_ADMIN'"'"' WHERE email = '"'"'owner@example.com'"'"' RETURNING id, handle"'

@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1.7
-# The backend image (spec §16.2): built once per commit and promoted sandbox → production. One image, three uses:
+# The backend image (spec §16.2, ADR-0096): built once per commit, pushed to GHCR and promoted beta → production.
+# One image, three uses:
 #   docker run <image>                                                 GraphQL API on :4000 (default)
 #   docker run <image> node apps/worker/dist/main.js                   background jobs
 #   docker run <image> node node_modules/prisma/build/index.js migrate deploy    migrations, before new api tasks start
@@ -26,10 +27,6 @@ FROM ${NODE_IMAGE}
 # ffmpeg: the worker's video transcodes, posters and audio (ADR-0041), run as separate processes.
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates tini ffmpeg && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
-# Amazon RDS certificate authorities: Node does not trust them by default, and DATABASE_URL verifies the server
-# (sslmode=verify-full). Readable by the unprivileged user.
-ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
-ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/rds-global-bundle.pem
 WORKDIR /app
 COPY --from=build --chown=node:node /repo /app
 USER node

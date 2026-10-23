@@ -1,0 +1,158 @@
+# The LearnViaNotes stack on one Lightsail VM (ADR-0096): PostgreSQL 16 with pgvector, Redis 7, the migration, the API,
+# the worker, the web and Caddy (real TLS by automatic HTTPS). Storage is Cloudflare R2 and email Resend, outside the VM.
+# ClamAV, Typesense and the PDF engine are not here: uploads are off (ADR-0097) and search runs on Postgres.
+#
+# It lives in /opt/lvn on the VM with:
+#   .env               compose's own variables (images, hosts, data passwords), assembled by lvn.sh from env/*.env
+#   env/backend.env    the api, worker and migrate environment (docs/architecture/env.md)
+#   env/web.env        the web's run-time environment
+# lvn-backend's deploy writes all of them except env/web-image.env, which lvn-web's deploy writes (infra/lightsail/deploy.sh).
+#
+# Memory: the VM has 2 GB and 2 GB of swap. Each service has a hard cap (mem_limit) and its own settings inside it; the
+# budget is in docs/runbooks/lightsail.md. A service over its cap is killed and restarted, not the VM.
+name: lvn
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: '10m', max-file: '3' }
+
+# Health checks run inside the containers, which have node but no curl.
+x-node-check: &node-check
+  interval: 10s
+  timeout: 5s
+  retries: 12
+  start_period: 30s
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg16
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 384m
+    shm_size: 128m
+    environment:
+      POSTGRES_USER: lvn
+      POSTGRES_DB: lvn
+      POSTGRES_PASSWORD: ${LVN_POSTGRES_PASSWORD:?set by lvn-backend's deploy}
+    # Sized for its 384 MB: a quarter in shared buffers, small per-query memory and few connections (the api, the worker
+    # and the migration open about 15 between them). pg_stat_statements: the slowest queries (docs/runbooks/on-call.md).
+    command:
+      - postgres
+      - -c
+      - shared_buffers=96MB
+      - -c
+      - effective_cache_size=256MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=48MB
+      - -c
+      - max_connections=40
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=top
+    volumes: [postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U lvn -d lvn']
+      interval: 5s
+      retries: 30
+
+  redis:
+    image: redis:7.4.11-alpine
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 96m
+    # BullMQ keeps its jobs here (ADR-0089): nothing may be evicted, and the append-only file keeps queued jobs through a
+    # restart. 48 MB of data leaves room in the cap for the rewrite fork.
+    command: ['redis-server', '--requirepass', '${LVN_REDIS_PASSWORD:?set by the backend deploy}', '--maxmemory', '48mb', '--maxmemory-policy', 'noeviction', '--appendonly', 'yes', '--appendfsync', 'everysec']
+    environment:
+      REDISCLI_AUTH: ${LVN_REDIS_PASSWORD}
+    volumes: [redis:/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli ping | grep -q PONG']
+      interval: 5s
+      retries: 30
+
+  # Migrations with the new backend image, before the api or worker on it starts.
+  migrate:
+    image: ${LVN_API_IMAGE:?set by lvn-backend's deploy}
+    restart: 'no'
+    logging: *logging
+    mem_limit: 256m
+    command: ['node', 'node_modules/prisma/build/index.js', 'migrate', 'deploy']
+    env_file: [env/backend.env]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    image: ${LVN_API_IMAGE}
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 448m
+    stop_grace_period: 30s
+    env_file: [env/backend.env]
+    environment:
+      NODE_OPTIONS: --max-old-space-size=288
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      <<: *node-check
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4000/health/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+
+  worker:
+    image: ${LVN_API_IMAGE}
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 352m
+    stop_grace_period: 30s
+    command: ['node', 'apps/worker/dist/main.js']
+    env_file: [env/backend.env]
+    environment:
+      NODE_OPTIONS: --max-old-space-size=192
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      <<: *node-check
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4001/health/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+
+  # lvn-web's standalone Next.js server. Its NEXT_PUBLIC_* values are compiled into the image (lvn-web's deploy builds
+  # it per environment); the run-time environment adds the API's address inside the network and the revalidation key.
+  # In the `web` profile, which lvn.sh turns on (COMPOSE_PROFILES) once lvn-web has deployed an image.
+  web:
+    image: ${LVN_WEB_IMAGE:-ghcr.io/learnvianotes/lvn-web:not-deployed}
+    profiles: [web]
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 288m
+    env_file: [env/web.env]
+    environment:
+      NODE_OPTIONS: --max-old-space-size=160
+    healthcheck:
+      <<: *node-check
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3000/robots.txt').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+
+  # The one entrance (Caddyfile): certificates from Let's Encrypt for LVN_SITE_HOSTS, /graphql and /health to the API,
+  # everything else to the web.
+  caddy:
+    image: caddy:2.11.7-alpine
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 64m
+    ports: ['80:80', '443:443', '443:443/udp']
+    environment:
+      LVN_SITE_HOSTS: ${LVN_SITE_HOSTS:?set by lvn-backend's deploy}
+      LVN_CANONICAL_HOST: ${LVN_CANONICAL_HOST:?set by lvn-backend's deploy}
+      LVN_ACME_EMAIL: ${LVN_ACME_EMAIL:?set by lvn-backend's deploy}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  postgres:
+  redis:
+  caddy-data:
+  caddy-config:

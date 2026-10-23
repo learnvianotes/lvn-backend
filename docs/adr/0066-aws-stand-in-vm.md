@@ -1,6 +1,6 @@
 # ADR-0066: An AWS stand-in VM for the sandbox's Terraform
 
-- Status: Accepted (owner direction, 2026-10-13: "for teraform create a VM in the aosp that you can use for now")
+- Status: Superseded by ADR-0096 (AWS retired; was: Accepted, owner direction, 2026-10-13)
 - Date: 2026-10-13
 - Deciders: owner; Backend agent
 - Spec sections: §16.1 (Environments), §16.2 (Deployment), §18

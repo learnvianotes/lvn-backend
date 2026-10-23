@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Deploys the current commits of lvn-backend and lvn-web to the local environment (ADR-0036) — deploy.sh's steps, on
-# the VM instead of AWS, with settings from infra/terraform/envs/local/.env:
+# Deploys the current commits of lvn-backend and lvn-web to the local environment (ADR-0036), with settings from
+# infra/terraform/envs/local/.env:
 #   1. starts the VM if needed (infra/local-vm/vm.sh)
 #   2. builds the API and web images here, tagged by commit (the web build gets the environment's public URL), and
 #      loads them into the VM's Docker
@@ -85,6 +85,8 @@ prune() {
 prune "$api_image" "$web_image" "$engine_image"
 "$vm" ssh bash -s -- "$api_image" "$web_image" "$engine_image" <<<"$(declare -f prune); prune \"\$1\" \"\$2\" \"\$3\""
 
-ready=$(curl -fsS "$public_url/health/ready" || true)
+# Not ready means a failed deploy: the stack is up but something in it is not healthy.
+ready=$(curl -fsS --retry 10 --retry-delay 3 --retry-all-errors --max-time 10 "$public_url/health/ready") ||
+  { echo "$public_url/health/ready does not answer: the deploy is not healthy (vm.sh ssh 'docker ps')" >&2; exit 1; }
 echo "Ready: $ready"
 echo "Deployed $api_image (api, worker), $web_image (web) and $engine_image (pdf-engine) to $public_url"

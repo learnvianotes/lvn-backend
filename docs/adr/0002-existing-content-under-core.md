@@ -31,7 +31,8 @@ complete rewrite, without the old sign-in features.
 - `/core` adds ~800 static pages to every web build (~10 s today).
 - **Phase 2 follow-up:** when `notes` owns Subject/Topic, import `content-build/` into Postgres as curated topics,
   switch `features/core-content/source.ts` to GraphQL, and move the authoring kit to lvn-backend (seed data) or its
-  own repo. A new ADR decides whether curated content becomes PUBLIC notes owned by an LVN account.
+  own repo. A new ADR decides whether curated content becomes PUBLIC notes owned by an LVN account. **Decided by
+  ADR-0098 (2026-10-22): yes, imported from the old site's Firestore by `content:import-legacy`.**
 
 ## Amendment (2026-10-08): `/core` is the old app, not a re-implementation
 

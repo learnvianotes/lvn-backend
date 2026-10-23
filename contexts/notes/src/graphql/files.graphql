@@ -48,6 +48,11 @@ type UploadIntentPayload {
   userErrors: [UserError!]!
 }
 
+type Query {
+  "ADR-0097: whether people may upload files here. Off, clients hide every upload control and createUploadIntent answers UNAVAILABLE."
+  uploadsEnabled: Boolean!
+}
+
 type Mutation {
   createUploadIntent(input: CreateUploadIntentInput!): UploadIntentPayload!
   "Checks the uploaded bytes (size, magic bytes) and makes the file READY"
