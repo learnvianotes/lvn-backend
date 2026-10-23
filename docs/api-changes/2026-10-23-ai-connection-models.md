@@ -1,5 +1,8 @@
 # Every model of an AI connection
 
+> The return type below is `[String!]!` as of 0.63.0. 0.67.0 replaces it with `AiConnectionModels`
+> (`docs/api-changes/2026-10-23-ai-model-pickers.md`): `all` keeps every id, and `pickers` is what each select shows.
+
 - Date: 2026-10-23
 - Package: `@lvn/contracts` 0.63.0
 - Spec: ADR-0065 (choosable AI providers)

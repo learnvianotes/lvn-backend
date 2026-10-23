@@ -9,6 +9,9 @@ interface Completion {
   error?: { message?: string }
 }
 
+/** A guard against a server that never stops saying there are more models. Not a cap on the list. */
+const MAX_MODEL_PAGES = 500
+
 const toMessage = (m: ChatMessage): { role: string; content: string | Part[] } => {
   if (!m.images?.length) return { role: m.role, content: m.content }
   const parts: Part[] = [{ type: 'text', text: m.content }]
@@ -90,11 +93,33 @@ export class OpenAiProvider implements AiProviderAdapter {
     return { vectors: vectors.map(normalized), promptTokens: json.usage?.prompt_tokens ?? 0 }
   }
 
+  /**
+   * Every model the account lists. One response is the whole list when the server says so; when it sets `has_more`,
+   * the next page is `after` the last id. There is no cap on how many ids come back (the page limit only stops a
+   * server that never says it is done).
+   */
   async models(timeoutMs: number): Promise<string[]> {
-    const res = await callProvider(this.name, this.url('/models'), this.headers(), {}, timeoutMs, 'GET')
-    const json = (await res.json()) as { data?: { id: string }[] }
-    // Gemini names its models "models/…".
-    return (json.data ?? []).map((m) => m.id.replace(/^models\//, '')).sort()
+    const ids: string[] = []
+    const seen = new Set<string>()
+    let after: string | null = null
+    for (let page = 0; page < MAX_MODEL_PAGES; page++) {
+      const path = after ? `/models?after=${encodeURIComponent(after)}` : '/models'
+      const res = await callProvider(this.name, this.url(path), this.headers(), {}, timeoutMs, 'GET')
+      const json = (await res.json()) as { data?: { id: string }[]; has_more?: boolean; last_id?: string | null }
+      const pageIds = (json.data ?? []).map((m) => m.id.replace(/^models\//, ''))
+      let added = 0
+      for (const id of pageIds) {
+        if (seen.has(id)) continue
+        seen.add(id)
+        ids.push(id)
+        added++
+      }
+      if (!json.has_more) break
+      const next = json.last_id ?? pageIds.at(-1) ?? null
+      if (!next || next === after || added === 0) break
+      after = next
+    }
+    return ids.sort()
   }
 
   /**

@@ -145,6 +145,64 @@ type AiSettingsPayload {
   userErrors: [UserError!]!
 }
 
+"What a listed model is. A picker offers it only when `supports` includes that picker's use."
+enum AiModelKind {
+  CHAT
+  EMBEDDING
+  IMAGE
+  AUDIO
+  REALTIME
+  TTS
+  MODERATION
+  OTHER
+}
+
+"""
+A select on /admin/ai. IMAGE, TTS, AUDIO, REALTIME and MODERATION stay empty: this app does not call those APIs.
+TRANSCRIBE is a recording sent through the chat API, not the audio-transcriptions API.
+"""
+enum AiModelUse {
+  "The connection's chat model, and every task route except embeddings and transcription"
+  CHAT
+  "The connection's embedding model, and the EMBED route. Embeddings are 768 numbers."
+  EMBEDDING
+  "The TRANSCRIBE route: a chat model that can hear a recording"
+  TRANSCRIBE
+  "Image generation. This app does not call it, so the picker is empty."
+  IMAGE
+  "Speech. This app does not call it, so the picker is empty."
+  TTS
+  "The audio transcriptions API. This app does not call it, so the picker is empty."
+  AUDIO
+  "Realtime. This app does not call it, so the picker is empty."
+  REALTIME
+  "Moderation models. This app does not call them, so the picker is empty."
+  MODERATION
+}
+
+"One model a connection's account lists"
+type AiListedModel {
+  "The id the provider uses, sent back as chatModel, embedModel or a route's model"
+  id: String!
+  kind: AiModelKind!
+  "Pickers that offer this model. Empty: listed under `all`, shown in no select."
+  supports: [AiModelUse!]!
+}
+
+"The models one select offers"
+type AiModelPicker {
+  use: AiModelUse!
+  models: [AiListedModel!]!
+}
+
+"Every model a connection lists, and the select for each use"
+type AiConnectionModels {
+  "Every model the account lists, sorted by id. Nothing is dropped."
+  all: [AiListedModel!]!
+  "One select per use, in a fixed order. A use this app cannot call has an empty list."
+  pickers: [AiModelPicker!]!
+}
+
 type AiConnectionTestPayload {
   test: AiConnectionTest
   userErrors: [UserError!]!
@@ -154,10 +212,12 @@ extend type Query {
   "Platform admins only"
   aiSettings: AiSettings!
   """
-  Platform admins only: every model the connection's account lists, sorted, for its chat and embedding model fields.
-  Empty when the provider does not list its models, cannot be reached or the key cannot be read. Spends no tokens.
+  Platform admins only: every model the connection's account lists, and the select for each use.
+  `all` keeps every id (paged through when the provider splits the list). `pickers` offers only models this app can
+  call for that use. Both are empty when the provider does not list its models, cannot be reached or the key cannot
+  be read. Spends no tokens.
   """
-  aiConnectionModels(input: AiConnectionIdInput!): [String!]!
+  aiConnectionModels(input: AiConnectionIdInput!): AiConnectionModels!
 }
 
 extend type Mutation {

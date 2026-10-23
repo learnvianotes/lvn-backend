@@ -23,6 +23,21 @@ describe('any model the account lists', () => {
     openai.requests.length = 0
     claude.answer = () => 'OK'
     openai.answer = () => 'OK'
+    openai.modelPageSize = null
+    openai.models = ['gpt-test', 'text-embedding-test']
+  })
+
+  it('lists every OpenAI model, following pages of 12, with no cap and no preset filter', async () => {
+    openai.modelPageSize = 12
+    openai.models = [...Array.from({ length: 148 }, (_, i) => `gpt-page-${String(i).padStart(3, '0')}`), 'gpt-image-1', 'brand-new-model']
+    const listed = await new OpenAiProvider('OPENAI', openai.url, 'sk-test', false).models(5_000)
+    expect(listed).toHaveLength(150)
+    expect(listed).toEqual([...openai.models].sort())
+    const pages = openai.requests.filter((r) => r.path === '/v1/models')
+    expect(pages).toHaveLength(13)
+    expect(pages[0]!.query.get('after')).toBeNull()
+    expect(pages[1]!.query.get('after')).toBe('gpt-page-011')
+    expect(pages[12]!.query.get('after')).toBe('gpt-page-143')
   })
 
   it('lists every Claude model, following the pages', async () => {
