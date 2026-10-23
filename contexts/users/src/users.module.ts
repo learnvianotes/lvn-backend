@@ -5,6 +5,7 @@ import { AdminService } from './application/admin.service'
 import { AdminMetricsService } from './application/admin-metrics.service'
 import { AppSettingsService } from './application/app-settings.service'
 import { PlanAdminService } from './application/plan-admin.service'
+import { PublicPlansService } from './application/public-plans.service'
 import { PlatformSettingsStore } from './application/platform-settings.store'
 import { AuditService } from './application/audit.service'
 import { AuthService } from './application/auth.service'
@@ -42,6 +43,7 @@ import { AccountDeletionService } from './application/account-deletion.service'
 import { AccountResolver } from './graphql/account.resolver'
 import { AccessAllowlistResolver } from './graphql/access.resolver'
 import { AdminDashboardResolver } from './graphql/admin.resolver'
+import { PlansResolver } from './graphql/plans.resolver'
 
 /**
  * The `users` bounded context (spec §6.1) — Postgres schema `users`.
@@ -80,6 +82,7 @@ export class UsersModule {
         AppSettingsService,
         AdminMetricsService,
         PlanAdminService,
+        PublicPlansService,
         AdminService,
         UsersMaintenance,
         ProfileService,
@@ -89,6 +92,7 @@ export class UsersModule {
         AccountResolver,
         AccessAllowlistResolver,
         AdminDashboardResolver,
+        PlansResolver,
         LegacyService,
         SocialService,
         TeacherProfileService,

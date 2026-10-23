@@ -7,7 +7,7 @@ import { ACCESS_ALLOWLIST_SETTING } from '../domain/setting-catalog'
 import { PlatformSettingsStore } from './platform-settings.store'
 
 /**
- * Whether an email may sign up or sign in while the beta allowlist is on (contracts 0.69.0).
+ * Whether an email may sign up or sign in while the beta allowlist is on (contracts 0.71.0).
  * Only interactive authentication calls this. The system publisher never signs in, and note publishing does not.
  */
 @Injectable()

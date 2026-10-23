@@ -1,8 +1,8 @@
 # Beta access allowlist
 
 - Date: 2026-10-23
-- Package: `@lvn/contracts` 0.68.0 → **0.69.0**
-- Spec: beta invite list. Depends on the admin settings registry (0.68.0).
+- Package: `@lvn/contracts` 0.70.0 → **0.71.0**
+- Spec: beta invite list. Depends on the admin settings registry (0.68.0). Public plans shipped as 0.70.0, so this is 0.71.0. The composed schema includes both.
 - Breaking: no. New queries and mutations. Existing fields stay.
 
 ## What changes for clients

@@ -2705,6 +2705,7 @@ type Limit {
 }
 
 enum LimitKey {
+  AI_REQUESTS_DAILY
   AI_TOKENS_DAILY
   CLASSROOMS_OWNED
   CLASSROOM_MEMBERS
@@ -2712,6 +2713,7 @@ enum LimitKey {
   GROUPS_OWNED
   GROUP_MEMBERS
   IMPORTS_DAILY
+  NOTES_OWNED
   ORG_SEATS
   PDF_PAGES_MONTHLY
   PROJECT_WORKSPACES
@@ -3459,6 +3461,11 @@ input MuteGroupMemberInput {
   userId: UUID!
 }
 
+type MyPlan {
+  plan: PublicPlan!
+  usage: [PlanUsage!]!
+}
+
 """A note, owned by the notes subgraph; ai adds the viewer's AI results"""
 type Note {
   """
@@ -4076,6 +4083,34 @@ enum PlanInterval {
   YEAR
 }
 
+"""
+One limit on a plan. `limit` is a decimal string, or null when the plan does not cap it.
+"""
+type PlanLimit {
+  key: LimitKey!
+
+  """Words for the limit, such as "AI asks a day"."""
+  label: String!
+  limit: String
+}
+
+"""
+How much of one limit the signed-in person has used. `resetsAt` is null for a standing cap.
+"""
+type PlanUsage {
+  key: LimitKey!
+  label: String!
+
+  """Null when the plan does not cap this."""
+  limit: String
+
+  """
+  When a daily or monthly counter goes back to zero. Null for a standing cap.
+  """
+  resetsAt: DateTime
+  used: String!
+}
+
 enum Platform {
   ANDROID
   IOS
@@ -4138,6 +4173,30 @@ input ProposeTopicInput {
   parentId: UUID
   subjectId: UUID!
   title: String!
+}
+
+"""
+A plan as a person sees it: price, features and the limits for their role.
+`priceMinor` is minor currency units. Showing a price does not charge anyone.
+"""
+type PublicPlan {
+  code: String!
+  currency: String!
+
+  """
+  True when this is the signed-in viewer's plan. False for every plan when nobody is signed in.
+  """
+  current: Boolean!
+  features: [String!]!
+  id: UUID!
+  interval: PlanInterval!
+
+  """
+  Limits for the viewer's role. Signed out, these are the student limits.
+  """
+  limits: [PlanLimit!]!
+  name: String!
+  priceMinor: Int!
 }
 
 input PublishClassQuizInput {
@@ -4322,6 +4381,11 @@ type Query {
   """The viewer's own notes, most recently edited first"""
   myNotes(after: String, filter: NoteFilter, first: Int): NoteConnection!
 
+  """
+  The signed-in person's plan and how much of each limit they have used. An account with no plan is on FREE.
+  """
+  myPlan: MyPlan!
+
   """The viewer's points history, newest first"""
   myPoints(after: String, first: Int): PointsEntryConnection!
 
@@ -4367,6 +4431,11 @@ type Query {
   """A conversion the viewer asked for"""
   pdfConversion(id: UUID!): PdfConversion
   pdfPagesThisMonth: PdfPagesUsage!
+
+  """
+  Active plans, cheapest first. Works signed out; `current` is then false on every plan.
+  """
+  plans: [PublicPlan!]!
 
   """
   Notes anyone may read, newest published first (at most 100 a page): sitemaps and public pages

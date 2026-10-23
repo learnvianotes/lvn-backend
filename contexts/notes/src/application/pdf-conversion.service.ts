@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { LimitKey, type CardType } from '@lvn/contracts/domain'
+import { LimitKey, planLimitMessage, type CardType } from '@lvn/contracts/domain'
 import { NOTE_LIMITS, positionsBetween } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { ENTITLEMENTS, PAGE_VISION, type Entitlements, type PageVision } from '@lvn-backend/facades'
@@ -99,9 +99,8 @@ export class PdfConversionService {
     if (m.pages < 1) return this.fail(c.id, 'This PDF has no pages.')
     if (m.pages > PDF_LIMITS.pagesPerConversion) return this.fail(c.id, `PDFs of up to ${PDF_LIMITS.pagesPerConversion} pages can be converted; this one has ${m.pages}.`)
     const allowed = await this.entitlements.limit(c.userId, LimitKey.PDF_PAGES_MONTHLY)
-    if (allowed !== null) {
-      const left = Number(allowed) - (await this.pagesThisMonth(c.userId, c.id))
-      if (m.pages > left) return this.fail(c.id, `This PDF has ${m.pages} pages and you can convert ${Math.max(0, left)} more this month.`)
+    if (allowed !== null && BigInt(await this.pagesThisMonth(c.userId, c.id)) + BigInt(m.pages) > allowed) {
+      return this.fail(c.id, planLimitMessage(LimitKey.PDF_PAGES_MONTHLY))
     }
     await this.db.pdfConversion.update({ where: { id: c.id }, data: { pages: m.pages, scannedPages: m.scannedPages, status: 'PARSING', progress: 15 } })
     const prefix = `pdf-engine/${m.sha256}/`

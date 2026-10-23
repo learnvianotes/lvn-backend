@@ -2,7 +2,7 @@ import { randomInt } from 'node:crypto'
 import { Inject, Injectable } from '@nestjs/common'
 import { Action, can, ClassroomRole as Role, type Actor, type Resource } from '@lvn/contracts/domain'
 import { docSchema, docText } from '@lvn/contracts/validation'
-import { Errors } from '@lvn-backend/errors'
+import { assertWithinPlan, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { AUDIT, ENTITLEMENTS, PEOPLE, POLICY, type Audit, type Entitlements, type People, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
@@ -128,7 +128,8 @@ export class ClassroomsService {
     if (!can(actor, Action.CLASSROOM_CREATE)) throw Errors.forbidden('Classes are run by teachers.')
     const { name, description } = this.clean(input.name, input.description)
     const limit = await this.entitlements.limit(actorId, 'CLASSROOMS_OWNED')
-    if (limit !== null && BigInt(await this.db.classroom.count({ where: { ownerId: actorId, deletedAt: null } })) >= limit) throw Errors.validation(`Your plan allows ${limit} classes.`)
+    const owned = BigInt(await this.db.classroom.count({ where: { ownerId: actorId, deletedAt: null } }))
+    assertWithinPlan('CLASSROOMS_OWNED', limit, owned)
     const rate = await this.limiter.hit(`core:class:create:${actorId}`, { max: CLASS_LIMITS.classesPerDay, windowSeconds: 86_400 })
     if (!rate.allowed) throw Errors.rateLimited(rate.retryAfter, 'You have started a lot of classes today. Try again tomorrow.')
     const id = newId()
@@ -161,7 +162,8 @@ export class ClassroomsService {
 
   private async assertRoom(c: ClassroomRow) {
     const limit = await this.entitlements.limit(c.ownerId, 'CLASSROOM_MEMBERS')
-    if (limit !== null && BigInt(await this.db.classroomMember.count({ where: { classroomId: c.id } })) >= limit) throw Errors.validation('This class is full.')
+    const members = BigInt(await this.db.classroomMember.count({ where: { classroomId: c.id } }))
+    assertWithinPlan('CLASSROOM_MEMBERS', limit, members)
   }
 
   private async addMember(c: ClassroomRow, userId: string, role: StoredClassRole) {

@@ -5,6 +5,7 @@ import { DraftsService } from './application/drafts.service'
 import { NoteModerationService } from './application/moderation.service'
 import { NotesAdminStats } from './application/admin-stats'
 import { FilesService } from './application/files.service'
+import { NotesPlanUsage } from './application/plan-usage'
 import { NotesService } from './application/notes.service'
 import { NoteImportService } from './application/note-import.service'
 import { LegacyContentImport } from './application/legacy-content'
@@ -69,6 +70,7 @@ export class NotesModule {
         { provide: NOTES_CONFIG, useValue: config },
         JsonScalar,
         FilesService,
+        NotesPlanUsage,
         NotesAdminStats,
         AttachmentsService,
         NotesAccountErasure,

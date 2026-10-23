@@ -387,7 +387,7 @@ export interface Limit {
   used: number
 }
 
-export type LimitKey = 'STORAGE_BYTES' | 'AI_TOKENS_DAILY' | 'PDF_PAGES_MONTHLY' | 'GROUPS_OWNED' | 'GROUP_MEMBERS' | 'CLASSROOMS_OWNED' | 'CLASSROOM_MEMBERS' | 'PROJECT_WORKSPACES' | 'EXPORTS_DAILY' | 'IMPORTS_DAILY' | 'ORG_SEATS'
+export type LimitKey = 'STORAGE_BYTES' | 'AI_TOKENS_DAILY' | 'PDF_PAGES_MONTHLY' | 'GROUPS_OWNED' | 'GROUP_MEMBERS' | 'CLASSROOMS_OWNED' | 'CLASSROOM_MEMBERS' | 'PROJECT_WORKSPACES' | 'EXPORTS_DAILY' | 'IMPORTS_DAILY' | 'ORG_SEATS' | 'NOTES_OWNED' | 'AI_REQUESTS_DAILY'
 
 export interface MutationSignUpArgs {
   input: SignUpInput
@@ -597,6 +597,11 @@ export interface MutationSetGlobalRoleArgs {
   input: SetGlobalRoleInput
 }
 
+export interface MyPlan {
+  plan: PublicPlan
+  usage: Array<PlanUsage>
+}
+
 /** Authorization Code + PKCE: the code from the provider's redirect and the verifier the client generated */
 export interface OAuthExchangeInput {
   provider: OAuthProvider
@@ -647,9 +652,44 @@ export interface PersonPayload {
 
 export type PlanInterval = 'NONE' | 'MONTH' | 'YEAR'
 
+/** One limit on a plan. `limit` is a decimal string, or null when the plan does not cap it. */
+export interface PlanLimit {
+  key: LimitKey
+  /** Words for the limit, such as "AI asks a day". */
+  label: string
+  limit: string | null
+}
+
+/** How much of one limit the signed-in person has used. `resetsAt` is null for a standing cap. */
+export interface PlanUsage {
+  key: LimitKey
+  label: string
+  used: string
+  /** Null when the plan does not cap this. */
+  limit: string | null
+  /** When a daily or monthly counter goes back to zero. Null for a standing cap. */
+  resetsAt: Date | null
+}
+
 export interface ProfilePayload {
   profile: StudentProfile | null
   userErrors: Array<UserError>
+}
+
+/** A plan as a person sees it: price, features and the limits for their role.
+ * `priceMinor` is minor currency units. Showing a price does not charge anyone. */
+export interface PublicPlan {
+  id: string
+  code: string
+  name: string
+  priceMinor: number
+  currency: string
+  interval: PlanInterval
+  features: Array<string>
+  /** Limits for the viewer's role. Signed out, these are the student limits. */
+  limits: Array<PlanLimit>
+  /** True when this is the signed-in viewer's plan. False for every plan when nobody is signed in. */
+  current: boolean
 }
 
 export interface QueryAdminAccessAllowlistArgs {

@@ -143,7 +143,7 @@ describe('security: resources', () => {
         .toLowerCase()
         .split(' ')
     const commerce = [...COMMERCE_WORDS, 'purchase', 'payment', 'pay', 'coupon', 'sale', 'sell']
-    // Admin plan prices and AI usage cost are configuration and totals (ADR-0101). Nothing is charged or sold.
+    // Plan prices and AI usage cost are configuration or a public price list (ADR-0101). Nothing is charged or sold.
     const adminConfig = new Set([
       'AdminAiMetrics.costMicroUsd',
       'AdminAiModelUsage.costMicroUsd',
@@ -155,6 +155,8 @@ describe('security: resources', () => {
       'CreateAdminPlanInput.currency',
       'UpdateAdminPlanInput.priceMinor',
       'UpdateAdminPlanInput.currency',
+      'PublicPlan.priceMinor',
+      'PublicPlan.currency',
     ])
     expect(names.length).toBeGreaterThan(500)
     expect(names.filter((n) => !adminConfig.has(n) && words(n).some((w) => commerce.includes(w)))).toEqual([])

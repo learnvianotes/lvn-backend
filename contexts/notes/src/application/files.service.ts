@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { CollegeIdCardLimits, collegeIdFileName, isCollegeIdMimeType, UploadLimits } from '@lvn/contracts/domain'
-import { Errors } from '@lvn-backend/errors'
+import { assertWithinPlan, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { ENTITLEMENTS, PLATFORM_SETTINGS, POLICY, type Entitlements, type FileParentKind, type FilePurposeKind, type Files, type FileSummary, type PlatformSettings, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
@@ -331,8 +331,8 @@ export class FilesService implements Files {
     if (bytes.length > limit) return { refused: `larger than ${Math.round(limit / 1024 ** 2)} MB` }
     try {
       await this.assertQuota(ownerId, bytes.length)
-    } catch {
-      return { refused: 'your storage is full' }
+    } catch (e) {
+      return { refused: e instanceof Error ? e.message : "You've reached your plan's limit for storage." }
     }
     const fileId = await this.store(ownerId, { purpose: 'ATTACHMENT', parent: { type: 'NOTE', id: noteId }, fileName: fileName.slice(0, 255), mimeType, bytes, restricted: false, expiresAt: null })
     await this.db.noteAttachment.create({ data: { noteId, fileId } })
@@ -378,10 +378,9 @@ export class FilesService implements Files {
     return used._sum.sizeBytes ?? 0n
   }
 
-  /** §8.1 quotas: 5 GB per student, 20 GB per teacher — from the plan's STORAGE_BYTES entitlement (ADR-0024). */
+  /** Storage comes from the plan's STORAGE_BYTES entitlement (ADR-0024). A null limit is unlimited. */
   private async assertQuota(ownerId: string, sizeBytes: number): Promise<void> {
     const limit = await this.entitlements.limit(ownerId, 'STORAGE_BYTES')
-    if (limit === null) return
-    if ((await this.storageUsed(ownerId)) + BigInt(sizeBytes) > limit) throw Errors.validation('Your storage is full. Delete files to make room.', field('sizeBytes'))
+    assertWithinPlan('STORAGE_BYTES', limit, await this.storageUsed(ownerId), BigInt(sizeBytes))
   }
 }

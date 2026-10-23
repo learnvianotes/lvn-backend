@@ -8,6 +8,8 @@ export { aiConfigFrom, type AiConfig } from './ai.config'
 export { AiGateway } from './application/ai-gateway'
 /** AI usage totals for the admin dashboard (ADR-0101). */
 export { AiAdminStats } from './application/admin-stats'
+/** Tokens and asks counted against a plan (AI_PLAN_USAGE). */
+export { AiPlanUsage } from './application/plan-usage'
 /** AI tasks (ADR-0059): the worker runs the queued ones; the AI part of a data export. */
 export { AI_TASKS_QUEUE, AiTasksService } from './application/ai-tasks.service'
 export { AiExport } from './application/ai-export'

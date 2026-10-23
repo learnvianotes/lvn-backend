@@ -51,6 +51,11 @@ describe('plan pricing input', () => {
   it('refuses a bad price, a duplicate limit and an edit that forgets to send a name', () => {
     expect(parsePlanDraft({ code: 'X', name: 'X', priceMinor: -1, currency: 'INR', interval: 'YEAR' }, keys).ok).toBe(false)
     expect(parsePlanDraft({ code: 'PLUS', name: 'Plus', priceMinor: 1, currency: 'INR', interval: 'NONE', entitlements: [{ key: 'ORG_SEATS', limit: '1', appliesToRole: null }, { key: 'ORG_SEATS', limit: '2', appliesToRole: null }] }, keys).ok).toBe(false)
+    const added = parsePlanDraft({ code: 'PLUS', name: 'Plus', priceMinor: 0, currency: 'INR', interval: 'NONE', entitlements: [{ key: 'NOTES_OWNED', limit: '40', appliesToRole: null }, { key: 'AI_REQUESTS_DAILY', limit: null, appliesToRole: 'STUDENT' }] }, keys)
+    expect(added.ok && added.value.entitlements).toEqual([
+      { key: 'NOTES_OWNED', limit: 40n, appliesToRole: null },
+      { key: 'AI_REQUESTS_DAILY', limit: null, appliesToRole: 'STUDENT' },
+    ])
     const patch = parsePlanPatch({ priceMinor: 100 }, keys)
     expect(patch.ok && patch.value).toEqual({ priceMinor: 100 })
   })

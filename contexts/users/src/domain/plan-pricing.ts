@@ -11,7 +11,7 @@ const MAX_PRICE_MINOR = 2_000_000_000
 const MAX_FEATURES = 24
 const MAX_FEATURE_LENGTH = 160
 const MAX_NAME = 80
-const MAX_ENTITLEMENTS = 40
+const MAX_ENTITLEMENTS = 64
 
 export interface PlanEntitlementDraft {
   key: LimitKey

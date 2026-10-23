@@ -1,4 +1,4 @@
-# Beta access allowlist (contracts 0.69.0). The switch is AdminSetting access_allowlist_enabled.
+# Beta access allowlist (contracts 0.71.0). The switch is AdminSetting access_allowlist_enabled.
 
 "Whether sign-up and sign-in are limited to the access allowlist. Public: no sign-in required."
 type AccessPolicy {

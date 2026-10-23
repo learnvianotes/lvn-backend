@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { Action, can, GroupJoinPolicy, GroupPrivacy, GroupRole as Role, GroupType, type Actor, type Resource } from '@lvn/contracts/domain'
 import { docSchema, docText } from '@lvn/contracts/validation'
-import { Errors } from '@lvn-backend/errors'
+import { assertWithinPlan, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { AUDIT, ENTITLEMENTS, FILES, PEOPLE, POLICY, type Audit, type Entitlements, type Files, type People, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
@@ -127,10 +127,10 @@ export class GroupsService {
     const { name, description } = this.clean(input.name, input.description)
     // Project workspaces have their own limit (ADR-0048).
     const type = input.type ?? 'COMMUNITY'
-    const limit = await this.entitlements.limit(actorId, type === 'PROJECT' ? 'PROJECT_WORKSPACES' : 'GROUPS_OWNED')
-    if (limit !== null && BigInt(await this.db.group.count({ where: { ownerId: actorId, deletedAt: null, type } })) >= limit) {
-      throw Errors.validation(type === 'PROJECT' ? `Your plan allows ${limit} project workspaces. Delete one to start another.` : `Your plan allows ${limit} groups. Delete one to start another.`)
-    }
+    const key = type === 'PROJECT' ? 'PROJECT_WORKSPACES' : 'GROUPS_OWNED'
+    const limit = await this.entitlements.limit(actorId, key)
+    const owned = BigInt(await this.db.group.count({ where: { ownerId: actorId, deletedAt: null, type } }))
+    assertWithinPlan(key, limit, owned)
     const rate = await this.limiter.hit(`core:group:create:${actorId}`, { max: GROUP_LIMITS.groupsPerDay, windowSeconds: 86_400 })
     if (!rate.allowed) throw Errors.rateLimited(rate.retryAfter, 'You have started a lot of groups today. Try again tomorrow.')
     const id = newId()
@@ -194,7 +194,8 @@ export class GroupsService {
   /** The plan limit on members is the owner's (ADR-0024); null means none. */
   private async assertRoom(group: GroupRow): Promise<void> {
     const limit = await this.entitlements.limit(group.ownerId, 'GROUP_MEMBERS')
-    if (limit !== null && BigInt(await this.db.groupMember.count({ where: { groupId: group.id } })) >= limit) throw Errors.validation('This group is full.')
+    const members = BigInt(await this.db.groupMember.count({ where: { groupId: group.id } }))
+    assertWithinPlan('GROUP_MEMBERS', limit, members)
   }
 
   private async addMember(group: GroupRow, userId: string): Promise<void> {

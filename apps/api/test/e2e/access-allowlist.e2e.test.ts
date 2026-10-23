@@ -7,7 +7,7 @@ import { createTestApp, infra, type TestApp } from '../support/app'
 import { OAuthStub } from '../support/oauth-stub'
 import { seedUser, tokenFor } from '../support/seed'
 
-/** Beta access allowlist (contracts 0.69.0): the admin switch, every sign-in path, guards, seed and role sync. */
+/** Beta access allowlist (contracts 0.71.0): the admin switch, every sign-in path, guards, seed and role sync. */
 
 const CLIENT = { id: 'lvn-test-client', secret: 'lvn-test-secret' }
 const REDIRECT = 'http://localhost:3000/oauth/callback'

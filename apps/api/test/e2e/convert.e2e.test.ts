@@ -142,7 +142,7 @@ describe('converting PDFs into notes', () => {
     try {
       const second = (await convert(reader2.token, noteId, fileId)).conversion!.id
       await conversions.triaged({ conversionId: second, pages: 6, scannedPages: 2, sha256: 'b'.repeat(64), encrypted: false })
-      expect(await status(reader2.token, second)).toMatchObject({ status: 'FAILED', error: 'This PDF has 6 pages and you can convert 5 more this month.' })
+      expect(await status(reader2.token, second)).toMatchObject({ status: 'FAILED', error: "You've reached your plan's limit for PDF pages a month." })
       const third = (await convert(reader2.token, noteId, fileId)).conversion!.id
       await conversions.triaged({ conversionId: third, pages: 1, scannedPages: 0, sha256: 'c'.repeat(64), encrypted: true })
       expect(await status(reader2.token, third)).toMatchObject({ status: 'FAILED', error: 'This PDF is locked with a password, so it cannot be converted.' })
