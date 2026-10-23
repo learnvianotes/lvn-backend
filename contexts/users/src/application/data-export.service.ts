@@ -137,12 +137,12 @@ export class DataExportService {
     const { passwordHash: _secret, ...account } = user
     const files: ExportFile[] = [
       { path: 'data/users/account.json', bytes: json({ ...account, hasPassword: !!_secret }) },
-      { path: 'data/users/sign-in-providers.json', bytes: json(providers.map((p) => ({ provider: p.provider, accountAtProvider: p.providerUserId, since: p.createdAt }))) },
+      { path: 'data/users/sign-in-providers.json', bytes: json(providers.map((p) => ({ provider: p.provider, providerSubject: p.providerSubject, since: p.createdAt }))) },
       { path: 'data/users/sessions.json', bytes: json(sessions.map((s) => ({ device: s.device, createdAt: s.createdAt, expiresAt: s.expiresAt, revokedAt: s.revokedAt }))) },
       { path: 'data/users/college-emails.json', bytes: json(institutional.map((i) => ({ email: i.email, domain: i.domain, verifiedAt: i.verifiedAt, replacedAt: i.replacedAt, createdAt: i.createdAt }))) },
       { path: 'data/users/organisations.json', bytes: json(memberships.map((m) => ({ organisation: m.organization.name, role: m.role, since: m.createdAt }))) },
       { path: 'data/users/consents.json', bytes: json(consents.map((c) => ({ kind: c.kind, version: c.version, acceptedAt: c.acceptedAt }))) },
-      { path: 'data/users/verification-requests.json', bytes: json(verification.map((v) => ({ method: v.method, status: v.status, createdAt: v.createdAt, decidedAt: v.decidedAt }))) },
+      { path: 'data/users/verification-requests.json', bytes: json(verification.map((v) => ({ method: v.method, status: v.status, collegeIdCard: v.collegeIdCard, createdAt: v.createdAt, decidedAt: v.decidedAt }))) },
       { path: 'data/users/study-profile.json', bytes: json(profile ? { department: profile.department, yearOfStudy: profile.yearOfStudy, interestTopicIds: profile.interestTopicIds, showOnProfile: profile.showOnProfile } : null) },
       { path: 'data/users/plan.json', bytes: json(plan ? { plan: plan.plan.name, since: plan.startedAt } : null) },
       { path: 'data/users/old-site-import.json', bytes: json(legacy ? { status: legacy.status, counts: legacy.counts, claimedAt: legacy.claimedAt, declinedAt: legacy.declinedAt } : null) },

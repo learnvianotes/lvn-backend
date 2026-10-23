@@ -54,7 +54,7 @@ erDiagram
     uuid id PK
     uuid userId FK
     enum provider "GOOGLE | GITHUB | LINKEDIN"
-    text providerUserId "GOOGLE: Firebase UID (ADR-0007)"
+    text providerSubject "GOOGLE: Firebase UID (ADR-0007, ADR-0100)"
     bytea encryptedRefreshToken
   }
   DeviceToken {
@@ -103,9 +103,16 @@ erDiagram
     uuid teacherId "TEACHER method"
     enum status "PENDING | APPROVED | REJECTED | WITHDRAWN"
     text message
+    bool collegeIdCard "ADR-0099: one college ID card, deleted at the decision"
     uuid decidedBy
     timestamptz decidedAt
     text reason
+  }
+  AppSetting {
+    text key PK "student_id_verification (ADR-0099, missing means off); google_sign_in (ADR-0100, inserted on)"
+    bool enabled
+    uuid updatedBy
+    timestamptz updatedAt
   }
   InstitutionalEmail {
     uuid userId FK

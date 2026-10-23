@@ -1,6 +1,6 @@
 # ADR-0007: Firebase Authentication for Google sign-in only
 
-- Status: Accepted (owner decision, 2026-10-08); the push question is answered by ADR-0021 (FCM for push delivery only)
+- Status: Accepted (owner decision, 2026-10-08); the push question is answered by ADR-0021 (FCM for push delivery only). Account linking is amended by ADR-0100.
 - Date: 2026-10-08
 - Spec sections: §2 (Auth, Auth providers), §7, §7.1, §16.1
 - Amends: §2 Auth row, §7 client calls, §7.1 OAuth bullet
@@ -26,7 +26,8 @@ configured, and the users of the old site (learnvianotes.in) signed in through i
    (beyond the `/__/auth/*` sign-in handler), Remote Config or Analytics. In the Firebase console only the Google
    provider is enabled.
 5. **Account linking** follows §7.1: by verified email. The Google identity is stored as
-   `OAuthAccount(provider = GOOGLE, providerUserId = <Firebase UID>)`.
+   `OAuthAccount(provider = GOOGLE, providerSubject = <Firebase UID>)`. *[Amended: ADR-0100 — the existing account's
+   email must be verified too, and an email sign-up joins that account only after the verification link is used.]*
 
 ## Open question for the owner
 

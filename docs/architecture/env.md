@@ -81,8 +81,8 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | api, worker | no (secret) | — | Local credentials; on AWS the task role is used instead |
 | `S3_FORCE_PATH_STYLE` | api, worker | no | `false` | `true` for RustFS and R2 |
 | `S3_BUCKET` | api, worker | yes | — | Uploads and media (§8) |
-| `UPLOADS_ENABLED` | api, worker | no | `false` | People may upload files (ADR-0097). Off, `createUploadIntent` answers UNAVAILABLE and the clients hide every upload control (`Query.uploadsEnabled`); `true` in development and the local environment |
-| `S3_RESTRICTED_BUCKET` | api, worker | yes | — | Identity documents (ADR-0019) and old-site snapshots (ADR-0023), own encryption key, never behind the CDN |
+| `UPLOADS_ENABLED` | api, worker | no | `false` | People may upload files (ADR-0097). Off, `createUploadIntent` answers UNAVAILABLE and the clients hide every upload control (`Query.uploadsEnabled`); `true` in development and the local environment. College ID verification does not use this switch (ADR-0099): platform admins turn that on in the app, and it is off until they do |
+| `S3_RESTRICTED_BUCKET` | api, worker | yes | — | Identity documents (ADR-0019), college ID cards (ADR-0099) and old-site snapshots (ADR-0023), own encryption key, never behind the CDN |
 | `MAIL_FROM` | api, worker | yes | — | Sender, e.g. `LearnViaNotes <no-reply@learnvianotes.in>` |
 | `MAIL_TRANSPORT` | api, worker | yes | — | `smtp` (Mailpit locally), `resend` (Lightsail, ADR-0096) or `ses` (kept in the code; its AWS deployment was retired) |
 | `SMTP_URL` | api, worker | when `smtp` | — | `smtp://localhost:51025` for Mailpit |
@@ -95,7 +95,7 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `DIGITAL_CONSENT_AGE` | api | no | `18` | Below it an account needs guardian or institutional consent or is a restricted minor (§15.2; 18 under DPDP) |
 | `ACCOUNT_MINIMUM_AGE` | api | no | `18` | Below it no account is created: sign-up refuses, and a provider account's under-age answer erases it (ADR-0091). `0` lets everyone register (minors restricted by `DIGITAL_CONSENT_AGE`) |
 | `PASSWORD_BREACH_API_URL` | api | no | — (check off) | k-anonymity range API, `https://api.pwnedpasswords.com/range` (§7.1) |
-| `FIREBASE_PROJECT_ID` | api | no | — (Google off) | Project whose ID tokens `signInWithGoogle` accepts (ADR-0007); no service account needed to verify |
+| `FIREBASE_PROJECT_ID` | api | no | — (Google off) | Project whose ID tokens `signInWithGoogle` accepts (ADR-0007); no service account needed to verify. Unset turns Google sign-in off. A platform admin can also turn it off while this is set (`setGoogleSignInEnabled`, `AppSetting` key `google_sign_in`, ADR-0100); that switch is not an environment variable |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | api | no (secret) | — (GitHub off) | OAuth app for `oauthExchange` |
 | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | api | no (secret) | — (LinkedIn off) | OAuth app for `oauthExchange` |
 | `GITHUB_OAUTH_URL`, `GITHUB_API_URL` | api | with GitHub | — | `https://github.com`, `https://api.github.com` |
@@ -166,3 +166,6 @@ file exists. Phase 3 (ADR-0021) adds `GOOGLE_SERVICE_INFO_PLIST`, its iOS counte
 
 The environments above are set on each VM by lvn-backend's `infra/lightsail/deploy.sh` from the GitHub environment's
 secrets and variables (`LVN_*`); docs/runbooks/lightsail.md lists them and what each becomes.
+
+Backups are not part of that deploy and need no variable here: the host's own `/opt/lvn/backup.sh` (Infra's, not in
+this repository) dumps the database at 02:30 IST with a backup-only R2 token read from `/opt/lvn/backup-r2.env`.

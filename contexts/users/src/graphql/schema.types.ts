@@ -29,6 +29,24 @@ export interface ApplyToTeachInput {
 export interface AuthPayload {
   session: Session | null
   userErrors: Array<UserError>
+  /** True only from signUp, when this email already belongs to an account with no password (for example one created with
+   * Google). A link was emailed; verifyEmail with that token attaches the password and does not sign anyone in. No
+   * session is returned, and signIn with the new password fails until the link is used. False for every other result,
+   * including a normal sign-up and "an account already exists, sign in instead". */
+  emailLinkPending: boolean
+}
+
+/** Whether Google sign-in can run. The Firebase project id is an environment variable; the switch is AppSetting google_sign_in (ADR-0100). */
+export interface AuthSettings {
+  /** FIREBASE_PROJECT_ID is set. The id itself is not returned. */
+  googleConfigured: boolean
+  /** Platform-admin switch (AppSetting google_sign_in, default on). Google is offered only when this is true and googleConfigured is true. */
+  googleEnabled: boolean
+}
+
+export interface AuthSettingsPayload {
+  settings: AuthSettings | null
+  userErrors: Array<UserError>
 }
 
 /** After a provider sign-in (no signUp call): the same details, collected once */
@@ -51,6 +69,15 @@ export interface ConnectionRequestItem {
   /** Who asked (INCOMING) or was asked (OUTGOING) */
   person: User
   createdAt: Date
+}
+
+export interface CreateStudentIdUploadInput {
+  /** Shown to the reviewing admin; never part of the storage key */
+  fileName: string
+  /** image/jpeg, image/png, image/webp or application/pdf */
+  mimeType: string
+  /** At most 5 MB (5242880) */
+  sizeBytes: number
 }
 
 export interface DataExport {
@@ -182,8 +209,32 @@ export interface MutationRequestAccountDeletionArgs {
   input: RequestAccountDeletionInput
 }
 
+export interface MutationCreateStudentIdUploadIntentArgs {
+  input: CreateStudentIdUploadInput
+}
+
+export interface MutationSubmitStudentIdVerificationArgs {
+  input: SubmitStudentIdVerificationInput
+}
+
+export interface MutationWithdrawStudentIdVerificationArgs {
+  requestId: string
+}
+
+export interface MutationReviewStudentIdVerificationArgs {
+  input: ReviewStudentIdVerificationInput
+}
+
+export interface MutationSetStudentIdVerificationEnabledArgs {
+  enabled: boolean
+}
+
 export interface MutationUpdateProfileArgs {
   input: UpdateProfileInput
+}
+
+export interface MutationSetGoogleSignInEnabledArgs {
+  input: SetGoogleSignInEnabledInput
 }
 
 export interface MutationSignInWithGoogleArgs {
@@ -359,6 +410,15 @@ export interface ProfilePayload {
   userErrors: Array<UserError>
 }
 
+export interface QueryStudentIdVerificationQueueArgs {
+  first?: number | null
+  after?: string | null
+}
+
+export interface QueryStudentIdCardUrlArgs {
+  requestId: string
+}
+
 export interface QueryUserByHandleArgs {
   handle: string
 }
@@ -456,6 +516,13 @@ export interface RespondToConnectionRequestInput {
   accept: boolean
 }
 
+export interface ReviewStudentIdVerificationInput {
+  requestId: string
+  approve: boolean
+  /** Optional. Shown to the student when you reject. */
+  reason?: string | null
+}
+
 export interface ReviewVerificationRequestInput {
   requestId: string
   approve: boolean
@@ -477,6 +544,10 @@ export interface SetGlobalRoleInput {
   role: GlobalRole
 }
 
+export interface SetGoogleSignInEnabledInput {
+  enabled: boolean
+}
+
 export interface SetInstitutionalEmailInput {
   email: string
 }
@@ -491,9 +562,13 @@ export interface SignInInput {
   password: string
 }
 
-/** Which sign-in methods this deployment offers */
+/** A way this account can sign in. EMAIL is a password; the others are linked provider identities (ADR-0100). */
+export type SignInMethod = 'EMAIL' | 'GOOGLE' | 'GITHUB' | 'LINKEDIN'
+
+/** Which sign-in methods this deployment offers. Read this before drawing the buttons. */
 export interface SignInOptions {
   emailPassword: boolean
+  /** False when FIREBASE_PROJECT_ID is unset, or a platform admin has turned Google sign-in off */
   google: boolean
   github: boolean
   linkedin: boolean
@@ -524,6 +599,47 @@ export interface SkillsImport {
   identities: Array<ExternalIdentity>
 }
 
+/** A short-lived upload of one college ID card. PUT the bytes to uploadUrl with exactly these headers within 10 minutes, then call submitStudentIdVerification. Do not call completeUpload. */
+export interface StudentIdUpload {
+  fileId: string
+  uploadUrl: string
+  uploadHeaders: Array<StudentIdUploadHeader>
+  expiresAt: Date
+}
+
+export interface StudentIdUploadHeader {
+  name: string
+  value: string
+}
+
+export interface StudentIdUploadPayload {
+  upload: StudentIdUpload | null
+  userErrors: Array<UserError>
+}
+
+export interface StudentIdVerificationPayload {
+  request: StudentIdVerificationRequest | null
+  userErrors: Array<UserError>
+}
+
+/** The student's own view of a college-ID request. `card` is null except for a platform admin, and null once the card has been deleted. */
+export interface StudentIdVerificationRequest {
+  id: string
+  status: VerificationRequestStatus
+  message: string | null
+  createdAt: Date
+  decidedAt: Date | null
+  reason: string | null
+  requester: User
+  card: VerificationDocument | null
+}
+
+/** Platform admins. `updatedAt` is null until someone changes the switch. */
+export interface StudentIdVerificationSettings {
+  enabled: boolean
+  updatedAt: Date | null
+}
+
 /** Department and year are shown to others only if showOnProfile; interests stay private */
 export interface StudentProfile {
   department: string | null
@@ -533,6 +649,12 @@ export interface StudentProfile {
   /** Viewer only: the topics they chose, for Community's For You (ADR-0076); null for a topic that is gone */
   interests: Array<Topic | null> | null
   showOnProfile: boolean
+}
+
+export interface SubmitStudentIdVerificationInput {
+  /** The fileId from createStudentIdUploadIntent, after the PUT */
+  fileId: string
+  message?: string | null
 }
 
 export interface TeacherProfile {
@@ -624,6 +746,8 @@ export interface User {
   limits?: Array<Limit> | null
   /** Viewer only: data from the old learnvianotes.in site (ADR-0023) */
   legacyImport?: LegacyImport | null
+  /** Viewer only (ADR-0100): ways this account can sign in. Null for anyone else, so account settings can list them. */
+  signInMethods?: Array<SignInMethod> | null
   /** Viewer only (ADR-0017): the confirmed address, or the one waiting for its code */
   institutionalEmail?: string | null
   /** Viewer only */
@@ -684,6 +808,8 @@ export interface VerificationRequest {
   teacher: User | null
   /** Platform admins only; open one with verificationDocumentUrl (every view is audited) */
   documents: Array<VerificationDocument>
+  /** True when the proof is one college ID card (ADR-0099). Deleted when the request is decided or withdrawn. */
+  collegeIdCard: boolean
 }
 
 export interface VerificationRequestPayload {

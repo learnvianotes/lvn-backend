@@ -60,6 +60,8 @@ enum VerificationRequestStatus {
 enum EmailTokenPurpose {
   VERIFY_EMAIL
   RESET_PASSWORD
+  /// Confirms a password sign-up against an account that already exists (Google, GitHub, LinkedIn) before the password is stored
+  LINK_EMAIL
 
   @@schema("users")
 }
@@ -250,30 +252,35 @@ model Session {
   @@schema("users")
 }
 
+/// A sign-in identity, separate from the person (ADR-0100): one row per provider account. The email method is the
+/// user's password, not a row here — the address is already unique on User. Unique on (provider, providerSubject).
 model OAuthAccount {
-  id             String        @id @db.Uuid
-  userId         String        @db.Uuid
-  provider       OAuthProvider
-  /// GOOGLE: the Firebase UID (ADR-0007)
-  providerUserId String
-  createdAt      DateTime      @default(now()) @db.Timestamptz(3)
+  id              String        @id @db.Uuid
+  userId          String        @db.Uuid
+  provider        OAuthProvider
+  /// Stable id at the provider. GOOGLE: the Firebase UID (ADR-0007). GitHub: the numeric user id. LinkedIn: `sub`.
+  providerSubject String
+  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([provider, providerUserId])
+  @@unique([provider, providerSubject])
   @@index([userId])
   @@schema("users")
 }
 
-/// Single-use links for login-email verification and password reset; only the SHA-256 of the token is stored.
+/// Single-use links for login-email verification, password reset, and attaching a password to an existing account.
+/// Only the SHA-256 of the token is stored.
 model EmailToken {
-  id        String            @id @db.Uuid
-  userId    String            @db.Uuid
-  purpose   EmailTokenPurpose
-  tokenHash Bytes             @unique
-  expiresAt DateTime          @db.Timestamptz(3)
-  usedAt    DateTime?         @db.Timestamptz(3)
-  createdAt DateTime          @default(now()) @db.Timestamptz(3)
+  id           String            @id @db.Uuid
+  userId       String            @db.Uuid
+  purpose      EmailTokenPurpose
+  tokenHash    Bytes             @unique
+  expiresAt    DateTime          @db.Timestamptz(3)
+  usedAt       DateTime?         @db.Timestamptz(3)
+  /// Argon2id password to set when a LINK_EMAIL token is used. Null for every other purpose, and cleared once used.
+  passwordHash String?
+  createdAt    DateTime          @default(now()) @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -410,6 +417,8 @@ model VerificationRequest {
   status      VerificationRequestStatus @default(PENDING)
   message     String?
   documentIds String[]                  @db.Uuid
+  /// ADR-0099: the one file is a college ID card. Deleted when the request is decided or withdrawn.
+  collegeIdCard Boolean                 @default(false)
   decidedBy   String?                   @db.Uuid
   decidedAt   DateTime?                 @db.Timestamptz(3)
   reason      String?
@@ -420,6 +429,19 @@ model VerificationRequest {
   @@index([userId, createdAt])
   @@index([teacherId, status])
   @@index([status, createdAt])
+  @@index([collegeIdCard, status, createdAt])
+  @@schema("users")
+}
+
+/// A switch a platform admin changes without a deploy or an environment variable.
+/// `student_id_verification` (ADR-0099): a missing row means off.
+/// `google_sign_in` (ADR-0100): the unified-sign-in migration inserts it on, and a missing row is treated as on.
+model AppSetting {
+  key       String   @id
+  enabled   Boolean  @default(false)
+  updatedBy String?  @db.Uuid
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
   @@schema("users")
 }
 
@@ -558,6 +580,8 @@ enum FilePurpose {
   VERIFICATION_DOCUMENT
   /// ADR-0076: a group's picture, uploaded by an admin and attached to the group then
   GROUP_PICTURE
+  /// ADR-0099: a college ID card. Not accepted by createUploadIntent. Restricted bucket only.
+  COLLEGE_ID
 
   @@schema("notes")
 }

@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common'
 import type { People, Person, SearchProfile } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { isRestrictedMinor } from '../domain/rules'
-import type { User } from '../graphql/schema.types'
+import type { SignInMethod, User } from '../graphql/schema.types'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { InstitutionalEmailService } from './institutional-email.service'
 import { deletionDate } from './account-deletion.service'
@@ -185,6 +185,21 @@ export class UsersService implements People {
       restrictedMinor: null,
       deletionScheduledFor: null,
     }))
+  }
+
+  /** Viewer only (ADR-0100): EMAIL when a password is set, then each linked provider. Empty if the account is gone. */
+  async signInMethods(userId: string): Promise<SignInMethod[]> {
+    const u = await this.db.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { passwordHash: true, oauthAccounts: { select: { provider: true } } },
+    })
+    if (!u) return []
+    const methods: SignInMethod[] = []
+    if (u.passwordHash) methods.push('EMAIL')
+    for (const provider of ['GOOGLE', 'GITHUB', 'LINKEDIN'] as const) {
+      if (u.oauthAccounts.some((a) => a.provider === provider)) methods.push(provider)
+    }
+    return methods
   }
 
   /** The viewer's own view of their account, viewer-only fields included; null if it was deleted meanwhile. */

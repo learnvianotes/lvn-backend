@@ -43,7 +43,7 @@ export async function githubIdentity(app: OAuthApp, x: CodeExchange): Promise<Pr
     json<{ email: string; primary: boolean; verified: boolean }[]>(await fetch(`${api}/user/emails`, { headers, signal: AbortSignal.timeout(TIMEOUT) }), 'GitHub emails'),
   ])
   const primary = emails.find((e) => e.primary && e.verified) ?? emails.find((e) => e.verified)
-  return { provider: 'GITHUB', providerUserId: String(user.id), email: primary?.email ?? null, emailVerified: !!primary, name: user.name ?? user.login }
+  return { provider: 'GITHUB', providerSubject: String(user.id), email: primary?.email ?? null, emailVerified: !!primary, name: user.name ?? user.login }
 }
 
 export async function linkedinIdentity(app: OAuthApp, x: CodeExchange): Promise<ProviderIdentity> {
@@ -68,5 +68,5 @@ export async function linkedinIdentity(app: OAuthApp, x: CodeExchange): Promise<
     await fetch(`${app.apiUrl.replace(/\/$/, '')}/userinfo`, { headers: { authorization: `Bearer ${token.access_token}` }, signal: AbortSignal.timeout(TIMEOUT) }),
     'LinkedIn userinfo',
   )
-  return { provider: 'LINKEDIN', providerUserId: info.sub, email: info.email ?? null, emailVerified: info.email_verified === true, name: info.name ?? null }
+  return { provider: 'LINKEDIN', providerSubject: info.sub, email: info.email ?? null, emailVerified: info.email_verified === true, name: info.name ?? null }
 }

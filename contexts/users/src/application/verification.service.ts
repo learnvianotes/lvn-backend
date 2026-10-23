@@ -4,6 +4,9 @@ import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { FILES, type Files } from '@lvn-backend/facades'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
+import { RateLimiter } from '@lvn-backend/redis'
+import { COLLEGE_ID_CARD_URL_SECONDS, COLLEGE_ID_OFF, COLLEGE_ID_UPLOADS_PER_DAY, checkedCollegeIdFile } from '../domain/college-id'
+import { AppSettingsService } from './app-settings.service'
 import { AuditService } from './audit.service'
 import { PolicyService } from './policy.service'
 
@@ -26,6 +29,8 @@ export class VerificationService {
     private readonly db: PrismaService,
     private readonly policy: PolicyService,
     private readonly audit: AuditService,
+    private readonly settings: AppSettingsService,
+    private readonly limiter: RateLimiter,
     @Inject(FILES) private readonly files: Files,
     @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
@@ -117,9 +122,11 @@ export class VerificationService {
     const request = await this.db.verificationRequest.findUnique({ where: { id: requestId } })
     if (!request || request.userId !== userId) throw Errors.notFound('Request not found.')
     if (request.status !== 'PENDING') throw Errors.conflict('This request was already decided.')
+    // A college ID card is deleted before the row forgets it, so a failed delete can be retried (ADR-0099).
+    if (request.collegeIdCard) await this.removeCollegeIdCard(userId, requestId, request.documentIds)
     await this.db.verificationRequest.update({ where: { id: requestId }, data: { status: 'WITHDRAWN', documentIds: [] } })
     // Documents exist only for this decision (purpose limitation, §15.2): a withdrawn request keeps none.
-    if (request.documentIds.length) await this.files.delete(request.documentIds)
+    if (!request.collegeIdCard && request.documentIds.length) await this.files.delete(request.documentIds)
   }
 
   async review(reviewerId: string, requestId: string, approve: boolean, reason?: string | null) {
@@ -131,7 +138,8 @@ export class VerificationService {
     if (request.status !== 'PENDING') throw Errors.conflict('This request was already decided.')
     const trimmed = reason?.trim().slice(0, 500) || null
     const teacherRole = request.purpose === 'TEACHER_ROLE'
-    if (!approve && !trimmed) throw Errors.validation(teacherRole ? 'Tell them why, so they can apply again.' : 'Tell the student why, so they can try again.', ['input', 'reason'])
+    // A college ID rejection may omit a reason (ADR-0099). Every other rejection still explains why.
+    if (!approve && !trimmed && !request.collegeIdCard) throw Errors.validation(teacherRole ? 'Tell them why, so they can apply again.' : 'Tell the student why, so they can try again.', ['input', 'reason'])
 
     const now = new Date()
     let newlyVerified = false
@@ -151,13 +159,18 @@ export class VerificationService {
         if (teacherRole) await tx.user.update({ where: { id: request.userId }, data: { globalRole: 'TEACHER' } })
       }
       const action = teacherRole ? (approve ? 'teacher.approved' : 'teacher.rejected') : approve ? 'verification.approved' : 'verification.rejected'
-      await this.audit.record({ actorId: reviewerId, action, targetType: 'VerificationRequest', targetId: requestId, metadata: { method: request.method, userId: request.userId, purpose: request.purpose } }, tx)
+      await this.audit.record({ actorId: reviewerId, action, targetType: 'VerificationRequest', targetId: requestId, metadata: { method: request.method, userId: request.userId, purpose: request.purpose, collegeIdCard: request.collegeIdCard } }, tx)
       return tx.verificationRequest.findUniqueOrThrow({ where: { id: requestId } })
     })
 
     const method = request.method as Method
     await this.events.publish('VerificationDecided', { requestId, userId: request.userId, method, decision: approve ? 'APPROVED' : 'REJECTED', reviewerId, purpose: request.purpose })
     if (newlyVerified) await this.events.publish('InstitutionVerified', { userId: request.userId, method })
+    // The card is deleted at the decision (ADR-0099). The 30-day job remains the backstop if this delete does not finish.
+    if (request.collegeIdCard) {
+      await this.removeCollegeIdCard(reviewerId, requestId, request.documentIds)
+      return { ...decided, documentIds: [] }
+    }
     return decided
   }
 
@@ -197,18 +210,96 @@ export class VerificationService {
     return this.files.describe(documentIds)
   }
 
-  /** Deletes documents of requests decided 30 days ago or more; keeps the outcome (job, daily). */
+  /**
+   * Deletes documents whose retention has ended. Other proof is kept 30 days after the decision (ADR-0019). A college
+   * ID card is deleted at the decision; this job removes one that is still stored after that (ADR-0099).
+   */
   async purgeDecidedDocuments(now = new Date()): Promise<number> {
     const due = await this.db.verificationRequest.findMany({
-      where: { decidedAt: { lte: new Date(now.getTime() - DOCUMENT_RETENTION_DAYS * DAY_MS) }, NOT: { documentIds: { isEmpty: true } } },
-      select: { id: true, documentIds: true },
+      where: {
+        NOT: { documentIds: { isEmpty: true } },
+        OR: [
+          { decidedAt: { lte: new Date(now.getTime() - DOCUMENT_RETENTION_DAYS * DAY_MS) } },
+          { collegeIdCard: true, status: { in: ['APPROVED', 'REJECTED', 'WITHDRAWN'] } },
+        ],
+      },
+      select: { id: true, documentIds: true, collegeIdCard: true },
     })
     for (const r of due) {
       await this.files.delete(r.documentIds)
       await this.db.verificationRequest.update({ where: { id: r.id }, data: { documentIds: [] } })
-      await this.audit.record({ actorId: null, action: 'verification.documents.deleted', targetType: 'VerificationRequest', targetId: r.id, metadata: { count: r.documentIds.length } })
+      await this.audit.record({ actorId: null, action: 'verification.documents.deleted', targetType: 'VerificationRequest', targetId: r.id, metadata: { count: r.documentIds.length, collegeIdCard: r.collegeIdCard } })
     }
     return due.length
+  }
+
+  /**
+   * A presigned upload for one college ID card (ADR-0099). Refused while the admin switch is off, and never stored
+   * then. Independent of UPLOADS_ENABLED: general uploads can stay off.
+   */
+  async createCollegeIdUpload(userId: string, input: { fileName: string; mimeType: string; sizeBytes: number }) {
+    await this.assertCollegeIdOpen(userId)
+    const file = checkedCollegeIdFile(input)
+    const limit = await this.limiter.hit(`college-id-upload:${userId}`, { max: COLLEGE_ID_UPLOADS_PER_DAY, windowSeconds: 24 * 3600 })
+    if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many college ID uploads today. Try again tomorrow.')
+    return this.files.createCollegeIdUpload(userId, file)
+  }
+
+  /** Attaches one READY college ID card to a new account-verification request. Platform admins decide it. */
+  async submitCollegeId(userId: string, fileId: string, message?: string | null) {
+    await this.assertCollegeIdOpen(userId)
+    await this.assertMayRequest(userId, VerificationMethod.DOCUMENTS, false)
+    await this.files.finalizeCollegeIdUpload(userId, fileId)
+    const request = await this.create(userId, VerificationMethod.DOCUMENTS, { documentIds: [fileId], message, collegeIdCard: true })
+    try {
+      await this.files.attach([fileId], userId, 'COLLEGE_ID', { type: 'VERIFICATION_REQUEST', id: request.id })
+    } catch (e) {
+      await this.db.verificationRequest.delete({ where: { id: request.id } })
+      throw e
+    }
+    await this.announce(request)
+    return request
+  }
+
+  /** The person's latest college-ID request, if they have sent one. */
+  myCollegeId(userId: string) {
+    return this.db.verificationRequest.findFirst({ where: { userId, collegeIdCard: true }, orderBy: { createdAt: 'desc' } })
+  }
+
+  /** Platform admins: pending college-ID requests, oldest first. */
+  async collegeIdQueue(adminId: string, first = 20, after?: string | null) {
+    const admin = await this.policy.actor(adminId)
+    if (!admin) throw Errors.unauthenticated()
+    if (!can(admin, Action.ACCOUNT_REVIEW_VERIFICATION, { kind: 'verification', method: VerificationMethod.DOCUMENTS })) throw Errors.forbidden()
+    return this.db.verificationRequest.findMany({
+      where: { status: 'PENDING', collegeIdCard: true, ...(after ? { id: { gt: after } } : {}) },
+      orderBy: { id: 'asc' },
+      take: Math.min(Math.max(first, 1), 100),
+    })
+  }
+
+  /**
+   * Platform admins decide a college-ID request. Approval verifies the account (method DOCUMENTS) and the card is
+   * deleted either way. A request that is not a college ID card is not found here.
+   */
+  async reviewCollegeId(reviewerId: string, requestId: string, approve: boolean, reason?: string | null) {
+    const reviewer = await this.policy.actor(reviewerId)
+    const request = await this.db.verificationRequest.findUnique({ where: { id: requestId }, select: { collegeIdCard: true } })
+    if (!reviewer || !request || !request.collegeIdCard) throw Errors.notFound('Request not found.')
+    if (!can(reviewer, Action.ACCOUNT_REVIEW_VERIFICATION, { kind: 'verification', method: VerificationMethod.DOCUMENTS })) throw Errors.forbidden()
+    return this.review(reviewerId, requestId, approve, reason)
+  }
+
+  /** Platform admins only. A 5-minute link; every view is audited. The owner of the card cannot open it. */
+  async collegeIdUrl(adminId: string, requestId: string) {
+    const admin = await this.policy.actor(adminId)
+    const request = await this.db.verificationRequest.findUnique({ where: { id: requestId } })
+    if (!admin || !request || !request.collegeIdCard) throw Errors.notFound('Request not found.')
+    if (!can(admin, Action.ACCOUNT_REVIEW_VERIFICATION, { kind: 'verification', method: VerificationMethod.DOCUMENTS })) throw Errors.forbidden()
+    const fileId = request.documentIds[0]
+    if (!fileId) throw Errors.notFound('The college ID card has been deleted.')
+    await this.audit.record({ actorId: adminId, action: 'verification.document.viewed', targetType: 'VerificationRequest', targetId: requestId, metadata: { fileId, collegeIdCard: true } })
+    return this.files.readUrl(fileId, { ttlSeconds: COLLEGE_ID_CARD_URL_SECONDS })
   }
 
   private async assertMayRequest(userId: string, method: Method, targetIsVerifiedTeacher: boolean): Promise<void> {
@@ -225,11 +316,28 @@ export class VerificationService {
     if (lastWeek >= REQUESTS_PER_WEEK) throw Errors.rateLimited(24 * 3600, 'You can send three requests a week. Try again later.')
   }
 
-  private async create(userId: string, method: Method, data: { teacherId?: string; documentIds?: string[]; message?: string | null }) {
+  private async assertCollegeIdOpen(userId: string): Promise<void> {
+    if (!(await this.settings.studentIdVerificationEnabled())) throw Errors.unavailable(COLLEGE_ID_OFF)
+    const actor = await this.policy.actor(userId)
+    if (!actor) throw Errors.unauthenticated()
+    if (actor.institutionVerified) throw Errors.conflict('Your account is already verified.')
+    if (actor.restrictedMinor) throw Errors.forbidden('Ask a teacher to verify your account instead.')
+    if (await this.db.verificationRequest.count({ where: { userId, status: 'PENDING', purpose: 'ACCOUNT' } })) throw Errors.conflict('You already have a request waiting. Withdraw it to send another.')
+  }
+
+  /** Deletes the stored card and records who did it. The request row is updated by the caller when the decision lands. */
+  private async removeCollegeIdCard(actorId: string | null, requestId: string, documentIds: string[]): Promise<void> {
+    if (!documentIds.length) return
+    await this.files.delete(documentIds)
+    await this.db.verificationRequest.update({ where: { id: requestId }, data: { documentIds: [] } })
+    await this.audit.record({ actorId, action: 'verification.documents.deleted', targetType: 'VerificationRequest', targetId: requestId, metadata: { count: documentIds.length, collegeIdCard: true } })
+  }
+
+  private async create(userId: string, method: Method, data: { teacherId?: string; documentIds?: string[]; message?: string | null; collegeIdCard?: boolean }) {
     const message = data.message?.trim().slice(0, 500) || null
     try {
       return await this.db.verificationRequest.create({
-        data: { id: newId(), userId, method, teacherId: data.teacherId ?? null, documentIds: data.documentIds ?? [], message },
+        data: { id: newId(), userId, method, teacherId: data.teacherId ?? null, documentIds: data.documentIds ?? [], message, collegeIdCard: data.collegeIdCard ?? false },
       })
     } catch (e) {
       // The partial unique index allows one pending request per user, even under concurrent requests.

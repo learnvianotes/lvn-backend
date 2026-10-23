@@ -634,7 +634,32 @@ input AskDoubtInput {
 }
 
 type AuthPayload {
+  """
+  True only from signUp, when this email already belongs to an account with no password (for example one created with
+  Google). A link was emailed; verifyEmail with that token attaches the password and does not sign anyone in. No
+  session is returned, and signIn with the new password fails until the link is used. False for every other result,
+  including a normal sign-up and "an account already exists, sign in instead".
+  """
+  emailLinkPending: Boolean!
   session: Session
+  userErrors: [UserError!]!
+}
+
+"""
+Whether Google sign-in can run. The Firebase project id is an environment variable; the switch is AppSetting google_sign_in (ADR-0100).
+"""
+type AuthSettings {
+  """FIREBASE_PROJECT_ID is set. The id itself is not returned."""
+  googleConfigured: Boolean!
+
+  """
+  Platform-admin switch (AppSetting google_sign_in, default on). Google is offered only when this is true and googleConfigured is true.
+  """
+  googleEnabled: Boolean!
+}
+
+type AuthSettingsPayload {
+  settings: AuthSettings
   userErrors: [UserError!]!
 }
 
@@ -1464,6 +1489,17 @@ input CreateNoteInput {
   tagNames: [String!]
   title: String
   topicIds: [UUID!]
+}
+
+input CreateStudentIdUploadInput {
+  """Shown to the reviewing admin; never part of the storage key"""
+  fileName: String!
+
+  """image/jpeg, image/png, image/webp or application/pdf"""
+  mimeType: String!
+
+  """At most 5 MB (5242880)"""
+  sizeBytes: Int!
 }
 
 input CreateUploadIntentInput {
@@ -2626,6 +2662,11 @@ type Mutation {
   createGroup(input: CreateGroupInput!): GroupPayload!
   createGroupPost(input: CreateGroupPostInput!): GroupPostPayload!
   createNote(input: CreateNoteInput!): NotePayload!
+
+  """
+  Signed in, unverified, no request already waiting. UNAVAILABLE while the switch is off — nothing is stored.
+  """
+  createStudentIdUploadIntent(input: CreateStudentIdUploadInput!): StudentIdUploadPayload!
   createUploadIntent(input: CreateUploadIntentInput!): UploadIntentPayload!
 
   """Platform admins"""
@@ -2836,6 +2877,11 @@ type Mutation {
   reviewGroupJoinRequest(input: ReviewGroupJoinRequestInput!): GroupPayload!
 
   """
+  Platform admins. Approval sets the account verified with method DOCUMENTS. The card is deleted either way. A reason is optional.
+  """
+  reviewStudentIdVerification(input: ReviewStudentIdVerificationInput!): StudentIdVerificationPayload!
+
+  """
   Teachers: requests addressed to them. Platform admins: all, including documents.
   """
   reviewVerificationRequest(input: ReviewVerificationRequestInput!): VerificationRequestPayload!
@@ -2879,6 +2925,11 @@ type Mutation {
   """
   setGlobalRole(input: SetGlobalRoleInput!): OkPayload!
 
+  """
+  Platform admins. Turns Google sign-in on or off without a deploy. Does nothing until FIREBASE_PROJECT_ID is set.
+  """
+  setGoogleSignInEnabled(input: SetGoogleSignInEnabledInput!): AuthSettingsPayload!
+
   """Admins and the Owner"""
   setGroupRepository(input: SetGroupRepositoryInput!): GroupPayload!
   setGroupRole(input: SetGroupRoleInput!): GroupPayload!
@@ -2911,6 +2962,9 @@ type Mutation {
   Shows, or stops showing, the viewer's name and counted days on their classes' Rhythm ring
   """
   setRhythmSharing(input: SetRhythmSharingInput!): OkPayload!
+
+  """Platform admins. Does not change UPLOADS_ENABLED. Off is the default."""
+  setStudentIdVerificationEnabled(enabled: Boolean!): OkPayload!
 
   """
   Share with one person, or change their role; a PRIVATE note becomes SHARED
@@ -2960,6 +3014,11 @@ type Mutation {
   """
   submitResource(input: SubmitResourceInput!): ResourcePayload!
 
+  """
+  Signed in. One pending account-verification request at a time; three requests a week. UNAVAILABLE while the switch is off.
+  """
+  submitStudentIdVerification(input: SubmitStudentIdVerificationInput!): StudentIdVerificationPayload!
+
   """Apply a device's outbox in order (at most 100 operations)"""
   syncPush(ops: [SyncOpInput!]!): SyncPushPayload!
   testAiConnection(input: AiConnectionIdInput!): AiConnectionTestPayload!
@@ -3008,6 +3067,11 @@ type Mutation {
   """Returns the person who was asked"""
   withdrawConnectionRequest(input: ConnectionRequestInput!): PersonPayload!
   withdrawGroupJoinRequest(input: JoinRequestIdInput!): GroupPayload!
+
+  """
+  The student withdraws their own pending college-ID request. The card is deleted.
+  """
+  withdrawStudentIdVerification(requestId: UUID!): OkPayload!
   withdrawVerificationRequest(requestId: UUID!): OkPayload!
 }
 
@@ -3724,11 +3788,22 @@ type Query {
   """
   aiArtifact(id: UUID!): AiArtifact
 
+  """
+  Platform admins only: every model the connection's account lists, sorted, for its chat and embedding model fields.
+  Empty when the provider does not list its models, cannot be reached or the key cannot be read. Spends no tokens.
+  """
+  aiConnectionModels(input: AiConnectionIdInput!): [String!]!
+
   """Platform admins only"""
   aiSettings: AiSettings!
 
   """Whether AI answers now; works signed out"""
   aiStatus: AiStatus!
+
+  """
+  Platform admins. Google's on/off switch and whether a Firebase project is configured.
+  """
+  authSettings: AuthSettings!
 
   """A quiz of a class the viewer is in; null otherwise"""
   classQuiz(id: UUID!): ClassQuiz
@@ -3858,6 +3933,11 @@ type Query {
   The viewer's account standing: a suspension and recent warnings (ADR-0053)
   """
   myStanding: AccountStanding!
+
+  """
+  Signed in: the viewer's latest college-ID request, or null if they have never sent one.
+  """
+  myStudentIdVerification: StudentIdVerificationRequest
   myTags: [Tag!]!
 
   """Signed in: the viewer's latest application to teach (ADR-0073)"""
@@ -3946,6 +4026,24 @@ type Query {
   """Notes other people shared with the viewer, most recently changed first"""
   sharedWithMe(after: String, first: Int): NoteConnection!
   signInOptions: SignInOptions!
+
+  """
+  Platform admins: a 5-minute link to the card. Every view is written to the audit log. The student, and every other non-admin, is refused.
+  """
+  studentIdCardUrl(requestId: UUID!): SignedUrl!
+
+  """
+  Public. False until a platform admin turns it on. Clients hide the college-ID control while it is false. Independent of uploadsEnabled.
+  """
+  studentIdVerificationEnabled: Boolean!
+
+  """
+  Platform admins: pending college-ID requests, oldest first. `after` is the last id seen.
+  """
+  studentIdVerificationQueue(after: UUID, first: Int): [StudentIdVerificationRequest!]!
+
+  """Platform admins: the switch and when it last changed."""
+  studentIdVerificationSettings: StudentIdVerificationSettings!
   subject(slug: String!): Subject
   subjects: [Subject!]!
 
@@ -4569,6 +4667,14 @@ enum ReviewState {
   REVIEW
 }
 
+input ReviewStudentIdVerificationInput {
+  approve: Boolean!
+
+  """Optional. Shown to the student when you reject."""
+  reason: String
+  requestId: UUID!
+}
+
 input ReviewVerificationRequestInput {
   approve: Boolean!
 
@@ -4894,6 +5000,10 @@ input SetGlobalRoleInput {
   userId: UUID!
 }
 
+input SetGoogleSignInEnabledInput {
+  enabled: Boolean!
+}
+
 input SetGroupRepositoryInput {
   groupId: UUID!
 
@@ -4961,10 +5071,26 @@ input SignInInput {
   password: String!
 }
 
-"""Which sign-in methods this deployment offers"""
+"""
+A way this account can sign in. EMAIL is a password; the others are linked provider identities (ADR-0100).
+"""
+enum SignInMethod {
+  EMAIL
+  GITHUB
+  GOOGLE
+  LINKEDIN
+}
+
+"""
+Which sign-in methods this deployment offers. Read this before drawing the buttons.
+"""
 type SignInOptions {
   emailPassword: Boolean!
   github: Boolean!
+
+  """
+  False when FIREBASE_PROJECT_ID is unset, or a platform admin has turned Google sign-in off
+  """
   google: Boolean!
   linkedin: Boolean!
 }
@@ -5023,6 +5149,51 @@ input StartFocusSessionInput {
   """A note the viewer can read"""
   noteId: UUID
   topicKey: String
+}
+
+"""
+A short-lived upload of one college ID card. PUT the bytes to uploadUrl with exactly these headers within 10 minutes, then call submitStudentIdVerification. Do not call completeUpload.
+"""
+type StudentIdUpload {
+  expiresAt: DateTime!
+  fileId: UUID!
+  uploadHeaders: [StudentIdUploadHeader!]!
+  uploadUrl: String!
+}
+
+type StudentIdUploadHeader {
+  name: String!
+  value: String!
+}
+
+type StudentIdUploadPayload {
+  upload: StudentIdUpload
+  userErrors: [UserError!]!
+}
+
+type StudentIdVerificationPayload {
+  request: StudentIdVerificationRequest
+  userErrors: [UserError!]!
+}
+
+"""
+The student's own view of a college-ID request. `card` is null except for a platform admin, and null once the card has been deleted.
+"""
+type StudentIdVerificationRequest {
+  card: VerificationDocument
+  createdAt: DateTime!
+  decidedAt: DateTime
+  id: UUID!
+  message: String
+  reason: String
+  requester: User!
+  status: VerificationRequestStatus!
+}
+
+"""Platform admins. `updatedAt` is null until someone changes the switch."""
+type StudentIdVerificationSettings {
+  enabled: Boolean!
+  updatedAt: DateTime
 }
 
 """
@@ -5088,6 +5259,12 @@ input SubmitResourceInput {
   topicIds: [UUID!]!
   type: ResourceType!
   url: String!
+}
+
+input SubmitStudentIdVerificationInput {
+  """The fileId from createStudentIdUploadIntent, after the PUT"""
+  fileId: UUID!
+  message: String
 }
 
 input SyncOpInput {
@@ -5556,6 +5733,11 @@ type User {
   """
   restrictedMinor: Boolean
 
+  """
+  Viewer only (ADR-0100): ways this account can sign in. Null for anyone else, so account settings can list them.
+  """
+  signInMethods: [SignInMethod!]
+
   """The Skills tab, for anyone; null for people who are not teachers"""
   teacherProfile: TeacherProfile
 
@@ -5608,6 +5790,10 @@ enum VerificationPurpose {
 Shown to the requester, the addressed teacher and platform admins. Documents are listed for platform admins only.
 """
 type VerificationRequest {
+  """
+  True when the proof is one college ID card (ADR-0099). Deleted when the request is decided or withdrawn.
+  """
+  collegeIdCard: Boolean!
   createdAt: DateTime!
   decidedAt: DateTime
 

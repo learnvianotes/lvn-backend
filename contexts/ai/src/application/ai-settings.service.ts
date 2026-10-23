@@ -178,6 +178,15 @@ export class AiSettingsService {
     return this.settings(adminId)
   }
 
+  /** Every model the connection's account lists, for the page's model fields; empty when it lists none or fails. */
+  async listModels(adminId: string, id: string): Promise<string[]> {
+    await this.assertAdmin(adminId)
+    const row = await this.db.aiConnection.findUnique({ where: { id } })
+    if (!row) throw Errors.notFound('This connection no longer exists.')
+    const adapter = this.providers.adapterFor(row)
+    return adapter?.models ? await adapter.models(TEST_TIMEOUT_MS).catch(() => [] as string[]) : []
+  }
+
   /**
    * Asks the provider for one word with the chat model, one embedding with the embedding model (it must have 768
    * numbers) and the models the account lists. The calls are recorded as CONNECTION_TEST, as the platform's.

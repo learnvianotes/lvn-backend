@@ -1,4 +1,5 @@
-import { PrismaService } from '@lvn-backend/prisma-base'
+import { AskService } from '@lvn-backend/ai'
+import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { startFakeAnthropic, startFakeOllama, startFakeOpenAi, type FakeOllama, type FakeProvider } from '@lvn-backend/testing'
 import { createTestApp, type TestApp } from '../support/app'
 import { seedUser, tokenFor } from '../support/seed'
@@ -95,6 +96,26 @@ describe('AI provider settings', () => {
     expect(usage.map((u) => u.provider)).toEqual(['OPENAI', 'OPENAI'])
   })
 
+  it('lists every model a connection’s account has, page after page, for platform admins only and without spending tokens', async () => {
+    const shown = (await settings(app, admin)).data!.aiSettings
+    const claudeId = shown.connections.find((c) => c.label.startsWith('Claude'))!.id
+    const models = (token: string, id = claudeId) => app.gql<{ aiConnectionModels: string[] }>('query ($input: AiConnectionIdInput!) { aiConnectionModels(input: $input) }', { input: { id } }, token)
+    // More than one page of Anthropic's 1000.
+    claude.models = Array.from({ length: 1205 }, (_, i) => `claude-${String(i).padStart(4, '0')}`)
+    const before = claude.requests.length
+    const listed = (await models(admin)).data!.aiConnectionModels
+    expect(listed).toHaveLength(1205)
+    expect(listed.slice(0, 2)).toEqual(['claude-0000', 'claude-0001'])
+    expect(listed.at(-1)).toBe('claude-1204')
+    const asked = claude.requests.slice(before)
+    expect(asked.map((r) => r.path)).toEqual(['/v1/models', '/v1/models'])
+    expect(asked[1]!.query.get('after_id')).toBe('claude-0999')
+    claude.models = ['claude-test']
+    expect((await models(student)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+    expect((await app.gql('query ($input: AiConnectionIdInput!) { aiConnectionModels(input: $input) }', { input: { id: claudeId } })).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
+    expect((await models(admin, '00000000-0000-4000-8000-000000000000')).errors?.[0]?.extensions.code).toBe('NOT_FOUND')
+  })
+
   it('chooses who answers: the defaults, and each task’s route; a route refuses a provider that cannot do the task', async () => {
     const shown = (await settings(app, admin)).data!.aiSettings
     const claudeId = shown.connections.find((c) => c.label.startsWith('Claude'))!.id
@@ -120,5 +141,39 @@ describe('AI provider settings', () => {
     expect((await mutate('deleteAiTaskRoute', 'AiTaskRouteInput', { task: 'TRANSCRIBE' })).settings!.routes).toEqual([])
     const actions = (await app.app.get(PrismaService).auditLog.findMany({ where: { action: { startsWith: 'ai.' } } })).map((a) => a.action)
     expect(actions).toEqual(expect.arrayContaining(['ai.defaults.changed', 'ai.route.saved', 'ai.connection.deleted', 'ai.route.deleted']))
+  })
+  it('lets an owner use a cloud AI on their own private note once its connection may receive private notes; others never reach it', async () => {
+    // Claude is the default for chats (above) and was saved with "Private notes may go to it" off, as a cloud provider is.
+    const claudeRow = (await settings(app, admin)).data!.aiSettings.connections.find((c) => c.label.startsWith('Claude'))!
+    await mutate('setAiDefaults', 'SetAiDefaultsInput', { chatConnectionId: claudeRow.id, embedConnectionId: null })
+    const owner = await seedUser(app.app, { verified: true })
+    const other = await seedUser(app.app, { verified: true })
+    const ownerToken = tokenFor(app.config, owner.id)
+    const otherToken = tokenFor(app.config, other.id)
+    const doc = (s: string) => ({ doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: s }] }] } })
+    const created = await app.gql<{ createNote: { note: { id: string } } }>('mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } userErrors { message } } }', { input: { title: 'My plan', cards: [{ id: newId(), type: 'text', position: 'a0', content: doc('Revise heaps on Friday. SECRETPLAN') }] } }, ownerToken)
+    const noteId = created.data!.createNote.note.id
+    const ask = async (token: string) => {
+      const res = await app.gql<{ askAi: { answer: { id: string } | null; userErrors: { code: string }[] } }>('mutation ($input: AskAiInput!) { askAi(input: $input) { answer { id } userErrors { code } } }', { input: { question: 'What is my plan for Friday?', scope: 'THIS_NOTE', noteId } }, token)
+      if (res.errors?.length || !res.data?.askAi.answer) return { code: res.errors?.[0]?.extensions.code ?? res.data?.askAi.userErrors[0]?.code }
+      await app.app.get(AskService).process(res.data.askAi.answer.id)
+      return (await app.gql<{ aiAnswer: { status: string; error: string | null } }>('query ($id: UUID!) { aiAnswer(id: $id) { status error } }', { id: res.data.askAi.answer.id }, token)).data!.aiAnswer
+    }
+    const sentToClaude = () => claude.requests.filter((r) => r.path === '/v1/messages' && JSON.stringify(r.body).includes('SECRETPLAN')).length
+    claude.answer = () => 'On Friday you revise heaps [1].'
+
+    // Off: the owner is told why, and nothing of the note leaves.
+    expect(await ask(ownerToken)).toMatchObject({ status: 'FAILED', error: 'AI cannot work on private notes here.' })
+    expect(sentToClaude()).toBe(0)
+
+    // An admin allows it: the owner's AI works on their own private note.
+    await save(app, admin, { id: claudeRow.id, kind: 'ANTHROPIC', label: claudeRow.label, baseUrl: claude.url, mayReceivePrivate: true, enabled: true, chatModel: 'claude-test' })
+    expect(await ask(ownerToken)).toMatchObject({ status: 'READY', error: null })
+    expect(sentToClaude()).toBe(1)
+
+    // Someone else still cannot ask about it, and nothing more of it is sent.
+    expect(await ask(otherToken)).toEqual({ code: 'NOT_FOUND' })
+    expect(sentToClaude()).toBe(1)
+    claude.answer = () => 'OK'
   })
 })

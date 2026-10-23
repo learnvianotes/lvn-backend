@@ -27,7 +27,10 @@ if [ -z "$ref_type" ]; then
   else ref_type=branch ref=$(git -C "$here" symbolic-ref --short -q HEAD || echo 'a detached HEAD'); fi
 fi
 case "$LVN_ENV" in
-  production) [ "$ref_type" = tag ] && [[ $ref == v* ]] || die "production deploys only from a v* tag (ADR-0093), not $ref_type $ref" ;;
+  production)
+    if [ "$ref_type" != tag ] || [[ $ref != v* ]]; then
+      die "production deploys only from a v* tag (ADR-0093), not $ref_type $ref"
+    fi ;;
   beta) { [ "$ref_type" = branch ] && [[ $ref == release/* ]]; } || { [ "$ref_type" = tag ] && [[ $ref == v* ]]; } ||
     die "beta deploys only from a release/** branch or a v* tag (ADR-0093), not $ref_type $ref" ;;
   *) die "LVN_ENV must be beta or production, not $LVN_ENV" ;;
@@ -120,25 +123,8 @@ kv() {
   kv REVALIDATE_SECRET "$LVN_REVALIDATE_SECRET"
 } > "$work/env/web.env"
 
-# backup.env is read by `docker run --env-file`, which keeps quotes: plain KEY=VALUE lines (none of these has spaces).
-plain() {
-  [[ $2 != *[[:space:]\'\"]* ]] || die "$1 must not contain spaces or quotes"
-  printf '%s=%s\n' "$1" "$2"
-}
-backups=''
-if [ -n "${LVN_R2_BACKUP_BUCKET:-}" ]; then
-  backups=yes
-  {
-    plain RCLONE_CONFIG_R2_TYPE s3
-    plain RCLONE_CONFIG_R2_PROVIDER Cloudflare
-    plain RCLONE_CONFIG_R2_ENDPOINT "$r2_origin"
-    plain RCLONE_CONFIG_R2_ACCESS_KEY_ID "$LVN_R2_ACCESS_KEY_ID"
-    plain RCLONE_CONFIG_R2_SECRET_ACCESS_KEY "$LVN_R2_SECRET_ACCESS_KEY"
-    plain RCLONE_CONFIG_R2_NO_CHECK_BUCKET true
-    plain LVN_BACKUP_BUCKET "$LVN_R2_BACKUP_BUCKET"
-    plain LVN_BACKUP_PREFIX "$LVN_ENV"
-  } > "$work/env/backup.env"
-fi
+# Backups are not part of this deploy: the host's own /opt/lvn/backup.sh (Infra's, 02:30 IST, a backup-only R2 token in
+# /opt/lvn/backup-r2.env) dumps the database. See docs/runbooks/lightsail.md.
 
 # --- the VM ------------------------------------------------------------------------------------------------------------
 printf '%s\n' "$LVN_DEPLOY_SSH_KEY" > "$work/key"
@@ -152,14 +138,12 @@ echo "==> $LVN_ENV: $canonical ($target), backend $LVN_API_IMAGE"
 # The stack files, then the settings (only the deploy user can read /opt/lvn/env).
 tar -C "$here" -cf - compose.yaml Caddyfile lvn.sh | remote "set -e; cd '$rdir' && tar -xf - && chmod 755 lvn.sh"
 tar -C "$work" -cf - env | remote "set -e; cd '$rdir' && umask 077 && mkdir -p env && tar -xf - && chmod 700 env && chmod 600 env/*.env"
-[ -n "$backups" ] || remote "rm -f '$rdir/env/backup.env'"
+# What older deploys left for the retired `lvn.sh backup`: its rclone settings and its cron line (crontab is untouched
+# when it has no such line, so the host's own backup schedule stays as Infra set it).
+remote "rm -f '$rdir/env/backup.env'; if crontab -l 2>/dev/null | grep -q 'lvn.sh backup'; then crontab -l | grep -v 'lvn.sh backup' | crontab -; fi"
 # Pulls from GHCR with a read-only token; docker keeps it for later pulls by hand.
 printf '%s' "$LVN_GHCR_TOKEN" | remote "docker login ghcr.io -u '$LVN_GHCR_USER' --password-stdin >/dev/null"
 remote "'$rdir/lvn.sh' set-image api '$LVN_API_IMAGE' && LVN_READY_TIMEOUT=${LVN_READY_TIMEOUT:-300} '$rdir/lvn.sh' up"
-# The daily backup at 03:00 IST, when there is a bucket for it.
-if [ -n "$backups" ]; then
-  remote "(crontab -l 2>/dev/null | grep -v 'lvn.sh backup' || true; echo '30 21 * * * $rdir/lvn.sh backup >> $rdir/backups/backup.log 2>&1') | crontab -"
-fi
 
 echo "==> From outside"
 curl -fsS --retry 10 --retry-delay 6 --retry-all-errors --max-time 10 "$LVN_PUBLIC_URL/health/ready" >/dev/null ||

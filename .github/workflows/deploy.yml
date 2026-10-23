@@ -103,7 +103,6 @@ jobs:
           LVN_R2_ENDPOINT: ${{ vars.LVN_R2_ENDPOINT }}
           LVN_R2_BUCKET: ${{ vars.LVN_R2_BUCKET }}
           LVN_R2_RESTRICTED_BUCKET: ${{ vars.LVN_R2_RESTRICTED_BUCKET }}
-          LVN_R2_BACKUP_BUCKET: ${{ vars.LVN_R2_BACKUP_BUCKET }}
           LVN_R2_ACCESS_KEY_ID: ${{ secrets.LVN_R2_ACCESS_KEY_ID }}
           LVN_R2_SECRET_ACCESS_KEY: ${{ secrets.LVN_R2_SECRET_ACCESS_KEY }}
           # The stack's own secrets

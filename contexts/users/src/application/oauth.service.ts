@@ -2,10 +2,13 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
+import { emailSchema } from '../domain/rules'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { freeHandle } from './handles'
+import { parseField } from './input'
 import { githubIdentity, linkedinIdentity, type CodeExchange } from './oauth-clients'
 import { GOOGLE_ID_TOKENS, type GoogleIdTokens, type ProviderIdentity } from './providers'
+import { AppSettingsService } from './app-settings.service'
 import { LegacyService } from './legacy.service'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
 
@@ -13,8 +16,9 @@ const NAMES = { GOOGLE: 'Google', GITHUB: 'GitHub', LINKEDIN: 'LinkedIn' } as co
 
 /**
  * Sign-in with Google (Firebase ID token, ADR-0007), GitHub and LinkedIn (Authorization Code + PKCE, §7.1), and
- * account linking by verified email only. A new provider account still owes its registration details
- * (completeRegistration, ADR-0017).
+ * account linking by verified email only (ADR-0100). A provider is linked to an existing account only when both the
+ * provider and that account have verified the same email. A new provider account still owes its registration details
+ * (completeRegistration, ADR-0017); the adults-only gate runs there (ADR-0091).
  */
 @Injectable()
 export class OAuthService {
@@ -25,22 +29,29 @@ export class OAuthService {
     private readonly sessions: SessionService,
     private readonly legacy: LegacyService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
+    private readonly settings: AppSettingsService,
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
     @Optional() @Inject(GOOGLE_ID_TOKENS) private readonly google: GoogleIdTokens | null,
   ) {}
 
   /** Which sign-in methods this deployment offers (clients show only those buttons). */
-  options() {
-    return { emailPassword: true, google: !!this.google, github: !!this.config.github, linkedin: !!this.config.linkedin }
+  async options() {
+    return { emailPassword: true, google: await this.googleOffered(), github: !!this.config.github, linkedin: !!this.config.linkedin }
+  }
+
+  /** Google is offered only when Firebase is configured and a platform admin has left the switch on (ADR-0100). */
+  private async googleOffered(): Promise<boolean> {
+    if (!this.config.firebaseProjectId || !this.google) return false
+    return this.settings.googleSignInEnabled()
   }
 
   async signInWithGoogle(idToken: string, device: DeviceInfo, correlationId?: string): Promise<IssuedSession> {
-    if (!this.google) throw Errors.validation('Google sign-in is not available here.')
-    const identity = await this.google.verify(idToken)
+    if (!(await this.googleOffered())) throw Errors.validation('Google sign-in is not available here.')
+    const identity = await this.google!.verify(idToken)
     if (!identity) throw Errors.unauthenticated('Google sign-in could not be verified. Try again.')
     const session = await this.signInWith(identity, device, correlationId)
     // Google sign-in carries the old site's Firebase UID (ADR-0023).
-    await this.legacy.match(session.userId, { firebaseUid: identity.providerUserId, verifiedEmail: identity.email ?? undefined })
+    await this.legacy.match(session.userId, { firebaseUid: identity.providerSubject, verifiedEmail: identity.email ?? undefined })
     return session
   }
 
@@ -60,12 +71,13 @@ export class OAuthService {
   }
 
   /**
-   * The account behind a provider identity: the one already linked; else the account with the same email, linked now
-   * because the provider verified that email; else a new account.
+   * The account behind a provider identity: the one already linked; else the account whose verified email matches,
+   * linked now without changing its password, role or sessions; else a new account. An account whose email is not
+   * verified is left alone (ADR-0100) — linking it would hand a provider sign-in to whoever registered the address.
    */
   private async signInWith(identity: ProviderIdentity, device: DeviceInfo, correlationId?: string): Promise<IssuedSession> {
-    const key = { provider: identity.provider, providerUserId: identity.providerUserId }
-    const linked = await this.db.oAuthAccount.findUnique({ where: { provider_providerUserId: key }, include: { user: { select: { deletedAt: true } } } })
+    const key = { provider: identity.provider, providerSubject: identity.providerSubject }
+    const linked = await this.db.oAuthAccount.findUnique({ where: { provider_providerSubject: key }, include: { user: { select: { deletedAt: true } } } })
     if (linked) {
       if (linked.user.deletedAt) throw Errors.forbidden('This account was deleted.')
       return this.sessions.start(linked.userId, device)
@@ -73,22 +85,22 @@ export class OAuthService {
     if (!identity.email || !identity.emailVerified) {
       throw Errors.validation(`Your ${NAMES[identity.provider]} account has no verified email address. Verify one there, or sign up with email.`)
     }
-    const email = identity.email.toLowerCase()
+    const email = parseField(emailSchema, identity.email, 'email')
 
-    const existing = await this.db.user.findUnique({ where: { email }, select: { id: true, deletedAt: true, emailVerifiedAt: true, passwordHash: true } })
+    const existing = await this.db.user.findUnique({ where: { email }, select: { id: true, deletedAt: true, emailVerifiedAt: true } })
     if (existing) {
       if (existing.deletedAt) throw Errors.forbidden('This account was deleted.')
-      // An unverified password on this email may have been set by someone who does not own the inbox (account
-      // pre-hijacking): the provider has now proved ownership, so that password and its sessions are dropped.
-      const dropPassword = !existing.emailVerifiedAt && existing.passwordHash !== null
-      await this.db.$transaction([
-        this.db.user.update({
-          where: { id: existing.id },
-          data: { emailVerifiedAt: existing.emailVerifiedAt ?? new Date(), ...(dropPassword ? { passwordHash: null } : {}) },
-        }),
-        this.db.oAuthAccount.create({ data: { id: newId(), userId: existing.id, ...key } }),
-      ])
-      if (dropPassword) await this.sessions.revokeAll(existing.id)
+      if (!existing.emailVerifiedAt) {
+        throw Errors.validation(
+          `An account with this email is not verified yet. Confirm it from the email we sent, then try ${NAMES[identity.provider]} again.`,
+        )
+      }
+      try {
+        await this.db.oAuthAccount.create({ data: { id: newId(), userId: existing.id, ...key } })
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return this.signInWith(identity, device, correlationId)
+        throw e
+      }
       return this.sessions.start(existing.id, device)
     }
 

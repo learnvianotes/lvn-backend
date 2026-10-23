@@ -360,6 +360,10 @@ export interface QueryMyAiAnswersArgs {
   doubtId?: string | null
 }
 
+export interface QueryAiConnectionModelsArgs {
+  input: AiConnectionIdInput
+}
+
 export interface QueryAiArtifactArgs {
   id: string
 }

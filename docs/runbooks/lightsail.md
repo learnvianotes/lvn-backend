@@ -1,7 +1,7 @@
 # Lightsail: beta and production (ADR-0096)
 
-One Lightsail VM per environment runs the whole stack with Docker Compose (`infra/lightsail/compose.yaml`). Files and
-backups go to Cloudflare R2, and email to Resend. Images come from GHCR. GitHub Actions deploys over SSH.
+One Lightsail VM per environment runs the whole stack with Docker Compose (`infra/lightsail/compose.yaml`). Files go to
+Cloudflare R2, and email to Resend. Images come from GHCR. GitHub Actions deploys over SSH.
 
 | Environment | Host | VM | Deploys from | GitHub environment |
 | --- | --- | --- | --- | --- |
@@ -21,10 +21,9 @@ secret is empty, so it fails before it touches anything. Don't push `v*` tags un
 | `env/stack.env` | compose's own variables: environment name, data passwords, hosts, ACME email | lvn-backend's deploy |
 | `env/backend.env` | the api, worker and migrate environment (docs/architecture/env.md) | lvn-backend's deploy |
 | `env/web.env` | the web's run-time environment (`API_INTERNAL_URL`, `REVALIDATE_SECRET`) | lvn-backend's deploy |
-| `env/backup.env` | rclone's R2 settings and the backup bucket (only when `LVN_R2_BACKUP_BUCKET` is set) | lvn-backend's deploy |
 | `env/api-image.env`, `env/web-image.env` | the images to run | each repository's deploy (`lvn.sh set-image`) |
 | `.env` | all of compose's variables, assembled by `lvn.sh up` from the files above | `lvn.sh` |
-| `backups/` | the last 3 database dumps, and `backup.log` | `lvn.sh backup` (cron, 03:00 IST) |
+| `backup.sh`, `backup-r2.env` | the database backup and its backup-only R2 token (see "Backups" below) | Infra, by hand (not the repository's deploy) |
 
 Everything in `env/` is mode 600 in a mode 700 folder. Docker keeps the GHCR read token in `~deploy/.docker/config.json`.
 
@@ -35,9 +34,17 @@ Everything in `env/` is mode 600 in a mode 700 folder. Docker keeps the GHCR rea
 - `ready`: every service healthy, the migration exited 0, and `https://<host>/health/ready` answering through Caddy.
   Exits non-zero otherwise, with the failing services' state and logs.
 - `status`: services, health, memory.
-- `backup`: a dump into `backups/`, and to R2 when configured.
 - `restore <dump>`: see `restore.md`.
 - `set-image api|web <image>`: which image the next `up` runs.
+
+### Backups
+
+Backups are done by the host, not by this repository's deploy. Infra's `/opt/lvn/backup.sh` runs from the deploy
+user's cron at 02:30 IST (the VM's clock is Asia/Kolkata), dumps Postgres and copies the dump to the environment's R2
+backup bucket with a **backup-only** R2 token kept in `/opt/lvn/backup-r2.env` (mode 600). The app's R2 token cannot
+write to the backup bucket, and the app never sees the backup token. `deploy.sh` does not install, change or remove
+that cron line; it only removes what the retired `lvn.sh backup` left (`env/backup.env` and its cron line) on VMs that
+had it. Restoring a dump: `restore.md`.
 
 ### The memory budget (2 GB RAM, 2 GB swap)
 
@@ -77,7 +84,8 @@ For each environment:
      and the deploy fails until the site answers over HTTPS.
 3. **R2.**
    - Buckets `lvn-<env>-files`, `lvn-<env>-restricted` and `lvn-<env>-backups`, all private.
-   - An R2 API token with Object Read & Write on those three buckets only.
+   - An R2 API token with Object Read & Write on the files and restricted buckets only (the app's), and a separate
+     backup-only token for the backups bucket, which goes in the host's `/opt/lvn/backup-r2.env`, not in GitHub.
    - On the files bucket, a CORS rule:
      - `GET` from any origin (read links are themselves the permission; the phone's PDF reader has no origin);
      - `PUT` from the site's origin only (any request headers: the API signs the ones it needs), exposing `ETag`,
@@ -134,7 +142,6 @@ Set in the `beta` and the `production` environment of each repository. Values di
 | variable | `LVN_R2_ENDPOINT` | `https://<account id>.r2.cloudflarestorage.com` |
 | variable | `LVN_R2_BUCKET` | `lvn-<env>-files` |
 | variable | `LVN_R2_RESTRICTED_BUCKET` | `lvn-<env>-restricted` |
-| variable, optional | `LVN_R2_BACKUP_BUCKET` | `lvn-<env>-backups`; unset, dumps stay on the VM only |
 | variable, optional | `LVN_FIREBASE_PROJECT_ID` | the Firebase project whose Google sign-in the API accepts |
 | variable, optional | `LVN_UPLOADS_ENABLED` | `true` turns uploads on (ADR-0097); unset or `false` at launch |
 | variable, optional | `LVN_SENTRY_DSN` | backend error reports |

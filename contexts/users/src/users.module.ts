@@ -1,5 +1,6 @@
 import { Module, type DynamicModule } from '@nestjs/common'
 import { AdminService } from './application/admin.service'
+import { AppSettingsService } from './application/app-settings.service'
 import { AuditService } from './application/audit.service'
 import { AuthService } from './application/auth.service'
 import { EntitlementService } from './application/entitlement.service'
@@ -27,9 +28,10 @@ import { DataResolver } from './graphql/data.resolver'
 import { RegistrationResolver } from './graphql/registration.resolver'
 import { PeopleResolver, SocialResolver } from './graphql/social.resolver'
 import { TeacherProfileFieldsResolver, TeacherProfileResolver } from './graphql/teacher.resolver'
+import { StudentIdVerificationPublicResolver, StudentIdVerificationResolver } from './graphql/college-id.resolver'
 import { TeacherStatusResolver, VerificationResolver } from './graphql/verification.resolver'
 import { UserReferenceResolver } from './graphql/user-reference.resolver'
-import { ViewerResolver } from './graphql/viewer.resolver'
+import { UserSignInMethodsResolver, ViewerResolver } from './graphql/viewer.resolver'
 import { USERS_CONFIG, type UsersConfig } from './users.config'
 import { AccountDeletionService } from './application/account-deletion.service'
 import { AccountResolver } from './graphql/account.resolver'
@@ -65,6 +67,7 @@ export class UsersModule {
         EntitlementService,
         AuditService,
         VerificationService,
+        AppSettingsService,
         AdminService,
         UsersMaintenance,
         ProfileService,
@@ -77,6 +80,7 @@ export class UsersModule {
         TeacherProfileService,
         SkillsImportService,
         ViewerResolver,
+        UserSignInMethodsResolver,
         SocialResolver,
         PeopleResolver,
         TeacherProfileResolver,
@@ -85,6 +89,8 @@ export class UsersModule {
         AuthResolver,
         RegistrationResolver,
         VerificationResolver,
+        StudentIdVerificationResolver,
+        StudentIdVerificationPublicResolver,
         TeacherStatusResolver,
         ProfileResolver,
         TermsResolver,

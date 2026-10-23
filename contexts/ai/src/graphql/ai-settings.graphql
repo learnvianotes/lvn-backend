@@ -153,6 +153,11 @@ type AiConnectionTestPayload {
 extend type Query {
   "Platform admins only"
   aiSettings: AiSettings!
+  """
+  Platform admins only: every model the connection's account lists, sorted, for its chat and embedding model fields.
+  Empty when the provider does not list its models, cannot be reached or the key cannot be read. Spends no tokens.
+  """
+  aiConnectionModels(input: AiConnectionIdInput!): [String!]!
 }
 
 extend type Mutation {
