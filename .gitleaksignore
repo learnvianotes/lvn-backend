@@ -10,3 +10,14 @@ de1ed8a7888719dd3f1724f448762a6eadf4d7e6:infra/local-vm/vm.sh:generic-api-key:40
 # Truncated PEM headers in a config test ("MIIB"), not keys.
 25e2d2c7efb06578d4574f7041dedce54f7cdf9c:contracts/test/unit/config/config.test.ts:private-key:3
 25e2d2c7efb06578d4574f7041dedce54f7cdf9c:contracts/test/unit/config/config.test.ts:private-key:47
+# Reviewed 2026-10-23, when CI moved to the gitleaks CLI scanning the whole history: none is a secret.
+# The e2e test app's made-up AI_KEYS_SECRET fixture.
+ea7c3d55d318e6a7cf978773bd9a9f9c346a3da9:apps/api/test/support/app.ts:generic-api-key:56
+# A storage object key in a test ("key: 'test/u2/...'"), not a credential.
+dba8e00f54ea6e7f119030850eb3e79943cfafdf:libs/storage/test/integration/storage.test.ts:generic-api-key:48
+# Doc comments describing the field topicKey ("subjectId/topicId"), not values.
+466d9db7d0652b9271b65a5ca96f5099bfa9baee:contracts/graphql/supergraph.graphql:generic-api-key:61
+466d9db7d0652b9271b65a5ca96f5099bfa9baee:contracts/graphql/schema.graphql:generic-api-key:31
+8eb1ac7317a7ed8294232765104c1a5ca759bc61:contexts/core/src/graphql/core.graphql:generic-api-key:8
+8eb1ac7317a7ed8294232765104c1a5ca759bc61:contexts/core/src/graphql/schema.types.ts:generic-api-key:15
+8eb1ac7317a7ed8294232765104c1a5ca759bc61:prisma/schema.prisma:generic-api-key:519
