@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto'
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { Action, can } from '@lvn/contracts/domain'
-import { Errors } from '@lvn-backend/errors'
+import { Action, can, LimitKey, startOfUtcDay } from '@lvn/contracts/domain'
+import { assertWithinPlan, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { AI_DATA_EXPORT, CORE_DATA_EXPORT, FILES, MAILER, NOTES_DATA_EXPORT, type DataExportPart, type ExportFile, type Files, type Mailer } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
 import { zipSync, type Zippable } from 'fflate'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { EntitlementService } from './entitlement.service'
 import { PolicyService } from './policy.service'
 
 export const USERS_EXPORT_QUEUE = 'users.export'
@@ -34,6 +35,7 @@ export class DataExportService {
     private readonly db: PrismaService,
     private readonly queues: Queues,
     private readonly policy: PolicyService,
+    private readonly entitlements: EntitlementService,
     @Inject(FILES) private readonly files: Files,
     @Inject(MAILER) private readonly mailer: Mailer,
     @Inject(NOTES_DATA_EXPORT) private readonly notes: DataExportPart,
@@ -45,8 +47,11 @@ export class DataExportService {
 
   async request(userId: string) {
     if (!can(await this.policy.actor(userId), Action.ACCOUNT_EXPORT_DATA)) throw Errors.forbidden()
-    const recent = await this.db.dataExport.findFirst({ where: { userId, status: { in: ['PENDING', 'READY'] }, requestedAt: { gt: new Date(Date.now() - DAY_MS) } }, orderBy: { requestedAt: 'desc' } })
-    if (recent) throw Errors.validation(recent.status === 'PENDING' ? 'Your export is being prepared.' : 'You can ask for one export a day; your latest one is ready below.')
+    const preparing = await this.db.dataExport.findFirst({ where: { userId, status: 'PENDING' }, orderBy: { requestedAt: 'desc' } })
+    if (preparing) throw Errors.validation('Your export is being prepared.')
+    const cap = await this.entitlements.limit(userId, LimitKey.EXPORTS_DAILY)
+    const used = BigInt(await this.db.dataExport.count({ where: { userId, requestedAt: { gte: startOfUtcDay() }, status: { not: 'FAILED' } } }))
+    assertWithinPlan(LimitKey.EXPORTS_DAILY, cap, used)
     const row = await this.db.dataExport.create({ data: { id: newId(), userId } })
     await this.queues.queue(USERS_EXPORT_QUEUE).add('build-export', { exportId: row.id }, { jobId: row.id })
     await this.events.publish('DataExportRequested', { exportId: row.id, userId })

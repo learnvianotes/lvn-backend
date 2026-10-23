@@ -267,12 +267,12 @@ describe('classrooms', () => {
     try {
       const fresh = await person({ teacher: true })
       const id = await create(fresh, 'Only one')
-      expect((await mutate('createClassroom', { name: 'Second' }, fresh)).error).toBe('Your plan allows 1 classes.')
+      expect((await mutate('createClassroom', { name: 'Second' }, fresh)).error).toBe("You've reached your plan's limit for classes.")
       await admit(id, fresh, await person())
       const third = await person()
       await mutate('requestToJoinClassroom', { code: await codeOf(id, fresh) }, third)
       const req = (await classroom(id, fresh))!.joinRequests![0]!
-      expect((await mutate('reviewClassroomJoinRequest', { requestId: req.id, decision: 'APPROVED' }, fresh)).error).toBe('This class is full.')
+      expect((await mutate('reviewClassroomJoinRequest', { requestId: req.id, decision: 'APPROVED' }, fresh)).error).toBe("You've reached your plan's limit for class members.")
     } finally {
       await db.entitlement.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } })
     }

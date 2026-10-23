@@ -186,6 +186,7 @@ export class SharingService implements OnModuleInit {
     const { note, actor, access, shareRole } = opened
     if (!actor || !can(actor, Action.NOTE_FORK, { kind: 'note', note: noteFacts(note, shareRole) })) throw Errors.forbidden('The owner does not allow copies of this note.')
     if (note.deletedAt) throw Errors.validation('Restore the note from the trash first.')
+    await this.notes.assertNotesOwned(viewerId)
     const limit = await this.limiter.hit(`notes:fork:${viewerId}`, { max: 100, windowSeconds: 3600 })
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'You have copied a lot of notes in the last hour. Try again later.')
 

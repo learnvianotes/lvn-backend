@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { AskAiScope, LearningEventType } from '@lvn/contracts/domain'
+import { AskAiScope, LearningEventType, LimitKey } from '@lvn/contracts/domain'
 import { LiveEventKind } from '@lvn/contracts/notifications'
-import { AppError, Errors } from '@lvn-backend/errors'
+import { AppError, Errors, planLimitError } from '@lvn-backend/errors'
 import { DOUBTS, LEARNING, LIVE, NOTE_AI, NOTE_RETRIEVAL, type Doubts, type Learning, type Live, type NoteAi, type NoteRetrieval, type RetrievalScope } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
@@ -153,8 +153,9 @@ export class AskService {
   private async ready(viewerId: string): Promise<void> {
     const status = await this.gateway.status()
     if (!status.available) throw Errors.unavailable(status.reason === 'BUDGET' ? 'AI is paused until next month: this month’s AI budget is used up.' : status.reason === 'PROVIDER_DOWN' ? 'AI is not answering right now. Try again in a minute.' : 'AI is not switched on here.')
-    const { usedToday, limitToday, resetsAt } = await this.gateway.allowance(viewerId)
-    if (limitToday !== null && usedToday >= limitToday) throw Errors.rateLimited(Math.ceil((resetsAt.getTime() - Date.now()) / 1000), 'You have used today’s AI allowance. It renews at midnight UTC.')
+    await this.gateway.assertDailyRequests(viewerId)
+    const { usedToday, limitToday } = await this.gateway.allowance(viewerId)
+    if (limitToday !== null && usedToday >= limitToday) throw planLimitError(LimitKey.AI_TOKENS_DAILY)
   }
 
   private async queue(data: { askerId: string; question: string; scope: AskAiScope; noteId?: string | null; groupId?: string | null; doubtId?: string | null }): Promise<AnswerRow> {

@@ -188,7 +188,7 @@ describe('groups', () => {
     try {
       const fresh = await person(true)
       await create(fresh, { name: 'First', privacy: 'PUBLIC' })
-      expect((await mutate('createGroup', { name: 'Second', privacy: 'PUBLIC' }, fresh)).error).toBe('Your plan allows 1 groups. Delete one to start another.')
+      expect((await mutate('createGroup', { name: 'Second', privacy: 'PUBLIC' }, fresh)).error).toBe("You've reached your plan's limit for groups.")
     } finally {
       await db.entitlement.delete({ where: { id: row.id } })
     }

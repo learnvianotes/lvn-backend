@@ -216,7 +216,7 @@ describe('project workspaces', () => {
     try {
       const fresh = await person()
       await workspace(fresh, 'First')
-      expect((await t.gql<{ createGroup: { userErrors: { message: string }[] } }>('mutation { createGroup(input: { name: "Second", privacy: PUBLIC, type: PROJECT }) { userErrors { message } } }', {}, fresh.token)).data!.createGroup.userErrors[0]!.message).toBe('Your plan allows 1 project workspaces. Delete one to start another.')
+      expect((await t.gql<{ createGroup: { userErrors: { message: string }[] } }>('mutation { createGroup(input: { name: "Second", privacy: PUBLIC, type: PROJECT }) { userErrors { message } } }', {}, fresh.token)).data!.createGroup.userErrors[0]!.message).toBe("You've reached your plan's limit for project workspaces.")
       expect((await t.gql<{ createGroup: { group: { id: string } | null } }>('mutation { createGroup(input: { name: "A study group", privacy: PUBLIC }) { group { id } } }', {}, fresh.token)).data!.createGroup.group).not.toBeNull()
     } finally {
       await db.entitlement.delete({ where: { id: row.id } })

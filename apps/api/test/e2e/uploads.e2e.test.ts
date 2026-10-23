@@ -75,7 +75,7 @@ describe('uploads', () => {
     await db.entitlement.update({ where: { id }, data: { limit: 50n } })
     try {
       const res = await createIntent(t, token, { fileName: 'big.png', mimeType: 'image/png', sizeBytes: 1000, purpose: 'AVATAR' })
-      expect(res.userErrors[0]!.message).toMatch(/storage is full/)
+      expect(res.userErrors[0]!.message).toBe("You've reached your plan's limit for storage.")
     } finally {
       await db.entitlement.update({ where: { id }, data: { limit: 5368709120n } })
     }

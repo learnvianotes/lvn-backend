@@ -196,7 +196,7 @@ type StudentProfile { department: String, yearOfStudy: YearOfStudy, interests: [
 input UpdateProfileInput { department: String, yearOfStudy: YearOfStudy, interestTopicIds: [UUID!], showOnProfile: Boolean }
 type ProfilePayload { profile: StudentProfile, userErrors: [UserError!]! }
 
-enum LimitKey { STORAGE_BYTES AI_TOKENS_DAILY PDF_PAGES_MONTHLY GROUPS_OWNED GROUP_MEMBERS CLASSROOMS_OWNED CLASSROOM_MEMBERS PROJECT_WORKSPACES EXPORTS_DAILY IMPORTS_DAILY ORG_SEATS }
+enum LimitKey { STORAGE_BYTES AI_TOKENS_DAILY PDF_PAGES_MONTHLY GROUPS_OWNED GROUP_MEMBERS CLASSROOMS_OWNED CLASSROOM_MEMBERS PROJECT_WORKSPACES EXPORTS_DAILY IMPORTS_DAILY ORG_SEATS NOTES_OWNED AI_REQUESTS_DAILY }
 "From the user's plan (only FREE today). limit null = unlimited."
 type Limit { key: LimitKey!, limit: Float, used: Float! }
 

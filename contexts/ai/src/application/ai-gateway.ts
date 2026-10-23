@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { z } from 'zod'
 import { LimitKey } from '@lvn/contracts/domain'
-import { Errors } from '@lvn-backend/errors'
+import { assertWithinPlan, Errors, planLimitError } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { ENTITLEMENTS, PLATFORM_SETTINGS, fallbackPlatformSettings, type Entitlements, type PlatformSettings } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
@@ -10,6 +10,7 @@ import { mendAll } from '../domain/escapes'
 import { ProviderError, UnsupportedInput, type ChatMessage } from '../domain/provider'
 import { AiProviders, type Target } from './ai-providers'
 import { PromptLibrary } from './prompts'
+import { aiUsedToday } from './usage-counts'
 
 export type AiUnavailableReason = 'NOT_CONFIGURED' | 'BUDGET' | 'PROVIDER_DOWN'
 
@@ -103,6 +104,12 @@ export class AiGateway {
     return { usedToday: (sum._sum.promptTokens ?? 0) + (sum._sum.completionTokens ?? 0), limitToday: limit === null ? null : Number(limit), resetsAt: new Date(since.getTime() + 86_400_000) }
   }
 
+  /** Refuses another question or task once today's AI_REQUESTS_DAILY is used. A null limit never refuses. */
+  async assertDailyRequests(userId: string): Promise<void> {
+    const [used, limit] = await Promise.all([aiUsedToday(this.db, userId), this.entitlements.limit(userId, LimitKey.AI_REQUESTS_DAILY)])
+    assertWithinPlan(LimitKey.AI_REQUESTS_DAILY, limit, used.requests)
+  }
+
   async generate<T = string>(call: GenerateCall<T>): Promise<Generated<T>> {
     const route = await this.ready(await this.providers.forTask(call.task), call.userId, call.private)
     const adapter = route.adapter
@@ -187,8 +194,8 @@ export class AiGateway {
     }
     if (isPrivate && !target.adapter.mayReceivePrivate) throw Errors.unavailable('AI cannot work on private notes here.')
     if (userId) {
-      const { usedToday, limitToday, resetsAt } = await this.allowance(userId)
-      if (limitToday !== null && usedToday >= limitToday) throw Errors.rateLimited(Math.ceil((resetsAt.getTime() - Date.now()) / 1000), `You have used today’s AI allowance (${limitToday.toLocaleString('en')} tokens). It renews at midnight UTC.`)
+      const { usedToday, limitToday } = await this.allowance(userId)
+      if (limitToday !== null && usedToday >= limitToday) throw planLimitError(LimitKey.AI_TOKENS_DAILY)
     }
     return target
   }

@@ -1,18 +1,18 @@
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { Action, can, HighlightColor, HighlightKind, type CardType } from '@lvn/contracts/domain'
+import { Action, can, HighlightColor, HighlightKind, LimitKey, startOfUtcDay, type CardType } from '@lvn/contracts/domain'
 import { CARD_LIMITS, HIGHLIGHT_LIMITS, NOTE_LIMITS, noteTitleSchema, pageRectSchema, parseCardContent, positionsBetween } from '@lvn/contracts/validation'
-import { Errors } from '@lvn-backend/errors'
+import { assertWithinPlan, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { POLICY, type Policy } from '@lvn-backend/facades'
+import { ENTITLEMENTS, POLICY, type Entitlements, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
-import { RateLimiter } from '@lvn-backend/redis'
 import { strFromU8, unzipSync } from 'fflate'
 import { parse as parseYaml } from 'yaml'
 import { markdownToCards, type ImportedCard } from '../domain/markdown-import'
 import { FilesService } from './files.service'
+import { NotesService } from './notes.service'
 import { OrganiseService } from './organise.service'
 
 export const NOTES_IMPORT_QUEUE = 'notes.import'
@@ -70,16 +70,18 @@ export class NoteImportService {
     private readonly db: PrismaService,
     private readonly files: FilesService,
     private readonly organise: OrganiseService,
+    private readonly notes: NotesService,
     private readonly queues: Queues,
-    private readonly limiter: RateLimiter,
     @Inject(POLICY) private readonly policy: Policy,
+    @Inject(ENTITLEMENTS) private readonly entitlements: Entitlements,
     @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
 
   async start(userId: string, fileId: string) {
     if (!can(await this.policy.actor(userId), Action.ACCOUNT_IMPORT_NOTES)) throw Errors.forbidden()
-    const limit = await this.limiter.hit(`imports:${userId}`, { max: 5, windowSeconds: 86_400 })
-    if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'You can import five times a day. Try again tomorrow.')
+    const cap = await this.entitlements.limit(userId, LimitKey.IMPORTS_DAILY)
+    const used = BigInt(await this.db.noteImport.count({ where: { userId, createdAt: { gte: startOfUtcDay() } } }))
+    assertWithinPlan(LimitKey.IMPORTS_DAILY, cap, used)
     const [file] = await this.files.describe([fileId])
     if (!file || file.ownerId !== userId || file.purpose !== 'IMPORT' || file.status !== 'READY') throw Errors.notFound('Upload not found.')
     const id = newId()
@@ -250,6 +252,7 @@ export class NoteImportService {
   // ── Writing notes ────────────────────────────────────────────────────────────────────────────────────────
 
   private async create(userId: string, teacher: boolean, n: NoteToCreate, entries: Map<string, Uint8Array>, report: Report): Promise<{ id: string; title: string }> {
+    await this.notes.assertNotesOwned(userId)
     const title = noteTitleSchema.safeParse(n.title.trim().slice(0, 200))
     const kind = n.kind === 'PROJECT' || (teacher && (n.kind === 'BLOG' || n.kind === 'POST')) ? n.kind : 'NOTE'
     const folderId = n.folder.length ? await this.organise.ensureFolderPath(userId, n.folder) : null

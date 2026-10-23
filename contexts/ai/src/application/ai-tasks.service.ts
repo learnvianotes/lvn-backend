@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { CardType, DERIVATIVE_AI_TASKS, LearningEventType, type AiTaskType } from '@lvn/contracts/domain'
+import { CardType, DERIVATIVE_AI_TASKS, LearningEventType, LimitKey, type AiTaskType } from '@lvn/contracts/domain'
 import { LiveEventKind } from '@lvn/contracts/notifications'
-import { AppError, Errors } from '@lvn-backend/errors'
+import { AppError, Errors, planLimitError } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { LEARNING, LIVE, NOTE_AI, type Learning, type Live, type NoteAi, type NoteAiSource } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
@@ -69,8 +69,9 @@ export class AiTasksService {
     if (!cards.length) throw Errors.validation(def.codeOnly ? 'This note has no code to explain.' : def.kind === 'CHANGES' ? 'This note has no text to clean up.' : 'This note has nothing to work on yet: write something, or add photos, PDFs or a recording.', ['input', 'noteId'])
     // A note of only recordings is read from their transcripts (ADR-0085): one must be made first.
     if (def.input !== 'AUDIO' && cards.every(isRecording) && !(await this.material.transcripts(input.noteId, viewerId, cards)).size) throw Errors.validation('Transcribe the recording first: AI tasks work on what it says.', ['input', 'noteId'])
-    const { usedToday, limitToday, resetsAt } = await this.gateway.allowance(viewerId)
-    if (limitToday !== null && usedToday >= limitToday) throw Errors.rateLimited(Math.ceil((resetsAt.getTime() - Date.now()) / 1000), 'You have used today’s AI allowance. It renews at midnight UTC.')
+    await this.gateway.assertDailyRequests(viewerId)
+    const { usedToday, limitToday } = await this.gateway.allowance(viewerId)
+    if (limitToday !== null && usedToday >= limitToday) throw planLimitError(LimitKey.AI_TOKENS_DAILY)
     const options: Options = { language: input.language ?? 'ENGLISH', cardIds: input.cardIds?.length ? input.cardIds : null }
     const artifact = await this.db.noteArtifact.create({
       data: { id: newId(), noteId: input.noteId, versionId: source.versionId, ownerId: viewerId, task: input.task, options: options as unknown as Prisma.InputJsonValue, status: 'QUEUED' },
