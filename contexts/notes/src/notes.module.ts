@@ -3,6 +3,7 @@ import { JsonScalar } from '@lvn-backend/graphql'
 import { AttachmentsService } from './application/attachments.service'
 import { DraftsService } from './application/drafts.service'
 import { NoteModerationService } from './application/moderation.service'
+import { NotesAdminStats } from './application/admin-stats'
 import { FilesService } from './application/files.service'
 import { NotesService } from './application/notes.service'
 import { NoteImportService } from './application/note-import.service'
@@ -68,6 +69,7 @@ export class NotesModule {
         { provide: NOTES_CONFIG, useValue: config },
         JsonScalar,
         FilesService,
+        NotesAdminStats,
         AttachmentsService,
         NotesAccountErasure,
         NoteModerationService,
@@ -131,7 +133,7 @@ export class NotesModule {
         ConversionResolver,
         NoteConversionResolver,
       ],
-      exports: [FilesService, NotesMaintenance, NoteModerationService, NoteAccessFacade, TopicsFacade, NoteAiFacade, NoteChunks, NoteRetrievalFacade, SearchIndex, NoteImportService, LegacyContentImport, PdfConversionService, MediaProcessingService],
+      exports: [FilesService, NotesAdminStats, NotesMaintenance, NoteModerationService, NoteAccessFacade, TopicsFacade, NoteAiFacade, NoteChunks, NoteRetrievalFacade, SearchIndex, NoteImportService, LegacyContentImport, PdfConversionService, MediaProcessingService],
     }
   }
 }

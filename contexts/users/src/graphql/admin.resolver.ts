@@ -1,0 +1,74 @@
+import { UseGuards } from '@nestjs/common'
+import { Args, Mutation, Query, Resolver } from '@nestjs/graphql'
+import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
+import { withUserErrors } from '@lvn-backend/errors'
+import { AdminMetricsService } from '../application/admin-metrics.service'
+import { AppSettingsService } from '../application/app-settings.service'
+import { PlanAdminService } from '../application/plan-admin.service'
+import type {
+  AdminMetrics,
+  AdminPlanPayload,
+  AdminSetting,
+  AdminSettingPayload,
+  MutationCreateAdminPlanArgs,
+  MutationDeleteAdminPlanArgs,
+  MutationResetAdminSettingArgs,
+  MutationUpdateAdminPlanArgs,
+  MutationUpdateAdminSettingArgs,
+  OkPayload,
+  QueryAdminMetricsArgs,
+} from './schema.types'
+
+/** Platform-admin dashboard (ADR-0101). */
+@Resolver()
+@UseGuards(SignedInGuard)
+export class AdminDashboardResolver {
+  constructor(
+    private readonly metrics: AdminMetricsService,
+    private readonly settings: AppSettingsService,
+    private readonly plans: PlanAdminService,
+  ) {}
+
+  @Query('adminMetrics')
+  adminMetrics(@Args() args: QueryAdminMetricsArgs, @CurrentViewer() viewer: Viewer): Promise<AdminMetrics> {
+    return this.metrics.metrics(viewer.userId, args.from, args.to) as Promise<AdminMetrics>
+  }
+
+  @Query('adminSettings')
+  adminSettings(@CurrentViewer() viewer: Viewer): Promise<AdminSetting[]> {
+    return this.settings.list(viewer.userId) as Promise<AdminSetting[]>
+  }
+
+  @Query('adminPlans')
+  adminPlans(@CurrentViewer() viewer: Viewer) {
+    return this.plans.list(viewer.userId)
+  }
+
+  @Mutation('updateAdminSetting')
+  updateAdminSetting(@Args() { input }: MutationUpdateAdminSettingArgs, @CurrentViewer() viewer: Viewer): Promise<AdminSettingPayload> {
+    return withUserErrors<AdminSettingPayload>(async () => ({ setting: (await this.settings.update(viewer.userId, input.key, input.value)) as AdminSetting }), { setting: null })
+  }
+
+  @Mutation('resetAdminSetting')
+  resetAdminSetting(@Args() { key }: MutationResetAdminSettingArgs, @CurrentViewer() viewer: Viewer): Promise<AdminSettingPayload> {
+    return withUserErrors<AdminSettingPayload>(async () => ({ setting: (await this.settings.reset(viewer.userId, key)) as AdminSetting }), { setting: null })
+  }
+
+  @Mutation('createAdminPlan')
+  createAdminPlan(@Args() { input }: MutationCreateAdminPlanArgs, @CurrentViewer() viewer: Viewer): Promise<AdminPlanPayload> {
+    return withUserErrors<AdminPlanPayload>(async () => ({ plan: await this.plans.create(viewer.userId, input) }), { plan: null })
+  }
+
+  @Mutation('updateAdminPlan')
+  updateAdminPlan(@Args() { input }: MutationUpdateAdminPlanArgs, @CurrentViewer() viewer: Viewer): Promise<AdminPlanPayload> {
+    return withUserErrors<AdminPlanPayload>(async () => ({ plan: await this.plans.update(viewer.userId, input) }), { plan: null })
+  }
+
+  @Mutation('deleteAdminPlan')
+  deleteAdminPlan(@Args() { id }: MutationDeleteAdminPlanArgs, @CurrentViewer() viewer: Viewer): Promise<OkPayload> {
+    return withUserErrors<OkPayload>(async () => {
+      await this.plans.remove(viewer.userId, id)
+      return { ok: true }
+    }, { ok: false })
+  }
+}

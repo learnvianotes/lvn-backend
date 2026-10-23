@@ -2,7 +2,7 @@ import { Inject, Injectable, type OnModuleInit } from '@nestjs/common'
 import type { AiTaskType } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { NOTE_AI, type NoteAi } from '@lvn-backend/facades'
+import { NOTE_AI, PLATFORM_SETTINGS, type NoteAi, type PlatformSettings } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
@@ -30,6 +30,7 @@ export class PublicPipeline implements OnModuleInit {
     @Inject(AI_CONFIG) private readonly config: AiConfig,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(NOTE_AI) private readonly notes: NoteAi,
+    @Inject(PLATFORM_SETTINGS) private readonly settings: PlatformSettings,
   ) {}
 
   onModuleInit(): void {
@@ -38,7 +39,7 @@ export class PublicPipeline implements OnModuleInit {
 
   /** Queues the version's aids, once; the number queued. Nothing with AI off or the pipeline switched off. */
   async start(noteId: string, versionId: string): Promise<number> {
-    if (!this.config.publicPipeline || !(await this.gateway.status()).available) return 0
+    if (!this.settings.boolean('ai_public_pipeline', this.config.publicPipeline) || !(await this.gateway.status()).available) return 0
     const queued = await this.db.$transaction(async (tx) => {
       // One start per note at a time: a publish and a change to PUBLIC may announce the same version together.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`pipeline:${noteId}`}))`

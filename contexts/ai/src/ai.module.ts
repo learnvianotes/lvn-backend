@@ -1,5 +1,6 @@
 import { Module, type DynamicModule } from '@nestjs/common'
 import { AI_CONFIG, type AiConfig } from './ai.config'
+import { AiAdminStats } from './application/admin-stats'
 import { AiGateway } from './application/ai-gateway'
 import { AiKeys } from './application/ai-keys'
 import { AI_PROVIDER_ADAPTER, AiProviders } from './application/ai-providers'
@@ -44,6 +45,7 @@ export class AiModule {
         AiKeys,
         AiProviders,
         AiGateway,
+        AiAdminStats,
         AiSettingsService,
         AiTasksService,
         MediaInput,
@@ -64,7 +66,7 @@ export class AiModule {
         InsightsResolver,
         AiSettingsResolver,
       ],
-      exports: [AiGateway, AiTasksService, AskService, PublicPipeline, AiEmbeddings, AiExport, AiPageVision, AiSkillsReader, AiDailyLines],
+      exports: [AiGateway, AiAdminStats, AiTasksService, AskService, PublicPipeline, AiEmbeddings, AiExport, AiPageVision, AiSkillsReader, AiDailyLines],
     }
   }
 }

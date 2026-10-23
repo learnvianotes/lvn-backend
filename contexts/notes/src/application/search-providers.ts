@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { PEOPLE, PLACES, RESOURCE_SEARCH, type People, type Places, type ResourceSearch } from '@lvn-backend/facades'
+import { PEOPLE, PLACES, PLATFORM_SETTINGS, RESOURCE_SEARCH, type People, type Places, type PlatformSettings, type ResourceSearch } from '@lvn-backend/facades'
 import { PrismaService, type Prisma, type Topic } from '@lvn-backend/prisma-base'
 import type { Typesense } from '../infrastructure/typesense'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
@@ -171,6 +171,7 @@ export class TypesenseSearchProvider implements SearchProvider {
     private readonly db: PrismaService,
     @Inject(NOTES_CONFIG) private readonly config: NotesConfig,
     @Inject(TYPESENSE) private readonly typesense: Typesense | null,
+    @Inject(PLATFORM_SETTINGS) private readonly settings: PlatformSettings,
   ) {}
 
   async find(q: SearchQuery): Promise<Found> {
@@ -219,7 +220,8 @@ export class TypesenseSearchProvider implements SearchProvider {
       const filter = resourcesFilter(q.blockedIds)
       searches.push({ scope: 'RESOURCES', params: { collection: aliasName(prefix, COLLECTIONS.RESOURCE), q: q.text, query_by: 'title,author,topics,description', query_by_weights: '4,2,2,1', ...(filter ? { filter_by: filter } : {}), ...firstOnes, stopwords } })
     }
-    const results = searches.length ? await ts.multiSearch<{ id: string; lead?: string }>(searches.map((s) => s.params), this.config.search.timeoutMs) : []
+    const timeoutMs = this.settings.integer('search_timeout_ms', this.config.search.timeoutMs) ?? this.config.search.timeoutMs
+    const results = searches.length ? await ts.multiSearch<{ id: string; lead?: string }>(searches.map((s) => s.params), timeoutMs) : []
     const of = (scope: SearchScope) => results[searches.findIndex((s) => s.scope === scope)]
     const ids = (scope: SearchScope) => of(scope)?.hits.map((h) => h.document.id) ?? []
     const notes = (of('NOTES')?.hits ?? []).map((h) => {

@@ -1,9 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common'
+import { Injectable } from '@nestjs/common'
 import type { Actor, GlobalRole } from '@lvn/contracts/domain'
 import type { Policy } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { isRestrictedMinor } from '../domain/rules'
-import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { PlatformSettingsStore } from './platform-settings.store'
 
 /**
  * The single source of Actors for `can()` (§6.1, ADR-0005): role, verification (ADR-0017, ADR-0019), the
@@ -14,7 +14,7 @@ import { USERS_CONFIG, type UsersConfig } from '../users.config'
 export class PolicyService implements Policy {
   constructor(
     private readonly db: PrismaService,
-    @Inject(USERS_CONFIG) private readonly config: UsersConfig,
+    private readonly settings: PlatformSettingsStore,
   ) {}
 
   async actor(userId: string): Promise<Actor | null> {
@@ -36,7 +36,8 @@ export class PolicyService implements Policy {
       id: u.id,
       globalRole: u.globalRole as GlobalRole,
       institutionVerified: u.verifiedAt !== null,
-      restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.config.digitalConsentAge, u.consents.length > 0),
+      // The age threshold is configuration, cached briefly (ADR-0101). The account itself is read every time.
+      restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.settings.consentAge(), u.consents.length > 0),
       suspended: u.suspendedUntil !== null && u.suspendedUntil.getTime() > Date.now(),
       teacherApplicant: u.globalRole === 'STUDENT' && u.verificationRequests.length > 0,
     }

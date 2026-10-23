@@ -5,8 +5,8 @@ import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { isRestrictedMinor } from '../domain/rules'
-import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { AuditService } from './audit.service'
+import { PlatformSettingsStore } from './platform-settings.store'
 import { PolicyService } from './policy.service'
 
 /** ADR-0043: follows a person may make in an hour. */
@@ -59,7 +59,7 @@ export class SocialService {
     private readonly limiter: RateLimiter,
     private readonly audit: AuditService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
-    @Inject(USERS_CONFIG) private readonly config: UsersConfig,
+    private readonly settings: PlatformSettingsStore,
   ) {}
 
   /** The actor and everything `can()` needs about the target; a missing or deleted target is NOT_FOUND. */
@@ -90,7 +90,7 @@ export class SocialService {
         kind: 'user',
         targetId,
         targetGlobalRole: target.globalRole as GlobalRole,
-        targetRestrictedMinor: isRestrictedMinor(target.dateOfBirth, this.config.digitalConsentAge, target.consents.length > 0),
+        targetRestrictedMinor: isRestrictedMinor(target.dateOfBirth, this.settings.consentAge(), target.consents.length > 0),
         following: following > 0,
         followsActor: followsActor > 0,
         blocked: blockedByActor + blockingActor > 0,
@@ -275,7 +275,7 @@ export class SocialService {
   /** People who may be named in a list: not deleted, and not restricted minors (ADR-0016). */
   private nameable(): Prisma.UserWhereInput {
     const adultsBornBy = new Date()
-    adultsBornBy.setUTCFullYear(adultsBornBy.getUTCFullYear() - this.config.digitalConsentAge)
+    adultsBornBy.setUTCFullYear(adultsBornBy.getUTCFullYear() - this.settings.consentAge())
     return { deletedAt: null, OR: [{ dateOfBirth: { lte: adultsBornBy } }, { consents: { some: { kind: 'GUARDIAN' } } }] }
   }
 
@@ -333,7 +333,7 @@ export class SocialService {
   async profileVisible(viewerId: string | null, userId: string): Promise<boolean> {
     if (viewerId === userId) return true
     const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { dateOfBirth: true, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } } })
-    return !!u && !isRestrictedMinor(u.dateOfBirth, this.config.digitalConsentAge, u.consents.length > 0)
+    return !!u && !isRestrictedMinor(u.dateOfBirth, this.settings.consentAge(), u.consents.length > 0)
   }
 
   /** A user by handle, or by id (links in notifications carry ids); deleted accounts are not found. */

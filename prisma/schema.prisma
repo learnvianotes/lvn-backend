@@ -433,12 +433,15 @@ model VerificationRequest {
   @@schema("users")
 }
 
-/// A switch a platform admin changes without a deploy or an environment variable.
-/// `student_id_verification` (ADR-0099): a missing row means off.
-/// `google_sign_in` (ADR-0100): the unified-sign-in migration inserts it on, and a missing row is treated as on.
+/// A platform setting an admin changes without a deploy (ADR-0099, ADR-0100, ADR-0101).
+/// `student_id_verification`: a missing row means off.
+/// `google_sign_in`: the unified-sign-in migration inserts it on, and a missing row is treated as on.
+/// `enabled` mirrors a boolean value. `value` is `{ "v": <boolean | number | string | null> }` for every type.
 model AppSetting {
   key       String   @id
   enabled   Boolean  @default(false)
+  /// `{ "v": ... }`. Null on a row written before ADR-0101; readers then use `enabled`.
+  value     Json?
   updatedBy String?  @db.Uuid
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
@@ -463,12 +466,31 @@ model StudentProfile {
   @@schema("users")
 }
 
-/// ADR-0024: every limit is data. Only FREE exists today.
+/// How a plan's price is quoted. NONE is a plan with no billing period (ADR-0101). Nothing is charged.
+enum PlanInterval {
+  NONE
+  MONTH
+  YEAR
+
+  @@schema("users")
+}
+
+/// ADR-0024: every limit is data. ADR-0101 adds a price the admin can edit. Nothing is charged.
 model Plan {
-  id        String   @id @db.Uuid
-  code      String   @unique
+  id        String       @id @db.Uuid
+  code      String       @unique
   name      String
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  /// Minor units (paise, cents). 0 is free. Config only (ADR-0101).
+  priceMinor Int         @default(0)
+  /// ISO 4217
+  currency  String       @default("INR")
+  interval  PlanInterval @default(NONE)
+  /// Short lines for a pricing card. Not entitlements.
+  features  String[]     @default([])
+  /// False hides it from a pricing list. FREE stays active: accounts without a plan use it.
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime     @default(now()) @updatedAt @db.Timestamptz(3)
 
   entitlements Entitlement[]
   users        UserPlan[]

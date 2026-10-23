@@ -3,8 +3,8 @@ import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { dateOfBirthSchema, displayNameSchema, isBelowMinimumAge, TERMS_VERSION, UNDER_MINIMUM_AGE_MESSAGE } from '../domain/rules'
-import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { AccountDeletionService } from './account-deletion.service'
+import { PlatformSettingsStore } from './platform-settings.store'
 import { InstitutionalEmailService } from './institutional-email.service'
 import { parseField } from './input'
 
@@ -28,7 +28,7 @@ export class RegistrationService {
     private readonly institutional: InstitutionalEmailService,
     private readonly deletion: AccountDeletionService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
-    @Inject(USERS_CONFIG) private readonly config: UsersConfig,
+    private readonly settings: PlatformSettingsStore,
   ) {}
 
   async complete(userId: string, input: RegistrationDetails): Promise<void> {
@@ -36,7 +36,7 @@ export class RegistrationService {
     if (user.registrationCompletedAt) throw Errors.conflict('Your registration is already complete.')
     const displayName = parseField(displayNameSchema, input.displayName, 'displayName')
     const dateOfBirth = parseField(dateOfBirthSchema, input.dateOfBirth, 'dateOfBirth')
-    if (isBelowMinimumAge(dateOfBirth, this.config.accountMinimumAge)) {
+    if (isBelowMinimumAge(dateOfBirth, this.settings.minimumAge())) {
       await this.deletion.eraseRefused(userId)
       throw Errors.underMinimumAge(UNDER_MINIMUM_AGE_MESSAGE, ['input', 'dateOfBirth'])
     }

@@ -1,10 +1,10 @@
-import { Inject, Injectable } from '@nestjs/common'
+import { Injectable } from '@nestjs/common'
 import type { People, Person, SearchProfile } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { isRestrictedMinor } from '../domain/rules'
 import type { SignInMethod, User } from '../graphql/schema.types'
-import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { InstitutionalEmailService } from './institutional-email.service'
+import { PlatformSettingsStore } from './platform-settings.store'
 import { deletionDate } from './account-deletion.service'
 
 @Injectable()
@@ -12,7 +12,7 @@ export class UsersService implements People {
   constructor(
     private readonly db: PrismaService,
     private readonly institutional: InstitutionalEmailService,
-    @Inject(USERS_CONFIG) private readonly config: UsersConfig,
+    private readonly settings: PlatformSettingsStore,
   ) {}
 
   /** People facade: the account a handle or an email names (exact, case-insensitive), never a deleted one. */
@@ -34,7 +34,7 @@ export class UsersService implements People {
     const q = query.trim().replace(/^@/, '')
     if (q.length < 2) return []
     const adultsBornBy = new Date()
-    adultsBornBy.setUTCFullYear(adultsBornBy.getUTCFullYear() - this.config.digitalConsentAge)
+    adultsBornBy.setUTCFullYear(adultsBornBy.getUTCFullYear() - this.settings.consentAge())
     const hidden = viewerId ? await this.blockedIds(viewerId) : []
     const rows = await this.db.user.findMany({
       where: {
@@ -84,7 +84,7 @@ export class UsersService implements People {
   async contactOf(userId: string): Promise<{ email: string; displayName: string; restrictedMinor: boolean } | null> {
     const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { email: true, displayName: true, dateOfBirth: true, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } } })
     if (!u) return null
-    return { email: u.email, displayName: u.displayName, restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.config.digitalConsentAge, u.consents.length > 0) }
+    return { email: u.email, displayName: u.displayName, restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.settings.consentAge(), u.consents.length > 0) }
   }
 
   /** People facade (ADR-0069): when the account was made; null for deleted accounts. */
@@ -116,7 +116,7 @@ export class UsersService implements People {
     })
     return rows.map((u) => {
       const adultFrom = new Date(u.dateOfBirth!)
-      adultFrom.setUTCFullYear(adultFrom.getUTCFullYear() + this.config.digitalConsentAge)
+      adultFrom.setUTCFullYear(adultFrom.getUTCFullYear() + this.settings.consentAge())
       return { id: u.id, handle: u.handle, displayName: u.displayName, globalRole: u.globalRole, headline: u.teacherProfile?.headline ?? null, bio: u.teacherProfile?.bio ?? null, adultFrom }
     })
   }
@@ -224,7 +224,7 @@ export class UsersService implements People {
       institutionalEmail: institutional.email,
       institutionalEmailStatus: institutional.status,
       institution: institutional.institution,
-      restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.config.digitalConsentAge, u.consents.length > 0),
+      restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.settings.consentAge(), u.consents.length > 0),
       deletionScheduledFor: deletionDate(u.deletionRequestedAt),
     }
   }

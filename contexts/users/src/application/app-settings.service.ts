@@ -1,80 +1,121 @@
-import { Injectable } from '@nestjs/common'
+import { Inject, Injectable } from '@nestjs/common'
 import { Errors } from '@lvn-backend/errors'
 import { PrismaService } from '@lvn-backend/prisma-base'
+import { decodeSettingValue, parseSettingInput, serializeSetting, SETTING_CATALOG, settingDef, type SettingDef } from '../domain/setting-catalog'
+import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { AuditService } from './audit.service'
+import { PlatformSettingsStore } from './platform-settings.store'
 import { PolicyService } from './policy.service'
 
-/** ADR-0099. A missing row means college-ID verification is off. */
-export const STUDENT_ID_VERIFICATION_SETTING = 'student_id_verification'
+export { GOOGLE_SIGN_IN_SETTING, STUDENT_ID_VERIFICATION_SETTING } from '../domain/setting-catalog'
+
+export interface AdminSettingView {
+  key: string
+  type: SettingDef['type']
+  category: string
+  description: string
+  value: string
+  overridden: boolean
+  updatedAt: Date | null
+  constraints: { min: number | null; max: number | null; maxLength: number | null; pattern: string | null; nullable: boolean }
+}
 
 /**
- * ADR-0100. Google sign-in stays available on a deployment that already set FIREBASE_PROJECT_ID, so this row is
- * inserted on. A missing row is treated as on for the same reason. An admin turns it off by writing `enabled: false`.
- */
-export const GOOGLE_SIGN_IN_SETTING = 'google_sign_in'
-
-/**
- * Switches a platform admin changes from the admin tools, stored as data. Not environment variables: turning college-ID
- * verification on does not need a deploy, and it does not turn general uploads on (ADR-0097). Google sign-in's switch
- * is the same table (ADR-0100); `FIREBASE_PROJECT_ID` stays the only environment value for that provider.
+ * Switches and limits a platform admin changes from the admin tools (ADR-0099, ADR-0100, ADR-0101).
+ * Ports, URLs and connection details stay in the environment. A missing row keeps today's environment value.
  */
 @Injectable()
 export class AppSettingsService {
   constructor(
     private readonly db: PrismaService,
+    private readonly store: PlatformSettingsStore,
     private readonly policy: PolicyService,
     private readonly audit: AuditService,
+    @Inject(USERS_CONFIG) private readonly config: UsersConfig,
   ) {}
 
   /** Public. False until an admin turns it on, including when the row has never been written. */
   async studentIdVerificationEnabled(): Promise<boolean> {
-    const row = await this.db.appSetting.findUnique({ where: { key: STUDENT_ID_VERIFICATION_SETTING }, select: { enabled: true } })
-    return row?.enabled ?? false
+    return this.store.boolean('student_id_verification', false)
   }
 
   async studentIdVerificationSettings(adminId: string): Promise<{ enabled: boolean; updatedAt: Date | null }> {
     await this.assertAdmin(adminId)
-    const row = await this.db.appSetting.findUnique({ where: { key: STUDENT_ID_VERIFICATION_SETTING } })
-    return { enabled: row?.enabled ?? false, updatedAt: row?.updatedAt ?? null }
+    const view = await this.one('student_id_verification')
+    return { enabled: view.value === 'true', updatedAt: view.updatedAt }
   }
 
   /** Public to sign-in. True until an admin writes the row off, including when the row has never been written. */
   async googleSignInEnabled(): Promise<boolean> {
-    const row = await this.db.appSetting.findUnique({ where: { key: GOOGLE_SIGN_IN_SETTING }, select: { enabled: true } })
-    return row?.enabled ?? true
+    return this.store.boolean('google_sign_in', true)
   }
 
   async setGoogleSignInEnabled(adminId: string, enabled: boolean): Promise<boolean> {
-    await this.assertAdmin(adminId)
-    await this.db.appSetting.upsert({
-      where: { key: GOOGLE_SIGN_IN_SETTING },
-      create: { key: GOOGLE_SIGN_IN_SETTING, enabled, updatedBy: adminId },
-      update: { enabled, updatedBy: adminId },
-    })
-    // targetId is a uuid column. The setting key is not one, so it lives in the metadata.
-    await this.audit.record({
-      actorId: adminId,
-      action: 'settings.google_sign_in',
-      targetType: 'AppSetting',
-      metadata: { key: GOOGLE_SIGN_IN_SETTING, enabled },
-    })
+    await this.write(adminId, 'google_sign_in', enabled ? 'true' : 'false', 'settings.google_sign_in')
     return enabled
   }
 
   async setStudentIdVerificationEnabled(adminId: string, enabled: boolean): Promise<void> {
+    await this.write(adminId, 'student_id_verification', enabled ? 'true' : 'false', 'settings.student_id_verification')
+  }
+
+  async list(adminId: string): Promise<AdminSettingView[]> {
     await this.assertAdmin(adminId)
-    await this.db.appSetting.upsert({
-      where: { key: STUDENT_ID_VERIFICATION_SETTING },
-      create: { key: STUDENT_ID_VERIFICATION_SETTING, enabled, updatedBy: adminId },
-      update: { enabled, updatedBy: adminId },
-    })
+    const rows = await this.db.appSetting.findMany()
+    const byKey = new Map(rows.map((row) => [row.key, row]))
+    return SETTING_CATALOG.map((def) => this.view(def, byKey.get(def.key)))
+  }
+
+  async update(adminId: string, key: string, raw: string): Promise<AdminSettingView> {
+    await this.write(adminId, key, raw, 'settings.updated')
+    return this.one(key)
+  }
+
+  async reset(adminId: string, key: string): Promise<AdminSettingView> {
+    await this.assertAdmin(adminId)
+    const def = settingDef(key)
+    if (!def) throw Errors.validation('That setting is not one an admin can change.', ['key'])
+    const removed = await this.store.remove(key)
+    if (removed) {
+      await this.audit.record({ actorId: adminId, action: 'settings.reset', targetType: 'AppSetting', metadata: { key } })
+    }
+    return this.one(key)
+  }
+
+  private async write(adminId: string, key: string, raw: string, action: string): Promise<void> {
+    await this.assertAdmin(adminId)
+    const def = settingDef(key)
+    if (!def) throw Errors.validation('That setting is not one an admin can change.', ['input', 'key'])
+    const parsed = parseSettingInput(def, raw)
+    if (!parsed.ok) throw Errors.validation(parsed.message, ['input', 'value'])
+    await this.store.put(key, parsed.value, adminId)
     // targetId is a uuid column. The setting key is not one, so it lives in the metadata.
+    // `enabled` stays on boolean rows so the older switch mutations keep the audit shape they already wrote.
     await this.audit.record({
       actorId: adminId,
-      action: 'settings.student_id_verification',
+      action,
       targetType: 'AppSetting',
-      metadata: { key: STUDENT_ID_VERIFICATION_SETTING, enabled },
+      metadata: { key, value: serializeSetting(parsed.value), ...(typeof parsed.value === 'boolean' ? { enabled: parsed.value } : {}) },
     })
+  }
+
+  private async one(key: string): Promise<AdminSettingView> {
+    const def = settingDef(key)
+    if (!def) throw Errors.validation('That setting is not one an admin can change.', ['key'])
+    return this.view(def, await this.db.appSetting.findUnique({ where: { key } }))
+  }
+
+  private view(def: SettingDef, row: { value: unknown; enabled: boolean; updatedAt: Date } | null | undefined): AdminSettingView {
+    const constraints = { min: def.min ?? null, max: def.max ?? null, maxLength: def.maxLength ?? null, pattern: def.pattern ?? null, nullable: def.nullable }
+    const base = { key: def.key, type: def.type, category: def.category, description: def.description, constraints }
+    if (!row) return { ...base, value: serializeSetting(this.unset(def)), overridden: false, updatedAt: null }
+    return { ...base, value: serializeSetting(decodeSettingValue(row.value, row.enabled)), overridden: true, updatedAt: row.updatedAt }
+  }
+
+  private unset(def: SettingDef): boolean | number | string | null {
+    const fallbacks = this.config.settingFallbacks
+    if (def.environmentFallback && def.key in fallbacks) return fallbacks[def.key as keyof typeof fallbacks]
+    return def.defaultValue
   }
 
   private async assertAdmin(userId: string): Promise<void> {
