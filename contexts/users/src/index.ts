@@ -13,6 +13,8 @@ export { EntitlementService } from './application/entitlement.service'
 /** Implementations of the PEOPLE and AUDIT facades, bound by the composition roots. */
 export { UsersService } from './application/users.service'
 export { AuditService } from './application/audit.service'
+/** AppSetting cache (ADR-0101), bound to PLATFORM_SETTINGS by the composition roots. */
+export { PlatformSettingsStore } from './application/platform-settings.store'
 /** Adapters at the edge of the context that a composition root (or a test) may bind differently. */
 export { GOOGLE_ID_TOKENS, MX_LOOKUP, type GoogleIdTokens, type MxLookup, type ProviderIdentity } from './application/providers'
 

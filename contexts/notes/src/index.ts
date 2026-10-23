@@ -6,6 +6,8 @@ export { NotesModule }
 export { notesConfigFrom, type NotesConfig } from './notes.config'
 /** Implementation of the FILES facade, bound by the composition roots. */
 export { FilesService } from './application/files.service'
+/** Note and storage totals for the admin dashboard (ADR-0101). */
+export { NotesAdminStats } from './application/admin-stats'
 /** Implementation of the NOTE_MODERATION facade (ADR-0037), bound by the composition roots. */
 export { NoteModerationService } from './application/moderation.service'
 /** Implementation of the NOTE_ACCESS facade (ADR-0047), bound by the composition roots. */

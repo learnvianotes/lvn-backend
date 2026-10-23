@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { metrics, SpanStatusCode, trace } from '@opentelemetry/api'
 import { Errors } from '@lvn-backend/errors'
-import { PEOPLE, PLACES, RESOURCE_SEARCH, type People, type Places, type ResourceSearch } from '@lvn-backend/facades'
+import { PEOPLE, PLACES, PLATFORM_SETTINGS, RESOURCE_SEARCH, type People, type Places, type PlatformSettings, type ResourceSearch } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { visibleNotesWhere } from '../domain/note-access'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
@@ -61,6 +61,7 @@ export class SearchService {
     @Inject(PLACES) private readonly places: Places,
     @Inject(RESOURCE_SEARCH) private readonly resources: ResourceSearch,
     @Inject(SEMANTIC_SEARCH) private readonly semantic: SemanticSearch | null,
+    @Inject(PLATFORM_SETTINGS) private readonly settings: PlatformSettings,
   ) {}
 
   /** Who answers this deployment's searches when all is well. */
@@ -141,7 +142,7 @@ export class SearchService {
       ...(await placesOf(this.db, viewerId)),
     }
     // Hybrid ranking fuses the first HYBRID_DEPTH notes of each side, so the keyword side is asked for all of them.
-    how.hybrid = this.config.search.hybrid && this.semantic !== null && terms.length > 0 && wanted.has('NOTES')
+    how.hybrid = this.settings.boolean('search_hybrid', this.config.search.hybrid) && this.semantic !== null && terms.length > 0 && wanted.has('NOTES')
     const asked = how.hybrid ? { ...q, offset: 0, size: HYBRID_DEPTH } : q
     let found: Found | null = null
     if (this.provider === this.typesense) {

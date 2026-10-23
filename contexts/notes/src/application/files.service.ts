@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common'
 import { CollegeIdCardLimits, collegeIdFileName, isCollegeIdMimeType, UploadLimits } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { ENTITLEMENTS, POLICY, type Entitlements, type FileParentKind, type FilePurposeKind, type Files, type FileSummary, type Policy } from '@lvn-backend/facades'
+import { ENTITLEMENTS, PLATFORM_SETTINGS, POLICY, type Entitlements, type FileParentKind, type FilePurposeKind, type Files, type FileSummary, type PlatformSettings, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { detectMimeType, Storage } from '@lvn-backend/storage'
@@ -84,15 +84,16 @@ export class FilesService implements Files {
     @Inject(ENTITLEMENTS) private readonly entitlements: Entitlements,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(NOTES_CONFIG) private readonly config: NotesConfig,
+    @Inject(PLATFORM_SETTINGS) private readonly settings: PlatformSettings,
   ) {}
 
-  /** ADR-0097: whether people may upload at all in this environment (clients hide every upload control when not). */
+  /** ADR-0097, ADR-0101: off until the environment or an admin turns uploads on. */
   get uploadsEnabled(): boolean {
-    return this.config.uploads
+    return this.settings.boolean('uploads_enabled', this.config.uploads)
   }
 
   async createUploadIntent(ownerId: string, input: UploadRequest) {
-    if (!this.config.uploads) throw Errors.unavailable(UPLOADS_OFF)
+    if (!this.uploadsEnabled) throw Errors.unavailable(UPLOADS_OFF)
     const actor = await this.policy.actor(ownerId)
     if (!actor) throw Errors.unauthenticated()
     const rule = PURPOSES[input.purpose]

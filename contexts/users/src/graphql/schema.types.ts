@@ -17,6 +17,171 @@ export interface AddExternalIdentityInput {
   value: string
 }
 
+/** `from` is inclusive and `to` is exclusive, both aligned to a UTC minute. A refresh within that minute reuses the cached aggregate. */
+export interface AdminAiMetrics {
+  from: Date
+  to: Date
+  tasksRun: number
+  failures: number
+  promptTokens: string
+  completionTokens: string
+  costMicroUsd: string
+  byProvider: Array<AdminAiProviderUsage>
+  byModel: Array<AdminAiModelUsage>
+  byTask: Array<AdminAiTaskUsage>
+}
+
+export interface AdminAiModelUsage {
+  provider: string
+  model: string
+  tasksRun: number
+  failures: number
+  promptTokens: string
+  completionTokens: string
+  costMicroUsd: string
+}
+
+/** Token sums and cost are decimal strings because they can exceed a GraphQL Int. Cost is millionths of a US dollar, 0 when no call recorded a price. */
+export interface AdminAiProviderUsage {
+  provider: string
+  tasksRun: number
+  failures: number
+  promptTokens: string
+  completionTokens: string
+  costMicroUsd: string
+}
+
+export interface AdminAiTaskUsage {
+  task: string
+  tasksRun: number
+  failures: number
+  promptTokens: string
+  completionTokens: string
+  costMicroUsd: string
+}
+
+/** Notes, the catalogue, and places. Deleted notes, groups and classes are left out. */
+export interface AdminContentMetrics {
+  notes: number
+  publicNotes: number
+  subjects: number
+  topics: number
+  groups: number
+  classrooms: number
+}
+
+/** Dashboard totals. Cached in each API process for about a minute. No personal data.
+ * `from` and `to` bound AI usage only. Omit them for the last 30 days through the current minute.
+ * The window can be at most 366 days. */
+export interface AdminMetrics {
+  generatedAt: Date
+  users: AdminUserMetrics
+  content: AdminContentMetrics
+  ai: AdminAiMetrics
+  storage: AdminStorageMetrics
+  verification: AdminVerificationMetrics
+  moderation: AdminModerationMetrics
+}
+
+export interface AdminModerationMetrics {
+  openReports: number
+  openAppeals: number
+}
+
+/** A plan's price and limits. `priceMinor` is minor currency units (paise, cents): 49900 INR MONTH is ₹499 a month.
+ * `subscriberCount` is how many accounts are on it. Saving a price does not charge anyone. */
+export interface AdminPlan {
+  id: string
+  code: string
+  name: string
+  priceMinor: number
+  currency: string
+  interval: PlanInterval
+  features: Array<string>
+  active: boolean
+  entitlements: Array<AdminPlanEntitlement>
+  subscriberCount: number
+}
+
+/** One limit on a plan. `limit` is a decimal string, or null for unlimited. */
+export interface AdminPlanEntitlement {
+  key: LimitKey
+  limit: string | null
+  appliesToRole: GlobalRole | null
+}
+
+export interface AdminPlanEntitlementInput {
+  key: LimitKey
+  /** A whole number of the unit LimitKey names, or null for unlimited. */
+  limit?: string | null
+  /** Null means every role. A role-specific row wins over that one. */
+  appliesToRole?: GlobalRole | null
+}
+
+export interface AdminPlanPayload {
+  plan: AdminPlan | null
+  userErrors: Array<UserError>
+}
+
+/** One application setting. `value` is `true` or `false`, a decimal integer, text, or empty when an integer is cleared.
+ * `overridden` is false when no admin has saved a row: `value` is then the environment variable or the built-in default.
+ * Categories: auth, verification, uploads, ai, search, accounts. */
+export interface AdminSetting {
+  key: string
+  type: AdminSettingType
+  category: string
+  description: string
+  value: string
+  overridden: boolean
+  /** When an admin last saved it. Null while the environment or the built-in default is in effect. */
+  updatedAt: Date | null
+  constraints: AdminSettingConstraints
+}
+
+/** What an admin may send for this setting. */
+export interface AdminSettingConstraints {
+  /** Whole numbers: the smallest value, when the setting is an integer. */
+  min: number | null
+  /** Whole numbers: the largest value, when the setting is an integer. */
+  max: number | null
+  /** Text: the longest value, in characters. */
+  maxLength: number | null
+  /** Text: a regular expression the value must match. */
+  pattern: string | null
+  /** An integer may be cleared. Send an empty value. Empty means no cap for ai_monthly_budget_micro_usd. */
+  nullable: boolean
+}
+
+export interface AdminSettingPayload {
+  setting: AdminSetting | null
+  userErrors: Array<UserError>
+}
+
+export type AdminSettingType = 'BOOLEAN' | 'INTEGER' | 'STRING'
+
+/** Bytes are a decimal string. Files are those stored: uploaded, processing, ready or quarantined. */
+export interface AdminStorageMetrics {
+  bytes: string
+  files: number
+}
+
+/** People. `active` is distinct accounts with a session that is not revoked and not expired. */
+export interface AdminUserMetrics {
+  total: number
+  newLast7Days: number
+  newLast30Days: number
+  active: number
+}
+
+export interface AdminVerificationMetrics {
+  /** Pending college-ID reviews. */
+  studentIdQueue: number
+  /** Pending verification requests of every purpose, including the college-ID queue. */
+  pendingRequests: number
+  /** Domains waiting for a decision (ACADEMIC_QUEUED or NEEDS_REVIEW). */
+  domainReviews: number
+}
+
 /** An application to teach (ADR-0073). fileIds: 0–3 proof files uploaded with createUploadIntent(purpose:
  * VERIFICATION_DOCUMENT), seen by platform admins only, deleted 30 days after the decision */
 export interface ApplyToTeachInput {
@@ -69,6 +234,21 @@ export interface ConnectionRequestItem {
   /** Who asked (INCOMING) or was asked (OUTGOING) */
   person: User
   createdAt: Date
+}
+
+export interface CreateAdminPlanInput {
+  /** 2–32 characters: A–Z, digits and underscores, starting with a letter. Stored uppercase. */
+  code: string
+  name: string
+  /** Minor units, 0 to 2000000000. */
+  priceMinor: number
+  /** ISO 4217, three letters. */
+  currency: string
+  interval: PlanInterval
+  features?: Array<string> | null
+  active?: boolean | null
+  /** Replaces nothing: these are the plan's limits. Empty means unlimited everywhere. */
+  entitlements?: Array<AdminPlanEntitlementInput> | null
 }
 
 export interface CreateStudentIdUploadInput {
@@ -207,6 +387,26 @@ export interface MutationResetPasswordArgs {
 
 export interface MutationRequestAccountDeletionArgs {
   input: RequestAccountDeletionInput
+}
+
+export interface MutationUpdateAdminSettingArgs {
+  input: UpdateAdminSettingInput
+}
+
+export interface MutationResetAdminSettingArgs {
+  key: string
+}
+
+export interface MutationCreateAdminPlanArgs {
+  input: CreateAdminPlanInput
+}
+
+export interface MutationUpdateAdminPlanArgs {
+  input: UpdateAdminPlanInput
+}
+
+export interface MutationDeleteAdminPlanArgs {
+  id: string
 }
 
 export interface MutationCreateStudentIdUploadIntentArgs {
@@ -405,9 +605,16 @@ export interface PersonPayload {
   userErrors: Array<UserError>
 }
 
+export type PlanInterval = 'NONE' | 'MONTH' | 'YEAR'
+
 export interface ProfilePayload {
   profile: StudentProfile | null
   userErrors: Array<UserError>
+}
+
+export interface QueryAdminMetricsArgs {
+  from?: Date | null
+  to?: Date | null
 }
 
 export interface QueryStudentIdVerificationQueueArgs {
@@ -706,6 +913,25 @@ export type TeacherStatus = 'NONE' | 'PENDING' | 'VERIFIED' | 'DECLINED'
 /** A topic of notes, resolved by notes */
 export interface Topic {
   id: string
+}
+
+export interface UpdateAdminPlanInput {
+  id: string
+  name?: string | null
+  priceMinor?: number | null
+  currency?: string | null
+  interval?: PlanInterval | null
+  /** Replaces the whole feature list, including with an empty list. */
+  features?: Array<string> | null
+  active?: boolean | null
+  /** Replaces the whole limit list, including with an empty list. Omit to leave the limits. */
+  entitlements?: Array<AdminPlanEntitlementInput> | null
+}
+
+export interface UpdateAdminSettingInput {
+  key: string
+  /** The same form as AdminSetting.value. */
+  value: string
 }
 
 /** Omitted fields stay as they are; null clears a field */

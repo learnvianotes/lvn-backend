@@ -23,6 +23,7 @@ import { InstitutionalEmailService } from './institutional-email.service'
 import { LegacyService } from './legacy.service'
 import { PasswordService } from './password.service'
 import { randomToken, sha256 } from './secrets'
+import { PlatformSettingsStore } from './platform-settings.store'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
 
 export interface SignUpInput {
@@ -58,6 +59,7 @@ export class AuthService {
     @Inject(MAILER) private readonly mailer: Mailer,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
+    private readonly settings: PlatformSettingsStore,
   ) {}
 
   async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string): Promise<SignUpResult> {
@@ -65,7 +67,7 @@ export class AuthService {
     const displayName = parseField(displayNameSchema, input.displayName, 'displayName')
     const dateOfBirth = parseField(dateOfBirthSchema, input.dateOfBirth, 'dateOfBirth')
     // ADR-0091: too young for an account — nothing is created or kept, and an existing account is not touched.
-    if (isBelowMinimumAge(dateOfBirth, this.config.accountMinimumAge)) throw Errors.underMinimumAge(UNDER_MINIMUM_AGE_MESSAGE, ['input', 'dateOfBirth'])
+    if (isBelowMinimumAge(dateOfBirth, this.settings.minimumAge())) throw Errors.underMinimumAge(UNDER_MINIMUM_AGE_MESSAGE, ['input', 'dateOfBirth'])
     if (input.acceptedTermsVersion !== TERMS_VERSION) {
       throw Errors.validation('Accept the current Terms and Privacy Policy to continue.', ['input', 'acceptedTermsVersion'])
     }

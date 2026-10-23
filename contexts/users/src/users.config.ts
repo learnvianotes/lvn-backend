@@ -24,6 +24,20 @@ export interface UsersConfig {
    * allowance, and how the safe fetcher names itself and which test hosts it may reach.
    */
   skillsImport: { githubApiUrl: string | null; githubToken: string | null; userAgent: string; allowHosts: string[] }
+  /**
+   * Environment values for settings an admin can override (ADR-0101). Used only while no AppSetting row is saved.
+   * Null is a budget with no cap.
+   */
+  settingFallbacks: {
+    uploads_enabled: boolean
+    ai_public_pipeline: boolean
+    ai_monthly_budget_micro_usd: number | null
+    ai_timeout_ms: number
+    search_hybrid: boolean
+    search_timeout_ms: number
+    account_minimum_age: number
+    digital_consent_age: number
+  }
 }
 
 export const USERS_CONFIG = Symbol('USERS_CONFIG')
@@ -52,5 +66,15 @@ export function usersConfigFrom(c: ApiConfig): UsersConfig {
     // Old-site snapshots (ADR-0023) live in the restricted bucket under the environment prefix.
     legacy: { bucket: c.S3_RESTRICTED_BUCKET, env: c.APP_ENV },
     skillsImport: { githubApiUrl: c.GITHUB_API_URL ?? null, githubToken: c.GITHUB_TOKEN ?? null, userAgent: `LearnViaNotes/1.0 (+${c.WEB_URL})`, allowHosts: c.SAFE_FETCH_ALLOW_HOSTS },
+    settingFallbacks: {
+      uploads_enabled: c.UPLOADS_ENABLED,
+      ai_public_pipeline: c.AI_PUBLIC_PIPELINE,
+      ai_monthly_budget_micro_usd: c.AI_MONTHLY_BUDGET_MICRO_USD ?? null,
+      ai_timeout_ms: c.AI_TIMEOUT_MS,
+      search_hybrid: c.SEARCH_HYBRID,
+      search_timeout_ms: c.SEARCH_TIMEOUT_MS,
+      account_minimum_age: c.ACCOUNT_MINIMUM_AGE,
+      digital_consent_age: c.DIGITAL_CONSENT_AGE,
+    },
   }
 }

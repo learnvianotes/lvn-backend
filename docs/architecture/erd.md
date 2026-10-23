@@ -78,7 +78,13 @@ erDiagram
   }
   Plan {
     uuid id PK
-    text code "FREE today"
+    text code "FREE today; accounts without a plan use it"
+    text name
+    int priceMinor "ADR-0101: minor units, config only, nothing is charged"
+    text currency "ISO 4217, default INR"
+    enum interval "NONE | MONTH | YEAR"
+    text_array features
+    bool active "FREE stays active"
   }
   Entitlement {
     uuid planId FK
@@ -109,8 +115,9 @@ erDiagram
     text reason
   }
   AppSetting {
-    text key PK "student_id_verification (ADR-0099, missing means off); google_sign_in (ADR-0100, inserted on)"
-    bool enabled
+    text key PK "catalog in setting-catalog.ts (ADR-0101); student_id_verification missing means off; google_sign_in missing means on"
+    bool enabled "mirrors a boolean value"
+    jsonb value "{ v: boolean | number | string | null }"
     uuid updatedBy
     timestamptz updatedAt
   }

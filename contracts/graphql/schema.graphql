@@ -175,6 +175,65 @@ input AddWeeklyTaskInput {
   topicId: UUID
 }
 
+"""
+`from` is inclusive and `to` is exclusive, both aligned to a UTC minute. A refresh within that minute reuses the cached aggregate.
+"""
+type AdminAiMetrics {
+  byModel: [AdminAiModelUsage!]!
+  byProvider: [AdminAiProviderUsage!]!
+  byTask: [AdminAiTaskUsage!]!
+  completionTokens: String!
+  costMicroUsd: String!
+  failures: Int!
+  from: DateTime!
+  promptTokens: String!
+  tasksRun: Int!
+  to: DateTime!
+}
+
+type AdminAiModelUsage {
+  completionTokens: String!
+  costMicroUsd: String!
+  failures: Int!
+  model: String!
+  promptTokens: String!
+  provider: String!
+  tasksRun: Int!
+}
+
+"""
+Token sums and cost are decimal strings because they can exceed a GraphQL Int. Cost is millionths of a US dollar, 0 when no call recorded a price.
+"""
+type AdminAiProviderUsage {
+  completionTokens: String!
+  costMicroUsd: String!
+  failures: Int!
+  promptTokens: String!
+  provider: String!
+  tasksRun: Int!
+}
+
+type AdminAiTaskUsage {
+  completionTokens: String!
+  costMicroUsd: String!
+  failures: Int!
+  promptTokens: String!
+  task: String!
+  tasksRun: Int!
+}
+
+"""
+Notes, the catalogue, and places. Deleted notes, groups and classes are left out.
+"""
+type AdminContentMetrics {
+  classrooms: Int!
+  groups: Int!
+  notes: Int!
+  publicNotes: Int!
+  subjects: Int!
+  topics: Int!
+}
+
 """A contest as its writers see it"""
 type AdminContest {
   """How many have started it"""
@@ -202,6 +261,148 @@ type AdminContestQuestion {
   explanation: String!
   id: UUID!
   prompt: String!
+}
+
+"""
+Dashboard totals. Cached in each API process for about a minute. No personal data.
+`from` and `to` bound AI usage only. Omit them for the last 30 days through the current minute.
+The window can be at most 366 days.
+"""
+type AdminMetrics {
+  ai: AdminAiMetrics!
+  content: AdminContentMetrics!
+  generatedAt: DateTime!
+  moderation: AdminModerationMetrics!
+  storage: AdminStorageMetrics!
+  users: AdminUserMetrics!
+  verification: AdminVerificationMetrics!
+}
+
+type AdminModerationMetrics {
+  openAppeals: Int!
+  openReports: Int!
+}
+
+"""
+A plan's price and limits. `priceMinor` is minor currency units (paise, cents): 49900 INR MONTH is ₹499 a month.
+`subscriberCount` is how many accounts are on it. Saving a price does not charge anyone.
+"""
+type AdminPlan {
+  active: Boolean!
+  code: String!
+  currency: String!
+  entitlements: [AdminPlanEntitlement!]!
+  features: [String!]!
+  id: UUID!
+  interval: PlanInterval!
+  name: String!
+  priceMinor: Int!
+  subscriberCount: Int!
+}
+
+"""
+One limit on a plan. `limit` is a decimal string, or null for unlimited.
+"""
+type AdminPlanEntitlement {
+  appliesToRole: GlobalRole
+  key: LimitKey!
+  limit: String
+}
+
+input AdminPlanEntitlementInput {
+  """Null means every role. A role-specific row wins over that one."""
+  appliesToRole: GlobalRole
+  key: LimitKey!
+
+  """A whole number of the unit LimitKey names, or null for unlimited."""
+  limit: String
+}
+
+type AdminPlanPayload {
+  plan: AdminPlan
+  userErrors: [UserError!]!
+}
+
+"""
+One application setting. `value` is `true` or `false`, a decimal integer, text, or empty when an integer is cleared.
+`overridden` is false when no admin has saved a row: `value` is then the environment variable or the built-in default.
+Categories: auth, verification, uploads, ai, search, accounts.
+"""
+type AdminSetting {
+  category: String!
+  constraints: AdminSettingConstraints!
+  description: String!
+  key: String!
+  overridden: Boolean!
+  type: AdminSettingType!
+
+  """
+  When an admin last saved it. Null while the environment or the built-in default is in effect.
+  """
+  updatedAt: DateTime
+  value: String!
+}
+
+"""What an admin may send for this setting."""
+type AdminSettingConstraints {
+  """Whole numbers: the largest value, when the setting is an integer."""
+  max: Int
+
+  """Text: the longest value, in characters."""
+  maxLength: Int
+
+  """Whole numbers: the smallest value, when the setting is an integer."""
+  min: Int
+
+  """
+  An integer may be cleared. Send an empty value. Empty means no cap for ai_monthly_budget_micro_usd.
+  """
+  nullable: Boolean!
+
+  """Text: a regular expression the value must match."""
+  pattern: String
+}
+
+type AdminSettingPayload {
+  setting: AdminSetting
+  userErrors: [UserError!]!
+}
+
+enum AdminSettingType {
+  BOOLEAN
+  INTEGER
+  STRING
+}
+
+"""
+Bytes are a decimal string. Files are those stored: uploaded, processing, ready or quarantined.
+"""
+type AdminStorageMetrics {
+  bytes: String!
+  files: Int!
+}
+
+"""
+People. `active` is distinct accounts with a session that is not revoked and not expired.
+"""
+type AdminUserMetrics {
+  active: Int!
+  newLast7Days: Int!
+  newLast30Days: Int!
+  total: Int!
+}
+
+type AdminVerificationMetrics {
+  """Domains waiting for a decision (ACADEMIC_QUEUED or NEEDS_REVIEW)."""
+  domainReviews: Int!
+
+  """
+  Pending verification requests of every purpose, including the college-ID queue.
+  """
+  pendingRequests: Int!
+
+  """Pending college-ID reviews."""
+  studentIdQueue: Int!
 }
 
 """
@@ -1424,6 +1625,29 @@ type CoreTopicProgress {
   revisit: Boolean!
   secondsStudied: Int!
   topicKey: String!
+}
+
+input CreateAdminPlanInput {
+  active: Boolean
+
+  """
+  2–32 characters: A–Z, digits and underscores, starting with a letter. Stored uppercase.
+  """
+  code: String!
+
+  """ISO 4217, three letters."""
+  currency: String!
+
+  """
+  Replaces nothing: these are the plan's limits. Empty means unlimited everywhere.
+  """
+  entitlements: [AdminPlanEntitlementInput!]
+  features: [String!]
+  interval: PlanInterval!
+  name: String!
+
+  """Minor units, 0 to 2000000000."""
+  priceMinor: Int!
 }
 
 input CreateClassroomInput {
@@ -2650,6 +2874,9 @@ type Mutation {
   """
   convertPdfToNote(input: ConvertPdfInput!): PdfConversionPayload!
 
+  """Platform admins. Adds a plan. Nothing is charged."""
+  createAdminPlan(input: CreateAdminPlanInput!): AdminPlanPayload!
+
   """Teachers"""
   createClassroom(input: CreateClassroomInput!): ClassroomPayload!
 
@@ -2674,6 +2901,11 @@ type Mutation {
 
   """Decline the old site's data, or remove it after it was attached"""
   declineLegacyData: OkPayload!
+
+  """
+  Platform admins. Deletes a plan nobody is on. FREE cannot be deleted. People on a plan are left where they are: mark it inactive instead.
+  """
+  deleteAdminPlan(id: UUID!): OkPayload!
   deleteAiAnswer(id: UUID!): OkPayload!
   deleteAiArtifact(id: UUID!): OkPayload!
 
@@ -2847,6 +3079,11 @@ type Mutation {
   """Every other group: the admins accept or reject"""
   requestToJoinGroup(input: RequestToJoinGroupInput!): GroupPayload!
   resendInstitutionalEmailCode: OkPayload!
+
+  """
+  Platform admins. Forgets the saved row. The environment variable or the built-in default applies again.
+  """
+  resetAdminSetting(key: String!): AdminSettingPayload!
 
   """The card starts again as new"""
   resetCardReview(input: CardIdInput!): OkPayload!
@@ -3045,6 +3282,16 @@ type Mutation {
   No sign-in: the token in an email's unsubscribe link turns off that kind of email
   """
   unsubscribeEmail(input: UnsubscribeEmailInput!): UnsubscribePayload!
+
+  """
+  Platform admins. Edits a plan's name, price, limits, features or active flag. The code stays. FREE cannot be deactivated.
+  """
+  updateAdminPlan(input: UpdateAdminPlanInput!): AdminPlanPayload!
+
+  """
+  Platform admins. Saves one setting and writes an audit row. A boolean is true or false.
+  """
+  updateAdminSetting(input: UpdateAdminSettingInput!): AdminSettingPayload!
   updateClassroom(input: UpdateClassroomInput!): ClassroomPayload!
   updateExam(input: UpdateExamInput!): ExamPayload!
   updateFolder(input: UpdateFolderInput!): FolderPayload!
@@ -3694,6 +3941,12 @@ input PinGroupPostInput {
   postId: UUID!
 }
 
+enum PlanInterval {
+  MONTH
+  NONE
+  YEAR
+}
+
 enum Platform {
   ANDROID
   IOS
@@ -3781,6 +4034,19 @@ type Query {
 
   """Platform admins: every contest, drafts included"""
   adminContests: [AdminContest!]!
+
+  """Platform admins. Counts for the dashboard."""
+  adminMetrics(from: DateTime, to: DateTime): AdminMetrics!
+
+  """
+  Platform admins. Every plan, with its price, limits and how many accounts are on it.
+  """
+  adminPlans: [AdminPlan!]!
+
+  """
+  Platform admins. Every application setting, with its type, description and validation.
+  """
+  adminSettings: [AdminSetting!]!
   aiAnswer(id: UUID!): AiAnswer
 
   """
@@ -5515,6 +5781,30 @@ type UnsubscribePayload {
   """What was turned off"""
   kind: EmailKind
   userErrors: [UserError!]!
+}
+
+input UpdateAdminPlanInput {
+  active: Boolean
+  currency: String
+
+  """
+  Replaces the whole limit list, including with an empty list. Omit to leave the limits.
+  """
+  entitlements: [AdminPlanEntitlementInput!]
+
+  """Replaces the whole feature list, including with an empty list."""
+  features: [String!]
+  id: UUID!
+  interval: PlanInterval
+  name: String
+  priceMinor: Int
+}
+
+input UpdateAdminSettingInput {
+  key: String!
+
+  """The same form as AdminSetting.value."""
+  value: String!
 }
 
 input UpdateClassroomInput {

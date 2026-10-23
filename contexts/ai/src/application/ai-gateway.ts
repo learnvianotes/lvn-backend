@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { LimitKey } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { ENTITLEMENTS, type Entitlements } from '@lvn-backend/facades'
+import { ENTITLEMENTS, PLATFORM_SETTINGS, fallbackPlatformSettings, type Entitlements, type PlatformSettings } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
 import { mendAll } from '../domain/escapes'
@@ -73,7 +73,13 @@ export class AiGateway {
     private readonly providers: AiProviders,
     @Inject(ENTITLEMENTS) private readonly entitlements: Entitlements,
     @Inject(EVENT_BUS) private readonly events: EventBus,
+    @Inject(PLATFORM_SETTINGS) private readonly settings: PlatformSettings = fallbackPlatformSettings,
   ) {}
+
+  /** An admin's saved timeout, or the environment's AI_TIMEOUT_MS (ADR-0101). */
+  private timeoutMs(): number {
+    return this.settings.integer('ai_timeout_ms', this.config.timeoutMs) ?? this.config.timeoutMs
+  }
 
   /** Whether AI answers now (the default chat provider), and if not, why. */
   async status(): Promise<{ available: boolean; reason: AiUnavailableReason | null }> {
@@ -107,7 +113,7 @@ export class AiGateway {
     let promptTokens = 0
     let completionTokens = 0
     const ask = async (msgs: ChatMessage[]) => {
-      const res = await this.withRetries(route, () => adapter.chat({ model: route.model, messages: msgs, schema, maxTokens: call.maxTokens, temperature: call.temperature, timeoutMs: this.config.timeoutMs }, schema ? undefined : call.onDelta))
+      const res = await this.withRetries(route, () => adapter.chat({ model: route.model, messages: msgs, schema, maxTokens: call.maxTokens, temperature: call.temperature, timeoutMs: this.timeoutMs() }, schema ? undefined : call.onDelta))
       promptTokens += res.promptTokens
       completionTokens += res.completionTokens
       return res.text
@@ -159,7 +165,7 @@ export class AiGateway {
     const route = await this.ready(await this.providers.forEmbeddings(), who.userId, who.private)
     const started = Date.now()
     try {
-      const res = await this.withRetries(route, () => route.adapter.embed(route.model, texts, this.config.timeoutMs))
+      const res = await this.withRetries(route, () => route.adapter.embed(route.model, texts, this.timeoutMs()))
       await this.record({ userId: who.userId, task: who.task ?? 'EMBED', model: route.model, promptTokens: res.promptTokens, completionTokens: 0, ok: true, started, route })
       return res.vectors
     } catch (e) {
@@ -230,7 +236,7 @@ export class AiGateway {
 
   /** This month's spend against the budget (cached a minute); tells the platform at 80 % and 100 %. */
   private async overBudget(): Promise<boolean> {
-    const cap = this.config.monthlyBudgetMicroUsd
+    const cap = this.settings.integer('ai_monthly_budget_micro_usd', this.config.monthlyBudgetMicroUsd)
     if (cap === null) return false
     const since = startOfUtcMonth().getTime()
     if (!this.spend || this.spend.since !== since || Date.now() - this.spend.at > BUDGET_CACHE_MS) {
