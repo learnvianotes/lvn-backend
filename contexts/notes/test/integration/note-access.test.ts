@@ -75,7 +75,9 @@ describe('note visibility: the single-note rule and the list query agree', () =>
   ])('%s sees the same notes either way', async (_, id) => {
     for (const verified of [true, false]) {
       const a = id ? actor(id, verified) : null
-      const listed = new Set((await db.note.findMany({ where: visibleNotesWhere(id), select: { id: true } })).map((n) => n.id))
+      // The study-note migrations also publish notes. This check is the matrix on the rows created above.
+      const created = notes.map((n) => n.id)
+      const listed = new Set((await db.note.findMany({ where: { AND: [visibleNotesWhere(id), { id: { in: created } }] }, select: { id: true } })).map((n) => n.id))
       // Lists leave the trash out; the owner reaches trashed notes through the trash view.
       const isShared = (n: (typeof notes)[number]) => Object.keys(n.shares).length > 0
       const reach = (n: (typeof notes)[number]) => ({ inSharedGroup: id === member && isShared(n), inSharedClassroom: id === pupil && isShared(n) })

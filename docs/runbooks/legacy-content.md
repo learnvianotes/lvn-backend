@@ -1,6 +1,15 @@
 # Import the old site's study content
 
-ADR-0098. One command reads the old learnvianotes.in content from its Firestore (project `learnvianotes-2e2d7`) and
+ADR-0098. The 22 subjects, their topics, and the 907 study notes (757 topics and 150 Sheet 150 problems) are loaded
+by Prisma migrations. `prisma migrate deploy` — the compose `migrate` service — applies them. Nothing else has to
+run on beta after a deploy, and the migrations do not need an environment variable that beta does not already have.
+They insert by stable id and skip a row that is already there. They do not update or delete a user, and they do not
+change a note after someone has edited it.
+
+The command below is the later path: a fresh read of Firestore when the old content itself has changed. It is not
+required for the notes the migrations already carry.
+
+One command reads the old learnvianotes.in content from its Firestore (project `learnvianotes-2e2d7`) and
 writes it into an environment's database:
 
 - the catalogue: subjects, topic groups and topics, added or renamed to match, never removed;
