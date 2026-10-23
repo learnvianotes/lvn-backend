@@ -98,6 +98,7 @@ export class AuthService {
           data: {
             id,
             email,
+            // Never a reserved brand or role handle (`learnvianotes`, `lvn`, `admin`, …).
             handle: await freeHandle(tx, displayName),
             displayName,
             passwordHash,

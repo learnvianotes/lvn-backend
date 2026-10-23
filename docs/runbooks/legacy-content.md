@@ -14,12 +14,14 @@ On the target database (beta first, then production):
 cd /opt/lvn
 docker compose exec -T postgres psql -U lvn -d lvn -c 'SELECT count(*) FROM notes."LegacyContentItem";'
 docker compose exec -T postgres psql -U lvn -d lvn -c "SELECT id, email, handle, \"displayName\" FROM users.\"User\" WHERE email IN ('publisher@learnvianotes.invalid', 'notes@learnvianotes.in') OR handle = 'learnvianotes';"
+docker compose exec -T postgres psql -U lvn -d lvn -c "select migration_name from _prisma_migrations where migration_name like '20261109%';"
 ```
 
 - **`LegacyContentItem` count.** Zero means this database has not imported the notes. The sync creates them. A count above zero means `content:import-legacy` (or an earlier sync) already ran: the sync attaches to those keys and does not insert a second note per key. Expect 907 after a full import.
-- **Publisher.** No row should already use `publisher@learnvianotes.invalid` unless a previous sync created the system publisher. If `notes@learnvianotes.in` or the handle `learnvianotes` exists, the sync reuses that account and does not create the `.invalid` one. Confirm that account is the publisher you intend, not a student. The system publisher cannot sign in. A reused account is left as it is, including its password, so do not point the catalogue at a learner.
+- **Publisher.** The publisher is always `publisher@learnvianotes.invalid` (id `019a118c-f480-7000-8000-000000000001`, handle `learnvianotes`). The sync creates that row when it is missing. It does not adopt `notes@learnvianotes.in` or any other account. If the handle `learnvianotes` already belongs to someone else and the system publisher does not exist yet, the migrate container exits and no notes are published. Free that handle (give the person a different one) and deploy again. Do not point the catalogue at a learner. The system publisher cannot sign in.
+- **Migrations named `20261109%`.** Lists any migration from that day that this database has applied. An empty result means none of those names are recorded.
 
-The system publisher, when it is created, is `publisher@learnvianotes.invalid`, handle `learnvianotes`, display name LearnViaNotes. It has no password, no verified email, no birth date and no verification flag. Those columns are nullable. Auth refuses that id and that address for password sign-in, reset, email-link sign-up and provider linking.
+The system publisher is `publisher@learnvianotes.invalid`, handle `learnvianotes`, display name LearnViaNotes. It has no password, no verified email, no birth date and no verification flag. Those columns are nullable. Auth refuses that id and that address for password sign-in, reset, email-link sign-up and provider linking. Sign-up will not give a person the handle `learnvianotes`.
 
 ## After deploy
 

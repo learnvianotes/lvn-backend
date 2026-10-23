@@ -114,6 +114,7 @@ export class OAuthService {
     const displayName = (identity.name?.trim() || email.slice(0, email.indexOf('@'))).slice(0, 60)
     try {
       await this.db.$transaction(async (tx) => {
+        // freeHandle refuses reserved brand and role handles, same as email sign-up.
         await tx.user.create({ data: { id, email, handle: await freeHandle(tx, displayName), displayName, emailVerifiedAt: new Date() } })
         await tx.oAuthAccount.create({ data: { id: newId(), userId: id, ...key } })
       })

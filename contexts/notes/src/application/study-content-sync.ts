@@ -16,16 +16,17 @@ import { parseStudyPage, type StudyPage } from '../domain/study-page'
  * unpublished, hidden or trashed is left alone. Users are never updated. Nothing is truncated.
  *
  * The publisher id and email match `contexts/users/src/domain/study-publisher.ts`. Auth refuses that id and that
- * address. A `notes@learnvianotes.in` account or the handle `learnvianotes`, when one already exists, is reused and
- * is not modified and not blocked: it may be a real operator. When seeded notes already exist, their owner is kept.
- * Nothing here sets a birth date, a password, or a verification flag. Those columns are nullable.
+ * address. The publisher is always that system account: the owner of seeded notes when that owner is this account,
+ * otherwise the account itself, created when it is missing. No other account is adopted. If another account holds
+ * the handle `learnvianotes` and the system publisher does not exist yet, the sync
+ * throws and the deploy stops. Nothing here sets a birth date, a password, or a verification flag. Those columns
+ * are nullable. Users are never updated.
  */
 
 /** Keep identical to contexts/users/src/domain/study-publisher.ts. */
 const STUDY_PUBLISHER_ID = '019a118c-f480-7000-8000-000000000001'
 const STUDY_PUBLISHER_EMAIL = 'publisher@learnvianotes.invalid'
-const LEGACY_PUBLISHER_EMAIL = 'notes@learnvianotes.in'
-const LEGACY_PUBLISHER_HANDLE = 'learnvianotes'
+const STUDY_PUBLISHER_HANDLE = 'learnvianotes'
 const FREE_PLAN_ID = '01920000-0000-7000-8000-000000000001'
 
 export interface StudySyncReport {
@@ -119,38 +120,25 @@ async function topicIndex(db: PrismaService): Promise<Map<string, TopicRef>> {
 }
 
 /**
- * Who owns notes this sync creates. An existing seeded catalogue keeps its owner. Otherwise an existing
- * notes@ / learnvianotes account is reused (so a second publisher is not created). Otherwise the system
- * publisher is inserted, and only inserted: no user row is updated.
+ * Who owns notes this sync creates. Only the system publisher. An owner of notes already seeded is kept only when
+ * that owner is `publisher@learnvianotes.invalid`. Otherwise that account is created, if its id, email and handle
+ * are free. Another account is never adopted. If the handle belongs to anyone else, this throws before any note
+ * is written, so the deploy stops instead of giving the catalogue away. No user row is updated.
  */
 async function resolvePublisher(db: PrismaService): Promise<{ id: string; created: boolean }> {
-  const owners = await db.$queryRaw<{ ownerId: string }[]>`
-    SELECT n."ownerId" AS "ownerId"
-    FROM "notes"."LegacyContentItem" l
-    JOIN "notes"."Note" n ON n.id = l."noteId"
-    GROUP BY n."ownerId"
-    ORDER BY count(*) DESC
-    LIMIT 1`
-  if (owners[0]) return { id: owners[0].ownerId, created: false }
+  const seeded = await seededSystemPublisher(db)
+  if (seeded) return seeded
 
-  // Prefer the historical content mailbox, then the handle, over a stray row that happens to share the system id.
-  const ranked = await db.user.findMany({
-    where: { OR: [{ email: LEGACY_PUBLISHER_EMAIL }, { handle: LEGACY_PUBLISHER_HANDLE }, { email: STUDY_PUBLISHER_EMAIL }, { id: STUDY_PUBLISHER_ID }] },
-    select: { id: true, email: true, handle: true },
-  })
-  const preferred =
-    ranked.find((user) => user.email.toLowerCase() === LEGACY_PUBLISHER_EMAIL) ??
-    ranked.find((user) => user.handle === LEGACY_PUBLISHER_HANDLE) ??
-    ranked.find((user) => user.email.toLowerCase() === STUDY_PUBLISHER_EMAIL) ??
-    ranked.find((user) => user.id === STUDY_PUBLISHER_ID)
-  if (preferred) return { id: preferred.id, created: false }
+  const existing = await existingSystemPublisher(db)
+  if (existing) return existing
 
+  await assertHandleFree(db)
   try {
     await db.user.create({
       data: {
         id: STUDY_PUBLISHER_ID,
         email: STUDY_PUBLISHER_EMAIL,
-        handle: LEGACY_PUBLISHER_HANDLE,
+        handle: STUDY_PUBLISHER_HANDLE,
         displayName: 'LearnViaNotes',
         // Nullable on purpose. This account never registers, so it has no birth date and no verification.
         // passwordHash and emailVerifiedAt stay null. Auth refuses the id and the address anyway.
@@ -158,16 +146,93 @@ async function resolvePublisher(db: PrismaService): Promise<{ id: string; create
     })
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      const winner = await db.user.findFirst({
-        where: { OR: [{ id: STUDY_PUBLISHER_ID }, { email: STUDY_PUBLISHER_EMAIL }, { handle: LEGACY_PUBLISHER_HANDLE }] },
-        select: { id: true },
-      })
-      if (winner) return { id: winner.id, created: false }
+      // A concurrent sync may have inserted this same system publisher. Anyone else holding the id, the email
+      // or the handle is not adopted: the deploy stops and no note is written under their account.
+      const raced = await systemPublisherRow(db)
+      if (raced) {
+        await db.userPlan.createMany({ data: [{ userId: STUDY_PUBLISHER_ID, planId: FREE_PLAN_ID }], skipDuplicates: true })
+        return { id: STUDY_PUBLISHER_ID, created: false }
+      }
+      throw await publisherConflict(db)
     }
     throw error
   }
   await db.userPlan.createMany({ data: [{ userId: STUDY_PUBLISHER_ID, planId: FREE_PLAN_ID }], skipDuplicates: true })
   return { id: STUDY_PUBLISHER_ID, created: true }
+}
+
+/** The system publisher when it already owns seeded notes. Any other owner is ignored. */
+async function seededSystemPublisher(db: PrismaService): Promise<{ id: string; created: false } | null> {
+  const rows = await db.$queryRaw<{ ownerId: string }[]>`
+    SELECT n."ownerId" AS "ownerId"
+    FROM "notes"."LegacyContentItem" l
+    JOIN "notes"."Note" n ON n.id = l."noteId"
+    JOIN "users"."User" u ON u.id = n."ownerId"
+    WHERE u.id = ${STUDY_PUBLISHER_ID}::uuid
+      AND u.email = ${STUDY_PUBLISHER_EMAIL}
+    GROUP BY n."ownerId"
+    LIMIT 1`
+  const ownerId = rows[0]?.ownerId
+  if (!ownerId) return null
+  return { id: ownerId, created: false }
+}
+
+/**
+ * The system publisher row, when it is exactly that id and email. A different account on either field is an
+ * operator error: this does not adopt it.
+ */
+async function existingSystemPublisher(db: PrismaService): Promise<{ id: string; created: false } | null> {
+  const byId = await db.user.findUnique({ where: { id: STUDY_PUBLISHER_ID }, select: { id: true, email: true, handle: true } })
+  const byEmail = await db.user.findUnique({ where: { email: STUDY_PUBLISHER_EMAIL }, select: { id: true, email: true, handle: true } })
+  if (byId && byId.email.toLowerCase() !== STUDY_PUBLISHER_EMAIL) {
+    throw stopped(`The id ${STUDY_PUBLISHER_ID} belongs to ${label(byId)}. That account is not the system publisher and was not adopted.`)
+  }
+  if (byEmail && byEmail.id !== STUDY_PUBLISHER_ID) {
+    throw stopped(`${STUDY_PUBLISHER_EMAIL} belongs to ${label(byEmail)}. That account was not adopted and was not given the notes.`)
+  }
+  if (byId) return { id: byId.id, created: false }
+  return null
+}
+
+/** The system publisher only when id, email and handle all match. A partial match is not this account. */
+async function systemPublisherRow(db: PrismaService): Promise<{ id: string } | null> {
+  const row = await db.user.findUnique({ where: { id: STUDY_PUBLISHER_ID }, select: { id: true, email: true, handle: true } })
+  if (!row) return null
+  if (row.email.toLowerCase() !== STUDY_PUBLISHER_EMAIL || row.handle.toLowerCase() !== STUDY_PUBLISHER_HANDLE) return null
+  return { id: row.id }
+}
+
+async function assertHandleFree(db: PrismaService): Promise<void> {
+  const holder = await db.user.findFirst({
+    where: { handle: { equals: STUDY_PUBLISHER_HANDLE, mode: 'insensitive' } },
+    select: { id: true, email: true, handle: true },
+  })
+  if (!holder) return
+  if (holder.id === STUDY_PUBLISHER_ID && holder.email.toLowerCase() === STUDY_PUBLISHER_EMAIL) return
+  throw stopped(
+    `The handle "${STUDY_PUBLISHER_HANDLE}" belongs to ${label(holder)}. Free that handle and deploy again. That account was not adopted and was not given the notes.`,
+  )
+}
+
+async function publisherConflict(db: PrismaService): Promise<Error> {
+  const holder = await db.user.findFirst({
+    where: {
+      OR: [{ id: STUDY_PUBLISHER_ID }, { email: STUDY_PUBLISHER_EMAIL }, { handle: { equals: STUDY_PUBLISHER_HANDLE, mode: 'insensitive' } }],
+    },
+    select: { id: true, email: true, handle: true },
+  })
+  if (!holder) return stopped('Creating the system publisher hit a unique conflict. No other account was adopted or given the notes.')
+  return stopped(`Creating the system publisher conflicted with ${label(holder)}. That account was not adopted and was not given the notes.`)
+}
+
+function label(user: { id: string; email: string; handle: string }): string {
+  return `${user.email} (id ${user.id}, handle ${user.handle})`
+}
+
+function stopped(detail: string): Error {
+  return new Error(
+    `Study content sync stopped. ${detail} The only publisher is ${STUDY_PUBLISHER_EMAIL} (id ${STUDY_PUBLISHER_ID}, handle ${STUDY_PUBLISHER_HANDLE}).`,
+  )
 }
 
 async function apply(db: PrismaService, page: StudyPage, topic: TopicRef, publisherId: string, report: StudySyncReport): Promise<void> {

@@ -1,4 +1,4 @@
-import { ageOn, dateOfBirthSchema, displayNameSchema, emailSchema, handleBase, isBelowMinimumAge, isRestrictedMinor } from '../../src/domain/rules'
+import { ageOn, dateOfBirthSchema, displayNameSchema, emailSchema, handleBase, handleSchema, isBelowMinimumAge, isReservedHandle, isRestrictedMinor } from '../../src/domain/rules'
 
 const d = (s: string) => new Date(`${s}T00:00:00Z`)
 
@@ -73,5 +73,47 @@ describe('handleBase', () => {
   it('pads names that leave too little to work with', () => {
     expect(handleBase('李')).toBe('learner')
     expect(handleBase('Al')).toBe('learneral')
+  })
+
+  it('does not offer a brand or role handle', () => {
+    for (const name of ['LearnViaNotes', 'Learn-Via-Notes', 'LVN', 'Admin', 'Support', 'Official', 'System', 'Publisher', 'LearnViaNotes Official']) {
+      expect(isReservedHandle(handleBase(name))).toBe(false)
+      expect(handleBase(name)).toBe('learner')
+    }
+  })
+})
+
+describe('reserved handles', () => {
+  it.each([
+    'learnvianotes',
+    'LearnViaNotes',
+    'learn-via-notes',
+    'learn_via_notes',
+    'LVN',
+    'lvn-official',
+    'official-lvn',
+    'admin',
+    'Admin',
+    'administrator',
+    'superadmin',
+    'support',
+    'official',
+    'system',
+    'publisher',
+    'moderator',
+    'staff',
+    'root',
+    'helpdesk',
+    'security',
+  ])('reserves %s', (handle) => {
+    expect(isReservedHandle(handle)).toBe(true)
+    expect(handleSchema.safeParse(handle).success).toBe(false)
+  })
+
+  it('leaves ordinary names free to use', () => {
+    for (const handle of ['asharao', 'Asha Rao', 'priya', 'arjun', 'saanvi', 'stafford', 'learner']) {
+      expect(isReservedHandle(handle)).toBe(false)
+    }
+    expect(handleSchema.parse('Asha_Rao')).toBe('asharao')
   })
 })

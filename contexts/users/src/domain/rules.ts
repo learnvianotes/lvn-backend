@@ -82,13 +82,102 @@ export function isRestrictedMinor(dateOfBirth: Date | null, consentAge: number, 
   return ageOn(dateOfBirth, on) < consentAge
 }
 
-/** Handle for a new account: the name as a lowercase slug plus a short suffix (users can change it later). */
-export function handleBase(displayName: string): string {
-  const slug = displayName
+/**
+ * Letters and digits only, so `Learn-Via-Notes`, `LearnViaNotes` and `learn_via_notes` are one handle.
+ * The same folding as a new account's slug.
+ */
+export function handleKey(raw: string): string {
+  return raw
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '')
-    .slice(0, 20)
-  return slug.length >= 3 ? slug : `learner${slug}`
+}
+
+/**
+ * Handles no person may take. Email sign-up, Google sign-up and a later handle edit all refuse these.
+ * Compared on {@link handleKey}. The product name is reserved in every form (`learnvianotes`, `learn-via-notes`,
+ * `lvn`, and a handle that contains those), and so are staff-shaped names (`admin`, `support`, `official`,
+ * `system`, `publisher`, and the same kind of name).
+ */
+const RESERVED_HANDLES = new Set([
+  'admin',
+  'administrator',
+  'admins',
+  'support',
+  'official',
+  'system',
+  'publisher',
+  'moderator',
+  'moderators',
+  'moderation',
+  'staff',
+  'root',
+  'help',
+  'helpdesk',
+  'security',
+  'abuse',
+  'noreply',
+  'postmaster',
+  'webmaster',
+  'hostmaster',
+  'operator',
+  'ops',
+  'owner',
+  'founder',
+  'billing',
+  'legal',
+  'privacy',
+  'trust',
+  'safety',
+  'press',
+  'contact',
+  'newsletter',
+  'anonymous',
+  'deleted',
+  'guest',
+  'team',
+  'info',
+  'mail',
+  'bot',
+  'null',
+  'test',
+  'api',
+  'www',
+  'notes',
+])
+
+/** Role names long enough that `superadmin` or `adminrao` is the same reservation, without swallowing short names. */
+const RESERVED_AFFIXES = ['admin', 'administrator', 'support', 'official', 'system', 'publisher', 'moderator', 'moderation']
+
+export function isReservedHandle(handle: string): boolean {
+  const key = handleKey(handle)
+  if (!key) return false
+  if (RESERVED_HANDLES.has(key)) return true
+  if (key.includes('learnvianotes') || key.includes('learnvia') || key.includes('lvn')) return true
+  return RESERVED_AFFIXES.some((role) => key.startsWith(role) || key.endsWith(role))
+}
+
+/**
+ * A handle someone chose. Brand and role handles are refused. Stored as the folded key, so a hyphen
+ * cannot hide `learn-via-notes`.
+ */
+export const handleSchema = z
+  .string()
+  .trim()
+  .transform((value) => handleKey(value))
+  .refine((key) => key.length >= 3 && key.length <= 30, 'Use 3 to 30 letters or numbers.')
+  .refine((key) => !isReservedHandle(key), 'That handle is reserved.')
+
+/**
+ * Handle for a new account: the name as a lowercase slug. A reserved brand or role slug is not offered;
+ * those names get `learner`, and freeHandle adds digits when that is taken. People can change it later,
+ * except onto a reserved handle.
+ */
+export function handleBase(displayName: string): string {
+  const key = handleKey(displayName)
+  if (isReservedHandle(key)) return 'learner'
+  const slug = key.slice(0, 20)
+  const base = slug.length >= 3 ? slug : `learner${slug}`
+  return isReservedHandle(base) ? 'learner' : base
 }

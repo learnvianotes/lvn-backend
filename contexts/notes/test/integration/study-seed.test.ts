@@ -35,42 +35,156 @@ describe('seeded study notes are visible', () => {
     await stop?.()
   }, 60_000)
 
-  it('updates a note content:import-legacy already stored, and reuses that owner', async () => {
-    await resetDatabase(url)
-    const ownerId = newId()
-    const noteId = newId()
+  function analysisPage(): string {
+    return path.join(CONTENT, 'dsa-basics/analysis/01-analysis-of-algorithms.md')
+  }
+
+  function otherPage(): string {
+    const otherDir = readdirSync(path.join(CONTENT, 'dsa-basics')).find((name) => name !== 'analysis')!
+    const otherFile = readdirSync(path.join(CONTENT, 'dsa-basics', otherDir)).find((name) => name.endsWith('.md'))!
+    return path.join(CONTENT, 'dsa-basics', otherDir, otherFile)
+  }
+
+  function stage(files: string[]): string {
+    const dir = mkdtempSync(path.join(tmpdir(), 'study-pub-'))
+    files.forEach((file, index) => writeFileSync(path.join(dir, `${index}-${path.basename(file)}`), readFileSync(file)))
+    return dir
+  }
+
+  async function seedLegacy(noteId: string, ownerId: string, drafted: Date): Promise<void> {
     const versionId = newId()
-    const drafted = new Date(Date.now() - 60_000)
-    await db.user.create({ data: { id: ownerId, email: 'notes@learnvianotes.in', handle: 'learnvianotes', displayName: 'Already here' } })
     await db.note.create({
       data: { id: noteId, ownerId, title: 'Old import', slug: 'old-analysis', visibility: 'PUBLIC', moderation: 'OK', draftUpdatedAt: drafted },
     })
     await db.noteVersion.create({ data: { id: versionId, noteId, number: 1, kind: 'PUBLISHED', title: 'Old import', cards: [], createdById: ownerId } })
     await db.note.update({ where: { id: noteId }, data: { publishedVersionId: versionId, publishedAt: drafted, draftUpdatedAt: drafted } })
     await db.legacyContentItem.create({ data: { key: 'topic:dsa-basics/analysis', noteId, sourceHash: 'old', versionId } })
+  }
 
-    const first = await syncStudyContent(url, CONTENT)
-    expect(first.publisher).toEqual({ id: ownerId, created: false })
-    expect(first.created).toBe(906)
-    expect(first.updated).toBe(1)
+  it('does not give the notes to an unverified LearnViaNotes sign-up that holds the brand handle', async () => {
+    await resetDatabase(url)
+    const squatterId = newId()
+    const dir = stage([analysisPage()])
+    await db.user.create({
+      data: { id: squatterId, email: 'squatter@example.com', handle: 'learnvianotes', displayName: 'LearnViaNotes' },
+    })
+
+    await expect(syncStudyContent(url, dir)).rejects.toThrow(
+      /Study content sync stopped[\s\S]*learnvianotes[\s\S]*squatter@example.com[\s\S]*was not adopted and was not given the notes/,
+    )
+    expect(await db.note.count()).toBe(0)
+    expect(await db.legacyContentItem.count()).toBe(0)
     expect(await db.user.findUnique({ where: { email: PUBLISHER_EMAIL } })).toBeNull()
-    expect(await db.note.findUnique({ where: { id: ANALYSIS } })).toBeNull()
-    expect(await db.note.findUniqueOrThrow({ where: { id: noteId } })).toMatchObject({ title: 'Analysis of Algorithms', ownerId })
-    expect(await db.user.findUniqueOrThrow({ where: { id: ownerId } })).toMatchObject({
+    expect(await db.user.findUniqueOrThrow({ where: { id: squatterId } })).toMatchObject({
+      displayName: 'LearnViaNotes',
+      handle: 'learnvianotes',
+      email: 'squatter@example.com',
+      emailVerifiedAt: null,
+      passwordHash: null,
+    })
+    expect(await db.note.count({ where: { ownerId: squatterId } })).toBe(0)
+    rmSync(dir, { recursive: true })
+  }, 180_000)
+
+  it('does not adopt an existing notes@learnvianotes.in account', async () => {
+    await resetDatabase(url)
+    const notesId = newId()
+    const noteId = newId()
+    const drafted = new Date(Date.now() - 60_000)
+    await db.user.create({ data: { id: notesId, email: 'notes@learnvianotes.in', handle: 'learnvianotes', displayName: 'Already here' } })
+    await seedLegacy(noteId, notesId, drafted)
+    const held = stage([analysisPage()])
+
+    await expect(syncStudyContent(url, held)).rejects.toThrow(/Study content sync stopped[\s\S]*was not adopted and was not given the notes/)
+    expect(await db.user.findUnique({ where: { email: PUBLISHER_EMAIL } })).toBeNull()
+    expect(await db.note.count()).toBe(1)
+    expect(await db.note.findUniqueOrThrow({ where: { id: noteId } })).toMatchObject({ title: 'Old import', ownerId: notesId })
+    expect(await db.user.findUniqueOrThrow({ where: { id: notesId } })).toMatchObject({
       displayName: 'Already here',
       handle: 'learnvianotes',
       email: 'notes@learnvianotes.in',
       passwordHash: null,
     })
-    expect(await db.note.count()).toBe(907)
-    expect(await db.legacyContentItem.count()).toBe(907)
-    expect(await db.note.count({ where: { ownerId } })).toBe(907)
+    rmSync(held, { recursive: true })
 
-    const again = await syncStudyContent(url, CONTENT)
-    expect(again).toMatchObject({ created: 0, updated: 0, unchanged: 907, edited: 0, foreign: 0, trashed: 0 })
-    expect(await db.note.count()).toBe(907)
-    expect(await db.legacyContentItem.count()).toBe(907)
-  }, 900_000)
+    await resetDatabase(url)
+    const mailboxId = newId()
+    const oldId = newId()
+    const files = [analysisPage(), otherPage()]
+    const pages = files.map((file) => parseStudyPage(readFileSync(file, 'utf8'), file))
+    const dir = stage(files)
+    await db.user.create({ data: { id: mailboxId, email: 'notes@learnvianotes.in', handle: 'campusnotes', displayName: 'Notes mailbox' } })
+    await seedLegacy(oldId, mailboxId, new Date(Date.now() - 60_000))
+
+    const report = await syncStudyContent(url, dir)
+    expect(report.publisher).toEqual({ id: PUBLISHER, created: true })
+    expect(report.created).toBe(1)
+    expect(report.updated).toBe(1)
+    expect(await db.note.findUniqueOrThrow({ where: { id: oldId } })).toMatchObject({ ownerId: mailboxId, title: pages[0]!.title })
+    expect(await db.note.findUniqueOrThrow({ where: { id: pages[1]!.id } })).toMatchObject({ ownerId: PUBLISHER })
+    expect(await db.note.count({ where: { ownerId: mailboxId } })).toBe(1)
+    expect(await db.user.findUniqueOrThrow({ where: { id: mailboxId } })).toMatchObject({
+      displayName: 'Notes mailbox',
+      handle: 'campusnotes',
+      email: 'notes@learnvianotes.in',
+    })
+    expect(await db.user.findUniqueOrThrow({ where: { id: PUBLISHER } })).toMatchObject({
+      email: PUBLISHER_EMAIL,
+      handle: 'learnvianotes',
+      passwordHash: null,
+      emailVerifiedAt: null,
+    })
+    rmSync(dir, { recursive: true })
+  }, 180_000)
+
+  it('keeps the system publisher, and does not hand the notes to whoever holds the brand handle', async () => {
+    await resetDatabase(url)
+    const noteId = newId()
+    const drafted = new Date(Date.now() - 60_000)
+    await db.user.create({ data: { id: PUBLISHER, email: PUBLISHER_EMAIL, handle: 'learnvianotes', displayName: 'LearnViaNotes' } })
+    await seedLegacy(noteId, PUBLISHER, drafted)
+    const dir = stage([analysisPage()])
+
+    const report = await syncStudyContent(url, dir)
+    expect(report.publisher).toEqual({ id: PUBLISHER, created: false })
+    expect(report.updated).toBe(1)
+    expect(report.created).toBe(0)
+    expect(await db.note.findUnique({ where: { id: ANALYSIS } })).toBeNull()
+    expect(await db.note.findUniqueOrThrow({ where: { id: noteId } })).toMatchObject({ title: 'Analysis of Algorithms', ownerId: PUBLISHER })
+    expect(await db.user.count()).toBe(1)
+    rmSync(dir, { recursive: true })
+
+    await resetDatabase(url)
+    const squatterId = newId()
+    await db.user.create({ data: { id: PUBLISHER, email: PUBLISHER_EMAIL, handle: 'catalogue', displayName: 'LearnViaNotes' } })
+    await db.user.create({ data: { id: squatterId, email: 'squatter@example.com', handle: 'learnvianotes', displayName: 'LearnViaNotes' } })
+    const fresh = stage([analysisPage()])
+    const created = await syncStudyContent(url, fresh)
+    expect(created.publisher).toEqual({ id: PUBLISHER, created: false })
+    expect(created.created).toBe(1)
+    expect(await db.note.count({ where: { ownerId: squatterId } })).toBe(0)
+    expect(await db.note.count({ where: { ownerId: PUBLISHER } })).toBe(1)
+    rmSync(fresh, { recursive: true })
+  }, 180_000)
+
+  it('stops when another account already uses the system publisher id or email', async () => {
+    await resetDatabase(url)
+    const emailHolder = newId()
+    await db.user.create({ data: { id: emailHolder, email: PUBLISHER_EMAIL, handle: 'someoneelse', displayName: 'Not the publisher' } })
+    const byEmail = stage([analysisPage()])
+    await expect(syncStudyContent(url, byEmail)).rejects.toThrow(/Study content sync stopped[\s\S]*was not adopted/)
+    expect(await db.note.count()).toBe(0)
+    expect(await db.note.count({ where: { ownerId: emailHolder } })).toBe(0)
+    rmSync(byEmail, { recursive: true })
+
+    await resetDatabase(url)
+    await db.user.create({ data: { id: PUBLISHER, email: 'student@example.com', handle: 'studenthandle', displayName: 'Student' } })
+    const byId = stage([analysisPage()])
+    await expect(syncStudyContent(url, byId)).rejects.toThrow(/Study content sync stopped[\s\S]*student@example.com[\s\S]*was not adopted/)
+    expect(await db.note.count()).toBe(0)
+    expect(await db.user.findUniqueOrThrow({ where: { id: PUBLISHER } })).toMatchObject({ email: 'student@example.com', handle: 'studenthandle' })
+    rmSync(byId, { recursive: true })
+  }, 180_000)
 
   it('publishes every note from the pages, and leaves an edit and a note a person wrote', async () => {
     await resetDatabase(url)
@@ -80,6 +194,10 @@ describe('seeded study notes are visible', () => {
     expect(await db.note.count()).toBe(0)
     expect(await db.user.findUnique({ where: { email: PUBLISHER_EMAIL } })).toBeNull()
     rmSync(bad, { recursive: true })
+
+    // What email sign-up assigns for display name LearnViaNotes now that the brand handle is reserved.
+    const signupId = newId()
+    await db.user.create({ data: { id: signupId, email: 'unverified-learner@example.com', handle: 'learner', displayName: 'LearnViaNotes' } })
 
     const topic = await db.topic.findFirstOrThrow({ where: { slug: 'analysis', subject: { slug: 'dsa-basics' } }, select: { id: true } })
     const first = await syncStudyContent(url, CONTENT)
@@ -97,6 +215,12 @@ describe('seeded study notes are visible', () => {
     expect(notes).toHaveLength(907)
     expect(await db.note.count({ where: visibleNotesWhere(null) })).toBe(907)
     expect(notes.every((n) => n.ownerId === PUBLISHER)).toBe(true)
+    expect(await db.note.count({ where: { ownerId: signupId } })).toBe(0)
+    expect(await db.user.findUniqueOrThrow({ where: { id: signupId } })).toMatchObject({
+      displayName: 'LearnViaNotes',
+      handle: 'learner',
+      emailVerifiedAt: null,
+    })
     expect(new Set(notes.flatMap((n) => n.topics.map((t) => t.topic.subjectId)))).toEqual(new Set(subjects.map((s) => s.id)))
 
     const analysis = notes.find((n) => n.id === ANALYSIS)
@@ -121,6 +245,7 @@ describe('seeded study notes are visible', () => {
 
     const live = await db.card.count({ where: { deletedAt: null } })
     const second = await syncStudyContent(url, CONTENT)
+    expect(second.publisher).toEqual({ id: PUBLISHER, created: false })
     expect(second).toMatchObject({ created: 0, updated: 0, unchanged: 907, edited: 0, foreign: 0, trashed: 0 })
     expect(await db.note.count()).toBe(907)
     expect(await db.card.count({ where: { deletedAt: null } })).toBe(live)
@@ -162,6 +287,7 @@ describe('seeded study notes are visible', () => {
     expect(await db.note.findUniqueOrThrow({ where: { id: original.id } })).toMatchObject({ title: original.title })
     expect(await db.note.findUniqueOrThrow({ where: { id: ANALYSIS } })).toMatchObject({ title: 'Edited in the app' })
     expect(await db.note.findUniqueOrThrow({ where: { id: noteId } })).toMatchObject({ title: 'My own note', ownerId: userId })
+    expect(await db.note.count({ where: { ownerId: signupId } })).toBe(0)
     expect(await db.note.count()).toBe(908)
   }, 900_000)
 })

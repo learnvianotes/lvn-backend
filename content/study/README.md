@@ -34,9 +34,9 @@ Editing a page and deploying updates that note while it is still the untouched s
 
 ## Publisher
 
-New notes belong to the system publisher `publisher@learnvianotes.invalid` (handle `learnvianotes`) when no seeded catalogue and no `notes@learnvianotes.in` account or `learnvianotes` handle exists yet. That address is on the reserved `.invalid` domain, so it cannot receive mail. The row has no password, no verified email, no birth date and no verification flag. Sign-in, password reset, email-link sign-up and provider linking are refused in code for that id and that address.
+New notes belong to the system publisher `publisher@learnvianotes.invalid` (id `019a118c-f480-7000-8000-000000000001`, handle `learnvianotes`, display name LearnViaNotes). That address is on the reserved `.invalid` domain, so it cannot receive mail. The row has no password, no verified email, no birth date and no verification flag. Sign-in, password reset, email-link sign-up and provider linking are refused in code for that id and that address.
 
-If seeded notes already exist, their owner is kept. Otherwise an existing `notes@learnvianotes.in` account, then the handle `learnvianotes`, is reused and not modified. A reused account is not blocked from sign-in. Confirm before deploy that it is the publisher you intend.
+The sync uses that account only. If it already owns seeded notes, it stays the publisher. If the row is missing, the sync creates it. No other account is adopted, including `notes@learnvianotes.in` and anyone who already has the handle `learnvianotes`. When that handle belongs to someone else and the system publisher does not exist yet, the sync throws and the deploy stops. The notes are not given to that account. Sign-up will not assign `learnvianotes`, `learn-via-notes`, `lvn`, `admin`, `support`, `official`, `system`, `publisher`, or the same kind of handle.
 
 ## Deploy
 
