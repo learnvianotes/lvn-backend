@@ -2,6 +2,7 @@ import { Inject, UseGuards } from '@nestjs/common'
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql'
 import { CurrentViewer, SignedInGuard, type RequestContext, type Viewer } from '@lvn-backend/auth-guard'
 import { withUserErrors } from '@lvn-backend/errors'
+import { AdminService } from '../application/admin.service'
 import { InstitutionalEmailService } from '../application/institutional-email.service'
 import { OAuthService } from '../application/oauth.service'
 import { RegistrationService } from '../application/registration.service'
@@ -10,8 +11,11 @@ import { deliverSession, deviceOf, refreshCookieOptions, type RefreshCookieOptio
 import { UsersService } from '../application/users.service'
 import type {
   AuthPayload,
+  AuthSettings,
+  AuthSettingsPayload,
   MutationCompleteRegistrationArgs,
   MutationOauthExchangeArgs,
+  MutationSetGoogleSignInEnabledArgs,
   MutationSetInstitutionalEmailArgs,
   MutationSignInWithGoogleArgs,
   MutationVerifyInstitutionalEmailArgs,
@@ -28,28 +32,43 @@ export class RegistrationResolver {
     private readonly registration: RegistrationService,
     private readonly institutional: InstitutionalEmailService,
     private readonly users: UsersService,
+    private readonly admin: AdminService,
     @Inject(USERS_CONFIG) config: UsersConfig,
   ) {
     this.cookie = refreshCookieOptions(config.jwtIssuer)
   }
 
   @Query('signInOptions')
-  signInOptions(): SignInOptions {
+  signInOptions(): Promise<SignInOptions> {
     return this.oauth.options()
+  }
+
+  @Query('authSettings')
+  @UseGuards(SignedInGuard)
+  authSettings(@CurrentViewer() viewer: Viewer): Promise<AuthSettings> {
+    return this.admin.authSettings(viewer.userId)
+  }
+
+  @Mutation('setGoogleSignInEnabled')
+  @UseGuards(SignedInGuard)
+  setGoogleSignInEnabled(@Args() { input }: MutationSetGoogleSignInEnabledArgs, @CurrentViewer() viewer: Viewer): Promise<AuthSettingsPayload> {
+    return withUserErrors<AuthSettingsPayload>(async () => ({ settings: await this.admin.setGoogleSignInEnabled(viewer.userId, input.enabled) }), { settings: null })
   }
 
   @Mutation('signInWithGoogle')
   signInWithGoogle(@Args() { input }: MutationSignInWithGoogleArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
     return withUserErrors<AuthPayload>(async () => ({
       session: await deliverSession(ctx, this.cookie, this.users, await this.oauth.signInWithGoogle(input.idToken, deviceOf(ctx), ctx.requestId)),
-    }), { session: null })
+      emailLinkPending: false,
+    }), { session: null, emailLinkPending: false })
   }
 
   @Mutation('oauthExchange')
   oauthExchange(@Args() { input }: MutationOauthExchangeArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
     return withUserErrors<AuthPayload>(async () => ({
       session: await deliverSession(ctx, this.cookie, this.users, await this.oauth.exchange(input.provider, input, deviceOf(ctx), ctx.requestId)),
-    }), { session: null })
+      emailLinkPending: false,
+    }), { session: null, emailLinkPending: false })
   }
 
   @Mutation('completeRegistration')

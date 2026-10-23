@@ -31,7 +31,7 @@ import { TeacherProfileFieldsResolver, TeacherProfileResolver } from './graphql/
 import { StudentIdVerificationPublicResolver, StudentIdVerificationResolver } from './graphql/college-id.resolver'
 import { TeacherStatusResolver, VerificationResolver } from './graphql/verification.resolver'
 import { UserReferenceResolver } from './graphql/user-reference.resolver'
-import { ViewerResolver } from './graphql/viewer.resolver'
+import { UserSignInMethodsResolver, ViewerResolver } from './graphql/viewer.resolver'
 import { USERS_CONFIG, type UsersConfig } from './users.config'
 import { AccountDeletionService } from './application/account-deletion.service'
 import { AccountResolver } from './graphql/account.resolver'
@@ -80,6 +80,7 @@ export class UsersModule {
         TeacherProfileService,
         SkillsImportService,
         ViewerResolver,
+        UserSignInMethodsResolver,
         SocialResolver,
         PeopleResolver,
         TeacherProfileResolver,

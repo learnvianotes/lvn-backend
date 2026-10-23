@@ -4,6 +4,8 @@ import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { domainAndParents } from '../domain/email-domains'
+import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { AppSettingsService } from './app-settings.service'
 import { AuditService } from './audit.service'
 import { PolicyService } from './policy.service'
 
@@ -17,8 +19,22 @@ export class AdminService {
     private readonly db: PrismaService,
     private readonly policy: PolicyService,
     private readonly audit: AuditService,
+    private readonly settings: AppSettingsService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
+    @Inject(USERS_CONFIG) private readonly config: UsersConfig,
   ) {}
+
+  /** Whether Google sign-in can run here. The project id is an environment variable; the switch is `AppSetting`. */
+  async authSettings(adminId: string): Promise<{ googleConfigured: boolean; googleEnabled: boolean }> {
+    await this.assertAdmin(adminId)
+    return { googleConfigured: !!this.config.firebaseProjectId, googleEnabled: await this.settings.googleSignInEnabled() }
+  }
+
+  /** Turns Google sign-in on or off without a deploy. Has no effect until FIREBASE_PROJECT_ID is set. */
+  async setGoogleSignInEnabled(adminId: string, enabled: boolean): Promise<{ googleConfigured: boolean; googleEnabled: boolean }> {
+    const googleEnabled = await this.settings.setGoogleSignInEnabled(adminId, enabled)
+    return { googleConfigured: !!this.config.firebaseProjectId, googleEnabled }
+  }
 
   async assertAdmin(userId: string): Promise<void> {
     const actor = await this.policy.actor(userId)

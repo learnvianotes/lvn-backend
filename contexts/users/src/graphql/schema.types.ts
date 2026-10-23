@@ -29,6 +29,24 @@ export interface ApplyToTeachInput {
 export interface AuthPayload {
   session: Session | null
   userErrors: Array<UserError>
+  /** True only from signUp, when this email already belongs to an account with no password (for example one created with
+   * Google). A link was emailed; verifyEmail with that token attaches the password and does not sign anyone in. No
+   * session is returned, and signIn with the new password fails until the link is used. False for every other result,
+   * including a normal sign-up and "an account already exists, sign in instead". */
+  emailLinkPending: boolean
+}
+
+/** Whether Google sign-in can run. The Firebase project id is an environment variable; the switch is AppSetting google_sign_in (ADR-0100). */
+export interface AuthSettings {
+  /** FIREBASE_PROJECT_ID is set. The id itself is not returned. */
+  googleConfigured: boolean
+  /** Platform-admin switch (AppSetting google_sign_in, default on). Google is offered only when this is true and googleConfigured is true. */
+  googleEnabled: boolean
+}
+
+export interface AuthSettingsPayload {
+  settings: AuthSettings | null
+  userErrors: Array<UserError>
 }
 
 /** After a provider sign-in (no signUp call): the same details, collected once */
@@ -213,6 +231,10 @@ export interface MutationSetStudentIdVerificationEnabledArgs {
 
 export interface MutationUpdateProfileArgs {
   input: UpdateProfileInput
+}
+
+export interface MutationSetGoogleSignInEnabledArgs {
+  input: SetGoogleSignInEnabledInput
 }
 
 export interface MutationSignInWithGoogleArgs {
@@ -522,6 +544,10 @@ export interface SetGlobalRoleInput {
   role: GlobalRole
 }
 
+export interface SetGoogleSignInEnabledInput {
+  enabled: boolean
+}
+
 export interface SetInstitutionalEmailInput {
   email: string
 }
@@ -536,9 +562,13 @@ export interface SignInInput {
   password: string
 }
 
-/** Which sign-in methods this deployment offers */
+/** A way this account can sign in. EMAIL is a password; the others are linked provider identities (ADR-0100). */
+export type SignInMethod = 'EMAIL' | 'GOOGLE' | 'GITHUB' | 'LINKEDIN'
+
+/** Which sign-in methods this deployment offers. Read this before drawing the buttons. */
 export interface SignInOptions {
   emailPassword: boolean
+  /** False when FIREBASE_PROJECT_ID is unset, or a platform admin has turned Google sign-in off */
   google: boolean
   github: boolean
   linkedin: boolean
@@ -716,6 +746,8 @@ export interface User {
   limits?: Array<Limit> | null
   /** Viewer only: data from the old learnvianotes.in site (ADR-0023) */
   legacyImport?: LegacyImport | null
+  /** Viewer only (ADR-0100): ways this account can sign in. Null for anyone else, so account settings can list them. */
+  signInMethods?: Array<SignInMethod> | null
   /** Viewer only (ADR-0017): the confirmed address, or the one waiting for its code */
   institutionalEmail?: string | null
   /** Viewer only */

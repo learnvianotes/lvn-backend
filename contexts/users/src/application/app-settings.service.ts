@@ -8,8 +8,15 @@ import { PolicyService } from './policy.service'
 export const STUDENT_ID_VERIFICATION_SETTING = 'student_id_verification'
 
 /**
+ * ADR-0100. Google sign-in stays available on a deployment that already set FIREBASE_PROJECT_ID, so this row is
+ * inserted on. A missing row is treated as on for the same reason. An admin turns it off by writing `enabled: false`.
+ */
+export const GOOGLE_SIGN_IN_SETTING = 'google_sign_in'
+
+/**
  * Switches a platform admin changes from the admin tools, stored as data. Not environment variables: turning college-ID
- * verification on does not need a deploy, and it does not turn general uploads on (ADR-0097).
+ * verification on does not need a deploy, and it does not turn general uploads on (ADR-0097). Google sign-in's switch
+ * is the same table (ADR-0100); `FIREBASE_PROJECT_ID` stays the only environment value for that provider.
  */
 @Injectable()
 export class AppSettingsService {
@@ -29,6 +36,29 @@ export class AppSettingsService {
     await this.assertAdmin(adminId)
     const row = await this.db.appSetting.findUnique({ where: { key: STUDENT_ID_VERIFICATION_SETTING } })
     return { enabled: row?.enabled ?? false, updatedAt: row?.updatedAt ?? null }
+  }
+
+  /** Public to sign-in. True until an admin writes the row off, including when the row has never been written. */
+  async googleSignInEnabled(): Promise<boolean> {
+    const row = await this.db.appSetting.findUnique({ where: { key: GOOGLE_SIGN_IN_SETTING }, select: { enabled: true } })
+    return row?.enabled ?? true
+  }
+
+  async setGoogleSignInEnabled(adminId: string, enabled: boolean): Promise<boolean> {
+    await this.assertAdmin(adminId)
+    await this.db.appSetting.upsert({
+      where: { key: GOOGLE_SIGN_IN_SETTING },
+      create: { key: GOOGLE_SIGN_IN_SETTING, enabled, updatedBy: adminId },
+      update: { enabled, updatedBy: adminId },
+    })
+    // targetId is a uuid column. The setting key is not one, so it lives in the metadata.
+    await this.audit.record({
+      actorId: adminId,
+      action: 'settings.google_sign_in',
+      targetType: 'AppSetting',
+      metadata: { key: GOOGLE_SIGN_IN_SETTING, enabled },
+    })
+    return enabled
   }
 
   async setStudentIdVerificationEnabled(adminId: string, enabled: boolean): Promise<void> {

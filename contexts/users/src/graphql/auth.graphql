@@ -27,6 +27,13 @@ type Session {
 type AuthPayload {
   session: Session
   userErrors: [UserError!]!
+  """
+  True only from signUp, when this email already belongs to an account with no password (for example one created with
+  Google). A link was emailed; verifyEmail with that token attaches the password and does not sign anyone in. No
+  session is returned, and signIn with the new password fails until the link is used. False for every other result,
+  including a normal sign-up and "an account already exists, sign in instead".
+  """
+  emailLinkPending: Boolean!
 }
 
 """

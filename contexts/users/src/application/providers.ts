@@ -2,13 +2,31 @@ import { resolveMx } from 'node:dns/promises'
 import { Logger } from '@nestjs/common'
 import { initializeApp, type App } from 'firebase-admin/app'
 
-/** What a sign-in provider proved about the person. */
+/** What a sign-in provider proved about the person. `providerSubject` is the stable id at that provider. */
 export interface ProviderIdentity {
   provider: 'GOOGLE' | 'GITHUB' | 'LINKEDIN'
-  providerUserId: string
+  providerSubject: string
   email: string | null
   emailVerified: boolean
   name: string | null
+}
+
+/** The claims from Firebase `verifyIdToken` that decide whether a Google sign-in can be linked (ADR-0007, ADR-0100). */
+export interface GoogleTokenClaims {
+  uid: string
+  email?: string
+  email_verified?: boolean
+  name?: unknown
+  firebase?: { sign_in_provider?: string }
+}
+
+/**
+ * A Google identity we will sign in. Null unless the token is a Google sign-in with a verified email — an unverified
+ * address is never used to find or create an account.
+ */
+export function identityFromGoogleClaims(t: GoogleTokenClaims): ProviderIdentity | null {
+  if (t.firebase?.sign_in_provider !== 'google.com' || typeof t.email !== 'string' || t.email.trim() === '' || t.email_verified !== true) return null
+  return { provider: 'GOOGLE', providerSubject: t.uid, email: t.email, emailVerified: true, name: typeof t.name === 'string' ? t.name : null }
 }
 
 /** Verifies a Firebase ID token from Google sign-in (ADR-0007). Bound to Firebase in production, a fake in tests. */
@@ -29,8 +47,7 @@ export class FirebaseGoogleIdTokens implements GoogleIdTokens {
       // Loaded on first use: firebase-admin/auth pulls in an ES-module-only dependency (jose).
       const { getAuth } = await import('firebase-admin/auth')
       const t = await getAuth(this.app).verifyIdToken(idToken)
-      if (t.firebase.sign_in_provider !== 'google.com' || !t.email || t.email_verified !== true) return null
-      return { provider: 'GOOGLE', providerUserId: t.uid, email: t.email, emailVerified: true, name: typeof t.name === 'string' ? t.name : null }
+      return identityFromGoogleClaims(t)
     } catch {
       return null
     }

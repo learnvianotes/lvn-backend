@@ -17,6 +17,8 @@ export const LIMITS = {
   signInFailuresPerNetwork: { max: 50, windowSeconds: 15 * 60 },
   passwordReset: { max: 3, windowSeconds: 60 * 60 },
   verifyEmailResend: { max: 3, windowSeconds: 60 * 60 },
+  /** Emails that attach a password to an account that already exists (ADR-0100). */
+  linkEmail: { max: 3, windowSeconds: 60 * 60 },
 } as const
 
 /** §7.1: at least 10 characters; the upper bound keeps hashing cheap for absurd inputs. */

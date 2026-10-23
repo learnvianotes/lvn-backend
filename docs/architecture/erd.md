@@ -54,7 +54,7 @@ erDiagram
     uuid id PK
     uuid userId FK
     enum provider "GOOGLE | GITHUB | LINKEDIN"
-    text providerUserId "GOOGLE: Firebase UID (ADR-0007)"
+    text providerSubject "GOOGLE: Firebase UID (ADR-0007, ADR-0100)"
     bytea encryptedRefreshToken
   }
   DeviceToken {
@@ -109,7 +109,7 @@ erDiagram
     text reason
   }
   AppSetting {
-    text key PK "student_id_verification (ADR-0099); missing row means off"
+    text key PK "student_id_verification (ADR-0099, missing means off); google_sign_in (ADR-0100, inserted on)"
     bool enabled
     uuid updatedBy
     timestamptz updatedAt

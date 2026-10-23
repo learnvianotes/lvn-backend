@@ -8,6 +8,8 @@ export const MAILER = Symbol('MAILER')
 export interface MailTemplates {
   /** Confirm the sign-in email of a password account */
   verifyEmail: { displayName: string; link: string }
+  /** Confirm adding a password to an account that already signs in another way (ADR-0100) */
+  linkEmail: { displayName: string; link: string }
   resetPassword: { displayName: string; link: string; expiresInMinutes: number }
   /** Sent after a password change or reset, so an unexpected change is noticed */
   passwordChanged: { displayName: string }

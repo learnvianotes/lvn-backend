@@ -782,6 +782,36 @@ type AuthPayload
 {
   session: Session
   userErrors: [UserError!]!
+
+  """
+  True only from signUp, when this email already belongs to an account with no password (for example one created with
+  Google). A link was emailed; verifyEmail with that token attaches the password and does not sign anyone in. No
+  session is returned, and signIn with the new password fails until the link is used. False for every other result,
+  including a normal sign-up and "an account already exists, sign in instead".
+  """
+  emailLinkPending: Boolean!
+}
+
+"""
+Whether Google sign-in can run. The Firebase project id is an environment variable; the switch is AppSetting google_sign_in (ADR-0100).
+"""
+type AuthSettings
+  @join__type(graph: USERS)
+{
+  """FIREBASE_PROJECT_ID is set. The id itself is not returned."""
+  googleConfigured: Boolean!
+
+  """
+  Platform-admin switch (AppSetting google_sign_in, default on). Google is offered only when this is true and googleConfigured is true.
+  """
+  googleEnabled: Boolean!
+}
+
+type AuthSettingsPayload
+  @join__type(graph: USERS)
+{
+  settings: AuthSettings
+  userErrors: [UserError!]!
 }
 
 type BuddyTogether
@@ -3545,6 +3575,11 @@ type Mutation
 
   """Decline the old site's data, or remove it after it was attached"""
   declineLegacyData: OkPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins. Turns Google sign-in on or off without a deploy. Does nothing until FIREBASE_PROJECT_ID is set.
+  """
+  setGoogleSignInEnabled(input: SetGoogleSignInEnabledInput!): AuthSettingsPayload! @join__field(graph: USERS)
   signInWithGoogle(input: SignInWithGoogleInput!): AuthPayload! @join__field(graph: USERS)
   oauthExchange(input: OAuthExchangeInput!): AuthPayload! @join__field(graph: USERS)
   completeRegistration(input: CompleteRegistrationInput!): OkPayload! @join__field(graph: USERS)
@@ -4757,6 +4792,11 @@ type Query
   signInOptions: SignInOptions! @join__field(graph: USERS)
 
   """
+  Platform admins. Google's on/off switch and whether a Firebase project is configured.
+  """
+  authSettings: AuthSettings! @join__field(graph: USERS)
+
+  """
   A person by handle (with or without @) or by id; null when there is none, or when they have no public profile (restricted minors, ADR-0043)
   """
   userByHandle(handle: String!): User @join__field(graph: USERS)
@@ -5887,6 +5927,12 @@ input SetGlobalRoleInput
   role: GlobalRole!
 }
 
+input SetGoogleSignInEnabledInput
+  @join__type(graph: USERS)
+{
+  enabled: Boolean!
+}
+
 input SetGroupRepositoryInput
   @join__type(graph: CORE)
 {
@@ -5983,11 +6029,29 @@ input SignInInput
   password: String!
 }
 
-"""Which sign-in methods this deployment offers"""
+"""
+A way this account can sign in. EMAIL is a password; the others are linked provider identities (ADR-0100).
+"""
+enum SignInMethod
+  @join__type(graph: USERS)
+{
+  EMAIL @join__enumValue(graph: USERS)
+  GOOGLE @join__enumValue(graph: USERS)
+  GITHUB @join__enumValue(graph: USERS)
+  LINKEDIN @join__enumValue(graph: USERS)
+}
+
+"""
+Which sign-in methods this deployment offers. Read this before drawing the buttons.
+"""
 type SignInOptions
   @join__type(graph: USERS)
 {
   emailPassword: Boolean!
+
+  """
+  False when FIREBASE_PROJECT_ID is unset, or a platform admin has turned Google sign-in off
+  """
   google: Boolean!
   github: Boolean!
   linkedin: Boolean!
@@ -6734,6 +6798,11 @@ type User
 
   """Viewer only: data from the old learnvianotes.in site (ADR-0023)"""
   legacyImport: LegacyImport @join__field(graph: USERS)
+
+  """
+  Viewer only (ADR-0100): ways this account can sign in. Null for anyone else, so account settings can list them.
+  """
+  signInMethods: [SignInMethod!] @join__field(graph: USERS)
 
   """
   Viewer only (ADR-0017): the confirmed address, or the one waiting for its code
