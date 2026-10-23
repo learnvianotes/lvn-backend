@@ -5,6 +5,7 @@ import { AUDIT, POLICY, type Audit, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
 import { presetOf, PROVIDER_PRESETS, ROUTABLE_TASKS } from '../domain/catalog'
+import { classifyModels, rejectionFor, useForTask, type AiModelUse } from '../domain/model-capabilities'
 import { ProviderError, type AiProviderAdapter, type AiProviderKind } from '../domain/provider'
 import { AiGateway } from './ai-gateway'
 import { AiKeys } from './ai-keys'
@@ -119,6 +120,8 @@ export class AiSettingsService {
     const embedModel = trimmed(input.embedModel)
     for (const [field, model] of [['chatModel', chatModel], ['embedModel', embedModel]] as const) if (model && model.length > 200) throw Errors.validation('That model name is too long.', ['input', field])
     if (embedModel && !preset.canEmbed) throw Errors.validation(`${preset.name} has no embeddings: leave the embedding model empty.`, ['input', 'embedModel'])
+    rejectUnlessSupported(chatModel, input.kind, 'CHAT', 'chatModel')
+    rejectUnlessSupported(embedModel, input.kind, 'EMBEDDING', 'embedModel')
     const prices = { inputMicroUsdPerMTok: price(input.inputMicroUsdPerMTok, 'inputMicroUsdPerMTok'), outputMicroUsdPerMTok: price(input.outputMicroUsdPerMTok, 'outputMicroUsdPerMTok'), embedMicroUsdPerMTok: price(input.embedMicroUsdPerMTok, 'embedMicroUsdPerMTok') }
     const key = apiKey ? { apiKeyCipher: this.keys.seal(apiKey), apiKeyHint: apiKey.slice(-4) } : input.clearApiKey ? { apiKeyCipher: null, apiKeyHint: null } : {}
     const data = { label, baseUrl, mayReceivePrivate: input.mayReceivePrivate, enabled: input.enabled, chatModel, embedModel, ...prices, ...key }
@@ -163,6 +166,7 @@ export class AiSettingsService {
     if (input.connectionId && !connection) throw Errors.notFound('That connection no longer exists.')
     if (connection && input.task === 'EMBED' && !presetOf(connection.kind).canEmbed) throw Errors.validation(`${presetOf(connection.kind).name} has no embeddings.`, ['input', 'connectionId'])
     if (connection && input.task === 'TRANSCRIBE' && !presetOf(connection.kind).canHear) throw Errors.validation(`${presetOf(connection.kind).name} cannot hear recordings.`, ['input', 'connectionId'])
+    if (connection) rejectUnlessSupported(model, connection.kind, useForTask(input.task), 'model')
     const data = { connectionId: connection?.id ?? null, model, inputMicroUsdPerMTok: price(input.inputMicroUsdPerMTok, 'inputMicroUsdPerMTok'), outputMicroUsdPerMTok: price(input.outputMicroUsdPerMTok, 'outputMicroUsdPerMTok') }
     await this.db.aiModelRoute.upsert({ where: { task: input.task }, create: { task: input.task, ...data }, update: data })
     await this.audit.record({ actorId: adminId, action: 'ai.route.saved', targetType: 'AiModelRoute', metadata: { task: input.task, connection: connection?.label ?? null, model } })
@@ -178,13 +182,17 @@ export class AiSettingsService {
     return this.settings(adminId)
   }
 
-  /** Every model the connection's account lists, for the page's model fields; empty when it lists none or fails. */
-  async listModels(adminId: string, id: string): Promise<string[]> {
+  /**
+   * Every model the connection's account lists, plus the select for each use. The full list drops nothing. A picker
+   * lists only models this app can call for that use. Empty when the provider lists none or the call fails.
+   */
+  async listModels(adminId: string, id: string) {
     await this.assertAdmin(adminId)
     const row = await this.db.aiConnection.findUnique({ where: { id } })
     if (!row) throw Errors.notFound('This connection no longer exists.')
     const adapter = this.providers.adapterFor(row)
-    return adapter?.models ? await adapter.models(TEST_TIMEOUT_MS).catch(() => [] as string[]) : []
+    const ids = adapter?.models ? await adapter.models(TEST_TIMEOUT_MS).catch(() => [] as string[]) : []
+    return classifyModels(ids, row.kind)
   }
 
   /**
@@ -233,6 +241,12 @@ export class AiSettingsService {
     const actor = await this.policy.actor(userId)
     if (actor?.globalRole !== GlobalRole.PLATFORM_ADMIN) throw Errors.forbidden('Only platform admins choose AI providers.')
   }
+}
+
+function rejectUnlessSupported(model: string | null, provider: AiProviderKind, use: AiModelUse, field: string) {
+  if (!model) return
+  const reason = rejectionFor(model, provider, use)
+  if (reason) throw Errors.validation(reason, ['input', field])
 }
 
 function price(value: number | null | undefined, field: string): number {
