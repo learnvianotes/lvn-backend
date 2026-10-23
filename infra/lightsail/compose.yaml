@@ -80,7 +80,7 @@ services:
     restart: 'no'
     logging: *logging
     mem_limit: 256m
-    command: ['node', 'node_modules/prisma/build/index.js', 'migrate', 'deploy']
+    command: ['node', 'scripts/migrate-and-sync.mjs']
     env_file: [env/backend.env]
     depends_on:
       postgres: { condition: service_healthy }

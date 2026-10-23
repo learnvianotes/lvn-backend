@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common'
 import { HttpProviderError, mediaTypeOf, ProviderError, UnsupportedInput, type AiProviderAdapter, type ChatMessage, type ChatRequest, type ChatResult, type EmbedResult } from '../domain/provider'
 import { callProvider, serverSentEvents } from './http'
 
@@ -22,6 +23,20 @@ interface StreamEvent {
 /** Long enough for the longest task (a revision sheet, new notes); a call may ask for less. */
 const DEFAULT_MAX_TOKENS = 8192
 const ANSWER_TOOL = 'answer'
+/** Asked of a model that will not take a forced tool, so it still calls the one tool instead of chatting. */
+const TOOL_NUDGE = 'Give the answer only by calling the answer tool. Do not reply with text.'
+const LOOSE_TOOL_DESCRIPTION = 'Call this tool with the answer in the required format. Do not reply with text.'
+
+/** Claude Sonnet 5.5, Opus 5.5, Haiku 5.5 and others answer 400: tool_choice type "tool" and "any" are not supported. */
+const forcedToolRefused = (body: string) => {
+  const text = body.toLowerCase()
+  return text.includes('tool_choice') && (text.includes('not supported') || (text.includes('"tool"') && text.includes('any')))
+}
+
+const toolRequest = (schema: object, loose: boolean) => ({
+  tools: [{ name: ANSWER_TOOL, description: loose ? LOOSE_TOOL_DESCRIPTION : 'Give the answer in the required format.', input_schema: schema }],
+  tool_choice: loose ? { type: 'auto' } : { type: 'tool', name: ANSWER_TOOL },
+})
 
 const toMessage = (m: ChatMessage): { role: string; content: string | Block[] } => {
   if (!m.images?.length) return { role: m.role, content: m.content }
@@ -35,12 +50,18 @@ const toMessage = (m: ChatMessage): { role: string; content: string | Block[] } 
 }
 
 /**
- * Anthropic's Messages API (ADR-0065). A structured answer is the input of one tool the model must call, whose input
- * schema is the answer's JSON schema (a schema that is not an object is wrapped in one); text answers stream. Claude
- * has no embeddings and does not take recordings.
+ * Anthropic's Messages API (ADR-0065). A structured answer is the input of one tool, whose input schema is the
+ * answer's JSON schema (a schema that is not an object is wrapped in one). Older models are told to call it
+ * (`tool_choice` type `tool`). Models that reject a forced tool (Claude Sonnet 5.5, Opus 5.5, Haiku 5.5 and others:
+ * type `tool` and `any` are not supported) are asked once more with `tool_choice` auto and that same single tool.
+ * Native JSON schema (`output_config`) is not used: our schemas carry constraints those outputs reject, and the
+ * gateway checks the answer. Text answers stream. Claude has no embeddings and does not take recordings.
  */
 export class AnthropicProvider implements AiProviderAdapter {
   readonly name = 'ANTHROPIC'
+  private readonly log = new Logger('AnthropicProvider')
+  /** Models already seen to reject a forced tool, so the next call starts in the mode they accept. */
+  private readonly looseTools = new Set<string>()
 
   constructor(
     private readonly baseUrl: string,
@@ -53,13 +74,15 @@ export class AnthropicProvider implements AiProviderAdapter {
     const wrapped = !!request.schema && (request.schema as { type?: unknown }).type !== 'object'
     const schema = request.schema && (wrapped ? { type: 'object', properties: { answer: request.schema }, required: ['answer'] } : request.schema)
     const stream = !!onDelta && !schema
+    const loose = !!schema && this.looseTools.has(request.model)
+    const systemText = [system, loose ? TOOL_NUDGE : ''].filter(Boolean).join('\n\n')
     const body: Record<string, unknown> = {
       model: request.model,
       max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
-      ...(system ? { system } : {}),
+      ...(systemText ? { system: systemText } : {}),
       messages: request.messages.filter((m) => m.role !== 'system').map(toMessage),
       ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-      ...(schema ? { tools: [{ name: ANSWER_TOOL, description: 'Give the answer in the required format.', input_schema: schema }], tool_choice: { type: 'tool', name: ANSWER_TOOL } } : {}),
+      ...(schema ? toolRequest(schema, loose) : {}),
       stream,
     }
     const res = await this.send(body, request.timeoutMs)
@@ -105,15 +128,17 @@ export class AnthropicProvider implements AiProviderAdapter {
   }
 
   /**
-   * Any model the account lists can answer: a model that refuses `temperature` is asked again without it, and one that
-   * writes fewer tokens than asked for (older Claude models stop at 4096) is asked again for its own maximum.
+   * Any model the account lists can answer. A model that refuses `temperature` is asked again without it, and one that
+   * writes fewer tokens than asked for (older Claude models stop at 4096) is asked again for its own maximum. A model
+   * that rejects a forced tool is asked once more with `tool_choice` auto and the same single tool.
    */
   private async send(body: Record<string, unknown>, timeoutMs: number): Promise<Response> {
     for (let attempt = 0; ; attempt++) {
       try {
         return await this.post('/v1/messages', body, timeoutMs)
       } catch (e) {
-        if (attempt >= 2 || !(e instanceof HttpProviderError && e.status === 400)) throw e
+        // temperature, an output cap and a forced tool can each be refused.
+        if (attempt >= 3 || !(e instanceof HttpProviderError && e.status === 400)) throw e
         if (e.body.includes('temperature') && body.temperature !== undefined) {
           delete body.temperature
           continue
@@ -123,9 +148,27 @@ export class AnthropicProvider implements AiProviderAdapter {
           body.max_tokens = cap
           continue
         }
+        if (forcedToolRefused(e.body) && this.loosenTools(body)) continue
         throw e
       }
     }
+  }
+
+  /** Switch this request to the one tool with `tool_choice` auto, and remember the model. */
+  private loosenTools(body: Record<string, unknown>): boolean {
+    const choice = body.tool_choice as { type?: string } | undefined
+    if (choice?.type !== 'tool' && choice?.type !== 'any') return false
+    const schema = (body.tools as { input_schema?: object }[] | undefined)?.[0]?.input_schema
+    if (!schema) return false
+    Object.assign(body, toolRequest(schema, true))
+    const system = typeof body.system === 'string' ? body.system : ''
+    if (!system.includes(TOOL_NUDGE)) body.system = system ? `${system}\n\n${TOOL_NUDGE}` : TOOL_NUDGE
+    const model = String(body.model ?? '')
+    if (model && !this.looseTools.has(model)) {
+      this.looseTools.add(model)
+      this.log.warn(`Claude model ${model} rejects a forced tool; asking with tool_choice auto`)
+    }
+    return true
   }
 
   private url(path: string) {

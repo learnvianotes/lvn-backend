@@ -3,6 +3,7 @@ import { usersTypeDefs } from './graphql/schema'
 import { UsersModule } from './users.module'
 
 export { UsersModule }
+export { STUDY_PUBLISHER_EMAIL, STUDY_PUBLISHER_ID, isStudyPublisher } from './domain/study-publisher'
 export { usersConfigFrom, type UsersConfig } from './users.config'
 export { UsersMaintenance } from './application/maintenance'
 /** ADR-0023 one-off snapshot of the old site, run by apps/worker's `legacy:snapshot` command. */
