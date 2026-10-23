@@ -121,6 +121,8 @@ enum LimitKey {
   EXPORTS_DAILY
   IMPORTS_DAILY
   ORG_SEATS
+  NOTES_OWNED
+  AI_REQUESTS_DAILY
 
   @@schema("users")
 }

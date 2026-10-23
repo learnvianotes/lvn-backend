@@ -6,6 +6,8 @@ export { NotesModule }
 export { notesConfigFrom, type NotesConfig } from './notes.config'
 /** Implementation of the FILES facade, bound by the composition roots. */
 export { FilesService } from './application/files.service'
+/** Notes, storage, PDF pages and imports counted against a plan (NOTES_PLAN_USAGE). */
+export { NotesPlanUsage } from './application/plan-usage'
 /** Note and storage totals for the admin dashboard (ADR-0101). */
 export { NotesAdminStats } from './application/admin-stats'
 /** Implementation of the NOTE_MODERATION facade (ADR-0037), bound by the composition roots. */

@@ -146,14 +146,14 @@ export const LegacyImportStatus = { NOT_FOUND: 'NOT_FOUND', AVAILABLE: 'AVAILABL
 export type LegacyImportStatus = (typeof LegacyImportStatus)[keyof typeof LegacyImportStatus]
 
 /**
- * Every usage limit, read from the user's (or organisation's) plan — never written in code (ADR-0024). Only the
- * FREE plan exists today; paid plans and organisation seat limits come later without code changes.
+ * Every usage limit, read from the user's plan — never a number written at the call site (ADR-0024).
+ * A missing row means unlimited. NOTES_OWNED and AI_REQUESTS_DAILY are the caps a person can see on a plan.
  */
 export const LimitKey = {
   STORAGE_BYTES: 'STORAGE_BYTES', AI_TOKENS_DAILY: 'AI_TOKENS_DAILY', PDF_PAGES_MONTHLY: 'PDF_PAGES_MONTHLY',
   GROUPS_OWNED: 'GROUPS_OWNED', GROUP_MEMBERS: 'GROUP_MEMBERS', CLASSROOMS_OWNED: 'CLASSROOMS_OWNED',
   CLASSROOM_MEMBERS: 'CLASSROOM_MEMBERS', PROJECT_WORKSPACES: 'PROJECT_WORKSPACES', EXPORTS_DAILY: 'EXPORTS_DAILY',
-  IMPORTS_DAILY: 'IMPORTS_DAILY', ORG_SEATS: 'ORG_SEATS',
+  IMPORTS_DAILY: 'IMPORTS_DAILY', ORG_SEATS: 'ORG_SEATS', NOTES_OWNED: 'NOTES_OWNED', AI_REQUESTS_DAILY: 'AI_REQUESTS_DAILY',
 } as const
 export type LimitKey = (typeof LimitKey)[keyof typeof LimitKey]
 

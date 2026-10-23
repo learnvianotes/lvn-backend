@@ -3268,6 +3268,8 @@ enum LimitKey
   EXPORTS_DAILY @join__enumValue(graph: USERS)
   IMPORTS_DAILY @join__enumValue(graph: USERS)
   ORG_SEATS @join__enumValue(graph: USERS)
+  NOTES_OWNED @join__enumValue(graph: USERS)
+  AI_REQUESTS_DAILY @join__enumValue(graph: USERS)
 }
 
 scalar link__Import
@@ -4055,6 +4057,13 @@ input MuteGroupMemberInput
   until: DateTime
 }
 
+type MyPlan
+  @join__type(graph: USERS)
+{
+  plan: PublicPlan!
+  usage: [PlanUsage!]!
+}
+
 """A note, owned by the notes subgraph; ai adds the viewer's AI results"""
 type Note
   @join__type(graph: AI, key: "id")
@@ -4794,6 +4803,38 @@ enum PlanInterval
   YEAR @join__enumValue(graph: USERS)
 }
 
+"""
+One limit on a plan. `limit` is a decimal string, or null when the plan does not cap it.
+"""
+type PlanLimit
+  @join__type(graph: USERS)
+{
+  key: LimitKey!
+
+  """Words for the limit, such as "AI asks a day"."""
+  label: String!
+  limit: String
+}
+
+"""
+How much of one limit the signed-in person has used. `resetsAt` is null for a standing cap.
+"""
+type PlanUsage
+  @join__type(graph: USERS)
+{
+  key: LimitKey!
+  label: String!
+  used: String!
+
+  """Null when the plan does not cap this."""
+  limit: String
+
+  """
+  When a daily or monthly counter goes back to zero. Null for a standing cap.
+  """
+  resetsAt: DateTime
+}
+
 enum Platform
   @join__type(graph: CORE)
 {
@@ -4874,6 +4915,32 @@ input ProposeTopicInput
   subjectId: UUID!
   parentId: UUID
   title: String!
+}
+
+"""
+A plan as a person sees it: price, features and the limits for their role.
+`priceMinor` is minor currency units. Showing a price does not charge anyone.
+"""
+type PublicPlan
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  code: String!
+  name: String!
+  priceMinor: Int!
+  currency: String!
+  interval: PlanInterval!
+  features: [String!]!
+
+  """
+  Limits for the viewer's role. Signed out, these are the student limits.
+  """
+  limits: [PlanLimit!]!
+
+  """
+  True when this is the signed-in viewer's plan. False for every plan when nobody is signed in.
+  """
+  current: Boolean!
 }
 
 input PublishClassQuizInput
@@ -5190,6 +5257,16 @@ type Query
 
   """Your latest data exports, newest first"""
   myDataExports: [DataExport!]! @join__field(graph: USERS)
+
+  """
+  Active plans, cheapest first. Works signed out; `current` is then false on every plan.
+  """
+  plans: [PublicPlan!]! @join__field(graph: USERS)
+
+  """
+  The signed-in person's plan and how much of each limit they have used. An account with no plan is on FREE.
+  """
+  myPlan: MyPlan! @join__field(graph: USERS)
   signInOptions: SignInOptions! @join__field(graph: USERS)
 
   """

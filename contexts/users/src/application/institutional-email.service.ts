@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { Errors } from '@lvn-backend/errors'
+import { LimitKey } from '@lvn/contracts/domain'
+import { assertWithinPlan, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { MAILER, type Mailer } from '@lvn-backend/facades'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
@@ -7,6 +8,7 @@ import { RateLimiter } from '@lvn-backend/redis'
 import { domainAndParents, domainOf, isAcademic, isPersonalOrDisposable } from '../domain/email-domains'
 import { emailSchema } from '../domain/rules'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { EntitlementService } from './entitlement.service'
 import { MX_LOOKUP, type MxLookup } from './providers'
 import { hmac, sameBytes, sixDigitCode } from './secrets'
 
@@ -31,6 +33,7 @@ export class InstitutionalEmailService {
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(MX_LOOKUP) private readonly mx: MxLookup,
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   /** Checks an address before anything is stored, so sign-up can refuse it as a field error. */
@@ -106,6 +109,12 @@ export class InstitutionalEmailService {
         }
         // A faculty address is evidence, not a role: membership starts as STUDENT; TEACHER comes from review (§5).
         if (pending.organizationId) {
+          const already = await tx.membership.findUnique({ where: { userId_organizationId: { userId, organizationId: pending.organizationId } } })
+          if (!already) {
+            const cap = await this.entitlements.limit(userId, LimitKey.ORG_SEATS)
+            const seats = BigInt(await tx.membership.count({ where: { userId } }))
+            assertWithinPlan(LimitKey.ORG_SEATS, cap, seats)
+          }
           await tx.membership.upsert({
             where: { userId_organizationId: { userId, organizationId: pending.organizationId } },
             create: { userId, organizationId: pending.organizationId, role: 'STUDENT' },

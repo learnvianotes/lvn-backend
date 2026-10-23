@@ -5,6 +5,7 @@ import { PEOPLE, POLICY, type People, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { contentHash, problemNote, topicNote, type ConvertedNote, type LegacyProblem, type LegacyTopic } from '../domain/legacy-content'
 import { DraftsService } from './drafts.service'
+import { NotesService } from './notes.service'
 import { SharingService } from './sharing.service'
 
 /**
@@ -99,6 +100,7 @@ export class LegacyContentImport {
   constructor(
     private readonly db: PrismaService,
     private readonly drafts: DraftsService,
+    private readonly notes: NotesService,
     private readonly sharing: SharingService,
     @Inject(PEOPLE) private readonly people: People,
     @Inject(POLICY) private readonly policy: Policy,
@@ -253,6 +255,7 @@ export class LegacyContentImport {
   }
 
   private async create(key: string, note: ConvertedNote, topics: string[], hash: string, ownerId: string, report: LegacyContentReport) {
+    await this.notes.assertNotesOwned(ownerId)
     const id = newId()
     await this.db.$transaction(async (tx) => {
       await tx.note.create({ data: { id, ownerId, kind: 'NOTE', title: note.title, draftRevision: note.cards.length ? 1 : 0 } })

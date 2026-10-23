@@ -1,9 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { Action, can, LearningEventType, type Actor, type CardType, type NoteKind } from '@lvn/contracts/domain'
+import { Action, can, LearningEventType, LimitKey, type Actor, type CardType, type NoteKind } from '@lvn/contracts/domain'
 import { cardAnchor, isValidPosition, MEDIA_CARD_TYPES, NOTE_LIMITS, noteTitleSchema, parseCardContent } from '@lvn/contracts/validation'
-import { Errors } from '@lvn-backend/errors'
+import { assertWithinPlan, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { LEARNING, POLICY, type Learning, type Policy } from '@lvn-backend/facades'
+import { ENTITLEMENTS, LEARNING, POLICY, type Entitlements, type Learning, type Policy } from '@lvn-backend/facades'
 import { decodeCursor, pageSize } from '@lvn-backend/graphql'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
@@ -64,7 +64,15 @@ export class NotesService {
     @Inject(POLICY) private readonly policy: Policy,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(LEARNING) private readonly learning: Learning,
+    @Inject(ENTITLEMENTS) private readonly entitlements: Entitlements,
   ) {}
+
+  /** Refuses another note once NOTES_OWNED is used. A null limit never refuses. Trashed notes do not count. */
+  async assertNotesOwned(ownerId: string, adding = 1n): Promise<void> {
+    const limit = await this.entitlements.limit(ownerId, LimitKey.NOTES_OWNED)
+    const used = BigInt(await this.db.note.count({ where: { ownerId, deletedAt: null } }))
+    assertWithinPlan(LimitKey.NOTES_OWNED, limit, used, adding)
+  }
 
   /** The actor for a viewer id; null for anonymous visitors. Throws for a signed-in id whose account is gone. */
   async actor(viewerId: string | null): Promise<Actor | null> {
@@ -107,6 +115,7 @@ export class NotesService {
     const kind = input.kind ?? 'NOTE'
     // Notes and projects for anyone, blogs and posts for teachers (ADR-0014, ADR-0015, ADR-0044).
     if (!can(actor, Action.NOTE_CREATE, { kind: 'newNote', noteKind: kind })) throw Errors.forbidden('Blogs and posts are for teachers.')
+    await this.assertNotesOwned(ownerId)
     const limit = await this.limiter.hit(`notes:create:${ownerId}`, { max: 300, windowSeconds: 3600 })
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'You have created a lot of notes in the last hour. Try again later.')
 
@@ -187,6 +196,7 @@ export class NotesService {
   async restore(ownerId: string, noteId: string): Promise<OpenedNote> {
     const { note } = await this.require(ownerId, noteId, 'owner')
     if (!note.deletedAt) return (await this.open(ownerId, noteId))!
+    await this.assertNotesOwned(ownerId)
     await this.db.note.update({ where: { id: noteId }, data: { deletedAt: null } })
     if (note.visibility === 'PUBLIC' && note.publishedVersionId) {
       await this.events.publish('NotePublished', { noteId, versionId: note.publishedVersionId, ownerId, visibility: note.visibility, kind: note.kind })

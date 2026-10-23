@@ -1,0 +1,50 @@
+# Plans a person can see, and the limits their plan gives them. Nothing here charges anyone.
+
+"One limit on a plan. `limit` is a decimal string, or null when the plan does not cap it."
+type PlanLimit {
+  key: LimitKey!
+  "Words for the limit, such as \"AI asks a day\"."
+  label: String!
+  limit: String
+}
+
+"""
+A plan as a person sees it: price, features and the limits for their role.
+`priceMinor` is minor currency units. Showing a price does not charge anyone.
+"""
+type PublicPlan {
+  id: UUID!
+  code: String!
+  name: String!
+  priceMinor: Int!
+  currency: String!
+  interval: PlanInterval!
+  features: [String!]!
+  "Limits for the viewer's role. Signed out, these are the student limits."
+  limits: [PlanLimit!]!
+  "True when this is the signed-in viewer's plan. False for every plan when nobody is signed in."
+  current: Boolean!
+}
+
+"How much of one limit the signed-in person has used. `resetsAt` is null for a standing cap."
+type PlanUsage {
+  key: LimitKey!
+  label: String!
+  used: String!
+  "Null when the plan does not cap this."
+  limit: String
+  "When a daily or monthly counter goes back to zero. Null for a standing cap."
+  resetsAt: DateTime
+}
+
+type MyPlan {
+  plan: PublicPlan!
+  usage: [PlanUsage!]!
+}
+
+extend type Query {
+  "Active plans, cheapest first. Works signed out; `current` is then false on every plan."
+  plans: [PublicPlan!]!
+  "The signed-in person's plan and how much of each limit they have used. An account with no plan is on FREE."
+  myPlan: MyPlan!
+}

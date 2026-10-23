@@ -3,6 +3,7 @@
 export { MAILER, type Mailer, type MailOptions, type MailTemplate, type MailTemplates } from './mail'
 export { POLICY, type Policy } from './policy'
 export { ENTITLEMENTS, type Entitlements } from './entitlements'
+export { AI_PLAN_USAGE, CORE_PLAN_USAGE, NOTES_PLAN_USAGE, type PlanUsageSource } from './plan-usage'
 export { PLATFORM_SETTINGS, fallbackPlatformSettings, type PlatformSettings } from './platform-settings'
 export { AI_ADMIN_STATS, CORE_ADMIN_STATS, NOTES_ADMIN_STATS, type AiAdminStats, type AiUsageSlice, type CoreAdminStats, type NotesAdminStats } from './admin-stats'
 export { FILES, type Files, type FileParentKind, type FilePurposeKind, type FileSummary } from './files'
