@@ -14,6 +14,7 @@ describe('admin setting catalog', () => {
     expect(parseSettingInput(settingDef('google_sign_in')!, 'false')).toEqual({ ok: true, value: false })
     expect(SETTING_CATALOG.map((d) => d.key)).toEqual([
       'google_sign_in',
+      'access_allowlist_enabled',
       'student_id_verification',
       'uploads_enabled',
       'ai_public_pipeline',

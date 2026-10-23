@@ -5,10 +5,38 @@ export interface AcceptTermsInput {
   version: string
 }
 
+/** One email allowed to sign up and sign in while the allowlist is on. `email` is stored lowercased. */
+export interface AccessAllowlistEntry {
+  id: string
+  email: string
+  /** Applied to the account on sign-up, and immediately when the account already exists. */
+  role: GlobalRole
+  note: string | null
+  hasAccount: boolean
+  addedByEmail: string | null
+  createdAt: Date
+}
+
+export interface AccessAllowlistPayload {
+  entry: AccessAllowlistEntry | null
+  userErrors: Array<UserError>
+}
+
+/** Whether sign-up and sign-in are limited to the access allowlist. Public: no sign-in required. */
+export interface AccessPolicy {
+  inviteOnly: boolean
+}
+
 export interface AccountDeletionPayload {
   /** When the account will be deleted; null once cancelled */
   deletionScheduledFor: Date | null
   userErrors: Array<UserError>
+}
+
+export interface AddAccessAllowlistEntryInput {
+  email: string
+  role: GlobalRole
+  note?: string | null
 }
 
 export interface AddExternalIdentityInput {
@@ -385,6 +413,18 @@ export interface MutationResetPasswordArgs {
   input: ResetPasswordInput
 }
 
+export interface MutationAddAccessAllowlistEntryArgs {
+  input: AddAccessAllowlistEntryInput
+}
+
+export interface MutationUpdateAccessAllowlistEntryArgs {
+  input: UpdateAccessAllowlistEntryInput
+}
+
+export interface MutationRemoveAccessAllowlistEntryArgs {
+  id: string
+}
+
 export interface MutationRequestAccountDeletionArgs {
   input: RequestAccountDeletionInput
 }
@@ -610,6 +650,10 @@ export type PlanInterval = 'NONE' | 'MONTH' | 'YEAR'
 export interface ProfilePayload {
   profile: StudentProfile | null
   userErrors: Array<UserError>
+}
+
+export interface QueryAdminAccessAllowlistArgs {
+  search?: string | null
 }
 
 export interface QueryAdminMetricsArgs {
@@ -913,6 +957,14 @@ export type TeacherStatus = 'NONE' | 'PENDING' | 'VERIFIED' | 'DECLINED'
 /** A topic of notes, resolved by notes */
 export interface Topic {
   id: string
+}
+
+export interface UpdateAccessAllowlistEntryInput {
+  id: string
+  /** Omit to leave the role. */
+  role?: GlobalRole | null
+  /** Omit to leave the note. An empty note clears it. */
+  note?: string | null
 }
 
 export interface UpdateAdminPlanInput {

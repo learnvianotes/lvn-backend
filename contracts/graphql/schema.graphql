@@ -4,6 +4,35 @@ input AcceptTermsInput {
   version: String!
 }
 
+"""
+One email allowed to sign up and sign in while the allowlist is on. `email` is stored lowercased.
+"""
+type AccessAllowlistEntry {
+  addedByEmail: String
+  createdAt: DateTime!
+  email: String!
+  hasAccount: Boolean!
+  id: UUID!
+  note: String
+
+  """
+  Applied to the account on sign-up, and immediately when the account already exists.
+  """
+  role: GlobalRole!
+}
+
+type AccessAllowlistPayload {
+  entry: AccessAllowlistEntry
+  userErrors: [UserError!]!
+}
+
+"""
+Whether sign-up and sign-in are limited to the access allowlist. Public: no sign-in required.
+"""
+type AccessPolicy {
+  inviteOnly: Boolean!
+}
+
 type AccountDeletionPayload {
   """When the account will be deleted; null once cancelled"""
   deletionScheduledFor: DateTime
@@ -126,6 +155,12 @@ enum ActivityKind {
   IDEA
   REPOSITORY
   SHARED_NOTE
+}
+
+input AddAccessAllowlistEntryInput {
+  email: String!
+  note: String
+  role: GlobalRole!
 }
 
 input AddCommentInput {
@@ -2786,6 +2821,11 @@ enum ModerationState {
 type Mutation {
   """Accept the current Terms, Privacy Policy and content licence"""
   acceptTerms(input: AcceptTermsInput!): OkPayload!
+
+  """
+  Platform admins. CONFLICT when the email is already listed. VALIDATION when the email is not usable.
+  """
+  addAccessAllowlistEntry(input: AddAccessAllowlistEntryInput!): AccessAllowlistPayload!
   addComment(input: AddCommentInput!): CommentPayload!
 
   """
@@ -3028,6 +3068,9 @@ type Mutation {
 
   """Phones: after sign-in and whenever the token changes"""
   registerDevice(input: RegisterDeviceInput!): OkPayload!
+
+  """Platform admins. Signs that account out everywhere."""
+  removeAccessAllowlistEntry(id: UUID!): OkPayload!
   removeClassroomMember(input: ClassroomMemberInput!): ClassroomPayload!
   removeConnection(input: PersonInput!): PersonPayload!
 
@@ -3282,6 +3325,9 @@ type Mutation {
   No sign-in: the token in an email's unsubscribe link turns off that kind of email
   """
   unsubscribeEmail(input: UnsubscribeEmailInput!): UnsubscribePayload!
+
+  """Platform admins. Applies `role` to an existing account at once."""
+  updateAccessAllowlistEntry(input: UpdateAccessAllowlistEntryInput!): AccessAllowlistPayload!
 
   """
   Platform admins. Edits a plan's name, price, limits, features or active flag. The code stays. FREE cannot be deactivated.
@@ -4025,12 +4071,18 @@ input PublishClassQuizInput {
 }
 
 type Query {
+  accessPolicy: AccessPolicy!
   achievementSettings: AchievementSettings!
 
   """
   What happened in the viewer's groups and classes, newest first; their own doing left out
   """
   activityFeed(after: String, first: Int): ActivityConnection!
+
+  """
+  Platform admins. Every allowlist entry, or those whose email or note contains `search`.
+  """
+  adminAccessAllowlist(search: String): [AccessAllowlistEntry!]!
 
   """Platform admins: every contest, drafts included"""
   adminContests: [AdminContest!]!
@@ -5781,6 +5833,16 @@ type UnsubscribePayload {
   """What was turned off"""
   kind: EmailKind
   userErrors: [UserError!]!
+}
+
+input UpdateAccessAllowlistEntryInput {
+  id: UUID!
+
+  """Omit to leave the note. An empty note clears it."""
+  note: String
+
+  """Omit to leave the role."""
+  role: GlobalRole
 }
 
 input UpdateAdminPlanInput {

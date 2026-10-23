@@ -23,6 +23,7 @@ import { InstitutionalEmailService } from './institutional-email.service'
 import { LegacyService } from './legacy.service'
 import { PasswordService } from './password.service'
 import { randomToken, sha256 } from './secrets'
+import { AccessGate } from './access-gate'
 import { PlatformSettingsStore } from './platform-settings.store'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
 
@@ -60,6 +61,7 @@ export class AuthService {
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
     private readonly settings: PlatformSettingsStore,
+    private readonly access: AccessGate,
   ) {}
 
   async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string): Promise<SignUpResult> {
@@ -73,6 +75,8 @@ export class AuthService {
     }
     await this.passwords.assertAcceptable(input.password)
     if (input.institutionalEmail) await this.institutional.check(input.institutionalEmail, ['input', 'institutionalEmail'])
+    await this.access.assertAllowed(email)
+    const role = (await this.access.roleFor(email)) ?? 'STUDENT'
     const existing = await this.db.user.findUnique({
       where: { email },
       select: { id: true, deletedAt: true, emailVerifiedAt: true, passwordHash: true, displayName: true },
@@ -101,6 +105,7 @@ export class AuthService {
             passwordHash,
             dateOfBirth,
             registrationCompletedAt: new Date(),
+            globalRole: role,
           },
         })
         await tx.consentRecord.createMany({
@@ -136,6 +141,7 @@ export class AuthService {
     }
     const limit = await this.limiter.hit(`signin:${email}`, LIMITS.signIn)
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many sign-in attempts. Try again in a few minutes.')
+    await this.access.assertAllowed(email)
 
     const user = await this.db.user.findUnique({ where: { email }, select: { id: true, passwordHash: true, deletedAt: true, emailVerifiedAt: true } })
     const ok = await this.passwords.verify(user && !user.deletedAt ? user.passwordHash : null, password)
@@ -157,6 +163,10 @@ export class AuthService {
    * password chosen at sign-up to the account that already had this address, and does not sign anyone in.
    */
   async verifyEmail(token: string): Promise<void> {
+    const preview = await this.readableToken(token, ['VERIFY_EMAIL', 'LINK_EMAIL'])
+    const owner = await this.db.user.findUnique({ where: { id: preview.userId }, select: { email: true, deletedAt: true } })
+    if (!owner || owner.deletedAt) throw Errors.validation(INVALID_LINK, ['input', 'token'])
+    await this.access.assertAllowed(owner.email)
     const row = await this.consumeToken(token, ['VERIFY_EMAIL', 'LINK_EMAIL'])
     if (row.purpose === 'LINK_EMAIL') {
       if (!row.passwordHash) throw Errors.validation(INVALID_LINK, ['input', 'token'])
@@ -179,6 +189,8 @@ export class AuthService {
     const email = parseField(emailSchema, rawEmail, 'email')
     const limit = await this.limiter.hit(`reset:${email}`, LIMITS.passwordReset)
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many reset requests. Try again later.')
+    // Same answer as an unknown address: the caller cannot tell whether the email is on the list.
+    if (!(await this.access.allows(email))) return
     const user = await this.db.user.findUnique({ where: { email }, select: { id: true, displayName: true, deletedAt: true } })
     if (!user || user.deletedAt) return
     const token = randomToken()
@@ -195,6 +207,10 @@ export class AuthService {
   /** Sets a new password from a reset link and signs the account out everywhere. */
   async resetPassword(token: string, password: string): Promise<void> {
     await this.passwords.assertAcceptable(password)
+    const preview = await this.readableToken(token, 'RESET_PASSWORD')
+    const owner = await this.db.user.findUnique({ where: { id: preview.userId }, select: { email: true, deletedAt: true } })
+    // An unlisted address looks like an expired link, so the reset does not reveal the list.
+    if (!owner || owner.deletedAt || !(await this.access.allows(owner.email))) throw Errors.validation(INVALID_LINK, ['input', 'token'])
     const row = await this.consumeToken(token, 'RESET_PASSWORD')
     const user = await this.db.user.update({
       where: { id: row.userId },
@@ -234,12 +250,18 @@ export class AuthService {
     await this.mailer.send(email, 'verifyEmail', { displayName, link: this.link('/verify', token) })
   }
 
+  /** A single-use email token that has not been used or expired. Does not mark it used. */
+  private async readableToken(token: string, purpose: 'VERIFY_EMAIL' | 'RESET_PASSWORD' | 'LINK_EMAIL' | Array<'VERIFY_EMAIL' | 'RESET_PASSWORD' | 'LINK_EMAIL'>) {
+    const allowed = Array.isArray(purpose) ? purpose : [purpose]
+    const row = await this.db.emailToken.findUnique({ where: { tokenHash: sha256(token) } })
+    if (!row || !allowed.includes(row.purpose) || row.usedAt || row.expiresAt <= new Date()) throw Errors.validation(INVALID_LINK, ['input', 'token'])
+    return row
+  }
+
   /** Marks a single-use email token used, or throws VALIDATION if it is unknown, used or expired. */
   private async consumeToken(token: string, purpose: 'VERIFY_EMAIL' | 'RESET_PASSWORD' | 'LINK_EMAIL' | Array<'VERIFY_EMAIL' | 'RESET_PASSWORD' | 'LINK_EMAIL'>) {
-    const allowed = Array.isArray(purpose) ? purpose : [purpose]
+    const row = await this.readableToken(token, purpose)
     const now = new Date()
-    const row = await this.db.emailToken.findUnique({ where: { tokenHash: sha256(token) } })
-    if (!row || !allowed.includes(row.purpose) || row.usedAt || row.expiresAt <= now) throw Errors.validation(INVALID_LINK, ['input', 'token'])
     // Drop a pending password hash as the token is spent, so it is not kept after the link is used or rejected.
     const { count } = await this.db.emailToken.updateMany({ where: { id: row.id, usedAt: null }, data: { usedAt: now, passwordHash: null } })
     if (count !== 1) throw Errors.validation(INVALID_LINK, ['input', 'token'])

@@ -8,6 +8,7 @@ import { freeHandle } from './handles'
 import { parseField } from './input'
 import { githubIdentity, linkedinIdentity, type CodeExchange } from './oauth-clients'
 import { GOOGLE_ID_TOKENS, type GoogleIdTokens, type ProviderIdentity } from './providers'
+import { AccessGate } from './access-gate'
 import { AppSettingsService } from './app-settings.service'
 import { LegacyService } from './legacy.service'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
@@ -30,6 +31,7 @@ export class OAuthService {
     private readonly legacy: LegacyService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     private readonly settings: AppSettingsService,
+    private readonly access: AccessGate,
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
     @Optional() @Inject(GOOGLE_ID_TOKENS) private readonly google: GoogleIdTokens | null,
   ) {}
@@ -80,12 +82,16 @@ export class OAuthService {
     const linked = await this.db.oAuthAccount.findUnique({ where: { provider_providerSubject: key }, include: { user: { select: { deletedAt: true } } } })
     if (linked) {
       if (linked.user.deletedAt) throw Errors.forbidden('This account was deleted.')
+      const account = await this.db.user.findUnique({ where: { id: linked.userId }, select: { email: true } })
+      if (!account) throw Errors.forbidden('This account was deleted.')
+      await this.access.assertAllowed(account.email)
       return this.sessions.start(linked.userId, device)
     }
     if (!identity.email || !identity.emailVerified) {
       throw Errors.validation(`Your ${NAMES[identity.provider]} account has no verified email address. Verify one there, or sign up with email.`)
     }
     const email = parseField(emailSchema, identity.email, 'email')
+    await this.access.assertAllowed(email)
 
     const existing = await this.db.user.findUnique({ where: { email }, select: { id: true, deletedAt: true, emailVerifiedAt: true } })
     if (existing) {
@@ -106,9 +112,10 @@ export class OAuthService {
 
     const id = newId()
     const displayName = (identity.name?.trim() || email.slice(0, email.indexOf('@'))).slice(0, 60)
+    const role = (await this.access.roleFor(email)) ?? 'STUDENT'
     try {
       await this.db.$transaction(async (tx) => {
-        await tx.user.create({ data: { id, email, handle: await freeHandle(tx, displayName), displayName, emailVerifiedAt: new Date() } })
+        await tx.user.create({ data: { id, email, handle: await freeHandle(tx, displayName), displayName, emailVerifiedAt: new Date(), globalRole: role } })
         await tx.oAuthAccount.create({ data: { id: newId(), userId: id, ...key } })
       })
     } catch (e) {

@@ -20,6 +20,7 @@ export interface SettingDef {
 }
 
 export const GOOGLE_SIGN_IN_SETTING = 'google_sign_in'
+export const ACCESS_ALLOWLIST_SETTING = 'access_allowlist_enabled'
 export const STUDENT_ID_VERIFICATION_SETTING = 'student_id_verification'
 
 export const SETTING_CATALOG: SettingDef[] = [
@@ -29,6 +30,15 @@ export const SETTING_CATALOG: SettingDef[] = [
     category: 'auth',
     description: 'Offer Google sign-in. It still needs FIREBASE_PROJECT_ID. A missing row means on.',
     defaultValue: true,
+    environmentFallback: false,
+    nullable: false,
+  },
+  {
+    key: ACCESS_ALLOWLIST_SETTING,
+    type: 'BOOLEAN',
+    category: 'auth',
+    description: 'When on, only emails an admin has added can sign up or sign in. Off lets everyone in. A missing row means off.',
+    defaultValue: false,
     environmentFallback: false,
     nullable: false,
   },

@@ -7,6 +7,7 @@ import { InstitutionalEmailService } from '../application/institutional-email.se
 import { OAuthService } from '../application/oauth.service'
 import { RegistrationService } from '../application/registration.service'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { withInviteError } from './access.resolver'
 import { deliverSession, deviceOf, refreshCookieOptions, type RefreshCookieOptions } from './session-delivery'
 import { UsersService } from '../application/users.service'
 import type {
@@ -57,7 +58,7 @@ export class RegistrationResolver {
 
   @Mutation('signInWithGoogle')
   signInWithGoogle(@Args() { input }: MutationSignInWithGoogleArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
-    return withUserErrors<AuthPayload>(async () => ({
+    return withInviteError<AuthPayload>(async () => ({
       session: await deliverSession(ctx, this.cookie, this.users, await this.oauth.signInWithGoogle(input.idToken, deviceOf(ctx), ctx.requestId)),
       emailLinkPending: false,
     }), { session: null, emailLinkPending: false })
@@ -65,7 +66,7 @@ export class RegistrationResolver {
 
   @Mutation('oauthExchange')
   oauthExchange(@Args() { input }: MutationOauthExchangeArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
-    return withUserErrors<AuthPayload>(async () => ({
+    return withInviteError<AuthPayload>(async () => ({
       session: await deliverSession(ctx, this.cookie, this.users, await this.oauth.exchange(input.provider, input, deviceOf(ctx), ctx.requestId)),
       emailLinkPending: false,
     }), { session: null, emailLinkPending: false })
