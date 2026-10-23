@@ -1,4 +1,6 @@
 import { Module, type DynamicModule } from '@nestjs/common'
+import { AccessAllowlistService } from './application/access-allowlist.service'
+import { AccessGate } from './application/access-gate'
 import { AdminService } from './application/admin.service'
 import { AdminMetricsService } from './application/admin-metrics.service'
 import { AppSettingsService } from './application/app-settings.service'
@@ -39,6 +41,7 @@ import { UserSignInMethodsResolver, ViewerResolver } from './graphql/viewer.reso
 import { USERS_CONFIG, type UsersConfig } from './users.config'
 import { AccountDeletionService } from './application/account-deletion.service'
 import { AccountResolver } from './graphql/account.resolver'
+import { AccessAllowlistResolver } from './graphql/access.resolver'
 import { AdminDashboardResolver } from './graphql/admin.resolver'
 import { PlansResolver } from './graphql/plans.resolver'
 
@@ -74,6 +77,8 @@ export class UsersModule {
         AuditService,
         VerificationService,
         PlatformSettingsStore,
+        AccessGate,
+        AccessAllowlistService,
         AppSettingsService,
         AdminMetricsService,
         PlanAdminService,
@@ -85,6 +90,7 @@ export class UsersModule {
         DataExportService,
         AccountDeletionService,
         AccountResolver,
+        AccessAllowlistResolver,
         AdminDashboardResolver,
         PlansResolver,
         LegacyService,

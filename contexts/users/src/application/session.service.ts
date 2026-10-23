@@ -8,6 +8,7 @@ import { SessionRevocations } from '@lvn-backend/redis'
 import { SESSION_TTL_DAYS } from '../domain/rules'
 import { isStudyPublisher } from '../domain/study-publisher'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { AccessGate } from './access-gate'
 import { randomToken, sha256 } from './secrets'
 
 export interface DeviceInfo {
@@ -39,6 +40,7 @@ export class SessionService {
     private readonly revocations: SessionRevocations,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(USERS_CONFIG) config: UsersConfig,
+    private readonly access: AccessGate,
   ) {
     this.signer = new AccessTokenSigner(config.jwtPrivateKey, config.jwtIssuer, config.tokenAudience)
   }
@@ -69,6 +71,10 @@ export class SessionService {
       throw Errors.unauthenticated('Your session has ended. Sign in again.')
     }
     if (session.expiresAt <= new Date() || session.user.deletedAt) throw Errors.unauthenticated('Your session has ended. Sign in again.')
+    if (!(await this.access.allows(session.user.email))) {
+      await this.revokeFamily(session.familyId, session.userId)
+      throw Errors.unauthenticated('Your session has ended. Sign in again.')
+    }
 
     const next = randomToken()
     const nextId = newId()

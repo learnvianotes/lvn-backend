@@ -4,9 +4,9 @@
 - Package: `@lvn/contracts` 0.68.0 → **0.70.0**
 - Spec: amends ADR-0024
 - Breaking: no. New queries and two `LimitKey` values. Existing fields stay.
-- Depends on: PR #24 (admin plan prices, contracts 0.68.0). Merge that first. 0.69.0 is reserved for the access-allowlist change.
+- Depends on: PR #24 (admin plan prices, contracts 0.68.0). The access allowlist follows this release as 0.71.0.
 
-**Version.** 0.68.0 is the admin dashboard release. 0.69.0 is left for the allowlist. This change is **0.70.0**.
+**Version.** 0.68.0 is the admin dashboard release. This change is **0.70.0**. The allowlist is **0.71.0** (0.69.0 was not published).
 
 ## What changes for clients
 

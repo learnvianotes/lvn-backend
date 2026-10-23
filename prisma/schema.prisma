@@ -438,6 +438,7 @@ model VerificationRequest {
 /// A platform setting an admin changes without a deploy (ADR-0099, ADR-0100, ADR-0101).
 /// `student_id_verification`: a missing row means off.
 /// `google_sign_in`: the unified-sign-in migration inserts it on, and a missing row is treated as on.
+/// `access_allowlist_enabled`: a missing row means off (everyone may sign in).
 /// `enabled` mirrors a boolean value. `value` is `{ "v": <boolean | number | string | null> }` for every type.
 model AppSetting {
   key       String   @id
@@ -447,6 +448,22 @@ model AppSetting {
   updatedBy String?  @db.Uuid
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
+  @@schema("users")
+}
+
+/// Emails that may sign up and sign in while `access_allowlist_enabled` is on. Stored lowercased.
+/// The migration seeds one row per existing account so current admins keep access.
+model AccessAllowlistEntry {
+  id        String     @id @db.Uuid
+  email     String     @unique @db.Citext
+  role      GlobalRole
+  note      String?
+  /// Who added the row. Null for the migration seed.
+  addedById String?    @db.Uuid
+  createdAt DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime   @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@index([role])
   @@schema("users")
 }
 

@@ -3,6 +3,7 @@ import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql'
 import { requireViewer, type RequestContext } from '@lvn-backend/auth-guard'
 import { Errors, withUserErrors } from '@lvn-backend/errors'
 import { AuthService } from '../application/auth.service'
+import { withInviteError } from './access.resolver'
 import { SessionService } from '../application/session.service'
 import { UsersService } from '../application/users.service'
 import { TERMS_VERSION } from '../domain/rules'
@@ -39,7 +40,7 @@ export class AuthResolver {
 
   @Mutation('signUp')
   signUp(@Args() { input }: MutationSignUpArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
-    return withUserErrors<AuthPayload>(async () => {
+    return withInviteError<AuthPayload>(async () => {
       const result = await this.auth.signUp(input, deviceOf(ctx), ctx.requestId)
       if (result.status === 'emailLinkPending') return { session: null, emailLinkPending: true }
       return { session: await deliverSession(ctx, this.cookie, this.users, result.session), emailLinkPending: false }
@@ -48,7 +49,7 @@ export class AuthResolver {
 
   @Mutation('signIn')
   signIn(@Args() { input }: MutationSignInArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
-    return withUserErrors<AuthPayload>(async () => ({ session: await deliverSession(ctx, this.cookie, this.users, await this.auth.signIn(input.email, input.password, deviceOf(ctx), ctx.req.ip)), emailLinkPending: false }), { session: null, emailLinkPending: false })
+    return withInviteError<AuthPayload>(async () => ({ session: await deliverSession(ctx, this.cookie, this.users, await this.auth.signIn(input.email, input.password, deviceOf(ctx), ctx.req.ip)), emailLinkPending: false }), { session: null, emailLinkPending: false })
   }
 
   @Mutation('refreshSession')
@@ -80,7 +81,7 @@ export class AuthResolver {
 
   @Mutation('verifyEmail')
   verifyEmail(@Args() { input }: MutationVerifyEmailArgs): Promise<OkPayload> {
-    return withUserErrors<OkPayload>(async () => {
+    return withInviteError<OkPayload>(async () => {
       await this.auth.verifyEmail(input.token)
       return { ok: true }
     }, { ok: false })

@@ -1,0 +1,52 @@
+# Beta access allowlist (contracts 0.71.0). The switch is AdminSetting access_allowlist_enabled.
+
+"Whether sign-up and sign-in are limited to the access allowlist. Public: no sign-in required."
+type AccessPolicy {
+  inviteOnly: Boolean!
+}
+
+"One email allowed to sign up and sign in while the allowlist is on. `email` is stored lowercased."
+type AccessAllowlistEntry {
+  id: UUID!
+  email: String!
+  "Applied to the account on sign-up, and immediately when the account already exists."
+  role: GlobalRole!
+  note: String
+  hasAccount: Boolean!
+  addedByEmail: String
+  createdAt: DateTime!
+}
+
+type AccessAllowlistPayload {
+  entry: AccessAllowlistEntry
+  userErrors: [UserError!]!
+}
+
+input AddAccessAllowlistEntryInput {
+  email: String!
+  role: GlobalRole!
+  note: String
+}
+
+input UpdateAccessAllowlistEntryInput {
+  id: UUID!
+  "Omit to leave the role."
+  role: GlobalRole
+  "Omit to leave the note. An empty note clears it."
+  note: String
+}
+
+extend type Query {
+  accessPolicy: AccessPolicy!
+  "Platform admins. Every allowlist entry, or those whose email or note contains `search`."
+  adminAccessAllowlist(search: String): [AccessAllowlistEntry!]!
+}
+
+extend type Mutation {
+  "Platform admins. CONFLICT when the email is already listed. VALIDATION when the email is not usable."
+  addAccessAllowlistEntry(input: AddAccessAllowlistEntryInput!): AccessAllowlistPayload!
+  "Platform admins. Applies `role` to an existing account at once."
+  updateAccessAllowlistEntry(input: UpdateAccessAllowlistEntryInput!): AccessAllowlistPayload!
+  "Platform admins. Signs that account out everywhere."
+  removeAccessAllowlistEntry(id: UUID!): OkPayload!
+}

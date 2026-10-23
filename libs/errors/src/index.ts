@@ -47,7 +47,7 @@ export function assertWithinPlan(key: LimitKey, limit: bigint | null, used: bigi
 
 export const Errors = {
   unauthenticated: (message = 'Sign in to continue.') => new AppError(ErrorCode.UNAUTHENTICATED, message),
-  forbidden: (message = 'You do not have permission to do that.') => new AppError(ErrorCode.FORBIDDEN, message),
+  forbidden: (message = 'You do not have permission to do that.', field?: string[]) => new AppError(ErrorCode.FORBIDDEN, message, field),
   notFound: (message = 'Not found.') => new AppError(ErrorCode.NOT_FOUND, message),
   validation: (message: string, field?: string[]) => new AppError(ErrorCode.VALIDATION, message, field),
   conflict: (message: string, field?: string[]) => new AppError(ErrorCode.CONFLICT, message, field),

@@ -28,6 +28,41 @@ input AcceptTermsInput
   version: String!
 }
 
+"""
+One email allowed to sign up and sign in while the allowlist is on. `email` is stored lowercased.
+"""
+type AccessAllowlistEntry
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  email: String!
+
+  """
+  Applied to the account on sign-up, and immediately when the account already exists.
+  """
+  role: GlobalRole!
+  note: String
+  hasAccount: Boolean!
+  addedByEmail: String
+  createdAt: DateTime!
+}
+
+type AccessAllowlistPayload
+  @join__type(graph: USERS)
+{
+  entry: AccessAllowlistEntry
+  userErrors: [UserError!]!
+}
+
+"""
+Whether sign-up and sign-in are limited to the access allowlist. Public: no sign-in required.
+"""
+type AccessPolicy
+  @join__type(graph: USERS)
+{
+  inviteOnly: Boolean!
+}
+
 type AccountDeletionPayload
   @join__type(graph: USERS)
 {
@@ -173,6 +208,14 @@ enum ActivityKind
   CLASS_ANNOUNCEMENT @join__enumValue(graph: CORE)
   SHARED_NOTE @join__enumValue(graph: CORE)
   REPOSITORY @join__enumValue(graph: CORE)
+}
+
+input AddAccessAllowlistEntryInput
+  @join__type(graph: USERS)
+{
+  email: String!
+  role: GlobalRole!
+  note: String
 }
 
 input AddCommentInput
@@ -3891,6 +3934,17 @@ type Mutation
   resetPassword(input: ResetPasswordInput!): OkPayload! @join__field(graph: USERS)
 
   """
+  Platform admins. CONFLICT when the email is already listed. VALIDATION when the email is not usable.
+  """
+  addAccessAllowlistEntry(input: AddAccessAllowlistEntryInput!): AccessAllowlistPayload! @join__field(graph: USERS)
+
+  """Platform admins. Applies `role` to an existing account at once."""
+  updateAccessAllowlistEntry(input: UpdateAccessAllowlistEntryInput!): AccessAllowlistPayload! @join__field(graph: USERS)
+
+  """Platform admins. Signs that account out everywhere."""
+  removeAccessAllowlistEntry(id: UUID!): OkPayload! @join__field(graph: USERS)
+
+  """
   Ask for your account to be deleted in 14 days, with your private notes and learning history; every other device is signed out. Public notes, posts and comments stay, by "Deleted user"
   """
   requestAccountDeletion(input: RequestAccountDeletionInput!): AccountDeletionPayload! @join__field(graph: USERS)
@@ -5213,6 +5267,12 @@ type Query
 
   """The signed-in user, null for anonymous visitors"""
   viewer: User @join__field(graph: USERS)
+  accessPolicy: AccessPolicy! @join__field(graph: USERS)
+
+  """
+  Platform admins. Every allowlist entry, or those whose email or note contains `search`.
+  """
+  adminAccessAllowlist(search: String): [AccessAllowlistEntry!]! @join__field(graph: USERS)
 
   """Platform admins. Counts for the dashboard."""
   adminMetrics(from: DateTime, to: DateTime): AdminMetrics! @join__field(graph: USERS)
@@ -7045,6 +7105,18 @@ type UnsubscribePayload
   """What was turned off"""
   kind: EmailKind
   userErrors: [UserError!]!
+}
+
+input UpdateAccessAllowlistEntryInput
+  @join__type(graph: USERS)
+{
+  id: UUID!
+
+  """Omit to leave the role."""
+  role: GlobalRole
+
+  """Omit to leave the note. An empty note clears it."""
+  note: String
 }
 
 input UpdateAdminPlanInput

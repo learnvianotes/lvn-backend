@@ -9,6 +9,7 @@ import { freeHandle } from './handles'
 import { parseField } from './input'
 import { githubIdentity, linkedinIdentity, type CodeExchange } from './oauth-clients'
 import { GOOGLE_ID_TOKENS, type GoogleIdTokens, type ProviderIdentity } from './providers'
+import { AccessGate } from './access-gate'
 import { AppSettingsService } from './app-settings.service'
 import { LegacyService } from './legacy.service'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
@@ -31,6 +32,7 @@ export class OAuthService {
     private readonly legacy: LegacyService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     private readonly settings: AppSettingsService,
+    private readonly access: AccessGate,
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
     @Optional() @Inject(GOOGLE_ID_TOKENS) private readonly google: GoogleIdTokens | null,
   ) {}
@@ -82,6 +84,7 @@ export class OAuthService {
     if (linked) {
       if (linked.user.deletedAt) throw Errors.forbidden('This account was deleted.')
       if (isStudyPublisher({ id: linked.userId, email: linked.user.email })) throw Errors.forbidden('This account cannot sign in.')
+      await this.access.assertAllowed(linked.user.email)
       return this.sessions.start(linked.userId, device)
     }
     if (!identity.email || !identity.emailVerified) {
@@ -91,6 +94,7 @@ export class OAuthService {
     // The study publisher is not a person. Do not link a provider to it, and do not open a session, even when the
     // provider and the row both say the address is verified (ADR-0098, ADR-0100).
     if (isStudyPublisher({ email })) throw Errors.forbidden('This account cannot sign in.')
+    await this.access.assertAllowed(email)
 
     const existing = await this.db.user.findUnique({ where: { email }, select: { id: true, email: true, deletedAt: true, emailVerifiedAt: true } })
     if (existing && isStudyPublisher(existing)) throw Errors.forbidden('This account cannot sign in.')
@@ -112,10 +116,11 @@ export class OAuthService {
 
     const id = newId()
     const displayName = (identity.name?.trim() || email.slice(0, email.indexOf('@'))).slice(0, 60)
+    const role = (await this.access.roleFor(email)) ?? 'STUDENT'
     try {
       await this.db.$transaction(async (tx) => {
         // freeHandle refuses reserved brand and role handles, same as email sign-up.
-        await tx.user.create({ data: { id, email, handle: await freeHandle(tx, displayName), displayName, emailVerifiedAt: new Date() } })
+        await tx.user.create({ data: { id, email, handle: await freeHandle(tx, displayName), displayName, emailVerifiedAt: new Date(), globalRole: role } })
         await tx.oAuthAccount.create({ data: { id: newId(), userId: id, ...key } })
       })
     } catch (e) {
