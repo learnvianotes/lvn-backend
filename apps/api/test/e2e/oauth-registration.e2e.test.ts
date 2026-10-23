@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
+import { STUDY_PUBLISHER_EMAIL, STUDY_PUBLISHER_ID } from '@lvn-backend/users'
 import { Mailbox } from '@lvn-backend/testing'
 import request from 'supertest'
 import { createTestApp, infra, type TestApp } from '../support/app'
@@ -402,6 +404,85 @@ describe('provider sign-in and registration', () => {
 
     it('requires a session', async () => {
       expect((await t.gql(SET_INST, { e: 'a@iitb.ac.in' })).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
+    })
+  })
+
+  describe('study publisher', () => {
+    const RESET_REQ = 'mutation ($e: String!) { requestPasswordReset(input: { email: $e }) { ok userErrors { code } } }'
+    const RESET = 'mutation ($t: String!, $p: String!) { resetPassword(input: { token: $t, password: $p }) { ok userErrors { code } } }'
+    const REFRESH = 'mutation ($input: RefreshSessionInput!) { refreshSession(input: $input) { session { accessToken } } }'
+    const tokenHash = (token: string) => Uint8Array.from(createHash('sha256').update(token).digest())
+
+    it('cannot gain a password or a session by reset, email link, Google or a planted token', async () => {
+      const db = t.app.get(PrismaService)
+      await db.user.create({
+        data: {
+          id: STUDY_PUBLISHER_ID,
+          email: STUDY_PUBLISHER_EMAIL,
+          handle: 'learnvianotes',
+          displayName: 'LearnViaNotes',
+          emailVerifiedAt: new Date(),
+        },
+      })
+      try {
+        const form = { email: ` ${STUDY_PUBLISHER_EMAIL.toUpperCase()} `, password: 'correct horse battery staple', displayName: 'Attacker', dateOfBirth: '2001-03-09', acceptedTermsVersion: terms }
+        const signUp = await t.gql<Payload<'signUp'>>(SIGN_UP, { input: form })
+        expect(signUp.data!.signUp).toMatchObject({ session: null, emailLinkPending: false, userErrors: [{ code: 'CONFLICT', field: ['input', 'email'] }] })
+        expect(await db.user.findUniqueOrThrow({ where: { id: STUDY_PUBLISHER_ID }, select: { passwordHash: true } })).toMatchObject({ passwordHash: null })
+        expect(await db.emailToken.count({ where: { userId: STUDY_PUBLISHER_ID } })).toBe(0)
+
+        const reset = await t.gql<{ requestPasswordReset: { ok: boolean; userErrors: { code: string }[] } }>(RESET_REQ, { e: STUDY_PUBLISHER_EMAIL })
+        expect(reset.data!.requestPasswordReset).toEqual({ ok: true, userErrors: [] })
+        expect(await db.emailToken.count({ where: { userId: STUDY_PUBLISHER_ID } })).toBe(0)
+        expect(await mail.countTo(STUDY_PUBLISHER_EMAIL)).toBe(0)
+
+        const signIn = await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email: STUDY_PUBLISHER_EMAIL, password: form.password } })
+        expect(signIn.data!.signIn.session).toBeNull()
+        expect(signIn.data!.signIn.userErrors[0]!.code).toBe('VALIDATION')
+
+        const resetToken = 'planted-reset-token'
+        await db.emailToken.create({
+          data: { id: newId(), userId: STUDY_PUBLISHER_ID, purpose: 'RESET_PASSWORD', tokenHash: tokenHash(resetToken), expiresAt: new Date(Date.now() + 3_600_000) },
+        })
+        const resetDone = await t.gql<{ resetPassword: { ok: boolean; userErrors: { code: string }[] } }>(RESET, { t: resetToken, p: form.password })
+        expect(resetDone.data!.resetPassword).toMatchObject({ ok: false, userErrors: [{ code: 'VALIDATION' }] })
+        expect(await db.user.findUniqueOrThrow({ where: { id: STUDY_PUBLISHER_ID }, select: { passwordHash: true, emailVerifiedAt: true } })).toMatchObject({ passwordHash: null })
+
+        const linkToken = 'planted-link-token'
+        await db.emailToken.create({
+          data: { id: newId(), userId: STUDY_PUBLISHER_ID, purpose: 'LINK_EMAIL', tokenHash: tokenHash(linkToken), passwordHash: 'not-a-real-hash', expiresAt: new Date(Date.now() + 3_600_000) },
+        })
+        const linked = await t.gql<{ verifyEmail: { ok: boolean; userErrors: { code: string }[] } }>(VERIFY, { t: linkToken })
+        expect(linked.data!.verifyEmail).toMatchObject({ ok: false, userErrors: [{ code: 'VALIDATION' }] })
+        expect(await db.user.findUniqueOrThrow({ where: { id: STUDY_PUBLISHER_ID }, select: { passwordHash: true } })).toMatchObject({ passwordHash: null })
+
+        const google = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:publisher-uid:${STUDY_PUBLISHER_EMAIL}:LearnViaNotes` })
+        expect(google.data?.signInWithGoogle?.session ?? null).toBeNull()
+        expect(google.errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+        expect(await db.oAuthAccount.count({ where: { userId: STUDY_PUBLISHER_ID } })).toBe(0)
+        expect(await db.session.count({ where: { userId: STUDY_PUBLISHER_ID } })).toBe(0)
+
+        const donor = await t.gql<Payload<'signUp'>>(SIGN_UP, { input: { ...form, email: `${unique('donor')}@example.com` } })
+        const donorId = donor.data!.signUp.session!.user.id as string
+        const donorHash = (await db.user.findUniqueOrThrow({ where: { id: donorId }, select: { passwordHash: true } })).passwordHash
+        await db.user.update({ where: { id: STUDY_PUBLISHER_ID }, data: { passwordHash: donorHash } })
+        const withPassword = await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email: STUDY_PUBLISHER_EMAIL, password: form.password } })
+        expect(withPassword.data!.signIn.session).toBeNull()
+        expect(withPassword.data!.signIn.userErrors[0]!.code).toBe('VALIDATION')
+        expect((await db.user.findUniqueOrThrow({ where: { id: STUDY_PUBLISHER_ID }, select: { passwordHash: true } })).passwordHash).toBe(donorHash)
+
+        const refreshToken = 'planted-refresh-token'
+        const sessionId = newId()
+        await db.session.create({
+          data: { id: sessionId, userId: STUDY_PUBLISHER_ID, familyId: newId(), refreshTokenHash: tokenHash(refreshToken), expiresAt: new Date(Date.now() + 86_400_000) },
+        })
+        const refreshed = await t.gql(REFRESH, { input: { refreshToken } })
+        expect(refreshed.errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+        expect(await db.session.findUniqueOrThrow({ where: { id: sessionId } })).toMatchObject({ revokedAt: null, replacedById: null })
+        expect(await db.session.count({ where: { userId: STUDY_PUBLISHER_ID } })).toBe(1)
+      } finally {
+        await db.user.delete({ where: { id: STUDY_PUBLISHER_ID } })
+      }
     })
   })
 })

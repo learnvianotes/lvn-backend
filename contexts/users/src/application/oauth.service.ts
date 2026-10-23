@@ -3,6 +3,7 @@ import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { emailSchema } from '../domain/rules'
+import { isStudyPublisher } from '../domain/study-publisher'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { freeHandle } from './handles'
 import { parseField } from './input'
@@ -79,21 +80,24 @@ export class OAuthService {
    */
   private async signInWith(identity: ProviderIdentity, device: DeviceInfo, correlationId?: string): Promise<IssuedSession> {
     const key = { provider: identity.provider, providerSubject: identity.providerSubject }
-    const linked = await this.db.oAuthAccount.findUnique({ where: { provider_providerSubject: key }, include: { user: { select: { deletedAt: true } } } })
+    const linked = await this.db.oAuthAccount.findUnique({ where: { provider_providerSubject: key }, include: { user: { select: { deletedAt: true, email: true } } } })
     if (linked) {
       if (linked.user.deletedAt) throw Errors.forbidden('This account was deleted.')
-      const account = await this.db.user.findUnique({ where: { id: linked.userId }, select: { email: true } })
-      if (!account) throw Errors.forbidden('This account was deleted.')
-      await this.access.assertAllowed(account.email)
+      if (isStudyPublisher({ id: linked.userId, email: linked.user.email })) throw Errors.forbidden('This account cannot sign in.')
+      await this.access.assertAllowed(linked.user.email)
       return this.sessions.start(linked.userId, device)
     }
     if (!identity.email || !identity.emailVerified) {
       throw Errors.validation(`Your ${NAMES[identity.provider]} account has no verified email address. Verify one there, or sign up with email.`)
     }
     const email = parseField(emailSchema, identity.email, 'email')
+    // The study publisher is not a person. Do not link a provider to it, and do not open a session, even when the
+    // provider and the row both say the address is verified (ADR-0098, ADR-0100).
+    if (isStudyPublisher({ email })) throw Errors.forbidden('This account cannot sign in.')
     await this.access.assertAllowed(email)
 
-    const existing = await this.db.user.findUnique({ where: { email }, select: { id: true, deletedAt: true, emailVerifiedAt: true } })
+    const existing = await this.db.user.findUnique({ where: { email }, select: { id: true, email: true, deletedAt: true, emailVerifiedAt: true } })
+    if (existing && isStudyPublisher(existing)) throw Errors.forbidden('This account cannot sign in.')
     if (existing) {
       if (existing.deletedAt) throw Errors.forbidden('This account was deleted.')
       if (!existing.emailVerifiedAt) {
@@ -115,6 +119,7 @@ export class OAuthService {
     const role = (await this.access.roleFor(email)) ?? 'STUDENT'
     try {
       await this.db.$transaction(async (tx) => {
+        // freeHandle refuses reserved brand and role handles, same as email sign-up.
         await tx.user.create({ data: { id, email, handle: await freeHandle(tx, displayName), displayName, emailVerifiedAt: new Date(), globalRole: role } })
         await tx.oAuthAccount.create({ data: { id: newId(), userId: id, ...key } })
       })

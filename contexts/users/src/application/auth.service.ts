@@ -16,6 +16,7 @@ import {
   VERIFY_EMAIL_TTL_HOURS,
 } from '../domain/rules'
 import { clientNetwork } from '../domain/network'
+import { isStudyPublisher } from '../domain/study-publisher'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { freeHandle } from './handles'
 import { parseField } from './input'
@@ -79,9 +80,12 @@ export class AuthService {
     const role = (await this.access.roleFor(email)) ?? 'STUDENT'
     const existing = await this.db.user.findUnique({
       where: { email },
-      select: { id: true, deletedAt: true, emailVerifiedAt: true, passwordHash: true, displayName: true },
+      select: { id: true, email: true, deletedAt: true, emailVerifiedAt: true, passwordHash: true, displayName: true },
     })
     if (existing) {
+      // The study publisher cannot gain a password, including through the email-link that attaches one to a
+      // verified account that has none (ADR-0098).
+      if (isStudyPublisher(existing)) throw Errors.conflict(ACCOUNT_EXISTS, ['input', 'email'])
       // A password is attached only when the account's email is already verified and it has no password yet
       // (a Google, GitHub or LinkedIn account). The link proves this caller owns the inbox. Anything else is the
       // same "sign in instead" answer: no second account, and no password written over one that is already set.
@@ -100,6 +104,7 @@ export class AuthService {
           data: {
             id,
             email,
+            // Never a reserved brand or role handle (`learnvianotes`, `lvn`, `admin`, …).
             handle: await freeHandle(tx, displayName),
             displayName,
             passwordHash,
@@ -115,7 +120,8 @@ export class AuthService {
     } catch (e) {
       // Two sign-ups with the same email at once: the unique index decides.
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        const raced = await this.db.user.findUnique({ where: { email }, select: { id: true, deletedAt: true, emailVerifiedAt: true, passwordHash: true, displayName: true } })
+        const raced = await this.db.user.findUnique({ where: { email }, select: { id: true, email: true, deletedAt: true, emailVerifiedAt: true, passwordHash: true, displayName: true } })
+        if (raced && isStudyPublisher(raced)) throw Errors.conflict(ACCOUNT_EXISTS, ['input', 'email'])
         if (raced && !raced.deletedAt && raced.passwordHash === null && raced.emailVerifiedAt) {
           await this.startEmailLink(raced.id, email, raced.displayName, input.password)
           return { status: 'emailLinkPending' }
@@ -143,8 +149,9 @@ export class AuthService {
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many sign-in attempts. Try again in a few minutes.')
     await this.access.assertAllowed(email)
 
-    const user = await this.db.user.findUnique({ where: { email }, select: { id: true, passwordHash: true, deletedAt: true, emailVerifiedAt: true } })
-    const ok = await this.passwords.verify(user && !user.deletedAt ? user.passwordHash : null, password)
+    const user = await this.db.user.findUnique({ where: { email }, select: { id: true, email: true, passwordHash: true, deletedAt: true, emailVerifiedAt: true } })
+    // The study publisher has no password. A hash written onto the row later still does not sign in.
+    const ok = await this.passwords.verify(user && !user.deletedAt && !isStudyPublisher(user) ? user.passwordHash : null, password)
     if (!user || !ok) {
       if (network) await this.limiter.hit(`signin-fail:${network}`, LIMITS.signInFailuresPerNetwork)
       throw Errors.validation('Email or password is incorrect.')
@@ -164,8 +171,8 @@ export class AuthService {
    */
   async verifyEmail(token: string): Promise<void> {
     const preview = await this.readableToken(token, ['VERIFY_EMAIL', 'LINK_EMAIL'])
-    const owner = await this.db.user.findUnique({ where: { id: preview.userId }, select: { email: true, deletedAt: true } })
-    if (!owner || owner.deletedAt) throw Errors.validation(INVALID_LINK, ['input', 'token'])
+    const owner = await this.db.user.findUnique({ where: { id: preview.userId }, select: { id: true, email: true, deletedAt: true } })
+    if (!owner || owner.deletedAt || isStudyPublisher(owner)) throw Errors.validation(INVALID_LINK, ['input', 'token'])
     await this.access.assertAllowed(owner.email)
     const row = await this.consumeToken(token, ['VERIFY_EMAIL', 'LINK_EMAIL'])
     if (row.purpose === 'LINK_EMAIL') {
@@ -191,8 +198,9 @@ export class AuthService {
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many reset requests. Try again later.')
     // Same answer as an unknown address: the caller cannot tell whether the email is on the list.
     if (!(await this.access.allows(email))) return
-    const user = await this.db.user.findUnique({ where: { email }, select: { id: true, displayName: true, deletedAt: true } })
-    if (!user || user.deletedAt) return
+    const user = await this.db.user.findUnique({ where: { email }, select: { id: true, email: true, displayName: true, deletedAt: true } })
+    // No reset mail for the study publisher, and no token that could set a password if the address ever received one.
+    if (!user || user.deletedAt || isStudyPublisher(user)) return
     const token = randomToken()
     await this.db.emailToken.create({
       data: { id: newId(), userId: user.id, purpose: 'RESET_PASSWORD', tokenHash: sha256(token), expiresAt: new Date(Date.now() + RESET_PASSWORD_TTL_MINUTES * 60_000) },
@@ -208,9 +216,11 @@ export class AuthService {
   async resetPassword(token: string, password: string): Promise<void> {
     await this.passwords.assertAcceptable(password)
     const preview = await this.readableToken(token, 'RESET_PASSWORD')
-    const owner = await this.db.user.findUnique({ where: { id: preview.userId }, select: { email: true, deletedAt: true } })
-    // An unlisted address looks like an expired link, so the reset does not reveal the list.
-    if (!owner || owner.deletedAt || !(await this.access.allows(owner.email))) throw Errors.validation(INVALID_LINK, ['input', 'token'])
+    const owner = await this.db.user.findUnique({ where: { id: preview.userId }, select: { id: true, email: true, deletedAt: true } })
+    // An unlisted address, and the study publisher, look like an expired link. The reset does not reveal the list.
+    if (!owner || owner.deletedAt || isStudyPublisher(owner) || !(await this.access.allows(owner.email))) {
+      throw Errors.validation(INVALID_LINK, ['input', 'token'])
+    }
     const row = await this.consumeToken(token, 'RESET_PASSWORD')
     const user = await this.db.user.update({
       where: { id: row.userId },

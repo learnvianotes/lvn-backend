@@ -701,6 +701,19 @@ input AiConnectionIdInput
   id: UUID!
 }
 
+"""Every model a connection lists, and the select for each use"""
+type AiConnectionModels
+  @join__type(graph: AI)
+{
+  """Every model the account lists, sorted by id. Nothing is dropped."""
+  all: [AiListedModel!]!
+
+  """
+  One select per use, in a fixed order. A use this app cannot call has an empty list.
+  """
+  pickers: [AiModelPicker!]!
+}
+
 type AiConnectionPayload
   @join__type(graph: AI)
 {
@@ -768,6 +781,86 @@ enum AiLanguage
   ENGLISH @join__enumValue(graph: AI)
   HINDI @join__enumValue(graph: AI)
   TELUGU @join__enumValue(graph: AI)
+}
+
+"""One model a connection's account lists"""
+type AiListedModel
+  @join__type(graph: AI)
+{
+  """
+  The id the provider uses, sent back as chatModel, embedModel or a route's model
+  """
+  id: String!
+  kind: AiModelKind!
+
+  """
+  Pickers that offer this model. Empty: listed under `all`, shown in no select.
+  """
+  supports: [AiModelUse!]!
+}
+
+"""
+What a listed model is. A picker offers it only when `supports` includes that picker's use.
+"""
+enum AiModelKind
+  @join__type(graph: AI)
+{
+  CHAT @join__enumValue(graph: AI)
+  EMBEDDING @join__enumValue(graph: AI)
+  IMAGE @join__enumValue(graph: AI)
+  AUDIO @join__enumValue(graph: AI)
+  REALTIME @join__enumValue(graph: AI)
+  TTS @join__enumValue(graph: AI)
+  MODERATION @join__enumValue(graph: AI)
+  OTHER @join__enumValue(graph: AI)
+}
+
+"""The models one select offers"""
+type AiModelPicker
+  @join__type(graph: AI)
+{
+  use: AiModelUse!
+  models: [AiListedModel!]!
+}
+
+"""
+A select on /admin/ai. IMAGE, TTS, AUDIO, REALTIME and MODERATION stay empty: this app does not call those APIs.
+TRANSCRIBE is a recording sent through the chat API, not the audio-transcriptions API.
+"""
+enum AiModelUse
+  @join__type(graph: AI)
+{
+  """
+  The connection's chat model, and every task route except embeddings and transcription
+  """
+  CHAT @join__enumValue(graph: AI)
+
+  """
+  The connection's embedding model, and the EMBED route. Embeddings are 768 numbers.
+  """
+  EMBEDDING @join__enumValue(graph: AI)
+
+  """The TRANSCRIBE route: a chat model that can hear a recording"""
+  TRANSCRIBE @join__enumValue(graph: AI)
+
+  """Image generation. This app does not call it, so the picker is empty."""
+  IMAGE @join__enumValue(graph: AI)
+
+  """Speech. This app does not call it, so the picker is empty."""
+  TTS @join__enumValue(graph: AI)
+
+  """
+  The audio transcriptions API. This app does not call it, so the picker is empty.
+  """
+  AUDIO @join__enumValue(graph: AI)
+
+  """Realtime. This app does not call it, so the picker is empty."""
+  REALTIME @join__enumValue(graph: AI)
+
+  """
+  Moderation models. This app does not call them, so the picker is empty.
+  """
+  MODERATION @join__enumValue(graph: AI)
 }
 
 """Who answers AI calls"""
@@ -4870,10 +4963,12 @@ type Query
   aiSettings: AiSettings! @join__field(graph: AI)
 
   """
-  Platform admins only: every model the connection's account lists, sorted, for its chat and embedding model fields.
-  Empty when the provider does not list its models, cannot be reached or the key cannot be read. Spends no tokens.
+  Platform admins only: every model the connection's account lists, and the select for each use.
+  `all` keeps every id (paged through when the provider splits the list). `pickers` offers only models this app can
+  call for that use. Both are empty when the provider does not list its models, cannot be reached or the key cannot
+  be read. Spends no tokens.
   """
-  aiConnectionModels(input: AiConnectionIdInput!): [String!]! @join__field(graph: AI)
+  aiConnectionModels(input: AiConnectionIdInput!): AiConnectionModels! @join__field(graph: AI)
 
   """
   One of the viewer's AI results; null when it is not theirs or they can no longer read the note

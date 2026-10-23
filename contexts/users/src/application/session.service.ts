@@ -6,6 +6,7 @@ import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { SessionRevocations } from '@lvn-backend/redis'
 import { SESSION_TTL_DAYS } from '../domain/rules'
+import { isStudyPublisher } from '../domain/study-publisher'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { AccessGate } from './access-gate'
 import { randomToken, sha256 } from './secrets'
@@ -46,7 +47,8 @@ export class SessionService {
 
   /** A new session family for a user who just proved who they are. */
   async start(userId: string, device: DeviceInfo): Promise<IssuedSession> {
-    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, select: { globalRole: true } })
+    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, select: { globalRole: true, email: true } })
+    if (isStudyPublisher(user)) throw Errors.forbidden('This account cannot sign in.')
     const familyId = newId()
     const refreshToken = randomToken()
     const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * DAY_MS)
@@ -63,6 +65,7 @@ export class SessionService {
       include: { user: { select: { globalRole: true, deletedAt: true, email: true } } },
     })
     if (!session) throw Errors.unauthenticated('Your session has ended. Sign in again.')
+    if (isStudyPublisher({ id: session.userId, email: session.user.email })) throw Errors.forbidden('This account cannot sign in.')
     if (session.revokedAt) {
       if (session.replacedById) await this.revokeFamily(session.familyId, session.userId)
       throw Errors.unauthenticated('Your session has ended. Sign in again.')

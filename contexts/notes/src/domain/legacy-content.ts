@@ -15,8 +15,8 @@ import type { ImportedCard } from './markdown-import'
  * - inside a callout, question or table, where cards only hold text, code becomes monospaced lines and tables rows;
  * - icons are dropped and the one inline SVG diagram is left out (counted, never silently).
  *
- * Pure: the import service reads Firestore and writes notes; this only converts, and every card it returns passes the
- * card schema the editors use.
+ * Pure: it only converts. Study-content sync stores the pages; this does not read Firestore. Every card it returns
+ * passes the card schema the editors use.
  */
 
 /** A node of the old content tree (old repo schema/content.ts ContentNode). */

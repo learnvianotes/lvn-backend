@@ -32,7 +32,7 @@ complete rewrite, without the old sign-in features.
 - **Phase 2 follow-up:** when `notes` owns Subject/Topic, import `content-build/` into Postgres as curated topics,
   switch `features/core-content/source.ts` to GraphQL, and move the authoring kit to lvn-backend (seed data) or its
   own repo. A new ADR decides whether curated content becomes PUBLIC notes owned by an LVN account. **Decided by
-  ADR-0098 (2026-10-22): yes, imported from the old site's Firestore by `content:import-legacy`.**
+  ADR-0098 (amended 2026-10-23): yes, as Markdown pages in `content/study`, synced on deploy. The Firestore content import is retired.**
 
 ## Amendment (2026-10-08): `/core` is the old app, not a re-implementation
 

@@ -1,87 +1,30 @@
-# Import the old site's study content
+# Study notes on deploy
 
-ADR-0098. One command reads the old learnvianotes.in content from its Firestore (project `learnvianotes-2e2d7`) and
-writes it into an environment's database:
+ADR-0098. The 22 subjects and their topics are already in the database from `20261008050000_curated_topics`. The 907 study notes (757 topics and 150 Sheet 150 problems) are Markdown pages in `content/study`. The compose `migrate` service runs `node scripts/migrate-and-sync.mjs`, which applies `prisma migrate deploy` and then upserts those pages. Nothing else has to run after a deploy, and the sync does not need an environment variable that the migrate container does not already have (`DATABASE_URL`).
 
-- the catalogue: subjects, topic groups and topics, added or renamed to match, never removed;
-- each of the 757 topics and 150 Sheet 150 problems as a PUBLIC note of the LearnViaNotes account, under its topic.
+Merging the change seeds production on that environment's first deploy. The same step seeds beta. There is no manual command and no Firestore credential for this content. Google sign-in and the old-account snapshot (`legacy:snapshot`, ADR-0023) are separate and still use Firebase.
 
-It never writes to Firestore, and it imports no accounts: people sign in again with Google. Their old progress and
-personal notes are a separate step (ADR-0023, `legacy:snapshot`). Beta first; **production only when the owner says
-so**.
+The sync matches a note on its `LegacyContentItem` key, and looks subjects and topics up by slug. It inserts a missing note and updates a seeded note that nobody has edited. It does not update users, and it does not change a note someone has edited, unpublished, hidden or trashed. Running it again does not duplicate rows.
 
-## Before the first run
+## Before the first deploy
 
-1. **A read-only service account** on `learnvianotes-2e2d7` (Google Cloud console → IAM & Admin → Service accounts):
-   - name it `lvn-content-reader`;
-   - give it the **Cloud Datastore Viewer** role (`roles/datastore.viewer`) and nothing else;
-   - create a JSON key. Keep it out of git and chat. Delete the key in the console after the import.
-2. **The LearnViaNotes account** on the target site (`https://beta.learnvianotes.in`):
-   - sign up with the content mailbox, display name "LearnViaNotes", and confirm the email;
-   - set the handle to `learnvianotes` in its settings if it got another one.
-3. **Verify it.** Publishing needs a verified account (§5), and this one has no college to verify it. On the VM, as the
-   deploy user:
-
-   ```sh
-   cd /opt/lvn
-   docker compose exec -T postgres psql -U lvn -d lvn -c "UPDATE users.\"User\" SET \"verifiedAt\" = now(), \"verificationMethod\" = 'DOCUMENTS' WHERE handle = 'learnvianotes' RETURNING id, handle"
-   ```
-
-## Run it
-
-On the VM, as the deploy user. Copy the key over first (`scp lvn-content-reader.json deploy@<host>:/opt/lvn/`):
+On the target database (beta first, then production):
 
 ```sh
 cd /opt/lvn
-chmod 600 lvn-content-reader.json
-lvn_import() {
-  docker compose run --rm --no-deps -T --user "$(id -u):$(id -g)" \
-    -v "$PWD/lvn-content-reader.json:/secrets/firestore-reader.json:ro" \
-    worker node apps/worker/dist/cli.js content:import-legacy --credentials /secrets/firestore-reader.json "$@"
-}
-lvn_import --owner learnvianotes --dry-run   # reads and converts everything, writes nothing
-lvn_import --owner learnvianotes             # writes
-rm lvn-content-reader.json
+docker compose exec -T postgres psql -U lvn -d lvn -c 'SELECT count(*) FROM notes."LegacyContentItem";'
+docker compose exec -T postgres psql -U lvn -d lvn -c "SELECT id, email, handle, \"displayName\" FROM users.\"User\" WHERE email IN ('publisher@learnvianotes.invalid', 'notes@learnvianotes.in') OR handle = 'learnvianotes';"
+docker compose exec -T postgres psql -U lvn -d lvn -c "select migration_name from _prisma_migrations where migration_name like '20261109%';"
 ```
 
-- The dry run prints the report with "would create 907".
-- The real run takes about a minute. It runs beside the stack in a one-off worker container (up to about 300 MB).
-- Then open `https://<host>/subjects/dsa-basics/analysis`: the topic lists its note by LearnViaNotes.
+- **`LegacyContentItem` count.** Zero means this database has not imported the notes. The sync creates them. A count above zero means `content:import-legacy` (or an earlier sync) already ran: the sync attaches to those keys and does not insert a second note per key. Expect 907 after a full import.
+- **Publisher.** The publisher is always `publisher@learnvianotes.invalid` (id `019a118c-f480-7000-8000-000000000001`, handle `learnvianotes`). The sync creates that row when it is missing. It does not adopt `notes@learnvianotes.in` or any other account. If the handle `learnvianotes` already belongs to someone else and the system publisher does not exist yet, the migrate container exits and no notes are published. Free that handle (give the person a different one) and deploy again. Do not point the catalogue at a learner. The system publisher cannot sign in.
+- **Migrations named `20261109%`.** Lists any migration from that day that this database has applied. An empty result means none of those names are recorded.
 
-Options:
+The system publisher is `publisher@learnvianotes.invalid`, handle `learnvianotes`, display name LearnViaNotes. It has no password, no verified email, no birth date and no verification flag. Those columns are nullable. Auth refuses that id and that address for password sign-in, reset, email-link sign-up and provider linking. Sign-up will not give a person the handle `learnvianotes`.
 
-- `--subject <id>` (repeatable): only those subjects' notes. The catalogue is always brought up to date.
-- `--project <id>`: when the key file's `project_id` is not the old project.
-- `--allow-production`: needed when `APP_ENV=production`. Only with the owner's word.
+## After deploy
 
-## The report
+`publicNotes` and each subject page list the notes. A second deploy of the same pages changes nothing. Editing a page under `content/study` and deploying updates that note until someone edits it in the app.
 
-| Field | What it means |
-| --- | --- |
-| `notes.created` / `updated` / `unchanged` | Written for the first time, rewritten as a new published version because the old document changed, or already up to date |
-| `notes.editedInApp` | Someone changed, unpublished or made private the note in the app since the import wrote it. It is left alone |
-| `notes.trashed` | In the LearnViaNotes account's trash. Left alone; once the trash is emptied, the next run writes it again |
-| `notes.held` | Held by the moderation scorer (ADR-0037). A platform admin approves them in `/admin/moderation` |
-| `notes.invalid` | Documents that are not in the old format, with the reason |
-| `catalog.*` | Subjects and topics added or changed; `notInSource` lists curated topics the old site no longer has (kept) |
-| `leftOut` | What no card can show, by kind. Today: one inline SVG diagram |
-
-## Running it again
-
-It is safe to run again at any time. A run writes only what changed. `notes.LegacyContentItem` remembers each old
-document's note, what was written and the version published.
-
-To bring an edited note back to the old content, trash it in the LearnViaNotes account and empty the trash. The next
-run writes it again.
-
-## Trying it locally
-
-The Firestore emulator stands in for the old project:
-
-1. Start it: `java -jar ~/.cache/firebase/emulators/cloud-firestore-emulator-*.jar --host <host> --port 8089`.
-2. Fill it with the old app's own seeder, from lvn-web's `release/college-launch` worktree:
-   `FIRESTORE_EMULATOR_HOST=<host>:8089 node scripts/content/seed/run.mjs`.
-3. Run the import with `-e FIRESTORE_EMULATOR_HOST=<host>:8089`. Any service-account-shaped key file works, since the
-   emulator does not check it.
-
-`<host>` must be reachable from the worker container: for the local Compose stack, its network's gateway address.
+`scripts/generate-study-seed.mjs` is retired. It exits without touching the filesystem. Do not regenerate migrations from it.
