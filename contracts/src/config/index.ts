@@ -97,11 +97,16 @@ const auth = z.object({
    */
   DIGITAL_CONSENT_AGE: z.coerce.number().int().min(13).max(21).default(18),
   /**
-   * ADR-0091: the youngest age that may create an account. Below it sign-up refuses, and an account a sign-in provider
-   * created is erased when its own (confirmed) answer is younger. 18 for the College/Interview launch; 0 lets everyone
+   * ADR-0091: the youngest age that may use an account. Below it sign-up keeps the account as AGE_BLOCKED
+   * (no session, nothing public) and returns AGE_RESTRICTED. 18 for the College/Interview launch; 0 lets everyone
    * in, minors then restricted as DIGITAL_CONSENT_AGE says (§15.2, the School track).
    */
   ACCOUNT_MINIMUM_AGE: z.coerce.number().int().min(0).max(21).default(18),
+  /**
+   * Fallback for userErrors.supportEmail when no non-deleted PLATFORM_ADMIN exists.
+   * Otherwise that field is the earliest platform admin by createdAt.
+   */
+  SUPPORT_EMAIL: z.email().default('support@learnvianotes.in'),
   /** ADR-0037: extra `REASON: phrase` lines for the rule-based moderation scorer; the built-in spam phrases apply without it. */
   MODERATION_WORDS_FILE: z.string().min(1).optional(),
   /** The web app's on-demand revalidation endpoint (`<web>/api/revalidate`): public note pages refresh when a note changes. Off without it. */

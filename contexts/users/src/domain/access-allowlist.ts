@@ -17,7 +17,7 @@ export const GUARD_SELF_DEMOTE = "You can't change your own role."
 export const GUARD_LAST_ADMIN_REMOVE = "You can't remove the last platform admin."
 export const GUARD_LAST_ADMIN_DEMOTE = "You can't change the role of the last platform admin."
 
-const RANK: Record<GlobalRole, number> = { STUDENT: 0, TEACHER: 1, PLATFORM_ADMIN: 2 }
+const RANK: Record<GlobalRole, number> = { STUDENT: 0, TEACHER: 1, MANAGER: 2, PLATFORM_ADMIN: 3 }
 
 export function normalizeAllowlistEmail(raw: string): string {
   return raw.trim().toLowerCase()

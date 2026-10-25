@@ -540,6 +540,9 @@ importers:
       graphql:
         specifier: 16.14.2
         version: 16.14.2
+      ioredis:
+        specifier: ^6.0.0
+        version: 6.0.0
       marked:
         specifier: 15.0.12
         version: 15.0.12
@@ -583,6 +586,9 @@ importers:
       '@lvn-backend/legacy':
         specifier: workspace:*
         version: link:../../libs/legacy
+      '@lvn-backend/observability':
+        specifier: workspace:*
+        version: link:../../libs/observability
       '@lvn-backend/prisma-base':
         specifier: workspace:*
         version: link:../../libs/prisma-base

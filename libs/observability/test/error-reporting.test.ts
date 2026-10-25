@@ -1,7 +1,71 @@
 import * as Sentry from '@sentry/node'
-import { flushErrors, reportError, startErrorReporting } from '../src'
+import type { ErrorEvent } from '@sentry/node'
+import { logContext } from '../src/log-context'
+import { flushErrors, reportError, scrubEvent, setBackendErrorSink, startErrorReporting } from '../src/error-reporting'
 
 type Envelope = [Record<string, unknown>, [{ type: string }, Record<string, unknown>][]]
+
+const OWNER = '22222222-2222-4222-8222-222222222222'
+
+describe('error reporting', () => {
+  afterEach(() => setBackendErrorSink(null))
+
+  it('keeps user.id and drops email, username and ip', () => {
+    const event = {
+      user: { id: 'user-1', email: 'ada@college.edu', username: 'Ada', ip_address: '203.0.113.8' },
+      request: {
+        url: 'https://api.example/graphql?token=secret',
+        cookies: { lvn_rt: 'cookie' },
+        data: { password: 'secret' },
+        query_string: 'token=secret',
+        headers: { cookie: 'c', authorization: 'Bearer x', 'user-agent': 'ua' },
+      },
+    }
+    const out = scrubEvent(event as unknown as ErrorEvent)
+    expect(out.user).toEqual({ id: 'user-1' })
+    expect(out.request?.url).toBe('https://api.example/graphql')
+    expect(out.request?.cookies).toBeUndefined()
+    expect(out.request?.headers).toEqual({ 'user-agent': 'ua' })
+    expect(JSON.stringify(out)).not.toContain('ada@college.edu')
+  })
+
+  it('writes our error log when Sentry is off, with a scrubbed message and the user id', () => {
+    const seen: { userId?: string; message: string; route?: string; code: string }[] = []
+    setBackendErrorSink((event) => void seen.push(event))
+    logContext.run({ userId: '11111111-1111-4111-8111-111111111111', operation: 'Viewer' }, () => {
+      reportError(new Error('failed for ada@college.edu bearer tok'))
+    })
+    expect(seen).toEqual([
+      expect.objectContaining({
+        userId: '11111111-1111-4111-8111-111111111111',
+        route: 'Viewer',
+        code: 'INTERNAL',
+        message: expect.stringContaining('[email]'),
+      }),
+    ])
+    expect(seen[0]!.message).not.toContain('ada@college.edu')
+    expect(seen[0]!.message).not.toContain('tok')
+  })
+
+  it('writes a failed scan to the error log with the file owner, even with no request', () => {
+    const seen: { userId?: string; route?: string; code: string; message: string }[] = []
+    setBackendErrorSink((event) => void seen.push(event))
+    reportError(Object.assign(new Error('scan service did not return a verdict'), { userId: OWNER }), {
+      queue: 'file-scan',
+      job: 'scan',
+      jobId: 'file-1',
+      userId: OWNER,
+    })
+    expect(seen).toEqual([
+      expect.objectContaining({
+        userId: OWNER,
+        route: 'file-scan/scan',
+        code: 'INTERNAL',
+        message: 'scan service did not return a verdict',
+      }),
+    ])
+  })
+})
 
 describe('reportError user id', () => {
   const sent: Envelope[] = []
@@ -30,10 +94,10 @@ describe('reportError user id', () => {
   })
 
   it('sets the user id from the tags a failed scan reports', async () => {
-    reportError(Object.assign(new Error('scan service did not return a verdict'), { userId: 'user-2' }), { queue: 'notes.media', job: 'process-file', userId: 'user-2' })
+    reportError(Object.assign(new Error('scan service did not return a verdict'), { userId: 'user-2' }), { queue: 'file-scan', job: 'scan', userId: 'user-2' })
     await flushErrors()
     const event = events().at(-1)
     expect(event?.user).toEqual({ id: 'user-2' })
-    expect(event?.tags).toMatchObject({ queue: 'notes.media', job: 'process-file', userId: 'user-2' })
+    expect(event?.tags).toMatchObject({ queue: 'file-scan', job: 'scan', userId: 'user-2' })
   })
 })

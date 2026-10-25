@@ -53,6 +53,7 @@ describe('worker', () => {
     const schedulers = await app.get(Queues).queue(USERS_MAINTENANCE_QUEUE).getJobSchedulers()
     expect(schedulers.map((s) => [s.key, s.pattern, s.tz]).sort()).toEqual([
       ['delete-accounts', '20 3 * * *', 'UTC'],
+      ['purge-analytics', '25 3 * * *', 'UTC'],
       ['purge-verification-documents', '15 3 * * *', 'UTC'],
     ])
   })

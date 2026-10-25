@@ -1,4 +1,4 @@
-import { ageOn, dateOfBirthSchema, displayNameSchema, emailSchema, handleBase, handleSchema, isBelowMinimumAge, isReservedHandle, isRestrictedMinor } from '../../src/domain/rules'
+import { ageRestrictedMessage, ageOn, dateOfBirthSchema, displayNameSchema, emailSchema, handleBase, handleSchema, isBelowMinimumAge, isReservedHandle, isRestrictedMinor, UNDER_MINIMUM_AGE_MESSAGE } from '../../src/domain/rules'
 
 const d = (s: string) => new Date(`${s}T00:00:00Z`)
 
@@ -41,6 +41,10 @@ describe('isBelowMinimumAge (ADR-0091)', () => {
 
   it('refuses nobody when the minimum is 0', () => {
     expect(isBelowMinimumAge(d('2020-01-01'), 0, on)).toBe(false)
+  })
+
+  it('names the support address on the refusal the client shows', () => {
+    expect(ageRestrictedMessage('support@learnvianotes.in')).toBe(`${UNDER_MINIMUM_AGE_MESSAGE} Contact an admin at support@learnvianotes.in.`)
   })
 })
 

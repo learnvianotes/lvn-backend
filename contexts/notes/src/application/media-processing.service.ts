@@ -223,10 +223,10 @@ export class MediaProcessingService implements OnModuleInit {
    */
   async scanQueued(fileId: string, lastAttempt: boolean): Promise<'clean' | 'quarantined'> {
     const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
-    if (!file || file.deletedAt || file.status !== 'READY' || file.scanResult === 'FAILED') return 'clean'
+    if (!file || file.deletedAt || file.scanResult === 'FAILED') return 'clean'
     if (file.scanResult === 'CLEAN') return 'clean'
     if (file.scanResult === 'INFECTED' || file.status === 'QUARANTINED') return 'quarantined'
-    if (this.config.scan.mode !== 'remote') return 'clean'
+    if (file.status !== 'READY' || this.config.scan.mode !== 'remote') return 'clean'
     if (file.scanResult !== 'PENDING') await this.db.fileObject.update({ where: { id: fileId }, data: { scanResult: 'PENDING' } })
     const dir = await mkdtemp(path.join(tmpdir(), 'lvn-scan-'))
     try {

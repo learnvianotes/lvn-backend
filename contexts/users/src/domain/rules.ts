@@ -71,6 +71,14 @@ export function isBelowMinimumAge(dateOfBirth: Date, minimumAge: number, on = ne
 /** What a refused person reads (web and phone show it, and remember the refusal on the device for a day). */
 export const UNDER_MINIMUM_AGE_MESSAGE = 'Sorry, you can’t create an account. LearnViaNotes accounts are only for adults; you can still read the public notes without one.'
 
+/** Stored on an AGE_BLOCKED account. It does not name the cut-off. */
+export const AGE_BLOCK_REASON = 'Below the minimum age for an account.'
+
+/** The sign-up and sign-in message, including the address the client shows as "contact admin at <email>". */
+export function ageRestrictedMessage(supportEmail: string): string {
+  return `${UNDER_MINIMUM_AGE_MESSAGE} Contact an admin at ${supportEmail}.`
+}
+
 /**
  * A minor without verified guardian or institutional consent (§15.2): private notes and classroom content only, no
  * public publishing, no DMs, no behavioural recommendations. Unknown date of birth (registration not finished) is

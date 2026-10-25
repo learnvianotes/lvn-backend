@@ -76,6 +76,8 @@ describe('apiConfigSchema (Phase 1)', () => {
     expect(loadConfig(apiConfigSchema, { ...valid, DIGITAL_CONSENT_AGE: '16' }).DIGITAL_CONSENT_AGE).toBe(16)
     expect(loadConfig(apiConfigSchema, valid).ACCOUNT_MINIMUM_AGE).toBe(18)
     expect(loadConfig(apiConfigSchema, { ...valid, ACCOUNT_MINIMUM_AGE: '0' }).ACCOUNT_MINIMUM_AGE).toBe(0)
+    expect(loadConfig(apiConfigSchema, valid).SUPPORT_EMAIL).toBe('support@learnvianotes.in')
+    expect(loadConfig(apiConfigSchema, { ...valid, SUPPORT_EMAIL: 'help@learnvianotes.in' }).SUPPORT_EMAIL).toBe('help@learnvianotes.in')
     expect(() => loadConfig(apiConfigSchema, { ...valid, DIGITAL_CONSENT_AGE: '10' })).toThrow(/DIGITAL_CONSENT_AGE/)
   })
 

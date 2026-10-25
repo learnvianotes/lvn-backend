@@ -1,5 +1,7 @@
 # Accounts for adults only (College/Interview launch)
 
+> The live sign-up response is now `AGE_RESTRICTED` and the account is kept. See `2026-10-25-age-restricted-accounts.md`.
+
 - Date: 2026-10-21
 - Package: `@lvn/contracts` 0.60.0
 - Spec: ADR-0091 (§6.2, §7, §15.2)

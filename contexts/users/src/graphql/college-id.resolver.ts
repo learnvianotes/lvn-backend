@@ -25,12 +25,20 @@ import type {
 interface CollegeIdRow {
   id: string
   userId: string
+  method: string
+  purpose: string
+  teacherId: string | null
   status: string
   message: string | null
   createdAt: Date
   decidedAt: Date | null
   reason: string | null
   documentIds: string[]
+  aiVerdict: string | null
+  aiConfidence: number | null
+  aiReason: string | null
+  aiExtracted: unknown
+  aiCheckedAt: Date | null
 }
 
 /** Anyone may ask whether the control should be shown (ADR-0099). */
@@ -123,8 +131,13 @@ export class StudentIdVerificationResolver {
 
   @ResolveField('card')
   async card(@Parent() row: CollegeIdRow, @CurrentViewer() viewer: Viewer): Promise<VerificationDocument | null> {
-    const files = await this.verification.documentsFor(viewer.userId, row.documentIds)
+    const files = await this.verification.documentsFor(viewer.userId, row)
     const file = files[0]
     return file ? { fileId: file.id, fileName: file.originalFileName, mimeType: file.mimeType, sizeBytes: file.sizeBytes } : null
+  }
+
+  @ResolveField('aiCheck')
+  aiCheck(@Parent() row: CollegeIdRow, @CurrentViewer() viewer: Viewer) {
+    return this.verification.aiCheckFor(viewer.userId, row)
   }
 }

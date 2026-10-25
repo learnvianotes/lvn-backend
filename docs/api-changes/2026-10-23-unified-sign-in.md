@@ -20,7 +20,7 @@ Send the Firebase ID token once. The API verifies it. Then:
 
 | Situation | Result |
 | --- | --- |
-| New Google user | `session` for a new account. `emailVerified: true`, `registrationComplete: false`. Call `completeRegistration` (date of birth under 18 is `UNDER_MINIMUM_AGE` and the unfinished account is erased, same as today). |
+| New Google user | `session` for a new account. `emailVerified: true`, `registrationComplete: false`. Call `completeRegistration` (a date of birth under 18 is `AGE_RESTRICTED`, the account stays `AGE_BLOCKED`, and the session ends — see `2026-10-25-age-restricted-accounts.md`). |
 | Google email matches a **verified** account | `session` for **that** account. No second user. Password, role, name and existing sessions stay. `viewer.signInMethods` includes `GOOGLE` and `EMAIL` if a password is set. |
 | Google email matches an **unverified** account | No session. `userErrors: [{ code: VALIDATION }]`. Nothing is linked and no user is created. Ask them to confirm the address (or reset the password), then try Google again. |
 | Token missing, forged, or `email_verified` is not true | No session. `UNAUTHENTICATED` ("could not be verified") when the token is rejected; `VALIDATION` ("no verified email") when the provider account has no verified email. |
@@ -34,7 +34,7 @@ Emails are trimmed and lowercased before they are stored or matched.
 | New email | session, as today | `false` | `[]` |
 | Verified account, **no password** (Google / GitHub / LinkedIn) | `null` | `true` | `[]` |
 | Account already has a password, or its email is not verified | `null` | `false` | `[{ code: CONFLICT, field: ["input", "email"], message: "An account with this email already exists. Sign in instead." }]` |
-| Date of birth under the minimum age | `null` | `false` | `[{ code: UNDER_MINIMUM_AGE, field: ["input", "dateOfBirth"] }]`. An existing account is not modified or deleted. |
+| Date of birth under the minimum age | `null` | `false` | `[{ code: AGE_RESTRICTED, field: ["input", "dateOfBirth"], supportEmail }]`. A new address is stored as `AGE_BLOCKED`. An existing account is not modified or deleted. |
 
 When `emailLinkPending` is true the API has emailed **Add a password to your account**. The link is
 `{WEB_URL}/verify?token=…`, the same page as email verification. Call `verifyEmail(input: { token })`. That mutation

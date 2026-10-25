@@ -13,7 +13,9 @@ import { type AiTaskType, ClassroomRole, DERIVATIVE_AI_TASKS, GlobalRole, GroupJ
  * - A verified account (college or organisation email confirmed, ADR-0017) is required for every action that
  *   reaches other people — the NEEDS_VERIFIED_ACCOUNT set below. Until then an account reads, keeps private notes,
  *   imports notes, exports its data, reports and blocks. Without an institutional email, a student asks a verified
- *   teacher to vouch for them, or sends proof of enrolment that only platform admins review (ADR-0019).
+ *   teacher to vouch for them, or sends proof of enrolment. Platform admins, managers, and a verified teacher at the
+ *   student's institution (or the teacher the student picked) review that proof, documents included (ADR-0019).
+ *   Teacher applications and role changes stay with platform admins.
  * - Restricted minors cannot make a note PUBLIC (§5, §15.2); the flag is applied before the matrix.
  *
  * A fork can be made PUBLIC only if its origin was PUBLIC when forked, or the forker was the origin's owner or
@@ -173,14 +175,18 @@ export type Resource =
   | { kind: 'newNote'; noteKind: NoteKind }
   | {
       kind: 'verification'
-      /** TEACHER: a verified teacher vouches. DOCUMENTS: platform admins review proof of enrolment (ADR-0019). */
+      /** TEACHER: a verified teacher vouches. DOCUMENTS: reviewers look at proof of enrolment (ADR-0019). */
       method: typeof VerificationMethod.TEACHER | typeof VerificationMethod.DOCUMENTS
       /** Requesting: the actor already has a verification request waiting. */
       pendingRequest?: boolean
       /** Requesting by TEACHER: the chosen person is a verified teacher. */
       targetIsVerifiedTeacher?: boolean
-      /** Reviewing a TEACHER request: it is addressed to the actor. */
+      /** Reviewing: the student picked this teacher. */
       addressedToActor?: boolean
+      /** Reviewing: the student belongs to the teacher's institution (membership or verified email domain). */
+      sameInstitution?: boolean
+      /** Reviewing a teacher application is platform-admin only. Absent means a student account request. */
+      purpose?: 'ACCOUNT' | 'TEACHER_ROLE'
     }
   | {
       kind: 'user'
@@ -497,9 +503,14 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           if (actor.institutionVerified || resource.pendingRequest) return false
           return documents ? !actor.restrictedMinor : resource.targetIsVerifiedTeacher === true
         case Action.ACCOUNT_REVIEW_VERIFICATION:
-          // Documents are seen by platform admins only, never by teachers.
+          // Teacher applications grant the TEACHER role: platform admins only.
           if (actor.globalRole === GlobalRole.PLATFORM_ADMIN) return true
-          return !documents && actor.globalRole === GlobalRole.TEACHER && resource.addressedToActor === true
+          if (resource.purpose === 'TEACHER_ROLE') return false
+          // Managers review every student request, documents and college IDs included.
+          if (actor.globalRole === GlobalRole.MANAGER) return true
+          // A verified teacher reviews students who picked them and students of their own institution, with documents.
+          if (actor.globalRole !== GlobalRole.TEACHER) return false
+          return resource.addressedToActor === true || resource.sameInstitution === true
         default:
           return false
       }

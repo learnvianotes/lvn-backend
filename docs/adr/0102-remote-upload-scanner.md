@@ -57,8 +57,9 @@ not hold the database or the R2 credentials.
   address (30 per minute), in Redis so every API process shares the window. A refusal is `RATE_LIMITED` with
   `userErrors[].retryAfter`. Admin settings override the environment until they are reset. College ID uploads count
   toward these windows and are still not scanned (ADR-0099).
-- The last failed attempt of a scan job is reported with `user.id` set to the file owner. A sweeper re-queues READY
-  files that are still `PENDING` when their job is not already waiting or failed. It does not resurrect a `FAILED` scan.
+- The last failed attempt of a scan job is reported to Sentry and written to `error_events` with `userId` set to
+  the file owner. A sweeper re-queues READY files that are still `PENDING` when their job is not already waiting or
+  failed. It does not resurrect a `FAILED` scan. A not-ready scanner pauses the queue and is not an error event.
 - An import that reads a file still `PENDING` is retried. On its last attempt it is marked failed with a clear
   message.
 - College ID cards (ADR-0099) do not publish `FileReady` and are not scanned. They stay in the restricted bucket and

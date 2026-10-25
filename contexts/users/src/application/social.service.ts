@@ -276,7 +276,7 @@ export class SocialService {
   private nameable(): Prisma.UserWhereInput {
     const adultsBornBy = new Date()
     adultsBornBy.setUTCFullYear(adultsBornBy.getUTCFullYear() - this.settings.consentAge())
-    return { deletedAt: null, OR: [{ dateOfBirth: { lte: adultsBornBy } }, { consents: { some: { kind: 'GUARDIAN' } } }] }
+    return { deletedAt: null, accountStatus: { notIn: ['AGE_BLOCKED', 'BLOCKED'] }, OR: [{ dateOfBirth: { lte: adultsBornBy } }, { consents: { some: { kind: 'GUARDIAN' } } }] }
   }
 
   /** The person's followers, newest first, restricted minors left out of the names (they are still counted). */

@@ -5,10 +5,12 @@ import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { SessionRevocations } from '@lvn-backend/redis'
+import { refusalError } from '../domain/account-status'
 import { SESSION_TTL_DAYS } from '../domain/rules'
 import { isStudyPublisher } from '../domain/study-publisher'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { AccessGate } from './access-gate'
+import { SupportContact } from './support-contact'
 import { randomToken, sha256 } from './secrets'
 
 export interface DeviceInfo {
@@ -41,14 +43,17 @@ export class SessionService {
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(USERS_CONFIG) config: UsersConfig,
     private readonly access: AccessGate,
+    private readonly support: SupportContact,
   ) {
     this.signer = new AccessTokenSigner(config.jwtPrivateKey, config.jwtIssuer, config.tokenAudience)
   }
 
   /** A new session family for a user who just proved who they are. */
   async start(userId: string, device: DeviceInfo): Promise<IssuedSession> {
-    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, select: { globalRole: true, email: true } })
+    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, select: { globalRole: true, email: true, accountStatus: true } })
     if (isStudyPublisher(user)) throw Errors.forbidden('This account cannot sign in.')
+    const refused = refusalError(user.accountStatus, await this.support.email())
+    if (refused) throw refused
     const familyId = newId()
     const refreshToken = randomToken()
     const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * DAY_MS)
@@ -62,7 +67,7 @@ export class SessionService {
   async refresh(refreshToken: string): Promise<IssuedSession> {
     const session = await this.db.session.findUnique({
       where: { refreshTokenHash: sha256(refreshToken) },
-      include: { user: { select: { globalRole: true, deletedAt: true, email: true } } },
+      include: { user: { select: { globalRole: true, deletedAt: true, email: true, accountStatus: true } } },
     })
     if (!session) throw Errors.unauthenticated('Your session has ended. Sign in again.')
     if (isStudyPublisher({ id: session.userId, email: session.user.email })) throw Errors.forbidden('This account cannot sign in.')
@@ -70,7 +75,10 @@ export class SessionService {
       if (session.replacedById) await this.revokeFamily(session.familyId, session.userId)
       throw Errors.unauthenticated('Your session has ended. Sign in again.')
     }
-    if (session.expiresAt <= new Date() || session.user.deletedAt) throw Errors.unauthenticated('Your session has ended. Sign in again.')
+    if (session.expiresAt <= new Date() || session.user.deletedAt || session.user.accountStatus !== 'ACTIVE') {
+      if (session.user.accountStatus !== 'ACTIVE') await this.revokeFamily(session.familyId, session.userId)
+      throw Errors.unauthenticated('Your session has ended. Sign in again.')
+    }
     if (!(await this.access.allows(session.user.email))) {
       await this.revokeFamily(session.familyId, session.userId)
       throw Errors.unauthenticated('Your session has ended. Sign in again.')

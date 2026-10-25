@@ -24,5 +24,8 @@ export const usersSubgraph = { name: 'users', typeDefs: usersTypeDefs, modules: 
 /** Data exports (ADR-0018): requested here, built by apps/worker from the users.export queue. */
 export { DataExportService, USERS_EXPORT_QUEUE } from './application/data-export.service'
 export { AccountDeletionService, DELETION_GRACE_DAYS } from './application/account-deletion.service'
+/** College ID and proof documents read by the worker's AI job. The API only enqueues. */
+export { AI_REVIEWER_ID, IdCardCheckService, USERS_ID_CHECK_QUEUE, type IdCardExtractor } from './application/id-card-check.service'
+export { AnalyticsService } from './application/analytics.service'
 /** Skills import (ADR-0077): the worker's import and monthly refresh. */
 export { SkillsImportService, USERS_SKILLS_QUEUE } from './application/skills-import.service'
