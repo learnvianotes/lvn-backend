@@ -121,12 +121,24 @@ describe('auth', () => {
       expect(res.data!.signUp.userErrors).toEqual([{ code: 'VALIDATION', field, message: expect.stringMatching(message) }])
     })
 
-    it('refuses a date of birth below the minimum age and stores nothing (ADR-0091)', async () => {
+    it('keeps a date of birth below the minimum age as AGE_BLOCKED and returns AGE_RESTRICTED', async () => {
       const input = signUpInput({ dateOfBirth: yearsAgo(17) })
-      const res = await t.gql<SignUpResult>(SIGN_UP, { input })
+      const res = await t.gql<{ signUp: { session: { accessToken: string } | null; userErrors: { field: string[] | null; message: string; code: string; supportEmail: string | null }[] } }>(
+        `mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken } userErrors { field message code supportEmail } } }`,
+        { input },
+      )
       expect(res.data!.signUp.session).toBeNull()
-      expect(res.data!.signUp.userErrors).toEqual([{ code: 'UNDER_MINIMUM_AGE', field: ['input', 'dateOfBirth'], message: expect.stringMatching(/only for adults/) }])
-      expect(await t.app.get(PrismaService).user.findUnique({ where: { email: input.email } })).toBeNull()
+      expect(res.data!.signUp.userErrors).toEqual([{
+        code: 'AGE_RESTRICTED',
+        field: ['input', 'dateOfBirth'],
+        message: expect.stringMatching(/Contact an admin at support@learnvianotes\.in/),
+        supportEmail: 'support@learnvianotes.in',
+      }])
+      const user = await t.app.get(PrismaService).user.findUnique({ where: { email: input.email } })
+      expect(user).toMatchObject({ accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.', analyticsOptOut: true })
+      expect(user!.deletedAt).toBeNull()
+      expect(user!.registrationCompletedAt).not.toBeNull()
+      expect(await t.app.get(PrismaService).session.count({ where: { userId: user!.id } })).toBe(0)
     })
 
     it('lets someone in on their eighteenth birthday', async () => {

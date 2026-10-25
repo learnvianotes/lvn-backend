@@ -54,6 +54,13 @@ type AccountStanding {
   warnings: [AccountWarning!]!
 }
 
+enum AccountStatus {
+  ACTIVE
+  AGE_BLOCKED
+  BLOCKED
+  SUSPENDED
+}
+
 """A warning platform moderators gave an account (ADR-0053)"""
 type AccountWarning {
   at: DateTime!
@@ -298,6 +305,13 @@ type AdminContestQuestion {
   prompt: String!
 }
 
+input AdminDeleteUserInput {
+  """The exact word DELETE."""
+  confirm: String!
+  reason: String!
+  userId: UUID!
+}
+
 """One error code in the window, with who it affected."""
 type AdminErrorGroup {
   code: String!
@@ -308,6 +322,21 @@ type AdminErrorGroup {
 
   """At most 100 distinct account ids."""
   userIds: [UUID!]!
+}
+
+"""
+An account as a platform admin sees it, including a date of birth (YYYY-MM-DD) and the standing reason.
+"""
+type AdminManagedUser {
+  accountStatus: AccountStatus!
+  createdAt: DateTime!
+  dateOfBirth: String
+  displayName: String!
+  email: String!
+  globalRole: GlobalRole!
+  handle: String!
+  id: UUID!
+  statusReason: String
 }
 
 """
@@ -370,6 +399,19 @@ type AdminPlanPayload {
   userErrors: [UserError!]!
 }
 
+input AdminSetAccountStandingInput {
+  reason: String!
+
+  """
+  ACTIVE lifts a block or suspension. BLOCKED is indefinite. SUSPENDED needs until. AGE_BLOCKED is refused: correct the date of birth.
+  """
+  status: AccountStatus!
+
+  """Required when status is SUSPENDED. A time in the future."""
+  until: DateTime
+  userId: UUID!
+}
+
 """
 One application setting. `value` is `true` or `false`, a decimal integer, text, or empty when an integer is cleared.
 `overridden` is false when no admin has saved a row: `value` is then the environment variable or the built-in default.
@@ -429,6 +471,21 @@ type AdminStorageMetrics {
   files: Int!
 }
 
+input AdminUpdateUserInput {
+  """
+  YYYY-MM-DD. The age gate runs again. A date that clears an age block needs reason.
+  """
+  dateOfBirth: String
+  displayName: String
+  email: String
+
+  """
+  Why this change is being made. Required, including when a new date of birth lets an under-age account pass.
+  """
+  reason: String!
+  userId: UUID!
+}
+
 """
 DAU, WAU and MAU are distinct accounts in the last 1, 7 and 30 days before `to`.
 """
@@ -440,6 +497,11 @@ type AdminUsageSummary {
   topEvents: [UsageCount!]!
   topFeatures: [UsageCount!]!
   wau: Int!
+}
+
+type AdminUserList {
+  total: Int!
+  users: [AdminManagedUser!]!
 }
 
 """
@@ -460,6 +522,20 @@ type AdminUserMetrics {
   newLast7Days: Int!
   newLast30Days: Int!
   total: Int!
+}
+
+type AdminUserPayload {
+  user: AdminManagedUser
+  userErrors: [UserError!]!
+}
+
+"""
+Which accounts adminUsers returns. BLOCKED_OR_SUSPENDED is both reversible holds.
+"""
+enum AdminUserStatusFilter {
+  ACTIVE
+  AGE_BLOCKED
+  BLOCKED_OR_SUSPENDED
 }
 
 type AdminVerificationMetrics {
@@ -2088,6 +2164,7 @@ enum EmailKind {
 
 """Fixed error vocabulary (§6.2)"""
 enum ErrorCode {
+  AGE_RESTRICTED
   CONFLICT
   FORBIDDEN
   INTERNAL
@@ -3012,6 +3089,21 @@ type Mutation {
 
   """Adds a task to this week (at most three)"""
   addWeeklyTask(input: AddWeeklyTaskInput!): WeeklyTaskPayload!
+
+  """
+  Platform admins. Permanently anonymises the account, deletes its files and sessions, and keeps a hashed-email tombstone. confirm must be DELETE.
+  """
+  adminDeleteUser(input: AdminDeleteUserInput!): OkPayload!
+
+  """
+  Platform admins. Blocks, suspends or restores an account. Block and suspend revoke every session. Audited.
+  """
+  adminSetAccountStanding(input: AdminSetAccountStandingInput!): AdminUserPayload!
+
+  """
+  Platform admins. Edits name, email or date of birth and re-runs the age gate. A passing date of birth clears AGE_BLOCKED. Audited.
+  """
+  adminUpdateUser(input: AdminUpdateUserInput!): AdminUserPayload!
   answerClassroomInvite(input: AnswerClassroomInviteInput!): ClassroomPayload!
 
   """Until the deadline or the submission; may change an answer"""
@@ -4361,6 +4453,11 @@ type Query {
 
   """Platform admins. One account's usage, newest first."""
   adminUserActivity(first: Int, userId: UUID!): [UserActivityEvent!]!
+
+  """
+  Platform admins. Accounts in one standing, optionally matched on name, email or handle.
+  """
+  adminUsers(first: Int, search: String, status: AdminUserStatusFilter!): AdminUserList!
   aiAnswer(id: UUID!): AiAnswer
 
   """
@@ -6453,6 +6550,11 @@ type UserError {
   code: ErrorCode!
   field: [String!]
   message: String!
+
+  """
+  Set on AGE_RESTRICTED, and on a blocked sign-in: the address to show as contact admin at this email.
+  """
+  supportEmail: String
 }
 
 type VerificationDocument {

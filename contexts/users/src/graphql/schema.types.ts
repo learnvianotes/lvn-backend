@@ -33,6 +33,8 @@ export interface AccountDeletionPayload {
   userErrors: Array<UserError>
 }
 
+export type AccountStatus = 'ACTIVE' | 'AGE_BLOCKED' | 'BLOCKED' | 'SUSPENDED'
+
 export interface AddAccessAllowlistEntryInput {
   email: string
   role: GlobalRole
@@ -98,6 +100,13 @@ export interface AdminContentMetrics {
   classrooms: number
 }
 
+export interface AdminDeleteUserInput {
+  userId: string
+  reason: string
+  /** The exact word DELETE. */
+  confirm: string
+}
+
 /** One error code in the window, with who it affected. */
 export interface AdminErrorGroup {
   code: string
@@ -107,6 +116,19 @@ export interface AdminErrorGroup {
   /** At most 100 distinct account ids. */
   userIds: Array<string>
   sampleMessage: string
+}
+
+/** An account as a platform admin sees it, including a date of birth (YYYY-MM-DD) and the standing reason. */
+export interface AdminManagedUser {
+  id: string
+  email: string
+  displayName: string
+  handle: string
+  dateOfBirth: string | null
+  accountStatus: AccountStatus
+  statusReason: string | null
+  globalRole: GlobalRole
+  createdAt: Date
 }
 
 /** Dashboard totals. Cached in each API process for about a minute. No personal data.
@@ -162,6 +184,15 @@ export interface AdminPlanPayload {
   userErrors: Array<UserError>
 }
 
+export interface AdminSetAccountStandingInput {
+  userId: string
+  /** ACTIVE lifts a block or suspension. BLOCKED is indefinite. SUSPENDED needs until. AGE_BLOCKED is refused: correct the date of birth. */
+  status: AccountStatus
+  reason: string
+  /** Required when status is SUSPENDED. A time in the future. */
+  until?: Date | null
+}
+
 /** One application setting. `value` is `true` or `false`, a decimal integer, text, or empty when an integer is cleared.
  * `overridden` is false when no admin has saved a row: `value` is then the environment variable or the built-in default.
  * Categories: auth, verification, uploads, ai, search, accounts. */
@@ -204,6 +235,16 @@ export interface AdminStorageMetrics {
   files: number
 }
 
+export interface AdminUpdateUserInput {
+  userId: string
+  displayName?: string | null
+  email?: string | null
+  /** YYYY-MM-DD. The age gate runs again. A date that clears an age block needs reason. */
+  dateOfBirth?: string | null
+  /** Why this change is being made. Required, including when a new date of birth lets an under-age account pass. */
+  reason: string
+}
+
 /** DAU, WAU and MAU are distinct accounts in the last 1, 7 and 30 days before `to`. */
 export interface AdminUsageSummary {
   from: Date
@@ -213,6 +254,11 @@ export interface AdminUsageSummary {
   mau: number
   topEvents: Array<UsageCount>
   topFeatures: Array<UsageCount>
+}
+
+export interface AdminUserList {
+  users: Array<AdminManagedUser>
+  total: number
 }
 
 /** Display name, email and role for the errors dashboard. Platform admins only. */
@@ -230,6 +276,14 @@ export interface AdminUserMetrics {
   newLast30Days: number
   active: number
 }
+
+export interface AdminUserPayload {
+  user: AdminManagedUser | null
+  userErrors: Array<UserError>
+}
+
+/** Which accounts adminUsers returns. BLOCKED_OR_SUSPENDED is both reversible holds. */
+export type AdminUserStatusFilter = 'AGE_BLOCKED' | 'BLOCKED_OR_SUSPENDED' | 'ACTIVE'
 
 export interface AdminVerificationMetrics {
   /** Pending college-ID reviews. */
@@ -366,7 +420,7 @@ export interface DomainReview {
 export type DomainReviewStatus = 'ACADEMIC_QUEUED' | 'NEEDS_REVIEW' | 'APPROVED' | 'REJECTED'
 
 /** Fixed error vocabulary (§6.2) */
-export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE'
+export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED'
 
 /** A public identifier a teacher claims, and how to prove it is theirs (ADR-0077) */
 export interface ExternalIdentity {
@@ -519,6 +573,18 @@ export interface MutationUpdateAdminPlanArgs {
 
 export interface MutationDeleteAdminPlanArgs {
   id: string
+}
+
+export interface MutationAdminUpdateUserArgs {
+  input: AdminUpdateUserInput
+}
+
+export interface MutationAdminSetAccountStandingArgs {
+  input: AdminSetAccountStandingInput
+}
+
+export interface MutationAdminDeleteUserArgs {
+  input: AdminDeleteUserInput
 }
 
 export interface MutationIngestAnalyticsArgs {
@@ -783,6 +849,12 @@ export interface QueryAdminAccessAllowlistArgs {
 export interface QueryAdminMetricsArgs {
   from?: Date | null
   to?: Date | null
+}
+
+export interface QueryAdminUsersArgs {
+  status: AdminUserStatusFilter
+  search?: string | null
+  first?: number | null
 }
 
 export interface QueryAdminErrorsArgs {
@@ -1242,6 +1314,8 @@ export interface UserError {
   field: Array<string> | null
   message: string
   code: ErrorCode
+  /** Set on AGE_RESTRICTED, and on a blocked sign-in: the address to show as contact admin at this email. */
+  supportEmail: string | null
 }
 
 export interface VerificationDocument {

@@ -26,29 +26,37 @@ export class PolicyService implements Policy {
         verifiedAt: true,
         dateOfBirth: true,
         suspendedUntil: true,
+        accountStatus: true,
         consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 },
         // A pending application to teach makes a teacher applicant (ADR-0073).
         verificationRequests: { where: { purpose: 'TEACHER_ROLE', status: 'PENDING' }, select: { id: true }, take: 1 },
       },
     })
-    if (!u) return null
+    if (!u || u.accountStatus === 'AGE_BLOCKED' || u.accountStatus === 'BLOCKED') return null
     return {
       id: u.id,
       globalRole: u.globalRole as GlobalRole,
       institutionVerified: u.verifiedAt !== null,
       // The age threshold is configuration, cached briefly (ADR-0101). The account itself is read every time.
       restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.settings.consentAge(), u.consents.length > 0),
-      suspended: u.suspendedUntil !== null && u.suspendedUntil.getTime() > Date.now(),
+      suspended: u.accountStatus === 'SUSPENDED' || (u.suspendedUntil !== null && u.suspendedUntil.getTime() > Date.now()),
       teacherApplicant: u.globalRole === 'STUDENT' && u.verificationRequests.length > 0,
     }
   }
 
   async suspend(userId: string, until: Date, reason: string): Promise<void> {
-    await this.db.user.updateMany({ where: { id: userId, deletedAt: null }, data: { suspendedUntil: until, suspensionReason: reason } })
+    await this.db.user.updateMany({
+      where: { id: userId, deletedAt: null, accountStatus: { notIn: ['AGE_BLOCKED', 'BLOCKED'] } },
+      data: { suspendedUntil: until, suspensionReason: reason, accountStatus: 'SUSPENDED', statusReason: reason },
+    })
   }
 
   async lift(userId: string): Promise<void> {
-    await this.db.user.updateMany({ where: { id: userId }, data: { suspendedUntil: null, suspensionReason: null } })
+    await this.db.user.updateMany({
+      where: { id: userId, accountStatus: 'SUSPENDED' },
+      data: { suspendedUntil: null, suspensionReason: null, accountStatus: 'ACTIVE', statusReason: null },
+    })
+    await this.db.user.updateMany({ where: { id: userId, accountStatus: { not: 'SUSPENDED' } }, data: { suspendedUntil: null, suspensionReason: null } })
   }
 
   async suspension(userId: string): Promise<{ until: Date; reason: string | null } | null> {

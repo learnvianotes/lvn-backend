@@ -156,7 +156,7 @@ describe('admin dashboard', () => {
       `mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken } userErrors { code field } } }`,
       { input: { email: `young-${newId().slice(0, 8)}@example.com`, password: 'a long passphrase for asha', displayName: 'Asha Rao', dateOfBirth: '2006-06-01', acceptedTermsVersion: '2026-10-08' } },
     )
-    expect(signUp.data!.signUp.userErrors[0]!.code).toBe('UNDER_MINIMUM_AGE')
+    expect(signUp.data!.signUp.userErrors[0]!.code).toBe('AGE_RESTRICTED')
     expect(signUp.data!.signUp.session).toBeNull()
 
     expect((await t.gql(SET, { input: { key: 'not_a_setting', value: 'true' } }, admin.token)).data).toMatchObject({ updateAdminSetting: { setting: null, userErrors: [{ code: 'VALIDATION' }] } })

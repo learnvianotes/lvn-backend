@@ -181,6 +181,10 @@ model User {
   suspensionReason        String?
   /// When true, usage analytics for this account are not stored (DPDP). Error reports from the app are stored without this id.
   analyticsOptOut         Boolean             @default(false)
+  /// AGE_BLOCKED has no session and is not public. BLOCKED and SUSPENDED are reversible admin holds.
+  accountStatus           AccountStatus       @default(ACTIVE)
+  /// Why the account is age-blocked, blocked, or suspended. Admins read it; it is not a public field.
+  statusReason            String?
   createdAt               DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt               DateTime            @updatedAt @db.Timestamptz(3)
 
@@ -208,6 +212,16 @@ model User {
   teacherProfile       TeacherProfile?
   teacherSkills        TeacherSkill[]
   externalIdentities   ExternalIdentity[]
+
+  @@index([accountStatus, createdAt(sort: Desc)])
+  @@schema("users")
+}
+
+enum AccountStatus {
+  ACTIVE
+  AGE_BLOCKED
+  BLOCKED
+  SUSPENDED
 
   @@schema("users")
 }
@@ -608,6 +622,20 @@ model AuditLog {
 
   @@index([targetType, targetId, createdAt])
   @@index([actorId, createdAt])
+  @@schema("users")
+}
+
+/// DPDP tombstone of an admin's permanent deletion. The email is a SHA-256 hex digest, never the address itself.
+model AccountTombstone {
+  id        String   @id @db.Uuid
+  userId    String   @db.Uuid
+  emailHash String
+  adminId   String   @db.Uuid
+  reason    String
+  deletedAt DateTime @db.Timestamptz(3)
+
+  @@index([emailHash])
+  @@map("account_tombstones")
   @@schema("users")
 }
 

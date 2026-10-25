@@ -1,11 +1,14 @@
 import { Injectable } from '@nestjs/common'
 import type { People, Person, SearchProfile } from '@lvn-backend/facades'
-import { PrismaService } from '@lvn-backend/prisma-base'
+import { $Enums, PrismaService } from '@lvn-backend/prisma-base'
 import { isRestrictedMinor } from '../domain/rules'
 import type { SignInMethod, User } from '../graphql/schema.types'
 import { InstitutionalEmailService } from './institutional-email.service'
 import { PlatformSettingsStore } from './platform-settings.store'
 import { deletionDate } from './account-deletion.service'
+
+/** Age-blocked and admin-blocked accounts are not public and cannot be found by handle or email. */
+const PUBLIC_ACCOUNT = { notIn: [$Enums.AccountStatus.AGE_BLOCKED, $Enums.AccountStatus.BLOCKED] }
 
 @Injectable()
 export class UsersService implements People {
@@ -20,7 +23,7 @@ export class UsersService implements People {
     const q = handleOrEmail.trim().replace(/^@/, '')
     if (!q || q.length > 254) return null
     const u = await this.db.user.findFirst({
-      where: { deletedAt: null, OR: [{ handle: { equals: q, mode: 'insensitive' } }, { email: q }] },
+      where: { deletedAt: null, accountStatus: PUBLIC_ACCOUNT, OR: [{ handle: { equals: q, mode: 'insensitive' } }, { email: q }] },
       select: { id: true, handle: true, displayName: true, globalRole: true },
     })
     return u ? { id: u.id, handle: u.handle, displayName: u.displayName, globalRole: u.globalRole } : null
@@ -39,6 +42,7 @@ export class UsersService implements People {
     const rows = await this.db.user.findMany({
       where: {
         deletedAt: null,
+        accountStatus: PUBLIC_ACCOUNT,
         dateOfBirth: { lte: adultsBornBy },
         ...(hidden.length ? { id: { notIn: hidden } } : {}),
         OR: [{ handle: { startsWith: q, mode: 'insensitive' } }, { displayName: { contains: q, mode: 'insensitive' } }],
@@ -82,7 +86,7 @@ export class UsersService implements People {
 
   /** People facade (ADR-0050): where communication writes to a person. */
   async contactOf(userId: string): Promise<{ email: string; displayName: string; restrictedMinor: boolean } | null> {
-    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { email: true, displayName: true, dateOfBirth: true, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } } })
+    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null, accountStatus: PUBLIC_ACCOUNT }, select: { email: true, displayName: true, dateOfBirth: true, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } } })
     if (!u) return null
     return { email: u.email, displayName: u.displayName, restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.settings.consentAge(), u.consents.length > 0) }
   }
@@ -111,7 +115,7 @@ export class UsersService implements People {
   async searchProfiles(ids: string[]): Promise<SearchProfile[]> {
     if (!ids.length) return []
     const rows = await this.db.user.findMany({
-      where: { id: { in: ids }, deletedAt: null, dateOfBirth: { not: null } },
+      where: { id: { in: ids }, deletedAt: null, accountStatus: PUBLIC_ACCOUNT, dateOfBirth: { not: null } },
       select: { id: true, handle: true, displayName: true, globalRole: true, dateOfBirth: true, teacherProfile: { select: { headline: true, bio: true } } },
     })
     return rows.map((u) => {
@@ -130,7 +134,7 @@ export class UsersService implements People {
   /** Anyone's view of a user: no email, institutional address, verification details or age signal. */
   async publicProfile(userId: string): Promise<User | null> {
     const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null } })
-    if (!u) return null
+    if (!u || u.accountStatus === 'AGE_BLOCKED' || u.accountStatus === 'BLOCKED') return null
     const institutional = await this.institutional.statusOf(userId)
     return {
       id: u.id,
@@ -169,7 +173,7 @@ export class UsersService implements People {
     ])
     const institutionOf = new Map<string, string>()
     for (const row of confirmed) if (row.organization && !institutionOf.has(row.userId)) institutionOf.set(row.userId, row.organization.name)
-    return users.map((u) => ({
+    return users.filter((u) => u.deletedAt !== null || (u.accountStatus !== 'AGE_BLOCKED' && u.accountStatus !== 'BLOCKED')).map((u) => ({
       id: u.id,
       handle: u.handle,
       displayName: u.displayName,
@@ -210,7 +214,7 @@ export class UsersService implements People {
       where: { id: userId, deletedAt: null },
       include: { consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } },
     })
-    if (!u) return null
+    if (!u || u.accountStatus === 'AGE_BLOCKED' || u.accountStatus === 'BLOCKED') return null
     const institutional = await this.institutional.statusOf(userId)
     return {
       id: u.id,

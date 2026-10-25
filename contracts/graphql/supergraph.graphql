@@ -88,6 +88,15 @@ type AccountStanding
   warnings: [AccountWarning!]!
 }
 
+enum AccountStatus
+  @join__type(graph: USERS)
+{
+  ACTIVE @join__enumValue(graph: USERS)
+  AGE_BLOCKED @join__enumValue(graph: USERS)
+  BLOCKED @join__enumValue(graph: USERS)
+  SUSPENDED @join__enumValue(graph: USERS)
+}
+
 """A warning platform moderators gave an account (ADR-0053)"""
 type AccountWarning
   @join__type(graph: CORE)
@@ -378,6 +387,16 @@ type AdminContestQuestion
   explanation: String!
 }
 
+input AdminDeleteUserInput
+  @join__type(graph: USERS)
+{
+  userId: UUID!
+  reason: String!
+
+  """The exact word DELETE."""
+  confirm: String!
+}
+
 """One error code in the window, with who it affected."""
 type AdminErrorGroup
   @join__type(graph: USERS)
@@ -390,6 +409,23 @@ type AdminErrorGroup
   """At most 100 distinct account ids."""
   userIds: [UUID!]!
   sampleMessage: String!
+}
+
+"""
+An account as a platform admin sees it, including a date of birth (YYYY-MM-DD) and the standing reason.
+"""
+type AdminManagedUser
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  email: String!
+  displayName: String!
+  handle: String!
+  dateOfBirth: String
+  accountStatus: AccountStatus!
+  statusReason: String
+  globalRole: GlobalRole!
+  createdAt: DateTime!
 }
 
 """
@@ -465,6 +501,21 @@ type AdminPlanPayload
   userErrors: [UserError!]!
 }
 
+input AdminSetAccountStandingInput
+  @join__type(graph: USERS)
+{
+  userId: UUID!
+
+  """
+  ACTIVE lifts a block or suspension. BLOCKED is indefinite. SUSPENDED needs until. AGE_BLOCKED is refused: correct the date of birth.
+  """
+  status: AccountStatus!
+  reason: String!
+
+  """Required when status is SUSPENDED. A time in the future."""
+  until: DateTime
+}
+
 """
 One application setting. `value` is `true` or `false`, a decimal integer, text, or empty when an integer is cleared.
 `overridden` is false when no admin has saved a row: `value` is then the environment variable or the built-in default.
@@ -534,6 +585,24 @@ type AdminStorageMetrics
   files: Int!
 }
 
+input AdminUpdateUserInput
+  @join__type(graph: USERS)
+{
+  userId: UUID!
+  displayName: String
+  email: String
+
+  """
+  YYYY-MM-DD. The age gate runs again. A date that clears an age block needs reason.
+  """
+  dateOfBirth: String
+
+  """
+  Why this change is being made. Required, including when a new date of birth lets an under-age account pass.
+  """
+  reason: String!
+}
+
 """
 DAU, WAU and MAU are distinct accounts in the last 1, 7 and 30 days before `to`.
 """
@@ -547,6 +616,13 @@ type AdminUsageSummary
   mau: Int!
   topEvents: [UsageCount!]!
   topFeatures: [UsageCount!]!
+}
+
+type AdminUserList
+  @join__type(graph: USERS)
+{
+  users: [AdminManagedUser!]!
+  total: Int!
 }
 
 """
@@ -571,6 +647,24 @@ type AdminUserMetrics
   newLast7Days: Int!
   newLast30Days: Int!
   active: Int!
+}
+
+type AdminUserPayload
+  @join__type(graph: USERS)
+{
+  user: AdminManagedUser
+  userErrors: [UserError!]!
+}
+
+"""
+Which accounts adminUsers returns. BLOCKED_OR_SUSPENDED is both reversible holds.
+"""
+enum AdminUserStatusFilter
+  @join__type(graph: USERS)
+{
+  AGE_BLOCKED @join__enumValue(graph: USERS)
+  BLOCKED_OR_SUSPENDED @join__enumValue(graph: USERS)
+  ACTIVE @join__enumValue(graph: USERS)
 }
 
 type AdminVerificationMetrics
@@ -2553,6 +2647,7 @@ enum ErrorCode
   INTERNAL @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
   UNAVAILABLE @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
   UNDER_MINIMUM_AGE @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  AGE_RESTRICTED @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
 }
 
 type Exam
@@ -4086,6 +4181,21 @@ type Mutation
   deleteAdminPlan(id: UUID!): OkPayload! @join__field(graph: USERS)
 
   """
+  Platform admins. Edits name, email or date of birth and re-runs the age gate. A passing date of birth clears AGE_BLOCKED. Audited.
+  """
+  adminUpdateUser(input: AdminUpdateUserInput!): AdminUserPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins. Blocks, suspends or restores an account. Block and suspend revoke every session. Audited.
+  """
+  adminSetAccountStanding(input: AdminSetAccountStandingInput!): AdminUserPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins. Permanently anonymises the account, deletes its files and sessions, and keeps a hashed-email tombstone. confirm must be DELETE.
+  """
+  adminDeleteUser(input: AdminDeleteUserInput!): OkPayload! @join__field(graph: USERS)
+
+  """
   Signed in. At most 40 events, 30 batches a minute. Unknown event names are refused.
   """
   ingestAnalytics(input: IngestAnalyticsInput!): OkPayload! @join__field(graph: USERS)
@@ -5409,6 +5519,11 @@ type Query
   Platform admins. Every plan, with its price, limits and how many accounts are on it.
   """
   adminPlans: [AdminPlan!]! @join__field(graph: USERS)
+
+  """
+  Platform admins. Accounts in one standing, optionally matched on name, email or handle.
+  """
+  adminUsers(status: AdminUserStatusFilter!, search: String, first: Int): AdminUserList! @join__field(graph: USERS)
 
   """
   Platform admins. Errors since `since`, or the last 90 days. Grouped by code.
@@ -7649,6 +7764,11 @@ type UserError
   field: [String!]
   message: String!
   code: ErrorCode!
+
+  """
+  Set on AGE_RESTRICTED, and on a blocked sign-in: the address to show as contact admin at this email.
+  """
+  supportEmail: String
 }
 
 scalar UUID

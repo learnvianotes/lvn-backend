@@ -42,7 +42,9 @@ import { TeacherStatusResolver, VerificationResolver } from './graphql/verificat
 import { UserReferenceResolver } from './graphql/user-reference.resolver'
 import { UserSignInMethodsResolver, ViewerResolver } from './graphql/viewer.resolver'
 import { USERS_CONFIG, type UsersConfig } from './users.config'
+import { AccountAdminService } from './application/account-admin.service'
 import { AccountDeletionService } from './application/account-deletion.service'
+import { AgeBlockService } from './application/age-block.service'
 import { AccountResolver } from './graphql/account.resolver'
 import { AccessAllowlistResolver } from './graphql/access.resolver'
 import { AnalyticsOptOutResolver, AnalyticsResolver } from './graphql/analytics.resolver'
@@ -96,6 +98,8 @@ export class UsersModule {
         ProfileService,
         ConsentService,
         DataExportService,
+        AgeBlockService,
+        AccountAdminService,
         AccountDeletionService,
         AccountResolver,
         AccessAllowlistResolver,

@@ -13,12 +13,14 @@ type PageInfo @shareable {
   endCursor: String
 }
 
-enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL UNAVAILABLE UNDER_MINIMUM_AGE }
+enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL UNAVAILABLE UNDER_MINIMUM_AGE AGE_RESTRICTED }
 
 type UserError @shareable {
   field: [String!]
   message: String!
   code: ErrorCode!
+  "Set on AGE_RESTRICTED, and on a blocked sign-in: the address to show as contact admin at this email."
+  supportEmail: String
 }
 
 type OkPayload @shareable {
