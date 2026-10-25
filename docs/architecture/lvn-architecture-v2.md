@@ -53,7 +53,7 @@ an *[Amended: ADR-NNNN]* note, and the ADR wins.
 | [0099](../adr/0099-college-id-verification.md) | A student asks a platform admin to verify them with one college ID card. The switch is admin data, off until turned on, and is not `UPLOADS_ENABLED`. The card is in the restricted bucket, admin-only via a 5-minute signed URL, and deleted when the request is decided. Approval is the existing `DOCUMENTS` verification. (§7, §8.1, §15.2) |
 | [0100](../adr/0100-unified-google-and-email-accounts.md) | One account for Google and email. Link a provider only when both the provider and the existing account have verified that email. An email sign-up for an existing provider account attaches the password after `verifyEmail`. Google is off unless `FIREBASE_PROJECT_ID` is set and an admin has left it on (`AppSetting` `google_sign_in`). (§7, §7.1) |
 | [0101](../adr/0101-admin-dashboard-metrics-settings-plans.md) | Platform admins read dashboard counts, edit every application setting, and edit plan prices. A price is configuration: nothing is charged. A missing setting row keeps the environment value. (§1, §6.3, §8.1, §10.1) |
-| [0102](../adr/0102-remote-upload-scanner.md) | Upload scanning runs on its own instance. The worker streams the file; the file stays `PENDING` and is not served until the verdict is clean. `SCAN_MODE=local` keeps the in-process clamd path. (§8.1, §8.2) |
+| [0102](../adr/0102-remote-upload-scanner.md) | Upload scanning runs on its own instance. Remote mode queues one durable `file-scan` job per file; the file stays `PENDING` or `FAILED` and is not served until the verdict is clean. `SCAN_MODE=local` keeps the in-process clamd path. (§8.1, §8.2) |
 
 **Errata (owner-approved, 2026-10-08).** Wording conflicts inside v2, corrected in place and marked *[Erratum E#]*:
 E1 role-brief sections · E2 three repositories, not a monorepo · E3 AI prompts path · E4 web/mobile own repositories,
@@ -413,7 +413,7 @@ Each store has one job. PostgreSQL is the only source of truth; Redis holds noth
 
 1. Client calls `createUploadIntent(input: {fileName, mimeType, sizeBytes, purpose, parentId})`. Backend checks permission on the parent, quota and limits, and returns a pre-signed PUT URL (10 min) plus a `FileObject` in `PENDING` state. *[Amended: ADR-0097 — only while `UPLOADS_ENABLED` is true (default false: the launch runs without uploads); `Query.uploadsEnabled` tells clients, which hide every upload control when it is false]*
 2. Client uploads directly to S3.
-3. Client calls `completeUpload(fileId)`. Backend verifies the object exists, checks magic bytes and size, sets `READY`, and enqueues processing (image resize to 3 sizes, video transcode to H.264 720p, audio normalise, PDF text extraction, malware scan with ClamAV). *[Amended: ADR-0102 — when `SCAN_MODE=remote`, the file is `scanResult=PENDING` before it can be read, the worker streams the bytes to the scan service, and a pending or failed scan is never served. `local` keeps the in-process clamd path of ADR-0041.]*
+3. Client calls `completeUpload(fileId)`. Backend verifies the object exists, checks magic bytes and size, sets `READY`, and enqueues processing (image resize to 3 sizes, video transcode to H.264 720p, audio normalise, PDF text extraction, malware scan with ClamAV). *[Amended: ADR-0102 — when `SCAN_MODE=remote`, the file is `scanResult=PENDING` before it can be read, `FileReady` enqueues one `file-scan` job, and a pending or failed scan is never served. `local` keeps the in-process clamd path of ADR-0041.]*
 4. Reads use pre-signed GET URLs (15 min) issued only after `PolicyService.can(user, 'read', parent)`. Public note media is served through CloudFront with signed cookies on the public note page.
 
 Limits: images 20 MB, audio 100 MB, video 500 MB, documents 50 MB; 5 GB per student, 20 GB per teacher, enforced server-side. Keys are `{env}/{ownerId}/{fileId}/{variant}` with no original filename in the key.
@@ -436,7 +436,7 @@ No object is written to S3 without a `FileObject` row created first, and no `Fil
 | `width`, `height`, `durationMs`, `pageCount` | int | worker | Layout without loading the file |
 | `originalFileName` | text | client | Display only; never in the key |
 | `status` | enum | API/worker | `PENDING`, `UPLOADED`, `PROCESSING`, `READY`, `FAILED`, `QUARANTINED`, `DELETED` |
-| `scanResult`, `scannedAt` | enum, timestamp | worker | ClamAV outcome. *[Amended: ADR-0102 — `PENDING` means the remote scanner has not answered; that file is not served.]* |
+| `scanResult`, `scannedAt` | enum, timestamp | worker | ClamAV outcome. *[Amended: ADR-0102 — `PENDING` means the remote scanner has not answered, and `FAILED` means the scan used its attempts. Neither is served.]* |
 | `visibilitySnapshot` | enum | API | Cached parent visibility for CDN cache keys; refreshed on parent change |
 | `accessCount`, `lastAccessedAt` | int, timestamp | API (batched via Redis) | Lifecycle tiering |
 | `expiresAt` | timestamp | API | Temporary files (imports, exports) |

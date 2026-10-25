@@ -34,7 +34,7 @@ export interface Files {
    * not announced as FileReady, so the media pipeline does not make derivative copies. The caller has already checked
    * the admin setting, the actor and the rate limit.
    */
-  createCollegeIdUpload(ownerId: string, input: { fileName: string; mimeType: string; sizeBytes: number }): Promise<{ fileId: string; uploadUrl: string; uploadHeaders: { name: string; value: string }[]; expiresAt: Date }>
+  createCollegeIdUpload(ownerId: string, input: { fileName: string; mimeType: string; sizeBytes: number }, ip?: string): Promise<{ fileId: string; uploadUrl: string; uploadHeaders: { name: string; value: string }[]; expiresAt: Date }>
   /**
    * Checks the college-ID bytes (they arrived, the size matches, the magic bytes match the declared type) and marks
    * that unused upload READY. Refuses anything that is not this owner's unused college-ID upload.

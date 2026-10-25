@@ -12,15 +12,13 @@ WORKDIR /repo
 COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @lvn-backend/scanner-protocol build && pnpm --filter @lvn-backend/scanner build
-# The runtime image is the scanner and pdf-lib only. A workspace deploy also pulled the repo's root
-# dependencies (Prisma included). The protocol package is copied in; it has no dependencies of its own.
-RUN mkdir -p /out \
+# The runtime image is the scanner and the protocol package. PDF checks stream the file; they do not
+# load it with pdf-lib. A workspace deploy also pulled Prisma, so this stage copies only what the process imports.
+RUN mkdir -p /out/node_modules/@lvn-backend/scanner-protocol \
  && cp -a apps/scanner/dist /out/dist \
- && printf '%s\n' '{"name":"@lvn-backend/scanner","private":true,"dependencies":{"pdf-lib":"1.17.1"}}' > /out/package.json \
- && cd /out && npm install --omit=dev --no-package-lock --ignore-scripts \
- && mkdir -p node_modules/@lvn-backend/scanner-protocol \
- && cp -a /repo/libs/scanner-protocol/dist node_modules/@lvn-backend/scanner-protocol/dist \
- && cp /repo/libs/scanner-protocol/package.json node_modules/@lvn-backend/scanner-protocol/package.json
+ && printf '%s\n' '{"name":"@lvn-backend/scanner","private":true}' > /out/package.json \
+ && cp -a /repo/libs/scanner-protocol/dist /out/node_modules/@lvn-backend/scanner-protocol/dist \
+ && cp /repo/libs/scanner-protocol/package.json /out/node_modules/@lvn-backend/scanner-protocol/package.json
 
 FROM ${NODE_IMAGE}
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tini && rm -rf /var/lib/apt/lists/*

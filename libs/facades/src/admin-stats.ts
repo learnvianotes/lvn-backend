@@ -11,6 +11,10 @@ export interface NotesAdminStats {
     /** Files that occupy storage. Pending, failed and deleted are left out. */
     storageFiles: number
     storageBytes: bigint
+    /** Remote scans that have not finished. */
+    pendingScans: number
+    /** Remote scans that used up their attempts. */
+    failedScans: number
   }>
 }
 

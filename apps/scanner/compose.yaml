@@ -29,8 +29,13 @@ services:
       CLAMD_CONF_MaxThreads: "2"
       CLAMD_CONF_MaxQueue: "4"
       CLAMD_CONF_ConcurrentDatabaseReload: "no"
+    # The image's entrypoint loads whatever database is already on the volume, then freshclam
+    # updates the files. That first update does not always reload clamd, so /readyz stays not-ready.
+    entrypoint: ["/bin/sh", "/opt/lvn/clamd-entry.sh"]
     volumes:
       - clamdb:/var/lib/clamav
+      - ./clamd-entry.sh:/opt/lvn/clamd-entry.sh:ro
+      - ./clamd-reload.sh:/opt/lvn/clamd-reload.sh:ro
     # The image's own check is the same script. Stated here so Compose does not depend on the image metadata.
     # freshclam's first download can take several minutes; start_period covers that.
     healthcheck:
@@ -63,7 +68,8 @@ services:
       CLAMAV_URL: tcp://127.0.0.1:3310
       SCANNER_MAX_BYTES: ${SCANNER_MAX_BYTES:-524288000}
       SCANNER_PDF_MAX_BYTES: ${SCANNER_PDF_MAX_BYTES:-52428800}
-      SCANNER_CONCURRENCY: ${SCANNER_CONCURRENCY:-1}
+      SCANNER_CONCURRENCY: ${SCANNER_CONCURRENCY:-2}
+      SCANNER_RATE_PER_MINUTE: ${SCANNER_RATE_PER_MINUTE:-60}
       SCANNER_SIGNATURE_MAX_AGE_HOURS: ${SCANNER_SIGNATURE_MAX_AGE_HOURS:-48}
       SCANNER_BODY_TIMEOUT_MS: ${SCANNER_BODY_TIMEOUT_MS:-180000}
     read_only: true

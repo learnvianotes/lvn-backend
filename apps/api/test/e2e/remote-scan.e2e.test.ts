@@ -96,7 +96,9 @@ describe('remote upload scanning', () => {
     await attach(fileId)
     expect(await shown(fileId)).toBeNull()
 
-    await t.app.get(MediaProcessingService).process(fileId)
+    const media = t.app.get(MediaProcessingService)
+    expect(await media.scanQueued(fileId, false)).toBe('clean')
+    await media.process(fileId)
     const row = await t.app.get(PrismaService).fileObject.findUniqueOrThrow({ where: { id: fileId } })
     expect(row).toMatchObject({ status: 'READY', scanResult: 'CLEAN', pageCount: 7 })
     expect(await shown(fileId)).toEqual({ pageCount: 7 })
@@ -111,7 +113,7 @@ describe('remote upload scanning', () => {
     ] as const) {
       const fileId = await upload(t, me.token, 'ATTACHMENT', 'application/pdf', bytes, name, noteId)
       const row = await t.app.get(PrismaService).fileObject.findUniqueOrThrow({ where: { id: fileId } })
-      expect(await media.process(fileId)).toEqual({ status: 'QUARANTINED', variants: {} })
+      expect(await media.scanQueued(fileId, false)).toBe('quarantined')
       expect(await t.app.get(PrismaService).fileObject.findUniqueOrThrow({ where: { id: fileId } })).toMatchObject({ status: 'QUARANTINED', scanResult: 'INFECTED' })
       expect(await storage.head(row.bucket, row.storageKey)).toBeNull()
       expect(await storage.head(t.config.S3_RESTRICTED_BUCKET, `quarantine/${row.storageKey}`)).not.toBeNull()
@@ -125,9 +127,12 @@ describe('remote upload scanning', () => {
       const token = tokenFor(away.config, u.id)
       const note = (await away.gql<{ createNote: { note: { id: string } } }>('mutation { createNote(input: { title: "Away" }) { note { id } } }', {}, token)).data!.createNote.note.id
       const fileId = await upload(away, token, 'ATTACHMENT', 'image/png', PNG, 'dot.png', note)
-      await expect(away.app.get(MediaProcessingService).process(fileId, true)).rejects.toThrow(/scan service/)
+      const awayMedia = away.app.get(MediaProcessingService)
+      await expect(awayMedia.scanQueued(fileId, false)).rejects.toThrow(/scan service/)
+      expect(await away.app.get(PrismaService).fileObject.findUniqueOrThrow({ where: { id: fileId } })).toMatchObject({ status: 'READY', scanResult: 'PENDING' })
+      await expect(awayMedia.scanQueued(fileId, true)).rejects.toThrow(/scan service/)
       const row = await away.app.get(PrismaService).fileObject.findUniqueOrThrow({ where: { id: fileId } })
-      expect(row).toMatchObject({ status: 'READY', scanResult: 'PENDING' })
+      expect(row).toMatchObject({ status: 'READY', scanResult: 'FAILED' })
       expect(row.variants).toBeNull()
     } finally {
       await away.close()

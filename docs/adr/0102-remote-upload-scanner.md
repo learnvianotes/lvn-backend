@@ -28,22 +28,37 @@ not hold the database or the R2 credentials.
   window or a reused nonce is rejected. The shared format lives in `@lvn-backend/scanner-protocol`.
 - `/readyz` answers ready only when clamd responds to PING and the signature database is younger than
   `SCANNER_SIGNATURE_MAX_AGE_HOURS` (48 by default).
-- The service caps the body (500 MB), PDF parsing (50 MB), concurrency (1) and its own memory (256 MB, heap 160 MB).
-  clamd is capped at 1450 MB. The host has 2 GB of swap.
+- The service caps the body (500 MB), PDF checks (50 MB, streamed in 64 KB reads, not loaded whole), in-flight scans (2) and its own memory (256 MB, heap 160 MB).
+  clamd is capped at 1450 MB. The host has 2 GB of swap. Two scans of a max-size video can fill the 640 MB tmpfs; that
+  is why concurrency stays at 2. A full in-flight limit or a per-caller rate cap (`SCANNER_RATE_PER_MINUTE`, 60)
+  answers 429 with `Retry-After`. The worker treats 429 as a retry and waits at least that long. `/readyz` (and
+  `POST /v1/scan`) answers 503 `not_ready` with `Retry-After: 30` while signatures are older than
+  `SCANNER_SIGNATURE_MAX_AGE_HOURS` or clamd is down. The image ships an old database. Compose runs
+  `clamd-reload.sh` beside `/init` and sends clamd `RELOAD` once the on-disk daily database is newer than the
+  one clamd loaded. The worker treats not-ready as a pause of `file-scan`, not as a failed attempt.
 - `SCAN_MODE` selects the behaviour:
   - `remote`: `completeUpload` and a non-restricted `store` set `scanResult` to `PENDING` before the file can be
-    read. The worker calls the service with a timeout, three attempts and a circuit breaker. Any failure throws and
-    leaves the file `PENDING`. A `PENDING` file is not served: client reads look like a missing file, and server-side
-    reads (`readBytes`, `download`) answer UNAVAILABLE so the caller can retry. `CLEAN` is served. `infected` and
-    `unsafe` are quarantined the way ADR-0041 quarantines an infection. The worker does not count PDF pages itself.
+    read. `FileReady` enqueues one durable BullMQ job on `file-scan` (job id is the file id). The worker streams the
+    body with a timeout, three HTTP tries inside the job, and a circuit breaker. While the breaker is open the queue
+    is paused and an in-flight job is delayed without using an attempt. A user's nth queued file has priority n, and
+    only one of that user's scans runs at a time, so a bulk upload cannot take both worker slots. Global concurrency
+    defaults to 2 (`SCAN_QUEUE_CONCURRENCY`). Any failure before the last attempt leaves the file `PENDING`. The last
+    attempt marks `scanResult` `FAILED`, copies the job to `file-scan-dlq`, and reports the failure. `PENDING` and
+    `FAILED` are not served: client reads look like a missing file. `readBytes` and `download` answer UNAVAILABLE
+    while pending (the caller retries) and VALIDATION once failed (so an import does not retry forever). `CLEAN` is
+    served. `infected` and `unsafe` are quarantined the way ADR-0041 quarantines an infection. Variants run on
+    `notes.media` only after a clean verdict. The worker does not count PDF pages itself.
   - `local`: today's ADR-0041 path. A scanner error on the last attempt sets `scanResult` to `ERROR` and the file is
-    served.
+    served. That path does not use `file-scan`.
   - `off`: nothing is scanned.
   - Unset: `CLAMAV_URL` means `local`, otherwise `off`.
 - Outside development, `SCANNER_URL` must be a private IPv4 address.
-- The last failed attempt of the media job is reported to Sentry with `user.id` set to the file owner. There is no
-  separate `error_events` table; this is the existing `reportError` path. A sweeper re-queues READY files that are
-  still `PENDING` when their job is not already waiting.
+- Upload URLs are limited per user (10 per minute, 100 per day, 500 MB per day, 5 pending scans) and per client
+  address (30 per minute), in Redis so every API process shares the window. A refusal is `RATE_LIMITED` with
+  `userErrors[].retryAfter`. Admin settings override the environment until they are reset. College ID uploads count
+  toward these windows and are still not scanned (ADR-0099).
+- The last failed attempt of a scan job is reported with `user.id` set to the file owner. A sweeper re-queues READY
+  files that are still `PENDING` when their job is not already waiting or failed. It does not resurrect a `FAILED` scan.
 - An import that reads a file still `PENDING` is retried. On its last attempt it is marked failed with a clear
   message.
 - College ID cards (ADR-0099) do not publish `FileReady` and are not scanned. They stay in the restricted bucket and
@@ -60,4 +75,5 @@ not hold the database or the R2 credentials.
 - The private path between two Lightsail instances in one region is not filtered by the public firewall. The host
   firewall and the process allow-list are what keep other instances in the region out. Docker is on the host network
   so that firewall sees the caller's address.
-- Contracts `0.72.0` adds the four scan variables. No GraphQL field changes.
+- Contracts `0.73.0` adds the scan queue and upload-limit variables. `UserError.retryAfter` carries the wait for
+  `RATE_LIMITED`. `AdminMetrics.scans` counts pending and failed remote scans.

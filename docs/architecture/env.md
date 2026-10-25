@@ -73,7 +73,14 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `SCAN_MODE` | api, worker | no | unset | `remote`, `local` or `off` (ADR-0102). Unset keeps the older rule: `CLAMAV_URL` means local, otherwise nothing is scanned. `remote` marks each new upload `scanResult=PENDING` and does not serve it until the scan service says it is clean |
 | `SCANNER_URL` | api, worker | when `remote` | — | The scan service, `http://<private-ip>:8080`. Outside development the host must be a private IPv4 address |
 | `SCANNER_SECRET` | api, worker | when `remote` (secret) | — | HMAC key shared with the scan service, at least 32 characters. `openssl rand -hex 32` |
-| `SCANNER_TIMEOUT_MS` | api, worker | no | `180000` | How long one scan request may take. The worker tries three times inside a circuit breaker |
+| `SCANNER_TIMEOUT_MS` | api, worker | no | `180000` | How long one scan request may take. One job tries the service three times inside a circuit breaker |
+| `SCAN_QUEUE_CONCURRENCY` | api, worker | no | `2` | Scan jobs the worker runs at once. Match `SCANNER_CONCURRENCY`. An admin setting (`scan_queue_concurrency`) overrides this until the worker restarts |
+| `SCAN_JOB_ATTEMPTS` | api, worker | no | `5` | Attempts for one `file-scan` job. After that the job is dead-lettered and `scanResult` becomes `FAILED` |
+| `UPLOADS_PER_MINUTE` | api, worker | no | `10` | Files one user may start uploading per minute. Admin setting `uploads_per_minute` |
+| `UPLOADS_PER_DAY` | api, worker | no | `100` | Files one user may start uploading per day. Admin setting `uploads_per_day` |
+| `UPLOAD_BYTES_PER_DAY` | api, worker | no | `524288000` | Bytes one user may declare per day (500 MB). Admin setting `upload_bytes_per_day` |
+| `UPLOAD_PENDING_SCANS` | api, worker | no | `5` | Files one user may have waiting on the remote scanner. Admin setting `upload_pending_scans` |
+| `UPLOADS_PER_IP_PER_MINUTE` | api, worker | no | `30` | Upload URLs one client address may ask for per minute. Admin setting `uploads_per_ip_per_minute` |
 | `API_HOST` | api | no | `0.0.0.0` | Bind address |
 | `API_PORT` | api | no | `4000` | HTTP + WebSocket port |
 | `CORS_ORIGINS` | api | yes | — | Comma-separated allow-list (§7.2) |
@@ -181,7 +188,8 @@ have these. The service has no `DATABASE_URL` and no `S3_*` credentials. `docs/o
 | `CLAMAV_URL` | `tcp://127.0.0.1:3310` | clamd on the same host. Compose sets this |
 | `SCANNER_MAX_BYTES` | `524288000` | Largest body, matching the 500 MB video limit |
 | `SCANNER_PDF_MAX_BYTES` | `52428800` | A larger PDF is not parsed; the verdict is unsafe |
-| `SCANNER_CONCURRENCY` | `1` | Scans at once. 2 is the maximum |
+| `SCANNER_CONCURRENCY` | `2` | Scans at once. 2 is the maximum. Match `SCAN_QUEUE_CONCURRENCY` on the main host |
+| `SCANNER_RATE_PER_MINUTE` | `60` | Authenticated `POST /v1/scan` calls one source address may make per minute. A full window answers 429 with `Retry-After`. Health checks are not counted |
 | `SCANNER_SIGNATURE_MAX_AGE_HOURS` | `48` | `/readyz` fails when the ClamAV database is older |
 | `SCANNER_BODY_TIMEOUT_MS` | `180000` | How long the body and the scan may take |
 | `SCANNER_CLOCK_SKEW_SECONDS` | `300` | How far a signed timestamp may be from this host's clock |

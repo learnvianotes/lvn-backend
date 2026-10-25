@@ -14,6 +14,7 @@ import { NotesMaintenance } from './application/notes-maintenance'
 import { NotesAccountErasure } from './application/account-erasure'
 import { OrganiseService } from './application/organise.service'
 import { PdfConversionService } from './application/pdf-conversion.service'
+import { FileScanQueue } from './application/file-scan-queue'
 import { MediaProcessingService } from './application/media-processing.service'
 import { PdfReaderService } from './application/pdf-reader.service'
 import { PublicPages } from './application/public-pages'
@@ -131,6 +132,7 @@ export class NotesModule {
         PdfReaderService,
         ReaderResolver,
         PdfConversionService,
+        FileScanQueue,
         MediaProcessingService,
         ConversionResolver,
         NoteConversionResolver,

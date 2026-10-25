@@ -28,6 +28,7 @@ describe('AppError', () => {
     expect(e).toBeInstanceOf(AppError)
     expect(e.code).toBe(ErrorCode.RATE_LIMITED)
     expect(e.retryAfter).toBe(30)
-    expect(toUserError(Errors.validation('Bad', ['input', 'x']))).toEqual({ code: 'VALIDATION', message: 'Bad', field: ['input', 'x'] })
+    expect(toUserError(Errors.validation('Bad', ['input', 'x']))).toEqual({ code: 'VALIDATION', message: 'Bad', field: ['input', 'x'], retryAfter: null })
+    expect(toUserError(Errors.rateLimited(30)).retryAfter).toBe(30)
   })
 })

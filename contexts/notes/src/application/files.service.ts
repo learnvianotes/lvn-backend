@@ -8,6 +8,7 @@ import { RateLimiter } from '@lvn-backend/redis'
 import { detectMimeType, Storage } from '@lvn-backend/storage'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
 import { NotesService } from './notes.service'
+import { uploadRefusal, type UploadLimitConfig, type WindowResult } from './scan-policy'
 
 /** What an upload attempt reads while uploads are off (ADR-0097). */
 export const UPLOADS_OFF = 'Uploads are off for now. You can still write notes, cards and code.'
@@ -92,7 +93,7 @@ export class FilesService implements Files {
     return this.settings.boolean('uploads_enabled', this.config.uploads)
   }
 
-  async createUploadIntent(ownerId: string, input: UploadRequest) {
+  async createUploadIntent(ownerId: string, input: UploadRequest, ip = '') {
     if (!this.uploadsEnabled) throw Errors.unavailable(UPLOADS_OFF)
     const actor = await this.policy.actor(ownerId)
     if (!actor) throw Errors.unauthenticated()
@@ -105,6 +106,8 @@ export class FilesService implements Files {
     if (!Number.isInteger(input.sizeBytes) || input.sizeBytes < 1) throw Errors.validation('The file is empty.', field('sizeBytes'))
     const maxBytes = typeof rule.maxBytes === 'number' ? rule.maxBytes : rule.maxBytes(input.mimeType)
     if (input.sizeBytes > maxBytes) throw Errors.validation(`Files like this can be at most ${Math.round(maxBytes / 1024 ** 2)} MB.`, field('sizeBytes'))
+
+    await this.assertUploadRate(ownerId, ip, input.sizeBytes, true)
 
     if (input.purpose === 'VERIFICATION_DOCUMENT') {
       // ADR-0019: restricted minors never upload identity documents; verified accounts have nothing to prove.
@@ -172,6 +175,7 @@ export class FilesService implements Files {
     if (object.sizeBytes !== Number(file.sizeBytes)) await fail('The uploaded file is not the size that was declared.')
     const detected = detectMimeType(await this.storage.firstBytes(file.bucket, file.storageKey))
     if (!sameKind(file.mimeType, detected)) await fail('The file content does not match its type.')
+    if (this.config.scan.mode === 'remote') await this.assertPendingScans(ownerId)
 
     await this.db.fileObject.update({
       where: { id: file.id },
@@ -209,17 +213,18 @@ export class FilesService implements Files {
 
   async readUrl(fileId: string, opts?: { ttlSeconds?: number }): Promise<{ url: string; expiresAt: Date }> {
     const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
-    if (!file || file.status !== 'READY' || file.deletedAt || file.scanResult === 'PENDING') throw Errors.notFound('File not found.')
+    if (!file || file.status !== 'READY' || file.deletedAt || unserved(file.scanResult)) throw Errors.notFound('File not found.')
     await this.db.fileObject.update({ where: { id: fileId }, data: { accessCount: { increment: 1 }, lastAccessedAt: new Date() } })
     return this.storage.presignGet(file.bucket, file.storageKey, { expiresInSeconds: opts?.ttlSeconds ?? READ_URL_TTL_SECONDS, downloadName: file.originalFileName })
   }
 
-  async createCollegeIdUpload(ownerId: string, input: { fileName: string; mimeType: string; sizeBytes: number }) {
+  async createCollegeIdUpload(ownerId: string, input: { fileName: string; mimeType: string; sizeBytes: number }, ip = '') {
     const fileName = collegeIdFileName(input.fileName)
     if (!fileName) throw Errors.validation('Give the file a name.', field('fileName'))
     if (!isCollegeIdMimeType(input.mimeType)) throw Errors.validation('Use a JPEG, PNG, WebP or PDF of your college ID card.', field('mimeType'))
     if (!Number.isInteger(input.sizeBytes) || input.sizeBytes < 1) throw Errors.validation('The file is empty.', field('sizeBytes'))
     if (input.sizeBytes > CollegeIdCardLimits.maxBytes) throw Errors.validation('A college ID card can be at most 5 MB.', field('sizeBytes'))
+    await this.assertUploadRate(ownerId, ip, input.sizeBytes, false)
     await this.assertQuota(ownerId, input.sizeBytes)
 
     const id = newId()
@@ -275,6 +280,7 @@ export class FilesService implements Files {
     const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
     if (!file || file.status !== 'READY' || file.deletedAt) throw Errors.notFound('File not found.')
     if (file.scanResult === 'PENDING') throw Errors.unavailable('This file is still being scanned.')
+    if (file.scanResult === 'FAILED') throw Errors.validation('This file could not be scanned, so it is not available.')
     const made = variant ? ((file.variants ?? {}) as Record<string, string | undefined>)[variant] : undefined
     await this.storage.download(file.bucket, made ?? file.storageKey, toPath)
     return { mimeType: made ? (variant === 'audio' ? 'audio/mp4' : 'image/webp') : file.mimeType }
@@ -350,6 +356,7 @@ export class FilesService implements Files {
     const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
     if (!file || file.ownerId !== ownerId || file.status !== 'READY' || file.deletedAt) throw Errors.notFound('Upload not found.')
     if (file.scanResult === 'PENDING') throw Errors.unavailable('This file is still being scanned.')
+    if (file.scanResult === 'FAILED') throw Errors.validation('This file could not be scanned, so it cannot be imported.')
     return { bytes: await this.storage.getBytes(file.bucket, file.storageKey, maxBytes), fileName: file.originalFileName, mimeType: file.mimeType }
   }
 
@@ -395,4 +402,55 @@ export class FilesService implements Files {
     const limit = await this.entitlements.limit(ownerId, 'STORAGE_BYTES')
     assertWithinPlan('STORAGE_BYTES', limit, await this.storageUsed(ownerId), BigInt(sizeBytes))
   }
+
+  /** Per-user and per-address windows, plus (for files that will be scanned) how many scans are already waiting. */
+  private async assertUploadRate(ownerId: string, ip: string, sizeBytes: number, countPending: boolean): Promise<void> {
+    const limits = this.uploadLimits()
+    const pending = countPending && this.config.scan.mode === 'remote' ? await this.pendingScans(ownerId) : 0
+    if (pending >= limits.pendingScans) {
+      const refusal = uploadRefusal({ minute: open, day: open, bytes: open, ip: open, pending }, limits)
+      if (refusal) throw Errors.rateLimited(refusal.retryAfter, refusal.message)
+    }
+    const minute = await this.limiter.hit(`upload:user:m:${ownerId}`, { max: limits.perMinute, windowSeconds: 60 })
+    if (!minute.allowed) throw Errors.rateLimited(minute.retryAfter, `You can upload ${limits.perMinute} files a minute. Try again in ${minute.retryAfter} seconds.`)
+    const day = await this.limiter.hit(`upload:user:d:${ownerId}`, { max: limits.perDay, windowSeconds: 24 * 3600 })
+    if (!day.allowed) throw Errors.rateLimited(day.retryAfter, `You can upload ${limits.perDay} files a day. Try again in ${day.retryAfter} seconds.`)
+    const bytes = await this.limiter.charge(`upload:user:b:${ownerId}`, sizeBytes, { max: limits.bytesPerDay, windowSeconds: 24 * 3600 })
+    if (!bytes.allowed) throw Errors.rateLimited(bytes.retryAfter, `You can upload ${Math.round(limits.bytesPerDay / (1024 * 1024))} MB a day. Try again in ${bytes.retryAfter} seconds.`)
+    if (!ip) return
+    const network = await this.limiter.hit(`upload:ip:m:${ip}`, { max: limits.perIpPerMinute, windowSeconds: 60 })
+    if (!network.allowed) throw Errors.rateLimited(network.retryAfter, `Too many uploads from this network. Try again in ${network.retryAfter} seconds.`)
+  }
+
+  private async assertPendingScans(ownerId: string): Promise<void> {
+    const limits = this.uploadLimits()
+    const pending = await this.pendingScans(ownerId)
+    const refusal = uploadRefusal({ minute: open, day: open, bytes: open, ip: open, pending }, limits)
+    if (refusal) throw Errors.rateLimited(refusal.retryAfter, refusal.message)
+  }
+
+  private pendingScans(ownerId: string): Promise<number> {
+    return this.db.fileObject.count({ where: { ownerId, deletedAt: null, scanResult: 'PENDING' } })
+  }
+
+  private uploadLimits(): UploadLimitConfig {
+    const base = this.config.uploadLimits
+    const number = (key: string, fallback: number) => {
+      const saved = this.settings.integer(key, fallback)
+      return saved ?? fallback
+    }
+    return {
+      perMinute: number('uploads_per_minute', base.perMinute),
+      perDay: number('uploads_per_day', base.perDay),
+      bytesPerDay: number('upload_bytes_per_day', base.bytesPerDay),
+      pendingScans: number('upload_pending_scans', base.pendingScans),
+      perIpPerMinute: number('uploads_per_ip_per_minute', base.perIpPerMinute),
+    }
+  }
+}
+
+const open: WindowResult = { allowed: true, retryAfter: 0 }
+
+function unserved(result: string | null): boolean {
+  return result === 'PENDING' || result === 'FAILED'
 }

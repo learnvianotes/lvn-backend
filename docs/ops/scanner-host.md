@@ -106,8 +106,12 @@ still works from the AWS account that owns the instance.
 
 ## 3. Prepare the host
 
-The 2 GB plan needs swap. clamd is capped at 1450 MB and the scanner at 256 MB; a large video can push the box into
-swap rather than getting the process killed.
+The 2 GB plan needs swap. On a live `small_3_1`, clamd sits at about 934 MB and about 355 MB is free, with the
+2 GB swap in use. clamd is capped at 1450 MB and the scanner at 256 MB (heap 160 MB). Leave
+`SCANNER_CONCURRENCY` at 2: two scans of a 500 MB video can fill the 640 MB tmpfs, and there is no room for a
+second copy of the signature database. PDFs are streamed from the temp file in 64 KB reads. The PDF cap stays
+at 50 MB (`SCANNER_PDF_MAX_BYTES`); do not raise it. A large video can push the box into swap rather than
+getting the process killed.
 
 ```bash
 sudo fallocate -l 2G /swapfile
@@ -147,8 +151,15 @@ set -a && source /opt/lvn-scan/scanner.env && set +a
 docker compose -f apps/scanner/compose.yaml up -d --build
 ```
 
-The first start downloads the ClamAV signature database and can take several minutes. `clamd` is not marked healthy
-until that finishes (`start_period` is 6 minutes, then retries). Watch it:
+The image ships an old signature database. On a new volume, `/init` runs freshclam once before clamd starts.
+When the volume already has that old database, clamd loads it and freshclam's later download does not always
+reload clamd, so `/readyz` stays not-ready (503, `signatures: stale`) until clamd answers `RELOAD`. Compose
+replaces the image entrypoint with `apps/scanner/clamd-entry.sh`, which runs `/init` and
+`apps/scanner/clamd-reload.sh`. The helper waits until clamd answers, and sends `RELOAD` once `daily.cvd` or
+`daily.cld` has a higher version than the one clamd reports. It tries for 45 minutes, then exits.
+`ConcurrentDatabaseReload` stays off: two databases do not fit. The first start can take several minutes.
+`clamd` is not marked healthy until clamd answers (`start_period` is 6 minutes, then retries). The scanner's
+own health check stays failing until `/readyz` sees a fresh database. Watch it:
 
 ```bash
 docker compose -f apps/scanner/compose.yaml ps
@@ -195,8 +206,11 @@ Generate one secret and put the same value on both hosts. `openssl rand -hex 32`
 | `SCANNER_PORT` | `8080` unless you also change the URL on the main host |
 
 Do not put `DATABASE_URL` or any `S3_*` / R2 key in this file. Compose sets `CLAMAV_URL=tcp://127.0.0.1:3310` itself.
-The other knobs (`SCANNER_MAX_BYTES`, `SCANNER_CONCURRENCY`, `SCANNER_SIGNATURE_MAX_AGE_HOURS`) have defaults in
-`apps/scanner/compose.yaml` and `docs/architecture/env.md`.
+The other knobs (`SCANNER_MAX_BYTES`, `SCANNER_CONCURRENCY`, `SCANNER_RATE_PER_MINUTE`,
+`SCANNER_SIGNATURE_MAX_AGE_HOURS`) have defaults in `apps/scanner/compose.yaml` and `docs/architecture/env.md`.
+Concurrency defaults to 2, the same as `SCAN_QUEUE_CONCURRENCY` on the main host. A third scan, or more than 60
+authenticated scan calls a minute from one address, is answered `429` with `Retry-After`. The worker waits and tries
+again. Two scans of a 500 MB video can fill the 640 MB tmpfs; leave concurrency at 2 on this 2 GB host.
 
 ### The main instance
 
@@ -209,7 +223,14 @@ SCAN_MODE=remote
 SCANNER_URL=http://<lvn-scan-beta-private-ip>:8080
 SCANNER_SECRET=<the same hex secret>
 SCANNER_TIMEOUT_MS=180000
+SCAN_QUEUE_CONCURRENCY=2
+SCAN_JOB_ATTEMPTS=5
 ```
+
+`SCAN_QUEUE_CONCURRENCY` must match this host's `SCANNER_CONCURRENCY`. The upload windows
+(`UPLOADS_PER_MINUTE` 10, `UPLOADS_PER_DAY` 100, `UPLOAD_BYTES_PER_DAY` 524288000, `UPLOAD_PENDING_SCANS` 5,
+`UPLOADS_PER_IP_PER_MINUTE` 30) apply without being set. A platform admin can change them, and the queue
+concurrency, from the admin settings. The worker reads concurrency when it starts.
 
 Do not set `CLAMAV_URL` on this instance while `SCAN_MODE=remote`. Redeploy lvn-backend so both containers pick the
 lines up. Uploads stay off until `LVN_UPLOADS_ENABLED=true` as well (ADR-0097); a remote upload is then pending
@@ -226,7 +247,18 @@ Until they match, files stay `PENDING` and are not served.
 ## What stays on the main server
 
 The database, the R2 credentials, quarantine (the copy into the restricted bucket), image and video variants, and
-the decision to serve a file. College ID cards are not sent here: they never enter the media queue (ADR-0099).
+the decision to serve a file. College ID cards are not sent here: they never enter the scan queue (ADR-0099).
 
-A `PENDING` file whose job has finished or failed is queued again every 10 minutes (`retry-pending-scans`). The
-last failed attempt is reported to Sentry with the file owner's user id.
+Remote mode does not call this service from the media job. `FileReady` adds one job to the Redis queue `file-scan`
+(job id is the file id, so a second enqueue is a no-op). The worker runs two of those jobs at a time. Each job tries
+the HTTP call three times. The job itself is retried with exponential backoff (about 15s, then 30s, 60s, 120s, each
+up to 20% shorter) and gives up after five attempts. That copy sits on `file-scan-dlq`, and the file is `FAILED`
+and still not served. An open circuit pauses `file-scan` until it closes. One user has one scan in flight.
+
+A `PENDING` file whose job is gone is queued again every 10 minutes (`retry-pending-scans`). A job that already
+failed is left failed. While `/readyz` is not ready (stale signatures, or clamd down during the reload), the
+worker pauses `file-scan` and puts the job back without using an attempt. That wait is not a failure: the file
+stays `PENDING`, the circuit breaker stays closed, and nothing is reported. The last failed attempt of a scan
+that did run is reported with the file owner's user id. Queue depth, wait, scan
+time and failures are logged (`scan result=…`) and counted (`lvn.scan.wait`, `lvn.scan.duration`,
+`lvn.scan.failures`). `adminMetrics.scans` shows how many files are pending or failed.

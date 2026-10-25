@@ -1,5 +1,5 @@
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common'
-import { MediaProcessingService, NOTES_MEDIA_QUEUE } from '@lvn-backend/notes'
+import { FILE_SCAN_QUEUE, MediaProcessingService, NOTES_MEDIA_QUEUE } from '@lvn-backend/notes'
 import { Queues } from '@lvn-backend/queue'
 
 /**
@@ -32,6 +32,17 @@ export class MediaJobs implements OnApplicationBootstrap {
         },
       },
       1,
+    )
+    this.queues.process(
+      FILE_SCAN_QUEUE,
+      {
+        scan: async (data, job) => {
+          const body = data as { fileId?: string; userId?: string }
+          const waitMs = job.processedOn && job.timestamp ? job.processedOn - job.timestamp : 0
+          await this.media.handleScanJob(body, job.attemptsMade + 1 >= (job.opts.attempts ?? 1), waitMs)
+        },
+      },
+      this.media.scanConcurrency(),
     )
     await this.queues.repeat(NOTES_MEDIA_QUEUE, 'reconcile', '40 3 * * *')
     // Files left pending while the scan service was down (ADR-0102).

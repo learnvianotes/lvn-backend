@@ -1,9 +1,20 @@
 import { Global, Logger, Module, type DynamicModule, type OnApplicationShutdown } from '@nestjs/common'
 import { metrics } from '@opentelemetry/api'
 import { reportError, withJobContext } from '@lvn-backend/observability'
-import { Queue, Worker, type ConnectionOptions, type Job } from 'bullmq'
+import { DelayedError, Queue, Worker, type ConnectionOptions, type Job } from 'bullmq'
 
 const meter = metrics.getMeter('lvn-queue')
+
+/**
+ * The handler wants this job to wait until `until` without using an attempt. The worker moves it and tells BullMQ
+ * the job was delayed (a scan circuit that is open, or a user who already has a scan in flight).
+ */
+export class DelayJobError extends Error {
+  override name = 'DelayJobError'
+  constructor(readonly until: number) {
+    super('delay')
+  }
+}
 /** The job SLO's numerator and denominator (§16.4, ADR-0089): jobs finished, by queue and outcome. */
 const finished = meter.createCounter('lvn.queue.jobs', { description: 'Jobs finished, by queue and outcome: completed, or failed after their last attempt' })
 
@@ -52,11 +63,19 @@ export class Queues implements OnApplicationShutdown {
   process(queueName: string, handlers: Record<string, JobHandler>, concurrency = 2): Worker {
     const worker = new Worker(
       queueName,
-      async (job) => {
+      async (job, token) => {
         const handler = handlers[job.name]
         if (!handler) throw new Error(`No handler for ${queueName}/${job.name}`)
-        // Every line the handler logs carries the queue and job id.
-        return withJobContext(queueName, job.id, () => handler(job.data, job))
+        try {
+          // Every line the handler logs carries the queue and job id.
+          return await withJobContext(queueName, job.id, () => handler(job.data, job))
+        } catch (e) {
+          if (e instanceof DelayJobError) {
+            await job.moveToDelayed(e.until, token)
+            throw new DelayedError()
+          }
+          throw e
+        }
       },
       { connection: this.connection, concurrency },
     )

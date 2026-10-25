@@ -633,6 +633,8 @@ enum ScanResult {
   ERROR
   /// Waiting for the remote scanner (ADR-0102). A file in this state is never served.
   PENDING
+  /// The remote scan used its attempts. The file is not served.
+  FAILED
 
   @@schema("notes")
 }

@@ -30,6 +30,12 @@ export interface UsersConfig {
    */
   settingFallbacks: {
     uploads_enabled: boolean
+    uploads_per_minute: number
+    uploads_per_day: number
+    upload_bytes_per_day: number
+    upload_pending_scans: number
+    uploads_per_ip_per_minute: number
+    scan_queue_concurrency: number
     ai_public_pipeline: boolean
     ai_monthly_budget_micro_usd: number | null
     ai_timeout_ms: number
@@ -68,6 +74,12 @@ export function usersConfigFrom(c: ApiConfig): UsersConfig {
     skillsImport: { githubApiUrl: c.GITHUB_API_URL ?? null, githubToken: c.GITHUB_TOKEN ?? null, userAgent: `LearnViaNotes/1.0 (+${c.WEB_URL})`, allowHosts: c.SAFE_FETCH_ALLOW_HOSTS },
     settingFallbacks: {
       uploads_enabled: c.UPLOADS_ENABLED,
+      uploads_per_minute: c.UPLOADS_PER_MINUTE,
+      uploads_per_day: c.UPLOADS_PER_DAY,
+      upload_bytes_per_day: c.UPLOAD_BYTES_PER_DAY,
+      upload_pending_scans: c.UPLOAD_PENDING_SCANS,
+      uploads_per_ip_per_minute: c.UPLOADS_PER_IP_PER_MINUTE,
+      scan_queue_concurrency: c.SCAN_QUEUE_CONCURRENCY,
       ai_public_pipeline: c.AI_PUBLIC_PIPELINE,
       ai_monthly_budget_micro_usd: c.AI_MONTHLY_BUDGET_MICRO_USD ?? null,
       ai_timeout_ms: c.AI_TIMEOUT_MS,

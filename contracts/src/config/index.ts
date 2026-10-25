@@ -122,6 +122,20 @@ const auth = z.object({
   SCANNER_SECRET: z.string().min(32).optional(),
   /** How long one scan request may take, including the upload of the body. The worker retries inside this budget. */
   SCANNER_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(180_000),
+  /** Scans the worker runs at once. Match the scanner's SCANNER_CONCURRENCY. Default 2. */
+  SCAN_QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
+  /** Attempts for one file-scan job, then the job is dead-lettered and the file stays unserved. */
+  SCAN_JOB_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
+  /** createUploadIntent: files one user may start per minute. */
+  UPLOADS_PER_MINUTE: z.coerce.number().int().min(1).max(10_000).default(10),
+  /** createUploadIntent: files one user may start per day. */
+  UPLOADS_PER_DAY: z.coerce.number().int().min(1).max(100_000).default(100),
+  /** createUploadIntent: bytes one user may declare per day. */
+  UPLOAD_BYTES_PER_DAY: z.coerce.number().int().min(1).max(50 * 1024 * 1024 * 1024).default(500 * 1024 * 1024),
+  /** Files one user may have waiting on the remote scanner. */
+  UPLOAD_PENDING_SCANS: z.coerce.number().int().min(1).max(1000).default(5),
+  /** createUploadIntent: upload URLs one client address may ask for per minute. */
+  UPLOADS_PER_IP_PER_MINUTE: z.coerce.number().int().min(1).max(10_000).default(30),
   /** k-anonymity range API for the breached-password check (§7.1); unset only in tests. */
   PASSWORD_BREACH_API_URL: z.url().optional(),
   /** Firebase project whose ID tokens signInWithGoogle accepts (ADR-0007). */

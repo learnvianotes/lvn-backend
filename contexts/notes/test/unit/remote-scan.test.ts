@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { SCAN_HEADERS, verify } from '@lvn-backend/scanner-protocol'
-import { RemoteScanClient, ScanUnavailableError, type RemoteScanClock } from '../../src/application/remote-scan'
+import { RemoteScanClient, ScanNotReadyError, ScanUnavailableError, type RemoteScanClock } from '../../src/application/remote-scan'
 
 const SECRET = 'remote-scan-secret-remote-scan-secret'
 
@@ -13,6 +13,12 @@ describe('RemoteScanClient', () => {
   it('posts the file once with a signature the service accepts', async () => {
     const seen: { mime: string; body: string; signed: boolean }[] = []
     const server = createServer((req, res) => {
+      if (req.url === '/readyz') {
+        const json = JSON.stringify({ status: 'ready' })
+        res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(json) })
+        res.end(json)
+        return
+      }
       const chunks: Buffer[] = []
       req.on('data', (c: Buffer) => chunks.push(c))
       req.on('end', () => {
@@ -48,7 +54,13 @@ describe('RemoteScanClient', () => {
 
   it('does not retry a 401, and opens the circuit after three failures', async () => {
     let calls = 0
-    const server = createServer((_req, res) => {
+    const server = createServer((req, res) => {
+      if (req.url === '/readyz') {
+        const json = JSON.stringify({ status: 'ready' })
+        res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(json) })
+        res.end(json)
+        return
+      }
       calls += 1
       res.writeHead(401)
       res.end('{}')
@@ -70,7 +82,13 @@ describe('RemoteScanClient', () => {
 
   it('retries a 503 and then returns the verdict', async () => {
     let calls = 0
-    const server = createServer((_req, res) => {
+    const server = createServer((req, res) => {
+      if (req.url === '/readyz') {
+        const json = JSON.stringify({ status: 'ready' })
+        res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(json) })
+        res.end(json)
+        return
+      }
       calls += 1
       if (calls < 3) {
         res.writeHead(503)
@@ -87,6 +105,27 @@ describe('RemoteScanClient', () => {
       const client = new RemoteScanClient({ url: address(server), secret: SECRET, timeoutMs: 2_000 }, clock)
       await expect(client.scan(file, 'application/pdf')).resolves.toEqual({ result: 'infected', signature: 'Eicar-Test-Signature' })
       expect(calls).toBe(3)
+    } finally {
+      server.close()
+    }
+  })
+
+  it('does not count a not-ready scanner as a failure', async () => {
+    let calls = 0
+    const server = createServer((_req, res) => {
+      calls += 1
+      const json = JSON.stringify({ status: 'not_ready', clamd: 'ok', signatures: 'stale' })
+      res.writeHead(503, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(json), 'retry-after': '30' })
+      res.end(json)
+    })
+    await listen(server)
+    const file = await tempFile('x')
+    const client = new RemoteScanClient({ url: address(server), secret: SECRET, timeoutMs: 2_000 }, clock)
+    try {
+      await expect(client.scan(file, 'text/plain', 'user-1')).rejects.toBeInstanceOf(ScanNotReadyError)
+      await expect(client.scan(file, 'text/plain', 'user-1')).rejects.toBeInstanceOf(ScanNotReadyError)
+      expect(client.circuitOpenUntil).toBe(0)
+      expect(calls).toBe(2)
     } finally {
       server.close()
     }

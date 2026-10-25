@@ -1,4 +1,5 @@
 import type { ApiConfig } from '@lvn/contracts/config'
+import type { UploadLimitConfig } from './application/scan-policy'
 
 /** Where an upload is scanned (ADR-0041, ADR-0102). */
 export type ScanConfig =
@@ -21,6 +22,10 @@ export interface NotesConfig {
   clamav: { host: string; port: number } | null
   /** ADR-0102. Unset SCAN_MODE keeps the old rule: CLAMAV_URL means local, otherwise off. */
   scan: ScanConfig
+  /** Upload windows. An admin setting overrides these until it is reset. */
+  uploadLimits: UploadLimitConfig
+  /** The file-scan queue. Concurrency is how many scans the worker runs at once. */
+  scanQueue: { concurrency: number; attempts: number }
   /** Search (ADR-0055): who answers, and Typesense when configured (the worker keeps it whichever answers) */
   search: {
     provider: 'postgres' | 'typesense'
@@ -43,6 +48,14 @@ export const notesConfigFrom = (c: ApiConfig): NotesConfig => {
     uploads: c.UPLOADS_ENABLED,
     clamav: scan.mode === 'local' ? scan.clamav : null,
     scan,
+    uploadLimits: {
+      perMinute: c.UPLOADS_PER_MINUTE,
+      perDay: c.UPLOADS_PER_DAY,
+      bytesPerDay: c.UPLOAD_BYTES_PER_DAY,
+      pendingScans: c.UPLOAD_PENDING_SCANS,
+      perIpPerMinute: c.UPLOADS_PER_IP_PER_MINUTE,
+    },
+    scanQueue: { concurrency: c.SCAN_QUEUE_CONCURRENCY, attempts: c.SCAN_JOB_ATTEMPTS },
     search: {
       provider: c.SEARCH_PROVIDER,
       typesense: c.TYPESENSE_URL && c.TYPESENSE_API_KEY ? { url: c.TYPESENSE_URL, apiKey: c.TYPESENSE_API_KEY, prefix: c.TYPESENSE_COLLECTION_PREFIX } : null,

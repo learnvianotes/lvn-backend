@@ -73,7 +73,7 @@ class ProbeModule {}
     { provide: AI_DATA_EXPORT, useValue: { exportFor: async () => ({ files: [], counts: {}, omitted: [] }) } },
     { provide: SKILLS_READER, useValue: { available: async () => false, read: async () => [] } },
     { provide: DAILY_LINES, useValue: { available: async () => false, write: async () => ({ title: '', line: '' }) } },
-    { provide: NOTES_ADMIN_STATS, useValue: { counts: async () => ({ notes: 0, publicNotes: 0, subjects: 0, topics: 0, storageFiles: 0, storageBytes: 0n }) } },
+    { provide: NOTES_ADMIN_STATS, useValue: { counts: async () => ({ notes: 0, publicNotes: 0, subjects: 0, topics: 0, storageFiles: 0, storageBytes: 0n, pendingScans: 0, failedScans: 0 }) } },
     { provide: AI_ADMIN_STATS, useValue: { usage: async () => [] } },
     { provide: CORE_ADMIN_STATS, useValue: { counts: async () => ({ openReports: 0, openAppeals: 0, groups: 0, classrooms: 0 }) } },
     { provide: NOTES_PLAN_USAGE, useValue: { used: async () => ({}) } },

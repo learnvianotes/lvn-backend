@@ -1,8 +1,11 @@
 import { createServer, type Server } from 'node:net'
 import { PDFDocument } from 'pdf-lib'
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { loadScannerConfig } from '../../src/config'
 import { signatureAgeHours } from '../../src/clamd'
-import { pdfRisks } from '../../src/pdf'
+import { inspectIfPdf, pdfRisks } from '../../src/pdf'
 import { createScanServer } from '../../src/server'
 import { signedHeaders, signedRequest } from './signed'
 
@@ -20,7 +23,8 @@ describe('scanner config', () => {
     expect(() => loadScannerConfig({ SCANNER_SECRET: SECRET, SCANNER_BIND: '10.0.0.5' })).toThrow(/SCANNER_ALLOW_FROM/)
     const cfg = loadScannerConfig({ SCANNER_SECRET: SECRET, SCANNER_BIND: '10.0.0.5', SCANNER_ALLOW_FROM: '10.0.0.5, 10.0.0.8' })
     expect(cfg.allowFrom).toEqual(['10.0.0.5', '10.0.0.8'])
-    expect(cfg.concurrency).toBe(1)
+    expect(cfg.concurrency).toBe(2)
+    expect(cfg.ratePerMinute).toBe(60)
     expect(cfg.maxBytes).toBe(500 * 1024 * 1024)
   })
 
@@ -36,6 +40,18 @@ describe('PDF safety', () => {
     expect(pdfRisks(Buffer.from('%PDF-1.4\n<< /Launch /Win << /F (cmd.exe) >> >>\n%%EOF\n'))).toContain('launch')
     expect(pdfRisks(Buffer.from('%PDF-1.4\n/JSX /EmbeddedFiles\n'))).toEqual([])
     expect(pdfRisks(Buffer.from('%PDF-1.4\n/JS << /EmbeddedFile /XFA >>'))).toEqual(['javascript', 'embedded-file', 'xfa'])
+  })
+
+  it('reads a name and the page count from the file in chunks', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'lvn-pdf-'))
+    const file = path.join(dir, 'wide.pdf')
+    const head = Buffer.alloc(64 * 1024 - 1, 0x20)
+    head.write('%PDF-1.4\n', 0)
+    head[head.length - 1] = 0x2f
+    const tail = Buffer.from('JavaScript\n/Type /Pages /Count 2\n%%EOF\n')
+    await writeFile(file, Buffer.concat([head, tail]))
+    const size = head.length + tail.length
+    await expect(inspectIfPdf(file, 'application/pdf', size, 50 * 1024 * 1024)).resolves.toEqual({ pageCount: 2, reasons: ['javascript'] })
   })
 })
 
@@ -53,7 +69,7 @@ describe('scanner HTTP', () => {
   let close: () => Promise<void>
 
   beforeAll(async () => {
-    clamd = await startFakeClamd()
+    clamd = await startFakeClamd(new Date().toUTCString())
     const target = new URL(clamd.url)
     const started = createScanServer(loadScannerConfig({
       SCANNER_SECRET: SECRET,
@@ -136,7 +152,7 @@ describe('scanner HTTP', () => {
     await waitFor(() => clamd.scans > before)
     const other = Buffer.from('other')
     const busy = await signedRequest(`${url}/v1/scan`, SECRET, other, 'text/plain')
-    expect(busy.status).toBe(503)
+    expect(busy.status).toBe(429)
     expect(busy.headers['retry-after']).toBe('2')
     clamd.hold = false
     expect((await pending).status).toBe(200)
@@ -158,8 +174,39 @@ function waitFor(pred: () => boolean): Promise<void> {
   })
 }
 
+describe('stale signatures', () => {
+  it('answers not-ready and does not scan', async () => {
+    const clamd = await startFakeClamd('Sat, 01 Jan 2020 00:00:00 GMT')
+    const target = new URL(clamd.url)
+    const started = createScanServer(loadScannerConfig({
+      SCANNER_SECRET: SECRET,
+      SCANNER_BIND: '127.0.0.1',
+      CLAMAV_URL: `tcp://${target.hostname}:${target.port}`,
+      SCANNER_SIGNATURE_MAX_AGE_HOURS: '48',
+    }))
+    await new Promise<void>((resolve) => started.server.listen(0, '127.0.0.1', resolve))
+    const address = started.server.address()
+    if (!address || typeof address === 'string') throw new Error('no port')
+    const url = `http://127.0.0.1:${address.port}`
+    try {
+      const ready = await signedRequest(`${url}/readyz`, SECRET, Buffer.alloc(0), 'application/octet-stream')
+      expect(ready.status).toBe(503)
+      expect(ready.headers['retry-after']).toBe('30')
+      expect(JSON.parse(ready.body)).toMatchObject({ status: 'not_ready', signatures: 'stale' })
+      const before = clamd.scans
+      const scan = await signedRequest(`${url}/v1/scan`, SECRET, Buffer.from('hello'), 'text/plain')
+      expect(scan.status).toBe(503)
+      expect(JSON.parse(scan.body)).toMatchObject({ status: 'not_ready' })
+      expect(clamd.scans).toBe(before)
+    } finally {
+      await started.close()
+      await clamd.close()
+    }
+  })
+})
+
 /** Speaks zPING, zVERSION and zINSTREAM. Holds the answer while `hold` is set. Finds EICAR anywhere in the stream. */
-async function startFakeClamd(): Promise<{ url: string; hold: boolean; scans: number; close: () => Promise<void> }> {
+async function startFakeClamd(version: string): Promise<{ url: string; hold: boolean; scans: number; close: () => Promise<void> }> {
   const state = { hold: false, scans: 0 }
   const server: Server = createServer((socket) => {
     let buffer = Buffer.alloc(0)
@@ -174,7 +221,7 @@ async function startFakeClamd(): Promise<{ url: string; hold: boolean; scans: nu
         const command = buffer.subarray(0, end).toString()
         buffer = buffer.subarray(end + 1)
         if (command === 'zPING') return finish('PONG')
-        if (command === 'zVERSION') return finish(`ClamAV 1.5.4/1/${new Date().toUTCString()}`)
+        if (command === 'zVERSION') return finish(`ClamAV 1.5.4/1/${version}`)
         if (command !== 'zINSTREAM') return finish('UNKNOWN COMMAND')
         streaming = true
       }

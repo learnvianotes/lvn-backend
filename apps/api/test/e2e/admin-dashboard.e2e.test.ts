@@ -17,7 +17,8 @@ const METRICS = `query ($from: DateTime, $to: DateTime) { adminMetrics(from: $fr
     byTask { task tasksRun failures } }
   storage { bytes files }
   verification { studentIdQueue pendingRequests domainReviews }
-  moderation { openReports openAppeals } } }`
+  moderation { openReports openAppeals }
+  scans { pending failed } } }`
 const SETTINGS = `{ adminSettings { key type category description value overridden updatedAt constraints { min max nullable } } }`
 const SET = `mutation ($input: UpdateAdminSettingInput!) { updateAdminSetting(input: $input) { setting { key value overridden } userErrors { code message field } } }`
 const RESET = `mutation ($key: String!) { resetAdminSetting(key: $key) { setting { key value overridden } userErrors { code message } } }`
@@ -34,6 +35,7 @@ type Metrics = {
   storage: { bytes: string; files: number }
   verification: { studentIdQueue: number; pendingRequests: number; domainReviews: number }
   moderation: { openReports: number; openAppeals: number }
+  scans: { pending: number; failed: number }
 }
 type Err = { code: string; message: string; field?: string[] | null }
 type Setting = { key: string; type: string; value: string; overridden: boolean; description: string; constraints: { min: number | null; nullable: boolean } }
@@ -65,6 +67,8 @@ describe('admin dashboard', () => {
     await db.note.create({ data: { id: newId(), ownerId: student.id, title: 'Visible', visibility: 'PUBLIC' } })
     await db.note.create({ data: { id: newId(), ownerId: student.id, title: 'Gone', deletedAt: new Date() } })
     await db.fileObject.create({ data: { id: newId(), ownerId: student.id, parentType: 'NOTE', purpose: 'ATTACHMENT', bucket: 'lvn-files', storageKey: `development/${student.id}/${newId()}/original`, mimeType: 'image/png', sizeBytes: 1000n, originalFileName: 'a.png', status: 'READY' } })
+    await db.fileObject.create({ data: { id: newId(), ownerId: student.id, parentType: 'NOTE', purpose: 'ATTACHMENT', bucket: 'lvn-files', storageKey: `development/${student.id}/${newId()}/waiting`, mimeType: 'image/png', sizeBytes: 10n, originalFileName: 'w.png', status: 'READY', scanResult: 'PENDING' } })
+    await db.fileObject.create({ data: { id: newId(), ownerId: student.id, parentType: 'NOTE', purpose: 'ATTACHMENT', bucket: 'lvn-files', storageKey: `development/${student.id}/${newId()}/gave-up`, mimeType: 'image/png', sizeBytes: 10n, originalFileName: 'f.png', status: 'READY', scanResult: 'FAILED' } })
     await db.fileObject.create({ data: { id: newId(), ownerId: student.id, parentType: 'NOTE', purpose: 'ATTACHMENT', bucket: 'lvn-files', storageKey: `development/${student.id}/${newId()}/pending`, mimeType: 'image/png', sizeBytes: 50n, originalFileName: 'p.png', status: 'PENDING' } })
     await db.group.create({ data: { id: newId(), name: 'Metric group', ownerId: admin.id } })
     await db.classroom.create({ data: { id: newId(), name: 'Metric class', joinCode: 'METRIC01', ownerId: admin.id } })
@@ -98,9 +102,10 @@ describe('admin dashboard', () => {
       groups: 1,
       classrooms: 1,
     })
-    expect(data.storage).toEqual({ bytes: '1000', files: 1 })
+    expect(data.storage).toEqual({ bytes: '1020', files: 3 })
     expect(data.verification).toEqual({ studentIdQueue: 1, pendingRequests: 1, domainReviews: 1 })
     expect(data.moderation).toEqual({ openReports: 1, openAppeals: 1 })
+    expect(data.scans).toEqual({ pending: 1, failed: 1 })
     expect(data.ai.tasksRun).toBe(2)
     expect(data.ai.failures).toBe(1)
     expect(data.ai.promptTokens).toBe('14')

@@ -10,6 +10,7 @@ import { SCAN_HEADERS, verify, type SignedRequest } from '@lvn-backend/scanner-p
 import { clamdCommand, clamdScan, signatureAgeHours } from './clamd'
 import { peerAllowed, type ScannerConfig } from './config'
 import { inspectIfPdf } from './pdf'
+import { CallerRate } from './rate'
 
 export interface ScanServer {
   server: Server
@@ -18,9 +19,10 @@ export interface ScanServer {
 
 export function createScanServer(config: ScannerConfig, now: () => number = Date.now): ScanServer {
   const nonces = new Map<string, number>()
+  const rates = new CallerRate(config.ratePerMinute, 60_000)
   let active = 0
   const server = createServer((req, res) => {
-    void handle(req, res, config, nonces, now, () => active, (n) => {
+    void handle(req, res, config, nonces, rates, now, () => active, (n) => {
       active += n
     }).catch((e) => {
       log({ level: 'error', msg: 'unhandled', error: e instanceof Error ? e.message : 'error' })
@@ -41,6 +43,7 @@ async function handle(
   res: ServerResponse,
   config: ScannerConfig,
   nonces: Map<string, number>,
+  rates: CallerRate,
   now: () => number,
   active: () => number,
   addActive: (n: number) => void,
@@ -67,6 +70,7 @@ async function handle(
       return
     }
     const [status, body] = await readiness(config, now)
+    if (status !== 200) res.setHeader('retry-after', NOT_READY_RETRY)
     send(res, status, body)
     return
   }
@@ -82,9 +86,23 @@ async function handle(
     send(res, 413, { error: 'too large' })
     return
   }
+  const [readyStatus, readyBody] = await readiness(config, now)
+  if (readyStatus !== 200) {
+    res.setHeader('retry-after', NOT_READY_RETRY)
+    send(res, 503, readyBody)
+    req.resume()
+    return
+  }
+  const caller = normalizeCaller(req.socket.remoteAddress)
+  const retryAfter = rates.take(caller, now())
+  if (retryAfter != null) {
+    res.setHeader('retry-after', String(retryAfter))
+    send(res, 429, { error: 'rate limited' })
+    return
+  }
   if (active() >= config.concurrency) {
     res.setHeader('retry-after', '2')
-    send(res, 503, { error: 'busy' })
+    send(res, 429, { error: 'busy' })
     return
   }
   addActive(1)
@@ -186,6 +204,9 @@ async function readiness(config: ScannerConfig, now: () => number): Promise<[num
   }
 }
 
+/** How long the main host should wait before asking again while signatures are stale or clamd is down. */
+const NOT_READY_RETRY = '30'
+
 function send(res: ServerResponse, status: number, body: object): void {
   const json = JSON.stringify(body)
   res.writeHead(status, {
@@ -194,6 +215,11 @@ function send(res: ServerResponse, status: number, body: object): void {
     'cache-control': 'no-store',
   })
   res.end(json)
+}
+
+function normalizeCaller(address: string | undefined): string {
+  if (!address) return ''
+  return address.startsWith('::ffff:') ? address.slice('::ffff:'.length) : address
 }
 
 function log(fields: Record<string, unknown>): void {

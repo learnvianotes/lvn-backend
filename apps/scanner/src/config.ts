@@ -15,6 +15,8 @@ export interface ScannerConfig {
   clamav: { host: string; port: number }
   /** Hard cap on the request body. Videos are the largest upload (500 MB). */
   maxBytes: number
+  /** Authenticated scan requests one source address may make per minute. */
+  ratePerMinute: number
   /** A PDF larger than this is not parsed; it is reported unsafe. */
   pdfMaxBytes: number
   concurrency: number
@@ -51,8 +53,9 @@ export function loadScannerConfig(env: Record<string, string | undefined>): Scan
     secret,
     clamav,
     maxBytes: numberIn(env.SCANNER_MAX_BYTES, 500 * 1024 * 1024, 1, 600 * 1024 * 1024, 'SCANNER_MAX_BYTES'),
-    pdfMaxBytes: numberIn(env.SCANNER_PDF_MAX_BYTES, 50 * 1024 * 1024, 1, 64 * 1024 * 1024, 'SCANNER_PDF_MAX_BYTES'),
-    concurrency: numberIn(env.SCANNER_CONCURRENCY, 1, 1, 2, 'SCANNER_CONCURRENCY'),
+    ratePerMinute: numberIn(env.SCANNER_RATE_PER_MINUTE, 60, 1, 6_000, 'SCANNER_RATE_PER_MINUTE'),
+    pdfMaxBytes: numberIn(env.SCANNER_PDF_MAX_BYTES, 50 * 1024 * 1024, 1, 50 * 1024 * 1024, 'SCANNER_PDF_MAX_BYTES'),
+    concurrency: numberIn(env.SCANNER_CONCURRENCY, 2, 1, 2, 'SCANNER_CONCURRENCY'),
     signatureMaxAgeHours: numberIn(env.SCANNER_SIGNATURE_MAX_AGE_HOURS, 48, 1, 24 * 14, 'SCANNER_SIGNATURE_MAX_AGE_HOURS'),
     clockSkewSeconds: numberIn(env.SCANNER_CLOCK_SKEW_SECONDS, 300, 30, 900, 'SCANNER_CLOCK_SKEW_SECONDS'),
     bodyTimeoutMs: numberIn(env.SCANNER_BODY_TIMEOUT_MS, 180_000, 1_000, 600_000, 'SCANNER_BODY_TIMEOUT_MS'),

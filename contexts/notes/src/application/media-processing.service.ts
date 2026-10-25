@@ -6,15 +6,24 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common'
+import { metrics } from '@opentelemetry/api'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
+import { PLATFORM_SETTINGS, type PlatformSettings } from '@lvn-backend/facades'
 import { PrismaService, type Prisma } from '@lvn-backend/prisma-base'
-import { Queues } from '@lvn-backend/queue'
+import { DelayJobError, Queues } from '@lvn-backend/queue'
 import { Storage } from '@lvn-backend/storage'
 import { PDFDocument } from 'pdf-lib'
 import sharp from 'sharp'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
 import { clamdScan } from './clamav'
-import { RemoteScanClient } from './remote-scan'
+import { FileScanQueue } from './file-scan-queue'
+import { RemoteScanClient, ScanNotReadyError, ScanUnavailableError } from './remote-scan'
+import { FILE_SCAN_QUEUE, ScanCircuitGate } from './scan-policy'
+
+const scanMeter = metrics.getMeter('lvn-notes')
+const scanWait = scanMeter.createHistogram('lvn.scan.wait', { unit: 'ms', description: 'How long a file-scan job waited before it started' })
+const scanDuration = scanMeter.createHistogram('lvn.scan.duration', { unit: 'ms', description: 'How long one scan attempt took' })
+const scanFailures = scanMeter.createCounter('lvn.scan.failures', { description: 'Scan attempts that did not return a verdict' })
 
 const run = promisify(execFile)
 
@@ -33,55 +42,96 @@ export const variantKey = (storageKey: string, name: string) => storageKey.repla
 
 /**
  * Media processing after an upload (§8.1, §8.2, ADR-0041, ADR-0102): the original is already READY. Local mode scans
- * it here and still serves it if the scanner fails on the last attempt. Remote mode has already marked it pending, and
- * this streams it to the scan service: a failure leaves it pending and unserved. Infected and unsafe files are
- * quarantined. What makes it better to show — three picture sizes, a 720p transcode and a poster for video, normalised
- * audio — and the facts §8.2 keeps (size, length, pages, SHA-256) are written only after a clean scan. Runs in
- * apps/worker; FileReady queues it.
+ * it here and still serves it if the scanner fails on the last attempt. Remote mode queues `file-scan` instead. That
+ * job streams the file to the scan service. A failure leaves it pending and unserved; the last attempt marks it
+ * FAILED, which is also unserved. Infected and unsafe files are quarantined. Variants run on the media queue only
+ * after a clean verdict. Runs in apps/worker; FileReady queues it.
  */
 @Injectable()
 export class MediaProcessingService implements OnModuleInit {
   private readonly log = new Logger('Media')
   /** One client per process so the circuit breaker survives from one file to the next. */
   private remote: RemoteScanClient | null = null
+  private gate: ScanCircuitGate | null = null
 
   constructor(
     private readonly db: PrismaService,
     private readonly storage: Storage,
     private readonly queues: Queues,
+    private readonly scans: FileScanQueue,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(NOTES_CONFIG) private readonly config: NotesConfig,
+    @Inject(PLATFORM_SETTINGS) private readonly settings: PlatformSettings,
   ) {}
 
   onModuleInit(): void {
-    this.events.subscribe('FileReady', async ({ payload: { fileId } }) => {
+    this.events.subscribe('FileReady', async ({ payload: { fileId, ownerId } }) => {
+      if (this.config.scan.mode === 'remote') {
+        await this.scans.enqueue(fileId, ownerId)
+        return
+      }
       await this.queues.queue(NOTES_MEDIA_QUEUE).add('process-file', { fileId }, { jobId: `${fileId}.process`, attempts: 3, backoff: { type: 'exponential', delay: 30_000 } })
     })
+  }
+
+  /** How many scan jobs this worker runs at once. An admin setting overrides the environment until the process restarts. */
+  scanConcurrency(): number {
+    const saved = this.settings.integer('scan_queue_concurrency', this.config.scanQueue.concurrency)
+    const n = saved ?? this.config.scanQueue.concurrency
+    return Math.min(8, Math.max(1, n))
+  }
+
+  /**
+   * One file-scan job. An open circuit pauses the queue and puts the job back without using an attempt. A user who
+   * already has a scan in flight waits the same way, so one bulk upload cannot take both worker slots.
+   */
+  async handleScanJob(data: { fileId?: string; userId?: string }, lastAttempt: boolean, waitMs = 0): Promise<void> {
+    const fileId = data.fileId ?? ''
+    const userId = data.userId ?? ''
+    if (!fileId) throw new Error('scan job is missing a file id')
+    if (this.config.scan.mode !== 'remote') {
+      await this.process(fileId, lastAttempt)
+      return
+    }
+    const client = this.scanner()
+    if (Date.now() < client.circuitOpenUntil) {
+      await this.circuitGate().sync(client.circuitOpenUntil)
+      throw new DelayJobError(client.circuitOpenUntil)
+    }
+    const locked = await this.scans.tryLock(userId, fileId, clientTimeout(this.config) + 30_000)
+    if (!locked) throw new DelayJobError(Date.now() + 2_000)
+    const started = Date.now()
+    try {
+      const outcome = await this.scanQueued(fileId, lastAttempt)
+      await this.observe(waitMs, Date.now() - started, outcome)
+    } catch (e) {
+      if (e instanceof ScanNotReadyError) {
+        const until = Date.now() + Math.max(1_000, e.retryAfterMs)
+        await this.circuitGate().sync(until)
+        await this.observe(waitMs, Date.now() - started, 'not-ready')
+        throw new DelayJobError(until)
+      }
+      if (Date.now() < client.circuitOpenUntil) await this.circuitGate().sync(client.circuitOpenUntil)
+      await this.observe(waitMs, Date.now() - started, 'failed')
+      throw e
+    } finally {
+      await this.scans.unlock(userId, fileId)
+    }
   }
 
   /** One uploaded file; `lastAttempt` decides what a scanner error leaves behind. */
   async process(fileId: string, lastAttempt = true): Promise<{ status: string; variants: Variants }> {
     const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
     if (!file || file.deletedAt || file.status !== 'READY') return { status: file?.status ?? 'MISSING', variants: {} }
+    // Remote scans run on file-scan. Variants wait until that job has recorded a clean verdict.
+    if (this.config.scan.mode === 'remote' && file.scanResult !== 'CLEAN') return { status: file.status, variants: {} }
     const dir = await mkdtemp(path.join(tmpdir(), 'lvn-media-'))
     try {
       const original = path.join(dir, 'original')
       await this.storage.download(file.bucket, file.storageKey, original)
       const data: Prisma.FileObjectUpdateInput = { checksumSha256: await sha256(original) }
 
-      if (this.config.scan.mode === 'remote') {
-        // Closed before the body is scanned, so a crash here cannot leave a READY file with no scan result.
-        if (file.scanResult !== 'PENDING') await this.db.fileObject.update({ where: { id: fileId }, data: { scanResult: 'PENDING' } })
-        // Always thrown: a remote failure is never recorded as ERROR and the file is never served unscanned.
-        const verdict = await this.scanner().scan(original, file.mimeType, file.ownerId)
-        data.scannedAt = new Date()
-        if (verdict.result === 'infected' || verdict.result === 'unsafe') {
-          await this.quarantine(file, verdict.signature)
-          return { status: 'QUARANTINED', variants: {} }
-        }
-        data.scanResult = 'CLEAN'
-        if (verdict.pageCount != null) data.pageCount = verdict.pageCount
-      } else if (this.config.scan.mode === 'local') {
+      if (this.config.scan.mode === 'local') {
         try {
           const scan = await clamdScan(this.config.scan.clamav, original)
           data.scannedAt = new Date()
@@ -168,32 +218,96 @@ export class MediaProcessingService implements OnModuleInit {
   }
 
   /**
+   * The file-scan job. A clean verdict queues media processing. The last failed attempt marks the file FAILED, copies
+   * the job to the dead-letter queue, and still throws so the failure is reported with the owner's user id.
+   */
+  async scanQueued(fileId: string, lastAttempt: boolean): Promise<'clean' | 'quarantined'> {
+    const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
+    if (!file || file.deletedAt || file.status !== 'READY' || file.scanResult === 'FAILED') return 'clean'
+    if (file.scanResult === 'CLEAN') return 'clean'
+    if (file.scanResult === 'INFECTED' || file.status === 'QUARANTINED') return 'quarantined'
+    if (this.config.scan.mode !== 'remote') return 'clean'
+    if (file.scanResult !== 'PENDING') await this.db.fileObject.update({ where: { id: fileId }, data: { scanResult: 'PENDING' } })
+    const dir = await mkdtemp(path.join(tmpdir(), 'lvn-scan-'))
+    try {
+      const original = path.join(dir, 'original')
+      await this.storage.download(file.bucket, file.storageKey, original)
+      let verdict
+      try {
+        verdict = await this.scanner().scan(original, file.mimeType, file.ownerId)
+      } catch (e) {
+        if (e instanceof ScanNotReadyError) throw e
+        if (lastAttempt) await this.exhaust(file.id, file.ownerId, e)
+        throw e instanceof ScanUnavailableError ? e : new ScanUnavailableError('scan service did not return a verdict', { userId: file.ownerId, cause: e })
+      }
+      if (verdict.result === 'infected' || verdict.result === 'unsafe') {
+        await this.quarantine(file, verdict.signature)
+        await this.scans.release(file.ownerId)
+        await this.scans.forget(file.id)
+        return 'quarantined'
+      }
+      await this.db.fileObject.update({
+        where: { id: fileId },
+        data: { scanResult: 'CLEAN', scannedAt: new Date(), ...(verdict.pageCount != null ? { pageCount: verdict.pageCount } : {}) },
+      })
+      await this.queues.queue(NOTES_MEDIA_QUEUE).add('process-file', { fileId }, { jobId: `${fileId}.process`, attempts: 3, backoff: { type: 'exponential', delay: 30_000 } })
+      await this.scans.release(file.ownerId)
+      await this.scans.forget(file.id)
+      return 'clean'
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }
+
+  /**
    * Files still waiting on the scan service whose job is not queued. The worker runs this every ten minutes so an
-   * outage does not leave an upload pending after the service is back. No-op unless SCAN_MODE=remote.
+   * outage does not leave an upload pending after the service is back. A job that already failed stays failed.
+   * No-op unless SCAN_MODE=remote.
    */
   async requeuePending(): Promise<number> {
     if (this.config.scan.mode !== 'remote') return 0
     const rows = await this.db.fileObject.findMany({
       where: { status: 'READY', scanResult: 'PENDING', deletedAt: null },
-      select: { id: true },
+      select: { id: true, ownerId: true },
       orderBy: { createdAt: 'asc' },
       take: 50,
     })
-    const queue = this.queues.queue(NOTES_MEDIA_QUEUE)
+    const queue = this.queues.queue(FILE_SCAN_QUEUE)
     const busy = new Set(['active', 'waiting', 'delayed', 'prioritized', 'waiting-children', 'paused'])
     let n = 0
     for (const row of rows) {
-      const jobId = `${row.id}.process`
-      const existing = await queue.getJob(jobId)
+      const existing = await queue.getJob(row.id)
       if (existing) {
         const state = await existing.getState()
-        if (busy.has(state)) continue
+        if (busy.has(state) || state === 'failed') continue
         await existing.remove()
       }
-      await queue.add('process-file', { fileId: row.id }, { jobId, attempts: 3, backoff: { type: 'exponential', delay: 30_000 } })
-      n += 1
+      await this.scans.release(row.ownerId)
+      await this.scans.forget(row.id)
+      if ((await this.scans.enqueue(row.id, row.ownerId)) === 'added') n += 1
     }
     return n
+  }
+
+  private async exhaust(fileId: string, userId: string, error: unknown): Promise<void> {
+    await this.db.fileObject.updateMany({ where: { id: fileId, scanResult: 'PENDING' }, data: { scanResult: 'FAILED', scannedAt: new Date() } })
+    await this.scans.deadLetter(fileId, userId, error instanceof Error ? error.message : 'scan failed')
+    await this.scans.release(userId)
+    await this.scans.forget(fileId)
+    this.log.error(`${fileId}: scan gave up: ${error instanceof Error ? error.message : 'scan failed'}`)
+  }
+
+  private async observe(waitMs: number, scanMs: number, result: string): Promise<void> {
+    scanWait.record(waitMs)
+    scanDuration.record(scanMs)
+    if (result === 'failed') scanFailures.add(1)
+    const depth = await this.scans.counts().catch(() => null)
+    this.log.log(`scan result=${result} waitMs=${waitMs} scanMs=${scanMs} waiting=${depth?.waiting ?? '?'} delayed=${depth?.delayed ?? '?'} active=${depth?.active ?? '?'} failed=${depth?.failed ?? '?'}`)
+  }
+
+  private circuitGate(): ScanCircuitGate {
+    this.gate ??= new ScanCircuitGate({ pause: () => this.scans.pause(), resume: () => this.scans.resume(), isPaused: () => this.scans.paused() })
+    return this.gate
   }
 
   private scanner(): RemoteScanClient {
@@ -222,6 +336,10 @@ export class MediaProcessingService implements OnModuleInit {
     if (orphanObjects.length || missingObjects.length) this.log.warn(`storage drift: ${orphanObjects.length} objects without a row, ${missingObjects.length} rows without their object`)
     return { objects: keys.size, orphanObjects: orphanObjects.slice(0, 100), missingObjects: missingObjects.slice(0, 100) }
   }
+}
+
+function clientTimeout(config: NotesConfig): number {
+  return config.scan.mode === 'remote' ? config.scan.timeoutMs : 180_000
 }
 
 async function sha256(file: string): Promise<string> {
