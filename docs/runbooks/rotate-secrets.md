@@ -18,6 +18,7 @@ Where the table says `-replace=…`, that is the local environment; on Lightsail
 | `CODE_HMAC_SECRET` | Email codes and links already sent stop working; people ask again | `-replace=random_password.code_hmac` |
 | `AI_KEYS_SECRET` | Saved AI provider keys can no longer be read: admins enter them again in AI settings | `-replace=random_password.ai_keys`; tell platform admins first |
 | `REVALIDATE_SECRET` | None visible | `-replace=random_password.revalidate` |
+| `SCANNER_SECRET` | Uploads stay pending until both hosts have the new value | `openssl rand -hex 32` into `LVN_BACKEND_EXTRA_ENV` and `/opt/lvn-scan/scanner.env`, then redeploy the API and restart the scanner (`docs/ops/scanner-host.md`) |
 | `TYPESENSE_API_KEY` | Search is off until the API restarts with the new key | `-replace=random_password.typesense` |
 | S3 keys (local) | None visible | `-replace=random_password.s3_access_key -replace=random_password.s3_secret_key` |
 | R2 keys (`LVN_R2_*`), `LVN_RESEND_API_KEY`, `LVN_GHCR_TOKEN` | Files, email or the next deploy's image pull fail until the new value is in place | Make a new token in Cloudflare, Resend or GitHub, put it in the GitHub environment, deploy, then revoke the old one |

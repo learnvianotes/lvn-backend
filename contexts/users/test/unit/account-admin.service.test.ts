@@ -199,6 +199,14 @@ describe('AccountAdminService', () => {
     expect(await rejection(() => h.service.setStanding(ADMIN, { userId: ADMIN, status: 'BLOCKED', reason: 'Myself' }))).toMatchObject({ code: ErrorCode.VALIDATION, field: ['input', 'userId'] })
   })
 
+  it('accepts the ISO-8601 string a GraphQL DateTime input arrives as', async () => {
+    const h = harness(row({ accountStatus: 'ACTIVE', dateOfBirth: new Date('2000-01-01T00:00:00Z'), statusReason: null }))
+    const until = new Date(Date.now() + 86_400_000).toISOString()
+    const suspended = await h.service.setStanding(ADMIN, { userId: USER, status: 'SUSPENDED', reason: 'Review', until: until as unknown as Date })
+    expect(suspended).toMatchObject({ accountStatus: 'SUSPENDED', statusReason: 'Review' })
+    expect(h.audits[0]).toMatchObject({ action: 'account.admin.suspended', metadata: { until } })
+  })
+
   it('blocks and suspends with a reason, revokes sessions, and restores a blocked account', async () => {
     const h = harness(row({ accountStatus: 'ACTIVE', dateOfBirth: new Date('2000-01-01T00:00:00Z'), statusReason: null }))
     const until = new Date(Date.now() + 86_400_000)

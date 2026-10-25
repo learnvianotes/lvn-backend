@@ -24,7 +24,7 @@ describe('plan limit errors', () => {
   it('returns a standing cap as a userError and still throws other forbidden errors', async () => {
     const hit = planLimitError(LimitKey.NOTES_OWNED, now)
     const out = await withUserErrors<Ok>(async () => { throw hit }, { ok: false })
-    expect(out.userErrors).toEqual([{ code: 'FORBIDDEN', message: "You've reached your plan's limit for notes.", field: null, supportEmail: null }])
+    expect(out.userErrors).toEqual([{ code: 'FORBIDDEN', message: "You've reached your plan's limit for notes.", field: null, retryAfter: null, supportEmail: null }])
     const daily = planLimitError(LimitKey.AI_REQUESTS_DAILY, now)
     const limited = await withUserErrors<Ok>(async () => { throw daily }, { ok: false })
     expect(limited.userErrors[0]).toMatchObject({ code: 'RATE_LIMITED', message: "You've reached your plan's limit for AI asks a day." })

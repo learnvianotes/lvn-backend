@@ -1,0 +1,90 @@
+# The scanner host (ADR-0102): clamd and freshclam in the ClamAV image, and the scanner HTTP service beside them.
+# Nothing is published on 0.0.0.0. Both containers use the host network so the process can bind the instance's
+# private IP and see the caller's real address. clamd listens on 127.0.0.1 only.
+#
+# From a checkout of this repository, with scanner.env filled in (docs/ops/scanner-host.md):
+#   set -a && source /opt/lvn-scan/scanner.env && set +a
+#   docker compose -f apps/scanner/compose.yaml up -d --build
+name: lvn-scan
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: '10m', max-file: '3' }
+
+services:
+  clamd:
+    image: clamav/clamav:1.5.4
+    restart: unless-stopped
+    logging: *logging
+    network_mode: host
+    # Signatures are about 1.2 GB. Reloading them beside the loaded set is off so the box does not need 3 GB.
+    # 1450 MB leaves the rest of the 2 GB instance for the scanner process and Ubuntu. Add swap (the runbook).
+    mem_limit: 1450m
+    environment:
+      CLAMD_CONF_TCPAddr: 127.0.0.1
+      CLAMD_CONF_TCPSocket: "3310"
+      CLAMD_CONF_StreamMaxLength: 512M
+      CLAMD_CONF_MaxScanSize: 512M
+      CLAMD_CONF_MaxFileSize: 512M
+      CLAMD_CONF_MaxThreads: "2"
+      CLAMD_CONF_MaxQueue: "4"
+      CLAMD_CONF_ConcurrentDatabaseReload: "no"
+    # The image's entrypoint loads whatever database is already on the volume, then freshclam
+    # updates the files. That first update does not always reload clamd, so /readyz stays not-ready.
+    entrypoint: ["/bin/sh", "/opt/lvn/clamd-entry.sh"]
+    volumes:
+      - clamdb:/var/lib/clamav
+      - ./clamd-entry.sh:/opt/lvn/clamd-entry.sh:ro
+      - ./clamd-reload.sh:/opt/lvn/clamd-reload.sh:ro
+    # The image's own check is the same script. Stated here so Compose does not depend on the image metadata.
+    # freshclam's first download can take several minutes; start_period covers that.
+    healthcheck:
+      test: ['CMD', 'clamdcheck.sh']
+      interval: 30s
+      timeout: 15s
+      retries: 12
+      start_period: 360s
+
+  scanner:
+    build:
+      context: ../..
+      dockerfile: apps/scanner/Dockerfile
+    image: lvn-scanner:local
+    restart: unless-stopped
+    logging: *logging
+    network_mode: host
+    mem_limit: 256m
+    depends_on:
+      clamd:
+        condition: service_healthy
+    environment:
+      NODE_OPTIONS: --max-old-space-size=160
+      HOME: /tmp
+      TMPDIR: /tmp
+      SCANNER_BIND: ${SCANNER_PRIVATE_IP:?set the instance private IP}
+      SCANNER_PORT: ${SCANNER_PORT:-8080}
+      SCANNER_SECRET: ${SCANNER_SECRET:?}
+      SCANNER_ALLOW_FROM: ${SCANNER_ALLOW_FROM:?set this host and the main instance, comma-separated}
+      CLAMAV_URL: tcp://127.0.0.1:3310
+      SCANNER_MAX_BYTES: ${SCANNER_MAX_BYTES:-524288000}
+      SCANNER_PDF_MAX_BYTES: ${SCANNER_PDF_MAX_BYTES:-52428800}
+      SCANNER_CONCURRENCY: ${SCANNER_CONCURRENCY:-2}
+      SCANNER_RATE_PER_MINUTE: ${SCANNER_RATE_PER_MINUTE:-60}
+      SCANNER_SIGNATURE_MAX_AGE_HOURS: ${SCANNER_SIGNATURE_MAX_AGE_HOURS:-48}
+      SCANNER_BODY_TIMEOUT_MS: ${SCANNER_BODY_TIMEOUT_MS:-180000}
+    read_only: true
+    tmpfs:
+      - /tmp:size=640m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ['CMD', 'node', 'dist/healthcheck.js']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+volumes:
+  clamdb:

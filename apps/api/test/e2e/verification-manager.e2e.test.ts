@@ -57,8 +57,8 @@ describe('manager verification, domains and account lookup', () => {
     const sent = await t.gql<{ requestDocumentVerification: { request: { id: string } | null; userErrors: { code: string }[] } }>(REQ_DOCS, { input: { fileIds: [fileId], message: 'First year' } }, s.token)
     const requestId = sent.data!.requestDocumentVerification.request!.id
 
-    const managerQueue = await t.gql<{ verificationRequestsToReview: { id: string; documents: { fileId: string }[] }[] }>(QUEUE, {}, manager.token)
-    expect(managerQueue.data!.verificationRequestsToReview.find((row) => row.id === requestId)!.documents).toEqual([{ fileId }])
+    const managerQueue = await t.gql<{ verificationRequestsToReview: { id: string; documents: { fileId: string; fileName: string }[] }[] }>(QUEUE, {}, manager.token)
+    expect(managerQueue.data!.verificationRequestsToReview.find((row) => row.id === requestId)!.documents).toEqual([{ fileId, fileName: 'id.png' }])
     const link = await t.gql<{ verificationDocumentUrl: { url: string } }>(DOC, { r: requestId, f: fileId }, manager.token)
     expect(link.data!.verificationDocumentUrl.url).toEqual(expect.any(String))
 

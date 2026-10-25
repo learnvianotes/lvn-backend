@@ -39,7 +39,10 @@ export class PolicyService implements Policy {
       institutionVerified: u.verifiedAt !== null,
       // The age threshold is configuration, cached briefly (ADR-0101). The account itself is read every time.
       restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.settings.consentAge(), u.consents.length > 0),
-      suspended: u.accountStatus === 'SUSPENDED' || (u.suspendedUntil !== null && u.suspendedUntil.getTime() > Date.now()),
+      // A dated suspension ends when its time is up, even before the row is rewritten to ACTIVE.
+      suspended: u.accountStatus === 'SUSPENDED'
+        ? u.suspendedUntil === null || u.suspendedUntil.getTime() > Date.now()
+        : u.suspendedUntil !== null && u.suspendedUntil.getTime() > Date.now(),
       teacherApplicant: u.globalRole === 'STUDENT' && u.verificationRequests.length > 0,
     }
   }

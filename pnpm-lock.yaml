@@ -156,6 +156,9 @@ importers:
       '@lvn-backend/legacy':
         specifier: workspace:*
         version: link:../../libs/legacy
+      '@lvn-backend/scanner-protocol':
+        specifier: workspace:*
+        version: link:../../libs/scanner-protocol
       '@lvn-backend/testing':
         specifier: workspace:*
         version: link:../../libs/testing
@@ -192,6 +195,15 @@ importers:
       ws:
         specifier: 8.22.0
         version: 8.22.0
+
+  apps/scanner:
+    dependencies:
+      '@lvn-backend/scanner-protocol':
+        specifier: workspace:*
+        version: link:../../libs/scanner-protocol
+      pdf-lib:
+        specifier: 1.17.1
+        version: 1.17.1
 
   apps/worker:
     dependencies:
@@ -504,6 +516,9 @@ importers:
       '@lvn-backend/redis':
         specifier: workspace:*
         version: link:../../libs/redis
+      '@lvn-backend/scanner-protocol':
+        specifier: workspace:*
+        version: link:../../libs/scanner-protocol
       '@lvn-backend/storage':
         specifier: workspace:*
         version: link:../../libs/storage
@@ -525,6 +540,9 @@ importers:
       graphql:
         specifier: 16.14.2
         version: 16.14.2
+      ioredis:
+        specifier: ^6.0.0
+        version: 6.0.0
       marked:
         specifier: 15.0.12
         version: 15.0.12
@@ -861,6 +879,8 @@ importers:
         version: link:../testing
 
   libs/safe-fetch: {}
+
+  libs/scanner-protocol: {}
 
   libs/storage:
     dependencies:

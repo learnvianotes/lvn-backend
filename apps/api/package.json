@@ -45,6 +45,7 @@
   },
   "devDependencies": {
     "@lvn-backend/legacy": "workspace:*",
+    "@lvn-backend/scanner-protocol": "workspace:*",
     "@lvn-backend/testing": "workspace:*",
     "@nestjs/cli": "^12.0.10",
     "@nestjs/testing": "^12.1.3",

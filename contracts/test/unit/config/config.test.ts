@@ -188,6 +188,34 @@ describe('telemetry', () => {
   })
 })
 
+describe('upload scanning (ADR-0102)', () => {
+  const secret = 's'.repeat(32)
+  it('leaves scanning off unless SCAN_MODE or CLAMAV_URL says otherwise', () => {
+    const cfg = loadConfig(apiConfigSchema, valid)
+    expect(cfg.SCAN_MODE).toBeUndefined()
+    expect(cfg.SCANNER_TIMEOUT_MS).toBe(180_000)
+    expect(cfg.SCAN_QUEUE_CONCURRENCY).toBe(2)
+    expect(cfg.SCAN_JOB_ATTEMPTS).toBe(5)
+    expect(cfg.UPLOADS_PER_MINUTE).toBe(10)
+    expect(cfg.UPLOADS_PER_DAY).toBe(100)
+    expect(cfg.UPLOAD_BYTES_PER_DAY).toBe(500 * 1024 * 1024)
+    expect(cfg.UPLOAD_PENDING_SCANS).toBe(5)
+    expect(cfg.UPLOADS_PER_IP_PER_MINUTE).toBe(30)
+    expect(loadConfig(apiConfigSchema, { ...valid, CLAMAV_URL: 'tcp://127.0.0.1:3310' }).CLAMAV_URL).toBe('tcp://127.0.0.1:3310')
+  })
+
+  it('requires the service address and secret for remote mode, and a private address outside development', () => {
+    expect(() => loadConfig(apiConfigSchema, { ...valid, SCAN_MODE: 'remote' })).toThrow(/SCANNER_URL[\s\S]*SCANNER_SECRET/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, SCAN_MODE: 'local' })).toThrow(/CLAMAV_URL/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, SCANNER_URL: 'http://10.0.0.5:8080' })).toThrow(/SCAN_MODE/)
+    const remote = { ...valid, SCAN_MODE: 'remote', SCANNER_URL: 'http://127.0.0.1:8080', SCANNER_SECRET: secret }
+    expect(loadConfig(apiConfigSchema, remote).SCANNER_URL).toBe('http://127.0.0.1:8080')
+    expect(() => loadConfig(apiConfigSchema, { ...remote, APP_ENV: 'sandbox' })).toThrow(/SCANNER_URL/)
+    expect(() => loadConfig(apiConfigSchema, { ...remote, APP_ENV: 'production', SCANNER_URL: 'https://scan.example.com' })).toThrow(/SCANNER_URL/)
+    expect(loadConfig(apiConfigSchema, { ...remote, APP_ENV: 'production', SCANNER_URL: 'http://10.0.1.8:8080' }).SCANNER_URL).toBe('http://10.0.1.8:8080')
+  })
+})
+
 describe('TRUST_PROXY_HOPS', () => {
   it('defaults to trusting no proxy and accepts a small number of hops only', () => {
     expect(loadConfig(apiConfigSchema, valid).TRUST_PROXY_HOPS).toBe(0)

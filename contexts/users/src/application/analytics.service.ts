@@ -258,12 +258,13 @@ function clip(value: string | null | undefined, max: number): string | null {
   return trimmed.slice(0, max)
 }
 
-function when(value: Date | null | undefined): Date {
+function when(value: Date | string | null | undefined): Date {
   const now = Date.now()
-  if (!value || Number.isNaN(value.getTime())) return new Date(now)
-  if (value.getTime() > now + 5 * 60 * 1000) return new Date(now)
-  if (value.getTime() < now - 7 * DAY_MS) return new Date(now)
-  return value
+  const date = value instanceof Date ? value : value ? new Date(value) : null
+  if (!date || Number.isNaN(date.getTime())) return new Date(now)
+  if (date.getTime() > now + 5 * 60 * 1000) return new Date(now)
+  if (date.getTime() < now - 7 * DAY_MS) return new Date(now)
+  return date
 }
 
 function propsOf(value: unknown): Prisma.InputJsonValue | undefined {

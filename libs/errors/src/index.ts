@@ -25,6 +25,8 @@ export interface UserError {
   field: string[] | null
   message: string
   code: ErrorCode
+  /** Seconds until a RATE_LIMITED caller may retry. Null for every other code. */
+  retryAfter: number | null
   /** Set when `code` is AGE_RESTRICTED, and on a blocked sign-in. */
   supportEmail?: string | null
 }
@@ -62,7 +64,13 @@ export const Errors = {
 }
 
 /** An AppError as a payload entry. */
-export const toUserError = (e: AppError): UserError => ({ code: e.code, message: e.message, field: e.field ?? null, supportEmail: e.supportEmail ?? null })
+export const toUserError = (e: AppError): UserError => ({
+  code: e.code,
+  message: e.message,
+  field: e.field ?? null,
+  retryAfter: e.retryAfter ?? null,
+  supportEmail: e.supportEmail ?? null,
+})
 
 type Body<P> = Omit<P, 'userErrors'>
 

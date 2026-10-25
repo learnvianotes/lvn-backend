@@ -29,6 +29,7 @@ export interface AdminMetricsView {
   storage: { bytes: string; files: number }
   verification: { studentIdQueue: number; pendingRequests: number; domainReviews: number }
   moderation: { openReports: number; openAppeals: number }
+  scans: { pending: number; failed: number }
 }
 
 interface UsageBucket {
@@ -94,6 +95,7 @@ export class AdminMetricsService {
       storage: { bytes: notes.storageBytes.toString(), files: notes.storageFiles },
       verification: { studentIdQueue, pendingRequests, domainReviews },
       moderation: { openReports: core.openReports, openAppeals: core.openAppeals },
+      scans: { pending: notes.pendingScans, failed: notes.failedScans },
     }
   }
 

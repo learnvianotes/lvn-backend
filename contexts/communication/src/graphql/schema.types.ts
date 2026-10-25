@@ -171,6 +171,8 @@ export interface UserError {
   field: Array<string> | null
   message: string
   code: ErrorCode
+  /** Seconds until a RATE_LIMITED caller may retry. Null for every other code. */
+  retryAfter: number | null
   /** One address on AGE_RESTRICTED and on a blocked sign-in: the earliest non-deleted platform admin (GlobalRole PLATFORM_ADMIN) by createdAt, or SUPPORT_EMAIL when none exists. */
   supportEmail: string | null
 }

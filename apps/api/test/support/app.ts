@@ -53,7 +53,12 @@ export async function testEnv(overrides: Record<string, string> = {}): Promise<R
     WEB_URL: 'http://localhost:3000',
     TRUST_PROXY_HOPS: '1',
     // The suites exercise uploads; their default is off (ADR-0097), checked in uploads.e2e.test.ts.
+    // Production windows are 10 a minute and 30 an IP. One reader or voice case uploads more than that.
     UPLOADS_ENABLED: 'true',
+    UPLOADS_PER_MINUTE: '1000',
+    UPLOADS_PER_DAY: '10000',
+    UPLOAD_PENDING_SCANS: '1000',
+    UPLOADS_PER_IP_PER_MINUTE: '1000',
     ...secrets,
     ...overrides,
   }

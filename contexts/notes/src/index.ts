@@ -32,6 +32,7 @@ export { NOTES_IMPORT_QUEUE, NoteImportService } from './application/note-import
 export { LegacyContentImport, type LegacyContentReport, type LegacyContentSource } from './application/legacy-content'
 export { NOTES_PDF_QUEUE, PDF_ENGINE_QUEUE, PDF_LIMITS, PdfConversionService } from './application/pdf-conversion.service'
 export { IMAGE_SIZES, MediaProcessingService, NOTES_MEDIA_QUEUE, variantKey } from './application/media-processing.service'
+export { FILE_SCAN_QUEUE } from './application/scan-policy'
 export { clamdScan } from './application/clamav'
 /** Nightly housekeeping (version pruning, emptying the trash), run by apps/worker. */
 export { NotesMaintenance } from './application/notes-maintenance'

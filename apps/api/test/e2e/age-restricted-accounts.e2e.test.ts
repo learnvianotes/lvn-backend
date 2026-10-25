@@ -101,7 +101,7 @@ describe('age-restricted accounts', () => {
     expect(passed.data!.adminUpdateUser.userErrors).toEqual([])
     expect(passed.data!.adminUpdateUser.user).toMatchObject({ accountStatus: 'ACTIVE', statusReason: null, displayName: 'Older Now', dateOfBirth: yearsAgo(20) })
     expect((await t.gql<{ userByHandle: { id: string } | null }>(BY_HANDLE, { h: handle })).data!.userByHandle).toEqual({ id: userId })
-    const audit = await db.auditLog.findFirst({ where: { action: 'account.admin.updated', targetId: userId, actorId: admin.id } })
+    const audit = await db.auditLog.findFirst({ where: { action: 'account.admin.updated', targetId: userId, actorId: admin.id }, orderBy: { createdAt: 'desc' } })
     expect(audit!.metadata).toMatchObject({ reason: 'Document shows an adult date of birth', ageUnblocked: true })
   })
 

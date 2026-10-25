@@ -49,8 +49,9 @@ export class DataJobs implements OnApplicationBootstrap {
     )
     await this.queues.repeat(USERS_SKILLS_QUEUE, 'refresh-due', '40 4 * * *')
     this.queues.process(NOTES_IMPORT_QUEUE, {
-      'run-import': async (data) => {
-        await this.imports.run((data as { importId: string }).importId)
+      'run-import': async (data, job) => {
+        const lastAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1)
+        await this.imports.run((data as { importId: string }).importId, lastAttempt)
         return { importId: (data as { importId: string }).importId }
       },
     })

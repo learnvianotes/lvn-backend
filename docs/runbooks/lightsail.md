@@ -67,8 +67,9 @@ clients at once.
   restarted by Docker; the VM keeps going.
 - Watch `lvn.sh status`. If the API or the worker sits near its cap, raise it here before anything else (a bigger
   Lightsail plan raises all of them).
-- Not on the VM: ClamAV and the PDF engine (uploads are off, ADR-0097), Typesense (search on Postgres), and the
-  monitoring stack (ADR-0089: use Grafana Cloud or an uptime check).
+- Not on the VM: ClamAV (its own 2 GB instance, `docs/ops/scanner-host.md`, ADR-0102), the PDF engine (uploads are off
+  until that host is up, ADR-0097), Typesense (search on Postgres), and the monitoring stack (ADR-0089: use Grafana
+  Cloud or an uptime check).
 
 ## What Infra provisions
 
@@ -196,5 +197,8 @@ don't need it.
 
 ## Uploads
 
-Off (ADR-0097). To turn them on: room for ClamAV (or a `CLAMAV_URL` elsewhere), the PDF engine for PDF conversion,
-`LVN_UPLOADS_ENABLED=true`, the files bucket's `PUT` CORS rule, then deploy lvn-backend.
+Off (ADR-0097). To turn them on: provision the scan service (`docs/ops/scanner-host.md`, ADR-0102), put
+`SCAN_MODE=remote`, `SCANNER_URL` and `SCANNER_SECRET` in `LVN_BACKEND_EXTRA_ENV` (the same secret as the scanner
+host; do not set `CLAMAV_URL` on this VM), the PDF engine for PDF conversion, `LVN_UPLOADS_ENABLED=true`, the files
+bucket's `PUT` CORS rule, then deploy lvn-backend. Until the scan service answers, a remote upload stays pending and
+is not served.

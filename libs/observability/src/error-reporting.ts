@@ -58,7 +58,7 @@ const DROPPED_INTEGRATIONS = new Set(['LocalVariables', 'LocalVariablesAsync', '
 /**
  * Sentry for unexpected exceptions only (§16.5): no performance tracing (OpenTelemetry does that), no personal data.
  * Events keep the request id, operation, queue and job id as tags, and user.id when the account is known.
- * Email, name, cookies, bodies, query strings and most headers are removed before anything leaves the process.
+ * A failed scan passes the file owner's id. Email, name, cookies, bodies, query strings and most headers are removed.
  */
 export function startErrorReporting(options: ErrorReportingOptions): boolean {
   configuredRelease = options.release
@@ -83,9 +83,12 @@ export function startErrorReporting(options: ErrorReportingOptions): boolean {
 export function reportError(error: unknown, tags: Record<string, string | undefined> = {}): void {
   const ctx = logContext.getStore()
   const message = error instanceof Error ? error.message : String(error)
+  const userId = tags.userId || ctx?.userId
+  const queue = tags.queue || ctx?.queue
+  const job = tags.job ?? ''
   emitBackendError({
-    userId: ctx?.userId,
-    route: tags.path || ctx?.operation || (ctx?.queue ? `${ctx.queue}/${tags.job ?? ''}`.replace(/\/$/, '') : undefined),
+    userId,
+    route: tags.path || ctx?.operation || (queue ? `${queue}/${job}`.replace(/\/$/, '') : undefined),
     code: 'INTERNAL',
     message: scrubMessage(message || 'Unexpected error'),
     release: configuredRelease,
@@ -95,8 +98,8 @@ export function reportError(error: unknown, tags: Record<string, string | undefi
     for (const [k, v] of Object.entries({ requestId: ctx?.requestId, operation: ctx?.operation, queue: ctx?.queue, jobId: ctx?.jobId, ...tags })) {
       if (v) scope.setTag(k, v)
     }
-    // UUID only. Email and name are stripped again in scrubEvent.
-    if (ctx?.userId) scope.setUser({ id: ctx.userId })
+    // UUID only. Email and name are stripped again in scrubEvent. A scan job has no request, so the owner is on the tags.
+    if (userId) scope.setUser({ id: userId })
     Sentry.captureException(error)
   })
 }

@@ -103,7 +103,7 @@ describe('provider sign-in and registration', () => {
       expect(user.registrationCompletedAt).not.toBeNull()
       expect(user.deletedAt).toBeNull()
       expect(await db.oAuthAccount.count({ where: { userId: id } })).toBe(1)
-      expect(await db.session.count({ where: { userId: id } })).toBe(0)
+      expect(await db.session.count({ where: { userId: id, revokedAt: null } })).toBe(0)
       expect((await t.gql(VIEWER, {}, s.accessToken)).data?.viewer ?? null).toBeNull()
 
       const again = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${uid}:${uid}@gmail.com:Young One` })

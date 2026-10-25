@@ -251,12 +251,12 @@ export class VerificationService {
    * A presigned upload for one college ID card (ADR-0099). Refused while the admin switch is off, and never stored
    * then. Independent of UPLOADS_ENABLED: general uploads can stay off.
    */
-  async createCollegeIdUpload(userId: string, input: { fileName: string; mimeType: string; sizeBytes: number }) {
+  async createCollegeIdUpload(userId: string, input: { fileName: string; mimeType: string; sizeBytes: number }, ip = '') {
     await this.assertCollegeIdOpen(userId)
     const file = checkedCollegeIdFile(input)
     const limit = await this.limiter.hit(`college-id-upload:${userId}`, { max: COLLEGE_ID_UPLOADS_PER_DAY, windowSeconds: 24 * 3600 })
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many college ID uploads today. Try again tomorrow.')
-    return this.files.createCollegeIdUpload(userId, file)
+    return this.files.createCollegeIdUpload(userId, file, ip)
   }
 
   /** Attaches one READY college ID card to a new account-verification request. Platform admins decide it. */

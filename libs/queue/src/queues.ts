@@ -1,9 +1,20 @@
 import { Global, Logger, Module, type DynamicModule, type OnApplicationShutdown } from '@nestjs/common'
 import { metrics } from '@opentelemetry/api'
 import { reportError, withJobContext } from '@lvn-backend/observability'
-import { Queue, Worker, type ConnectionOptions, type Job } from 'bullmq'
+import { DelayedError, Queue, Worker, type ConnectionOptions, type Job } from 'bullmq'
 
 const meter = metrics.getMeter('lvn-queue')
+
+/**
+ * The handler wants this job to wait until `until` without using an attempt. The worker moves it and tells BullMQ
+ * the job was delayed (a scan circuit that is open, or a user who already has a scan in flight).
+ */
+export class DelayJobError extends Error {
+  override name = 'DelayJobError'
+  constructor(readonly until: number) {
+    super('delay')
+  }
+}
 /** The job SLO's numerator and denominator (§16.4, ADR-0089): jobs finished, by queue and outcome. */
 const finished = meter.createCounter('lvn.queue.jobs', { description: 'Jobs finished, by queue and outcome: completed, or failed after their last attempt' })
 
@@ -52,11 +63,19 @@ export class Queues implements OnApplicationShutdown {
   process(queueName: string, handlers: Record<string, JobHandler>, concurrency = 2): Worker {
     const worker = new Worker(
       queueName,
-      async (job) => {
+      async (job, token) => {
         const handler = handlers[job.name]
         if (!handler) throw new Error(`No handler for ${queueName}/${job.name}`)
-        // Every line the handler logs carries the queue and job id.
-        return withJobContext(queueName, job.id, () => handler(job.data, job))
+        try {
+          // Every line the handler logs carries the queue and job id.
+          return await withJobContext(queueName, job.id, () => handler(job.data, job))
+        } catch (e) {
+          if (e instanceof DelayJobError) {
+            await job.moveToDelayed(e.until, token)
+            throw new DelayedError()
+          }
+          throw e
+        }
       },
       { connection: this.connection, concurrency },
     )
@@ -65,7 +84,7 @@ export class Queues implements OnApplicationShutdown {
       this.log.error(`${queueName}/${job?.name ?? '?'} failed: ${err.message}`)
       // Retries are expected; only a job that has used up its attempts is an error to report.
       if (!job || job.attemptsMade >= (job.opts.attempts ?? 1)) {
-        reportError(err, { queue: queueName, jobId: job?.id, job: job?.name })
+        reportError(err, reportedFailureTags(err, { queue: queueName, jobId: job?.id, job: job?.name }))
         finished.add(1, { queue: queueName, outcome: 'failed' })
       }
     })
@@ -93,6 +112,17 @@ export class Queues implements OnApplicationShutdown {
     await Promise.all(this.workers.map((w) => w.close()))
     await Promise.all([...this.queues.values()].map((q) => q.close()))
   }
+}
+
+/** Tags for a job that has used up its attempts. A `userId` on the error is the file owner (ADR-0102). */
+export function reportedFailureTags(err: unknown, tags: { queue: string; jobId?: string; job?: string }): Record<string, string | undefined> {
+  return { ...tags, userId: errorUserId(err) }
+}
+
+function errorUserId(err: unknown): string | undefined {
+  if (!err || typeof err !== 'object' || !('userId' in err)) return undefined
+  const id = (err as { userId?: unknown }).userId
+  return typeof id === 'string' && id.length > 0 ? id : undefined
 }
 
 @Global()

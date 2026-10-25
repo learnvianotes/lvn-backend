@@ -1,6 +1,6 @@
 import { UseGuards } from '@nestjs/common'
-import { Args, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql'
-import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
+import { Args, Context, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql'
+import { CurrentViewer, SignedInGuard, type RequestContext, type Viewer } from '@lvn-backend/auth-guard'
 import { Errors, withUserErrors } from '@lvn-backend/errors'
 import { AppSettingsService } from '../application/app-settings.service'
 import { UsersService } from '../application/users.service'
@@ -82,8 +82,10 @@ export class StudentIdVerificationResolver {
   }
 
   @Mutation('createStudentIdUploadIntent')
-  createStudentIdUploadIntent(@Args() { input }: MutationCreateStudentIdUploadIntentArgs, @CurrentViewer() viewer: Viewer): Promise<StudentIdUploadPayload> {
-    return withUserErrors<StudentIdUploadPayload>(async () => ({ upload: await this.verification.createCollegeIdUpload(viewer.userId, input) }), { upload: null })
+  createStudentIdUploadIntent(@Args() { input }: MutationCreateStudentIdUploadIntentArgs, @CurrentViewer() viewer: Viewer, @Context() ctx: RequestContext): Promise<StudentIdUploadPayload> {
+    const raw = (ctx.req as { ip?: string }).ip ?? ''
+    const ip = raw.startsWith('::ffff:') ? raw.slice('::ffff:'.length) : raw
+    return withUserErrors<StudentIdUploadPayload>(async () => ({ upload: await this.verification.createCollegeIdUpload(viewer.userId, input, ip) }), { upload: null })
   }
 
   @Mutation('submitStudentIdVerification')

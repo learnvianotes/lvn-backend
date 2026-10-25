@@ -28,11 +28,13 @@ describe('AppError', () => {
     expect(e).toBeInstanceOf(AppError)
     expect(e.code).toBe(ErrorCode.RATE_LIMITED)
     expect(e.retryAfter).toBe(30)
-    expect(toUserError(Errors.validation('Bad', ['input', 'x']))).toEqual({ code: 'VALIDATION', message: 'Bad', field: ['input', 'x'], supportEmail: null })
+    expect(toUserError(Errors.validation('Bad', ['input', 'x']))).toEqual({ code: 'VALIDATION', message: 'Bad', field: ['input', 'x'], retryAfter: null, supportEmail: null })
+    expect(toUserError(Errors.rateLimited(30)).retryAfter).toBe(30)
     expect(toUserError(Errors.ageRestricted('Too young', 'support@learnvianotes.in', ['input', 'dateOfBirth']))).toEqual({
       code: 'AGE_RESTRICTED',
       message: 'Too young',
       field: ['input', 'dateOfBirth'],
+      retryAfter: null,
       supportEmail: 'support@learnvianotes.in',
     })
   })

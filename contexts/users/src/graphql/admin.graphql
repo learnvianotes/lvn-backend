@@ -127,6 +127,13 @@ type AdminModerationMetrics {
   openAppeals: Int!
 }
 
+type AdminScanMetrics {
+  "Uploads waiting for a scan. They are not served."
+  pending: Int!
+  "Scans that used up their attempts. They are not served."
+  failed: Int!
+}
+
 """
 Dashboard totals. Cached in each API process for about a minute. No personal data.
 `from` and `to` bound AI usage only. Omit them for the last 30 days through the current minute.
@@ -140,6 +147,7 @@ type AdminMetrics {
   storage: AdminStorageMetrics!
   verification: AdminVerificationMetrics!
   moderation: AdminModerationMetrics!
+  scans: AdminScanMetrics!
 }
 
 enum PlanInterval { NONE MONTH YEAR }

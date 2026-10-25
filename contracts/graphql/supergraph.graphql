@@ -443,6 +443,7 @@ type AdminMetrics
   storage: AdminStorageMetrics!
   verification: AdminVerificationMetrics!
   moderation: AdminModerationMetrics!
+  scans: AdminScanMetrics!
 }
 
 type AdminModerationMetrics
@@ -499,6 +500,16 @@ type AdminPlanPayload
 {
   plan: AdminPlan
   userErrors: [UserError!]!
+}
+
+type AdminScanMetrics
+  @join__type(graph: USERS)
+{
+  """Uploads waiting for a scan. They are not served."""
+  pending: Int!
+
+  """Scans that used up their attempts. They are not served."""
+  failed: Int!
 }
 
 input AdminSetAccountStandingInput
@@ -7764,6 +7775,11 @@ type UserError
   field: [String!]
   message: String!
   code: ErrorCode!
+
+  """
+  Seconds until a RATE_LIMITED caller may retry. Null for every other code.
+  """
+  retryAfter: Int
 
   """
   One address on AGE_RESTRICTED and on a blocked sign-in: the earliest non-deleted platform admin (GlobalRole PLATFORM_ADMIN) by createdAt, or SUPPORT_EMAIL when none exists.

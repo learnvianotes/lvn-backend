@@ -151,13 +151,15 @@ export class AccountAdminService {
       return this.toManaged(await this.live(user.id))
     }
     if (input.status === 'SUSPENDED') {
-      if (!input.until || input.until.getTime() <= Date.now()) throw Errors.validation('Choose a time in the future.', ['input', 'until'])
+      // GraphQL delivers DateTime input as an ISO string; a Date is what the unit tests pass.
+      const until = input.until instanceof Date ? input.until : new Date(input.until ?? '')
+      if (!input.until || Number.isNaN(until.getTime()) || until.getTime() <= Date.now()) throw Errors.validation('Choose a time in the future.', ['input', 'until'])
       await this.db.user.update({
         where: { id: user.id },
-        data: { accountStatus: 'SUSPENDED', statusReason: reason, suspendedUntil: input.until, suspensionReason: reason },
+        data: { accountStatus: 'SUSPENDED', statusReason: reason, suspendedUntil: until, suspensionReason: reason },
       })
       await this.sessions.revokeAll(user.id)
-      await this.audit.record({ actorId, action: 'account.admin.suspended', targetType: 'USER', targetId: user.id, metadata: { reason, until: input.until.toISOString() } })
+      await this.audit.record({ actorId, action: 'account.admin.suspended', targetType: 'USER', targetId: user.id, metadata: { reason, until: until.toISOString() } })
       return this.toManaged(await this.live(user.id))
     }
     await this.db.user.update({

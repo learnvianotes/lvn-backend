@@ -731,6 +731,10 @@ enum ScanResult {
   CLEAN
   INFECTED
   ERROR
+  /// Waiting for the remote scanner (ADR-0102). A file in this state is never served.
+  PENDING
+  /// The remote scan used its attempts. The file is not served.
+  FAILED
 
   @@schema("notes")
 }
@@ -771,6 +775,7 @@ model FileObject {
   @@index([ownerId, status])
   @@index([parentType, parentId])
   @@index([status, expiresAt])
+  @@index([scanResult, status])
   @@schema("notes")
 }
 
