@@ -10,10 +10,15 @@ overrides:
   graphql: 16.14.2
   '@apollo/subgraph': 2.14.4
   '@apollo/federation-internals': 2.14.4
+  # @types/ssh2@1 still asks for @types/node 18. One Node type package for the whole workspace.
+  '@types/node': 26.6.5
   # Patched releases of what pnpm audit flags high (CI's audit job): GraphQL Tools under @nestjs/graphql and mysql2
-  # under the Prisma CLI.
+  # under the Prisma CLI. body-parser, multer and undici are the highs left after the Nest 12 / Apollo bump.
   '@graphql-tools/utils': ^12.0.1
   mysql2: ^3.22.0
+  body-parser: ^2.4.0
+  multer: ^2.5.0
+  undici: ^8.12.2
 
 auditConfig:
   ignoreGhsas:

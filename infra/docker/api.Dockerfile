@@ -7,7 +7,7 @@
 # Configuration comes only from the environment (docs/architecture/env.md); no .env file is copied in.
 #   docker build -f infra/docker/api.Dockerfile -t lvn-backend .
 
-ARG NODE_IMAGE=node:22-bookworm-slim
+ARG NODE_IMAGE=node:24-bookworm-slim
 
 FROM ${NODE_IMAGE} AS build
 # Prisma's schema engine needs OpenSSL.
