@@ -8,7 +8,7 @@ const values = <T extends Record<string, string>>(o: T) => Object.values(o) as [
 export const Visibility = { PRIVATE: 'PRIVATE', SHARED: 'SHARED', PUBLIC: 'PUBLIC' } as const
 export type Visibility = (typeof Visibility)[keyof typeof Visibility]
 
-export const GlobalRole = { STUDENT: 'STUDENT', TEACHER: 'TEACHER', PLATFORM_ADMIN: 'PLATFORM_ADMIN' } as const
+export const GlobalRole = { STUDENT: 'STUDENT', TEACHER: 'TEACHER', MANAGER: 'MANAGER', PLATFORM_ADMIN: 'PLATFORM_ADMIN' } as const
 export type GlobalRole = (typeof GlobalRole)[keyof typeof GlobalRole]
 
 /** MENTOR exists only in PROJECT groups: a teacher the team invited (ADR-0015). */

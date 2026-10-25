@@ -148,6 +148,7 @@ export class UsersService implements People {
       institution: institutional.institution,
       restrictedMinor: null,
       deletionScheduledFor: null,
+      analyticsOptOut: null,
     }
   }
 
@@ -184,6 +185,7 @@ export class UsersService implements People {
       institution: institutionOf.has(u.id) ? { name: institutionOf.get(u.id)!, verified: true } : null,
       restrictedMinor: null,
       deletionScheduledFor: null,
+      analyticsOptOut: null,
     }))
   }
 
@@ -226,6 +228,7 @@ export class UsersService implements People {
       institution: institutional.institution,
       restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.settings.consentAge(), u.consents.length > 0),
       deletionScheduledFor: deletionDate(u.deletionRequestedAt),
+      analyticsOptOut: u.analyticsOptOut,
     }
   }
 }

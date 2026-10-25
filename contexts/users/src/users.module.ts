@@ -1,4 +1,5 @@
 import { Module, type DynamicModule } from '@nestjs/common'
+import { JsonScalar } from '@lvn-backend/graphql'
 import { AccessAllowlistService } from './application/access-allowlist.service'
 import { AccessGate } from './application/access-gate'
 import { AdminService } from './application/admin.service'
@@ -26,6 +27,8 @@ import { SocialService } from './application/social.service'
 import { SkillsImportService } from './application/skills-import.service'
 import { TeacherProfileService } from './application/teacher-profile.service'
 import { UsersService } from './application/users.service'
+import { AnalyticsService, BackendErrorSink } from './application/analytics.service'
+import { IdCardCheckService } from './application/id-card-check.service'
 import { VerificationService } from './application/verification.service'
 import { AuthResolver } from './graphql/auth.resolver'
 import { ProfileResolver } from './graphql/profile.resolver'
@@ -42,6 +45,7 @@ import { USERS_CONFIG, type UsersConfig } from './users.config'
 import { AccountDeletionService } from './application/account-deletion.service'
 import { AccountResolver } from './graphql/account.resolver'
 import { AccessAllowlistResolver } from './graphql/access.resolver'
+import { AnalyticsOptOutResolver, AnalyticsResolver } from './graphql/analytics.resolver'
 import { AdminDashboardResolver } from './graphql/admin.resolver'
 import { PlansResolver } from './graphql/plans.resolver'
 
@@ -62,6 +66,7 @@ export class UsersModule {
       module: UsersModule,
       providers: [
         { provide: USERS_CONFIG, useValue: config },
+        JsonScalar,
         // Google sign-in is off unless a Firebase project is configured (ADR-0007).
         { provide: GOOGLE_ID_TOKENS, useFactory: () => (config.firebaseProjectId ? new FirebaseGoogleIdTokens(config.firebaseProjectId) : null) },
         { provide: MX_LOOKUP, useClass: DnsMxLookup },
@@ -75,6 +80,9 @@ export class UsersModule {
         PolicyService,
         EntitlementService,
         AuditService,
+        IdCardCheckService,
+        AnalyticsService,
+        BackendErrorSink,
         VerificationService,
         PlatformSettingsStore,
         AccessGate,
@@ -113,8 +121,10 @@ export class UsersModule {
         ProfileResolver,
         TermsResolver,
         DataResolver,
+        AnalyticsResolver,
+        AnalyticsOptOutResolver,
       ],
-      exports: [PolicyService, EntitlementService, UsersMaintenance, DataExportService, SkillsImportService, AccountDeletionService],
+      exports: [PolicyService, EntitlementService, UsersMaintenance, DataExportService, SkillsImportService, AccountDeletionService, IdCardCheckService],
     }
   }
 }

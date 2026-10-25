@@ -48,3 +48,9 @@ export function noteOperation(req: unknown, operation: string | null | undefined
   const ctx = logContext.getStore()
   if (ctx) ctx.operation = operation
 }
+
+/** Records the signed-in account id for error reports. Email and name are never stored here. */
+export function noteViewer(userId: string | null | undefined): void {
+  const ctx = logContext.getStore()
+  if (ctx && userId) ctx.userId = userId
+}

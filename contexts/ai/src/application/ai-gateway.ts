@@ -52,6 +52,25 @@ const BUDGET_CACHE_MS = 60_000
 /** The circuit of the environment's provider; a connection's is its id. */
 const ENVIRONMENT = 'environment'
 
+const idCardSchema = z.object({
+  name: z.string().nullable(),
+  institution: z.string().nullable(),
+  idNumber: z.string().nullable(),
+  validUntil: z.string().nullable(),
+  readable: z.boolean(),
+  confidence: z.number(),
+})
+
+/** What the ID-card prompt returns. The gateway sends only the image. */
+export interface IdCardReading {
+  name: string | null
+  institution: string | null
+  idNumber: string | null
+  validUntil: string | null
+  readable: boolean
+  confidence: number
+}
+
 const startOfUtcDay = (now = new Date()) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 const startOfUtcMonth = (now = new Date()) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
@@ -114,7 +133,43 @@ export class AiGateway {
   }
 
   async generate<T = string>(call: GenerateCall<T>): Promise<Generated<T>> {
-    const route = await this.ready(await this.providers.forTask(call.task), call.userId, call.private)
+    return this.complete(await this.ready(await this.providers.forTask(call.task), call.userId, call.private), call)
+  }
+
+  /**
+   * Reads one ID image or PDF. The prompt has no account fields: only these bytes are attached.
+   * Gemini Flash is preferred, then GPT-4o-mini, then the default private chat model.
+   * A provider that cannot take the file is skipped. Nothing about the image is logged.
+   */
+  async extractIdCard(imageBase64: string): Promise<IdCardReading> {
+    const targets = await this.providers.idCardCandidates()
+    if (!targets.length) throw Errors.unavailable('AI is not switched on here.')
+    let last: unknown = Errors.unavailable('AI is not switched on here.')
+    for (const target of targets) {
+      try {
+        const generated = await this.complete(target, {
+          task: 'ID_CARD_CHECK',
+          userId: null,
+          private: true,
+          prompt: 'id-card-check',
+          images: [imageBase64],
+          schema: idCardSchema,
+          temperature: 0,
+          maxTokens: 600,
+        })
+        const confidence = generated.output.confidence > 1 ? Math.min(1, generated.output.confidence / 100) : Math.max(0, generated.output.confidence)
+        return { ...generated.output, confidence }
+      } catch (e) {
+        last = e
+        if (e instanceof Error && /budget/i.test(e.message)) throw e
+      }
+    }
+    throw last
+  }
+
+  /** One call on an already chosen provider. `ready` still checks the budget, the circuit and private data. */
+  private async complete<T>(target: Target, call: GenerateCall<T>): Promise<Generated<T>> {
+    const route = await this.ready(target, call.userId, call.private)
     const adapter = route.adapter
     const rendered = this.prompts.render(call.prompt, call.vars, call.content)
     const messages: ChatMessage[] = rendered.messages.map((m, i) => (i === rendered.messages.length - 1 && call.images?.length ? { ...m, images: call.images } : m))

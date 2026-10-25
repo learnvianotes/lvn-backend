@@ -22,6 +22,14 @@ export interface SettingDef {
 export const GOOGLE_SIGN_IN_SETTING = 'google_sign_in'
 export const ACCESS_ALLOWLIST_SETTING = 'access_allowlist_enabled'
 export const STUDENT_ID_VERIFICATION_SETTING = 'student_id_verification'
+/** AI reads a college ID or proof image. Off until an admin turns it on. */
+export const STUDENT_ID_AI_CHECK_SETTING = 'student_id_ai_check'
+/** Approve a student request when the check is a high-confidence match. Default off. Never auto-rejects. */
+export const STUDENT_ID_AI_AUTO_APPROVE_SETTING = 'student_id_ai_auto_approve'
+/** Minimum confidence, 0–100, before a match may be auto-approved. */
+export const STUDENT_ID_AI_THRESHOLD_SETTING = 'student_id_ai_confidence_threshold'
+/** Days a college ID image is kept after the request is decided. Default 30. */
+export const STUDENT_ID_IMAGE_RETENTION_SETTING = 'student_id_image_retention_days'
 
 export const SETTING_CATALOG: SettingDef[] = [
   {
@@ -46,10 +54,50 @@ export const SETTING_CATALOG: SettingDef[] = [
     key: STUDENT_ID_VERIFICATION_SETTING,
     type: 'BOOLEAN',
     category: 'verification',
-    description: 'Let a student send one college ID card for an admin to review. Off until an admin turns it on. It does not turn general uploads on.',
+    description: 'Let a student send one college ID card for review. Off until an admin turns it on. It does not turn general uploads on.',
     defaultValue: false,
     environmentFallback: false,
     nullable: false,
+  },
+  {
+    key: STUDENT_ID_AI_CHECK_SETTING,
+    type: 'BOOLEAN',
+    category: 'verification',
+    description: 'aiCheckEnabled. When a student uploads a college ID or proof, a background job reads that image only and stores a match, mismatch or unreadable verdict. Off until an admin turns it on. Mismatches always wait for a person.',
+    defaultValue: false,
+    environmentFallback: false,
+    nullable: false,
+  },
+  {
+    key: STUDENT_ID_AI_AUTO_APPROVE_SETTING,
+    type: 'BOOLEAN',
+    category: 'verification',
+    description: 'autoApproveOnHighConfidence. When on, a high-confidence match verifies the student account. Default off. A mismatch or a low score is never decided by the check.',
+    defaultValue: false,
+    environmentFallback: false,
+    nullable: false,
+  },
+  {
+    key: STUDENT_ID_AI_THRESHOLD_SETTING,
+    type: 'INTEGER',
+    category: 'verification',
+    description: 'Confidence, from 50 to 100, required before autoApproveOnHighConfidence may approve. 90 means the check must be at least 90 percent sure.',
+    defaultValue: 90,
+    environmentFallback: false,
+    nullable: false,
+    min: 50,
+    max: 100,
+  },
+  {
+    key: STUDENT_ID_IMAGE_RETENTION_SETTING,
+    type: 'INTEGER',
+    category: 'verification',
+    description: 'Days a college ID image is kept after the request is approved or rejected. Default 30. A withdrawn card is deleted at once. The image is sent only to the ID check and is never written to logs.',
+    defaultValue: 30,
+    environmentFallback: false,
+    nullable: false,
+    min: 1,
+    max: 3650,
   },
   {
     key: 'uploads_enabled',

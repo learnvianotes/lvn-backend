@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { AccountDeletionService } from './account-deletion.service'
+import { AnalyticsService } from './analytics.service'
 import { VerificationService } from './verification.service'
 
 /** Scheduled housekeeping of the users context, run by apps/worker (daily). */
@@ -8,7 +9,13 @@ export class UsersMaintenance {
   constructor(
     private readonly verification: VerificationService,
     private readonly deletion: AccountDeletionService,
+    private readonly analytics: AnalyticsService,
   ) {}
+
+  /** Usage events older than 180 days and error events older than 90 days. */
+  purgeAnalytics(now = new Date()): Promise<{ errors: number; usage: number }> {
+    return this.analytics.purge(now)
+  }
 
   /** ADR-0088: accounts past their 14 days are deleted; recent deletions are announced again. */
   deleteAccounts(now = new Date()): Promise<{ deleted: number; announced: number }> {

@@ -1,5 +1,5 @@
 import type { AccessTokenVerifier, RequestContext, Viewer } from '@lvn-backend/auth-guard'
-import { requestIdFrom } from '@lvn-backend/observability'
+import { noteViewer, requestIdFrom } from '@lvn-backend/observability'
 
 /** Answers whether a session family was revoked within the access-token lifetime (Redis in apps/api). */
 export interface RevocationCheck {
@@ -29,6 +29,7 @@ export function buildRequestContext(verifier: AccessTokenVerifier, revocations: 
     const r = req as Req
     let viewer = viewerFromRequest(r, verifier)
     if (viewer && (await revocations.isRevoked(viewer.sessionId))) viewer = null
+    noteViewer(viewer?.userId)
     return { req: r, res: res as RequestContext['res'], requestId: requestIdOf(r), viewer }
   }
 }

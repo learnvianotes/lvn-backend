@@ -16,6 +16,7 @@
     "@lvn-backend/event-bus": "workspace:*",
     "@lvn-backend/facades": "workspace:*",
     "@lvn-backend/graphql": "workspace:*",
+    "@lvn-backend/observability": "workspace:*",
     "@lvn-backend/legacy": "workspace:*",
     "@lvn-backend/prisma-base": "workspace:*",
     "@lvn-backend/queue": "workspace:*",

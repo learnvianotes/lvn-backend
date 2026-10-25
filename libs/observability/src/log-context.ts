@@ -6,6 +6,8 @@ export interface LogContext {
   requestId?: string
   /** GraphQL operation name, once known. */
   operation?: string
+  /** Signed-in account. A UUID only: never an email or a name (§16.5, B7). */
+  userId?: string
   queue?: string
   jobId?: string
 }

@@ -40,6 +40,11 @@ interface RequestRow {
   decidedAt: Date | null
   reason: string | null
   documentIds: string[]
+  aiVerdict: string | null
+  aiConfidence: number | null
+  aiReason: string | null
+  aiExtracted: unknown
+  aiCheckedAt: Date | null
 }
 
 @Resolver('VerificationRequest')
@@ -148,6 +153,19 @@ export class VerificationResolver {
     }, { ok: false })
   }
 
+  @Query('institutionDomains')
+  institutionDomains(@Args('status') status: DomainReview['status'] | null, @Args('first') first: number | null, @CurrentViewer() viewer: Viewer): Promise<DomainReview[]> {
+    return this.admin.institutionDomains(viewer.userId, status, first ?? 50)
+  }
+
+  @Mutation('reviewInstitutionDomain')
+  reviewInstitutionDomain(@Args('input') input: { domain: string; approve: boolean }, @CurrentViewer() viewer: Viewer): Promise<OkPayload> {
+    return withUserErrors<OkPayload>(async () => {
+      await this.admin.reviewInstitutionDomain(viewer.userId, input.domain, input.approve)
+      return { ok: true }
+    }, { ok: false })
+  }
+
   // ── VerificationRequest fields ───────────────────────────────────────────────────────────────────────────
 
   @ResolveField('requester')
@@ -164,8 +182,13 @@ export class VerificationResolver {
 
   @ResolveField('documents')
   async documents(@Parent() r: RequestRow, @CurrentViewer() viewer: Viewer): Promise<VerificationDocument[]> {
-    const files = await this.verification.documentsFor(viewer.userId, r.documentIds)
+    const files = await this.verification.documentsFor(viewer.userId, r)
     return files.map((f) => ({ fileId: f.id, fileName: f.originalFileName, mimeType: f.mimeType, sizeBytes: f.sizeBytes }))
+  }
+
+  @ResolveField('aiCheck')
+  aiCheck(@Parent() r: RequestRow, @CurrentViewer() viewer: Viewer) {
+    return this.verification.aiCheckFor(viewer.userId, r)
   }
 }
 
