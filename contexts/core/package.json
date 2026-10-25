@@ -8,7 +8,7 @@
     "build": "node ../../scripts/graphql-types.mjs core && tsc -p tsconfig.build.json && cp src/graphql/*.graphql dist/graphql/",
     "typecheck": "node ../../scripts/graphql-types.mjs core --check && tsc --noEmit",
     "lint": "eslint src",
-    "test": "jest --passWithNoTests"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests"
   },
   "dependencies": {
     "@lvn-backend/auth-guard": "workspace:*",
@@ -23,8 +23,8 @@
     "@lvn-backend/safe-fetch": "workspace:*",
     "@lvn-backend/storage": "workspace:*",
     "@lvn/contracts": "workspace:@learnvianotes/contracts@*",
-    "@nestjs/common": "^11.2.7",
-    "@nestjs/graphql": "13.4.5",
+    "@nestjs/common": "^12.1.3",
+    "@nestjs/graphql": "14.0.3",
     "graphql": "16.14.2",
     "ioredis": "^6.0.0",
     "reflect-metadata": "^0.2.2",

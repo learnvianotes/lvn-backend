@@ -25,7 +25,7 @@ across Postgres schemas, configuration only through `libs/config`, contracts imp
 
 ## Develop
 
-Requires Node 22 and pnpm 10.
+Requires Node 24 and pnpm 10. Jest loads Nest 12's ESM packages with `require()`, which needs Node 24.9 or newer.
 
 ```bash
 pnpm install

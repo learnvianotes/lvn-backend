@@ -1,4 +1,6 @@
-import type { ApolloServerPlugin } from '@apollo/server'
+// @nestjs/apollo is ESM and types its plugins from @apollo/server's import entry. A CJS
+// `import type` resolves the require entry instead, and the two copies of HeaderMap are not the same type.
+import type { ApolloServerPlugin } from '@apollo/server' with { 'resolution-mode': 'import' }
 import { ErrorCode } from '@lvn-backend/errors'
 import { noteOperation } from '@lvn-backend/observability'
 import { GraphQLError, Kind, type DocumentNode, type FragmentDefinitionNode, type SelectionSetNode } from 'graphql'
