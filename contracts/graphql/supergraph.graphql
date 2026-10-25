@@ -88,6 +88,15 @@ type AccountStanding
   warnings: [AccountWarning!]!
 }
 
+enum AccountStatus
+  @join__type(graph: USERS)
+{
+  ACTIVE @join__enumValue(graph: USERS)
+  AGE_BLOCKED @join__enumValue(graph: USERS)
+  BLOCKED @join__enumValue(graph: USERS)
+  SUSPENDED @join__enumValue(graph: USERS)
+}
+
 """A warning platform moderators gave an account (ADR-0053)"""
 type AccountWarning
   @join__type(graph: CORE)
@@ -378,6 +387,47 @@ type AdminContestQuestion
   explanation: String!
 }
 
+input AdminDeleteUserInput
+  @join__type(graph: USERS)
+{
+  userId: UUID!
+  reason: String!
+
+  """The exact word DELETE."""
+  confirm: String!
+}
+
+"""One error code in the window, with who it affected."""
+type AdminErrorGroup
+  @join__type(graph: USERS)
+{
+  code: String!
+  count: Int!
+  firstSeen: DateTime!
+  lastSeen: DateTime!
+
+  """At most 100 distinct account ids."""
+  userIds: [UUID!]!
+  sampleMessage: String!
+}
+
+"""
+An account as a platform admin sees it, including a date of birth (YYYY-MM-DD) and the standing reason.
+"""
+type AdminManagedUser
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  email: String!
+  displayName: String!
+  handle: String!
+  dateOfBirth: String
+  accountStatus: AccountStatus!
+  statusReason: String
+  globalRole: GlobalRole!
+  createdAt: DateTime!
+}
+
 """
 Dashboard totals. Cached in each API process for about a minute. No personal data.
 `from` and `to` bound AI usage only. Omit them for the last 30 days through the current minute.
@@ -451,6 +501,21 @@ type AdminPlanPayload
   userErrors: [UserError!]!
 }
 
+input AdminSetAccountStandingInput
+  @join__type(graph: USERS)
+{
+  userId: UUID!
+
+  """
+  ACTIVE lifts a block or suspension. BLOCKED is indefinite. SUSPENDED needs until. AGE_BLOCKED is refused: correct the date of birth.
+  """
+  status: AccountStatus!
+  reason: String!
+
+  """Required when status is SUSPENDED. A time in the future."""
+  until: DateTime
+}
+
 """
 One application setting. `value` is `true` or `false`, a decimal integer, text, or empty when an integer is cleared.
 `overridden` is false when no admin has saved a row: `value` is then the environment variable or the built-in default.
@@ -520,6 +585,58 @@ type AdminStorageMetrics
   files: Int!
 }
 
+input AdminUpdateUserInput
+  @join__type(graph: USERS)
+{
+  userId: UUID!
+  displayName: String
+  email: String
+
+  """
+  YYYY-MM-DD. The age gate runs again. A date that clears an age block needs reason.
+  """
+  dateOfBirth: String
+
+  """
+  Why this change is being made. Required, including when a new date of birth lets an under-age account pass.
+  """
+  reason: String!
+}
+
+"""
+DAU, WAU and MAU are distinct accounts in the last 1, 7 and 30 days before `to`.
+"""
+type AdminUsageSummary
+  @join__type(graph: USERS)
+{
+  from: DateTime!
+  to: DateTime!
+  dau: Int!
+  wau: Int!
+  mau: Int!
+  topEvents: [UsageCount!]!
+  topFeatures: [UsageCount!]!
+}
+
+type AdminUserList
+  @join__type(graph: USERS)
+{
+  users: [AdminManagedUser!]!
+  total: Int!
+}
+
+"""
+Display name, email and role for the errors dashboard. Platform admins only.
+"""
+type AdminUserLookup
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  displayName: String!
+  email: String!
+  globalRole: GlobalRole!
+}
+
 """
 People. `active` is distinct accounts with a session that is not revoked and not expired.
 """
@@ -530,6 +647,24 @@ type AdminUserMetrics
   newLast7Days: Int!
   newLast30Days: Int!
   active: Int!
+}
+
+type AdminUserPayload
+  @join__type(graph: USERS)
+{
+  user: AdminManagedUser
+  userErrors: [UserError!]!
+}
+
+"""
+Which accounts adminUsers returns. BLOCKED_OR_SUSPENDED is both reversible holds.
+"""
+enum AdminUserStatusFilter
+  @join__type(graph: USERS)
+{
+  AGE_BLOCKED @join__enumValue(graph: USERS)
+  BLOCKED_OR_SUSPENDED @join__enumValue(graph: USERS)
+  ACTIVE @join__enumValue(graph: USERS)
 }
 
 type AdminVerificationMetrics
@@ -1717,6 +1852,28 @@ type ClassTopicPerformance
   hard: Boolean!
 }
 
+input ClientErrorInput
+  @join__type(graph: USERS)
+{
+  route: String
+  code: String!
+  message: String!
+  occurredAt: DateTime
+  platform: ClientPlatform!
+  release: String
+  appVersion: String
+}
+
+"""
+Where the client recorded the event. Backend failures are stored by the server and are not sent here.
+"""
+enum ClientPlatform
+  @join__type(graph: USERS)
+{
+  WEB @join__enumValue(graph: USERS)
+  MOBILE @join__enumValue(graph: USERS)
+}
+
 type Comment
   @join__type(graph: CORE)
 {
@@ -2490,6 +2647,7 @@ enum ErrorCode
   INTERNAL @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
   UNAVAILABLE @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
   UNDER_MINIMUM_AGE @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  AGE_RESTRICTED @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
 }
 
 type Exam
@@ -2716,11 +2874,19 @@ type ForkCredit
   title: String
 }
 
+type FunnelStep
+  @join__type(graph: USERS)
+{
+  name: String!
+  users: Int!
+}
+
 enum GlobalRole
   @join__type(graph: USERS)
 {
   STUDENT @join__enumValue(graph: USERS)
   TEACHER @join__enumValue(graph: USERS)
+  MANAGER @join__enumValue(graph: USERS)
   PLATFORM_ADMIN @join__enumValue(graph: USERS)
 }
 
@@ -3003,6 +3169,37 @@ enum HighlightKind
   AREA @join__enumValue(graph: NOTES)
 }
 
+"""
+match, mismatch or unreadable. A mismatch is never an automatic rejection.
+"""
+type IdCardCheck
+  @join__type(graph: USERS)
+{
+  verdict: IdCardVerdict!
+  confidence: Float
+  reason: String
+  checkedAt: DateTime!
+  extracted: IdCardFields!
+}
+
+"""Fields read from the document. `idNumber` is null for the student."""
+type IdCardFields
+  @join__type(graph: USERS)
+{
+  name: String
+  institution: String
+  idNumber: String
+  validUntil: String
+}
+
+enum IdCardVerdict
+  @join__type(graph: USERS)
+{
+  MATCH @join__enumValue(graph: USERS)
+  MISMATCH @join__enumValue(graph: USERS)
+  UNREADABLE @join__enumValue(graph: USERS)
+}
+
 input IdInput
   @join__type(graph: NOTES)
 {
@@ -3031,6 +3228,13 @@ type ImportSkip
   """The file (or card) in the upload"""
   path: String!
   reason: String!
+}
+
+input IngestAnalyticsInput
+  @join__type(graph: USERS)
+{
+  events: [UsageEventInput!]
+  errors: [ClientErrorInput!]
 }
 
 type Institution
@@ -3121,6 +3325,7 @@ scalar JSON
   @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
+  @join__type(graph: USERS)
 
 input KeepAiCardsInput
   @join__type(graph: AI)
@@ -3976,6 +4181,29 @@ type Mutation
   deleteAdminPlan(id: UUID!): OkPayload! @join__field(graph: USERS)
 
   """
+  Platform admins. Edits name, email or date of birth and re-runs the age gate. A passing date of birth clears AGE_BLOCKED. Audited.
+  """
+  adminUpdateUser(input: AdminUpdateUserInput!): AdminUserPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins. Blocks, suspends or restores an account. Block and suspend revoke every session. Audited.
+  """
+  adminSetAccountStanding(input: AdminSetAccountStandingInput!): AdminUserPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins. Permanently anonymises the account, deletes its files and sessions, and keeps a hashed-email tombstone. confirm must be DELETE.
+  """
+  adminDeleteUser(input: AdminDeleteUserInput!): OkPayload! @join__field(graph: USERS)
+
+  """
+  Signed in. At most 40 events, 30 batches a minute. Unknown event names are refused.
+  """
+  ingestAnalytics(input: IngestAnalyticsInput!): OkPayload! @join__field(graph: USERS)
+
+  """Signed in. Stops or resumes usage analytics for this account."""
+  setAnalyticsOptOut(optOut: Boolean!): OkPayload! @join__field(graph: USERS)
+
+  """
   Signed in, unverified, no request already waiting. UNAVAILABLE while the switch is off — nothing is stored.
   """
   createStudentIdUploadIntent(input: CreateStudentIdUploadInput!): StudentIdUploadPayload! @join__field(graph: USERS)
@@ -3991,7 +4219,7 @@ type Mutation
   withdrawStudentIdVerification(requestId: UUID!): OkPayload! @join__field(graph: USERS)
 
   """
-  Platform admins. Approval sets the account verified with method DOCUMENTS. The card is deleted either way. A reason is optional.
+  A reviewer of this request. Approval sets the account verified with method DOCUMENTS. The card is kept until the retention window. A reason is optional.
   """
   reviewStudentIdVerification(input: ReviewStudentIdVerificationInput!): StudentIdVerificationPayload! @join__field(graph: USERS)
 
@@ -4088,7 +4316,7 @@ type Mutation
   withdrawVerificationRequest(requestId: UUID!): OkPayload! @join__field(graph: USERS)
 
   """
-  Teachers: requests addressed to them. Platform admins: all, including documents.
+  Teachers: student requests in their scope. Managers: student requests. Platform admins: all, including teacher applications.
   """
   reviewVerificationRequest(input: ReviewVerificationRequestInput!): VerificationRequestPayload! @join__field(graph: USERS)
 
@@ -4096,7 +4324,12 @@ type Mutation
   decideDomainReview(input: DecideDomainReviewInput!): OkPayload! @join__field(graph: USERS)
 
   """
-  Platform admins: TEACHER is granted by review, not by an email address (§5, ADR-0017)
+  Platform admins: approve or reject a domain, including one nobody has asked for yet.
+  """
+  reviewInstitutionDomain(input: DecideDomainReviewInput!): OkPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins: TEACHER and MANAGER are granted here, not by an email address (§5, ADR-0017). Every change is audited.
   """
   setGlobalRole(input: SetGlobalRoleInput!): OkPayload! @join__field(graph: USERS)
 }
@@ -5288,6 +5521,34 @@ type Query
   adminPlans: [AdminPlan!]! @join__field(graph: USERS)
 
   """
+  Platform admins. Accounts in one standing, optionally matched on name, email or handle.
+  """
+  adminUsers(status: AdminUserStatusFilter!, search: String, first: Int): AdminUserList! @join__field(graph: USERS)
+
+  """
+  Platform admins. Errors since `since`, or the last 90 days. Grouped by code.
+  """
+  adminErrors(since: DateTime): [AdminErrorGroup!]! @join__field(graph: USERS)
+
+  """
+  Platform admins. Usage between `from` and `to`. Omit them for the last 30 days.
+  """
+  adminUsage(from: DateTime, to: DateTime): AdminUsageSummary! @join__field(graph: USERS)
+
+  """Platform admins. One account's usage, newest first."""
+  adminUserActivity(userId: UUID!, first: Int): [UserActivityEvent!]! @join__field(graph: USERS)
+
+  """
+  Platform admins. Ordered steps. A person counts at a step when each earlier step happened first.
+  """
+  adminFunnel(steps: [String!]!, since: DateTime): [FunnelStep!]! @join__field(graph: USERS)
+
+  """
+  Platform admins. Resolves account ids for the errors dashboard. Unknown and deleted accounts are omitted.
+  """
+  usersByIds(ids: [UUID!]!): [AdminUserLookup!]! @join__field(graph: USERS)
+
+  """
   Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2)
   """
   termsVersion: String! @join__field(graph: USERS)
@@ -5303,12 +5564,12 @@ type Query
   myStudentIdVerification: StudentIdVerificationRequest @join__field(graph: USERS)
 
   """
-  Platform admins: pending college-ID requests, oldest first. `after` is the last id seen.
+  Platform admins and managers: every pending college-ID request. A teacher: students of their institution. Oldest first. `after` is the last id seen.
   """
   studentIdVerificationQueue(first: Int, after: UUID): [StudentIdVerificationRequest!]! @join__field(graph: USERS)
 
   """
-  Platform admins: a 5-minute link to the card. Every view is written to the audit log. The student, and every other non-admin, is refused.
+  A reviewer of this card: a 5-minute link. Every view is written to the audit log. The student is refused.
   """
   studentIdCardUrl(requestId: UUID!): SignedUrl! @join__field(graph: USERS)
 
@@ -5361,12 +5622,12 @@ type Query
   myTeacherApplication: VerificationRequest @join__field(graph: USERS)
 
   """
-  Teachers: pending requests addressed to them. Platform admins: every pending request. Oldest first; `after` is the last id seen.
+  Teachers: student requests addressed to them, and students of their institution. Managers: every student request. Platform admins: every pending request. Oldest first; `after` is the last id seen.
   """
   verificationRequestsToReview(first: Int, after: UUID): [VerificationRequest!]! @join__field(graph: USERS)
 
   """
-  Platform admins only: a 15-minute link to one document; the view is written to the audit log
+  A reviewer of this request: a 15-minute link to one document. The view is written to the audit log.
   """
   verificationDocumentUrl(requestId: UUID!, fileId: UUID!): SignedUrl! @join__field(graph: USERS)
 
@@ -5379,6 +5640,11 @@ type Query
   Platform admins: institutional email domains waiting for review (ADR-0017)
   """
   domainReviews(status: DomainReviewStatus): [DomainReview!]! @join__field(graph: USERS)
+
+  """
+  Platform admins: the same queue, or every domain of one status. Omit status for domains still waiting.
+  """
+  institutionDomains(status: DomainReviewStatus, first: Int): [DomainReview!]! @join__field(graph: USERS)
 }
 
 type QuizAnswer
@@ -5722,7 +5988,7 @@ input RequestAccountDeletionInput
 }
 
 """
-fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by platform admins only, deleted 30 days after the decision
+fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by reviewers of this request, deleted 30 days after the decision
 """
 input RequestDocumentVerificationInput
   @join__type(graph: USERS)
@@ -6691,7 +6957,7 @@ type StudentIdVerificationPayload
 }
 
 """
-The student's own view of a college-ID request. `card` is null except for a platform admin, and null once the card has been deleted.
+A college-ID request. `card` is set for a reviewer and null for the student. It is null once the card has been deleted.
 """
 type StudentIdVerificationRequest
   @join__type(graph: USERS)
@@ -6704,14 +6970,37 @@ type StudentIdVerificationRequest
   reason: String
   requester: User!
   card: VerificationDocument
+
+  """
+  The automated reading, once it has run. The ID number is hidden from the student.
+  """
+  aiCheck: IdCardCheck
 }
 
-"""Platform admins. `updatedAt` is null until someone changes the switch."""
+"""
+Platform admins. `updatedAt` is null until someone changes the college-ID switch. The AI switches default off.
+"""
 type StudentIdVerificationSettings
   @join__type(graph: USERS)
 {
   enabled: Boolean!
   updatedAt: DateTime
+
+  """student_id_ai_check. Off until an admin turns it on."""
+  aiCheckEnabled: Boolean!
+
+  """
+  student_id_ai_auto_approve. Off until an admin turns it on. Never rejects.
+  """
+  autoApproveOnHighConfidence: Boolean!
+
+  """student_id_ai_confidence_threshold, 50–100. Default 90."""
+  confidenceThreshold: Int!
+
+  """
+  student_id_image_retention_days. Default 30. A withdrawn card is deleted at once.
+  """
+  imageRetentionDays: Int!
 }
 
 """
@@ -7324,6 +7613,29 @@ type UploadIntentPayload
   userErrors: [UserError!]!
 }
 
+type UsageCount
+  @join__type(graph: USERS)
+{
+  name: String!
+  count: Int!
+}
+
+input UsageEventInput
+  @join__type(graph: USERS)
+{
+  """One of: page_view, note_open, note_upload, search, download, sign_in."""
+  name: String!
+  sessionId: String
+  occurredAt: DateTime
+
+  """
+  A small object. A string `feature` is counted in top features. At most 1024 characters.
+  """
+  props: JSON
+  platform: ClientPlatform!
+  appVersion: String
+}
+
 """A person, owned by the users subgraph"""
 type User
   @join__type(graph: COMMUNICATION, key: "id", resolvable: false)
@@ -7367,6 +7679,11 @@ type User
   Viewer only: when the account will be deleted, if its owner asked (ADR-0088)
   """
   deletionScheduledFor: DateTime @join__field(graph: USERS)
+
+  """
+  Viewer only. When true, usage analytics are not stored for this account.
+  """
+  analyticsOptOut: Boolean @join__field(graph: USERS)
 
   """The viewer's own profile; for others only when they show it"""
   profile: StudentProfile @join__field(graph: USERS)
@@ -7424,6 +7741,16 @@ type User
   teacherStatus: TeacherStatus @join__field(graph: USERS)
 }
 
+type UserActivityEvent
+  @join__type(graph: USERS)
+{
+  occurredAt: DateTime!
+  name: String!
+  props: JSON
+  platform: ClientPlatform!
+  appVersion: String
+}
+
 """
 An expected failure of a mutation; `field` is the dotted input path, e.g. ["input", "email"]
 """
@@ -7437,6 +7764,11 @@ type UserError
   field: [String!]
   message: String!
   code: ErrorCode!
+
+  """
+  One address on AGE_RESTRICTED and on a blocked sign-in: the earliest non-deleted platform admin (GlobalRole PLATFORM_ADMIN) by createdAt, or SUPPORT_EMAIL when none exists.
+  """
+  supportEmail: String
 }
 
 scalar UUID
@@ -7474,7 +7806,7 @@ enum VerificationPurpose
 }
 
 """
-Shown to the requester, the addressed teacher and platform admins. Documents are listed for platform admins only.
+Shown to the requester, the addressed teacher, a teacher at the same institution, a manager and platform admins. Documents are listed for those reviewers.
 """
 type VerificationRequest
   @join__type(graph: USERS)
@@ -7497,14 +7829,19 @@ type VerificationRequest
   teacher: User
 
   """
-  Platform admins only; open one with verificationDocumentUrl (every view is audited)
+  Reviewers who may decide this request. Open one with verificationDocumentUrl (every view is audited).
   """
   documents: [VerificationDocument!]!
 
   """
-  True when the proof is one college ID card (ADR-0099). Deleted when the request is decided or withdrawn.
+  True when the proof is one college ID card (ADR-0099). Kept for the retention window after a decision, and deleted at once when withdrawn.
   """
   collegeIdCard: Boolean!
+
+  """
+  The automated reading, once it has run. The ID number is hidden from the student.
+  """
+  aiCheck: IdCardCheck
 }
 
 type VerificationRequestPayload

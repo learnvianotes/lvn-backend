@@ -33,6 +33,8 @@ export interface AccountDeletionPayload {
   userErrors: Array<UserError>
 }
 
+export type AccountStatus = 'ACTIVE' | 'AGE_BLOCKED' | 'BLOCKED' | 'SUSPENDED'
+
 export interface AddAccessAllowlistEntryInput {
   email: string
   role: GlobalRole
@@ -98,6 +100,37 @@ export interface AdminContentMetrics {
   classrooms: number
 }
 
+export interface AdminDeleteUserInput {
+  userId: string
+  reason: string
+  /** The exact word DELETE. */
+  confirm: string
+}
+
+/** One error code in the window, with who it affected. */
+export interface AdminErrorGroup {
+  code: string
+  count: number
+  firstSeen: Date
+  lastSeen: Date
+  /** At most 100 distinct account ids. */
+  userIds: Array<string>
+  sampleMessage: string
+}
+
+/** An account as a platform admin sees it, including a date of birth (YYYY-MM-DD) and the standing reason. */
+export interface AdminManagedUser {
+  id: string
+  email: string
+  displayName: string
+  handle: string
+  dateOfBirth: string | null
+  accountStatus: AccountStatus
+  statusReason: string | null
+  globalRole: GlobalRole
+  createdAt: Date
+}
+
 /** Dashboard totals. Cached in each API process for about a minute. No personal data.
  * `from` and `to` bound AI usage only. Omit them for the last 30 days through the current minute.
  * The window can be at most 366 days. */
@@ -151,6 +184,15 @@ export interface AdminPlanPayload {
   userErrors: Array<UserError>
 }
 
+export interface AdminSetAccountStandingInput {
+  userId: string
+  /** ACTIVE lifts a block or suspension. BLOCKED is indefinite. SUSPENDED needs until. AGE_BLOCKED is refused: correct the date of birth. */
+  status: AccountStatus
+  reason: string
+  /** Required when status is SUSPENDED. A time in the future. */
+  until?: Date | null
+}
+
 /** One application setting. `value` is `true` or `false`, a decimal integer, text, or empty when an integer is cleared.
  * `overridden` is false when no admin has saved a row: `value` is then the environment variable or the built-in default.
  * Categories: auth, verification, uploads, ai, search, accounts. */
@@ -193,6 +235,40 @@ export interface AdminStorageMetrics {
   files: number
 }
 
+export interface AdminUpdateUserInput {
+  userId: string
+  displayName?: string | null
+  email?: string | null
+  /** YYYY-MM-DD. The age gate runs again. A date that clears an age block needs reason. */
+  dateOfBirth?: string | null
+  /** Why this change is being made. Required, including when a new date of birth lets an under-age account pass. */
+  reason: string
+}
+
+/** DAU, WAU and MAU are distinct accounts in the last 1, 7 and 30 days before `to`. */
+export interface AdminUsageSummary {
+  from: Date
+  to: Date
+  dau: number
+  wau: number
+  mau: number
+  topEvents: Array<UsageCount>
+  topFeatures: Array<UsageCount>
+}
+
+export interface AdminUserList {
+  users: Array<AdminManagedUser>
+  total: number
+}
+
+/** Display name, email and role for the errors dashboard. Platform admins only. */
+export interface AdminUserLookup {
+  id: string
+  displayName: string
+  email: string
+  globalRole: GlobalRole
+}
+
 /** People. `active` is distinct accounts with a session that is not revoked and not expired. */
 export interface AdminUserMetrics {
   total: number
@@ -200,6 +276,14 @@ export interface AdminUserMetrics {
   newLast30Days: number
   active: number
 }
+
+export interface AdminUserPayload {
+  user: AdminManagedUser | null
+  userErrors: Array<UserError>
+}
+
+/** Which accounts adminUsers returns. BLOCKED_OR_SUSPENDED is both reversible holds. */
+export type AdminUserStatusFilter = 'AGE_BLOCKED' | 'BLOCKED_OR_SUSPENDED' | 'ACTIVE'
 
 export interface AdminVerificationMetrics {
   /** Pending college-ID reviews. */
@@ -241,6 +325,19 @@ export interface AuthSettingsPayload {
   settings: AuthSettings | null
   userErrors: Array<UserError>
 }
+
+export interface ClientErrorInput {
+  route?: string | null
+  code: string
+  message: string
+  occurredAt?: Date | null
+  platform: ClientPlatform
+  release?: string | null
+  appVersion?: string | null
+}
+
+/** Where the client recorded the event. Backend failures are stored by the server and are not sent here. */
+export type ClientPlatform = 'WEB' | 'MOBILE'
 
 /** After a provider sign-in (no signUp call): the same details, collected once */
 export interface CompleteRegistrationInput {
@@ -323,7 +420,7 @@ export interface DomainReview {
 export type DomainReviewStatus = 'ACADEMIC_QUEUED' | 'NEEDS_REVIEW' | 'APPROVED' | 'REJECTED'
 
 /** Fixed error vocabulary (§6.2) */
-export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE'
+export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED'
 
 /** A public identifier a teacher claims, and how to prove it is theirs (ADR-0077) */
 export interface ExternalIdentity {
@@ -355,7 +452,36 @@ export interface ExternalIdentityPayload {
   userErrors: Array<UserError>
 }
 
-export type GlobalRole = 'STUDENT' | 'TEACHER' | 'PLATFORM_ADMIN'
+export interface FunnelStep {
+  name: string
+  users: number
+}
+
+export type GlobalRole = 'STUDENT' | 'TEACHER' | 'MANAGER' | 'PLATFORM_ADMIN'
+
+/** match, mismatch or unreadable. A mismatch is never an automatic rejection. */
+export interface IdCardCheck {
+  verdict: IdCardVerdict
+  confidence: number | null
+  reason: string | null
+  checkedAt: Date
+  extracted: IdCardFields
+}
+
+/** Fields read from the document. `idNumber` is null for the student. */
+export interface IdCardFields {
+  name: string | null
+  institution: string | null
+  idNumber: string | null
+  validUntil: string | null
+}
+
+export type IdCardVerdict = 'MATCH' | 'MISMATCH' | 'UNREADABLE'
+
+export interface IngestAnalyticsInput {
+  events?: Array<UsageEventInput> | null
+  errors?: Array<ClientErrorInput> | null
+}
 
 export interface Institution {
   name: string
@@ -447,6 +573,26 @@ export interface MutationUpdateAdminPlanArgs {
 
 export interface MutationDeleteAdminPlanArgs {
   id: string
+}
+
+export interface MutationAdminUpdateUserArgs {
+  input: AdminUpdateUserInput
+}
+
+export interface MutationAdminSetAccountStandingArgs {
+  input: AdminSetAccountStandingInput
+}
+
+export interface MutationAdminDeleteUserArgs {
+  input: AdminDeleteUserInput
+}
+
+export interface MutationIngestAnalyticsArgs {
+  input: IngestAnalyticsInput
+}
+
+export interface MutationSetAnalyticsOptOutArgs {
+  optOut: boolean
 }
 
 export interface MutationCreateStudentIdUploadIntentArgs {
@@ -593,6 +739,10 @@ export interface MutationDecideDomainReviewArgs {
   input: DecideDomainReviewInput
 }
 
+export interface MutationReviewInstitutionDomainArgs {
+  input: DecideDomainReviewInput
+}
+
 export interface MutationSetGlobalRoleArgs {
   input: SetGlobalRoleInput
 }
@@ -701,6 +851,35 @@ export interface QueryAdminMetricsArgs {
   to?: Date | null
 }
 
+export interface QueryAdminUsersArgs {
+  status: AdminUserStatusFilter
+  search?: string | null
+  first?: number | null
+}
+
+export interface QueryAdminErrorsArgs {
+  since?: Date | null
+}
+
+export interface QueryAdminUsageArgs {
+  from?: Date | null
+  to?: Date | null
+}
+
+export interface QueryAdminUserActivityArgs {
+  userId: string
+  first?: number | null
+}
+
+export interface QueryAdminFunnelArgs {
+  steps: Array<string>
+  since?: Date | null
+}
+
+export interface QueryUsersByIdsArgs {
+  ids: Array<string>
+}
+
 export interface QueryStudentIdVerificationQueueArgs {
   first?: number | null
   after?: string | null
@@ -740,6 +919,11 @@ export interface QueryTeachersArgs {
 
 export interface QueryDomainReviewsArgs {
   status?: DomainReviewStatus | null
+}
+
+export interface QueryInstitutionDomainsArgs {
+  status?: DomainReviewStatus | null
+  first?: number | null
 }
 
 export interface RefreshSessionInput {
@@ -782,7 +966,7 @@ export interface RequestAccountDeletionInput {
   confirm: string
 }
 
-/** fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by platform admins only, deleted 30 days after the decision */
+/** fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by reviewers of this request, deleted 30 days after the decision */
 export interface RequestDocumentVerificationInput {
   fileIds: Array<string>
   message?: string | null
@@ -913,7 +1097,7 @@ export interface StudentIdVerificationPayload {
   userErrors: Array<UserError>
 }
 
-/** The student's own view of a college-ID request. `card` is null except for a platform admin, and null once the card has been deleted. */
+/** A college-ID request. `card` is set for a reviewer and null for the student. It is null once the card has been deleted. */
 export interface StudentIdVerificationRequest {
   id: string
   status: VerificationRequestStatus
@@ -923,12 +1107,22 @@ export interface StudentIdVerificationRequest {
   reason: string | null
   requester: User
   card: VerificationDocument | null
+  /** The automated reading, once it has run. The ID number is hidden from the student. */
+  aiCheck: IdCardCheck | null
 }
 
-/** Platform admins. `updatedAt` is null until someone changes the switch. */
+/** Platform admins. `updatedAt` is null until someone changes the college-ID switch. The AI switches default off. */
 export interface StudentIdVerificationSettings {
   enabled: boolean
   updatedAt: Date | null
+  /** student_id_ai_check. Off until an admin turns it on. */
+  aiCheckEnabled: boolean
+  /** student_id_ai_auto_approve. Off until an admin turns it on. Never rejects. */
+  autoApproveOnHighConfidence: boolean
+  /** student_id_ai_confidence_threshold, 50–100. Default 90. */
+  confidenceThreshold: number
+  /** student_id_image_retention_days. Default 30. A withdrawn card is deleted at once. */
+  imageRetentionDays: number
 }
 
 /** Department and year are shown to others only if showOnProfile; interests stay private */
@@ -1041,6 +1235,22 @@ export interface UpdateTeacherProfileInput {
   skills: Array<TeacherSkillInput>
 }
 
+export interface UsageCount {
+  name: string
+  count: number
+}
+
+export interface UsageEventInput {
+  /** One of: page_view, note_open, note_upload, search, download, sign_in. */
+  name: string
+  sessionId?: string | null
+  occurredAt?: Date | null
+  /** A small object. A string `feature` is counted in top features. At most 1024 characters. */
+  props?: unknown | null
+  platform: ClientPlatform
+  appVersion?: string | null
+}
+
 /** A person on LVN (§4.1). Fields marked viewer-only are null for anyone else. */
 export interface User {
   id: string
@@ -1058,6 +1268,8 @@ export interface User {
   createdAt: Date
   /** Viewer only: when the account will be deleted, if its owner asked (ADR-0088) */
   deletionScheduledFor: Date | null
+  /** Viewer only. When true, usage analytics are not stored for this account. */
+  analyticsOptOut: boolean | null
   /** The viewer's own profile; for others only when they show it */
   profile?: StudentProfile | null
   /** Viewer only */
@@ -1089,11 +1301,21 @@ export interface User {
   teacherStatus?: TeacherStatus | null
 }
 
+export interface UserActivityEvent {
+  occurredAt: Date
+  name: string
+  props: unknown | null
+  platform: ClientPlatform
+  appVersion: string | null
+}
+
 /** An expected failure of a mutation; `field` is the dotted input path, e.g. ["input", "email"] */
 export interface UserError {
   field: Array<string> | null
   message: string
   code: ErrorCode
+  /** One address on AGE_RESTRICTED and on a blocked sign-in: the earliest non-deleted platform admin (GlobalRole PLATFORM_ADMIN) by createdAt, or SUPPORT_EMAIL when none exists. */
+  supportEmail: string | null
 }
 
 export interface VerificationDocument {
@@ -1108,7 +1330,7 @@ export type VerificationMethod = 'INSTITUTIONAL_EMAIL' | 'TEACHER' | 'DOCUMENTS'
 /** ACCOUNT: have the account verified (ADR-0019). TEACHER_ROLE: an application to teach (ADR-0073) */
 export type VerificationPurpose = 'ACCOUNT' | 'TEACHER_ROLE'
 
-/** Shown to the requester, the addressed teacher and platform admins. Documents are listed for platform admins only. */
+/** Shown to the requester, the addressed teacher, a teacher at the same institution, a manager and platform admins. Documents are listed for those reviewers. */
 export interface VerificationRequest {
   id: string
   purpose: VerificationPurpose
@@ -1124,10 +1346,12 @@ export interface VerificationRequest {
   requester: User
   /** TEACHER method: the teacher asked to vouch */
   teacher: User | null
-  /** Platform admins only; open one with verificationDocumentUrl (every view is audited) */
+  /** Reviewers who may decide this request. Open one with verificationDocumentUrl (every view is audited). */
   documents: Array<VerificationDocument>
-  /** True when the proof is one college ID card (ADR-0099). Deleted when the request is decided or withdrawn. */
+  /** True when the proof is one college ID card (ADR-0099). Kept for the retention window after a decision, and deleted at once when withdrawn. */
   collegeIdCard: boolean
+  /** The automated reading, once it has run. The ID number is hidden from the student. */
+  aiCheck: IdCardCheck | null
 }
 
 export interface VerificationRequestPayload {

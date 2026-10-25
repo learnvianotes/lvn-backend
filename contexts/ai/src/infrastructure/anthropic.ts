@@ -44,6 +44,7 @@ const toMessage = (m: ChatMessage): { role: string; content: string | Block[] } 
   for (const data of m.images) {
     const type = mediaTypeOf(data)
     if (type === 'audio/wav') throw new UnsupportedInput('The AI chosen here cannot hear recordings.')
+    if (type === 'application/pdf') throw new UnsupportedInput('The AI chosen here cannot read this document.')
     blocks.push({ type: 'image', source: { type: 'base64', media_type: type, data } })
   }
   return { role: m.role, content: blocks }

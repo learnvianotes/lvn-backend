@@ -5,7 +5,7 @@ import type { INestApplication } from '@nestjs/common'
 import { TOKEN_AUDIENCE } from '../../src/app.module'
 
 /** Inserts a user straight into the database (tests that are not about registration). */
-export async function seedUser(app: INestApplication, overrides: Partial<{ email: string; handle: string; displayName: string; globalRole: 'STUDENT' | 'TEACHER' | 'PLATFORM_ADMIN'; verified: boolean }> = {}) {
+export async function seedUser(app: INestApplication, overrides: Partial<{ email: string; handle: string; displayName: string; globalRole: 'STUDENT' | 'TEACHER' | 'MANAGER' | 'PLATFORM_ADMIN'; verified: boolean }> = {}) {
   const db = app.get(PrismaService)
   const id = newId()
   return db.user.create({
@@ -23,6 +23,6 @@ export async function seedUser(app: INestApplication, overrides: Partial<{ email
 }
 
 /** An access token for `userId` signed with the test key, as the auth flow would issue it. */
-export function tokenFor(config: ApiConfig, userId: string, sessionId = newId(), roles: ('STUDENT' | 'TEACHER' | 'PLATFORM_ADMIN')[] = ['STUDENT']): string {
+export function tokenFor(config: ApiConfig, userId: string, sessionId = newId(), roles: ('STUDENT' | 'TEACHER' | 'MANAGER' | 'PLATFORM_ADMIN')[] = ['STUDENT']): string {
   return new AccessTokenSigner(config.JWT_PRIVATE_KEY, config.JWT_ISSUER, TOKEN_AUDIENCE).sign({ userId, sessionId, roles }).token
 }

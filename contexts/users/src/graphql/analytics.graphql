@@ -1,0 +1,104 @@
+# Our own error log and usage analytics (B9). Usage is dropped when the account has opted out.
+# Client error reports from an opted-out account are stored without the user id.
+# Privacy: pages, notes, search, downloads and sign-ins, plus error reports tied to the account id,
+# unless the person opts out. A college ID image is read by the automated check and deleted after the
+# retention window. Only that image is sent to the model, never the name, email or profile.
+
+scalar JSON
+
+"Where the client recorded the event. Backend failures are stored by the server and are not sent here."
+enum ClientPlatform { WEB MOBILE }
+
+input UsageEventInput {
+  "One of: page_view, note_open, note_upload, search, download, sign_in."
+  name: String!
+  sessionId: String
+  occurredAt: DateTime
+  "A small object. A string `feature` is counted in top features. At most 1024 characters."
+  props: JSON
+  platform: ClientPlatform!
+  appVersion: String
+}
+
+input ClientErrorInput {
+  route: String
+  code: String!
+  message: String!
+  occurredAt: DateTime
+  platform: ClientPlatform!
+  release: String
+  appVersion: String
+}
+
+input IngestAnalyticsInput {
+  events: [UsageEventInput!]
+  errors: [ClientErrorInput!]
+}
+
+"One error code in the window, with who it affected."
+type AdminErrorGroup {
+  code: String!
+  count: Int!
+  firstSeen: DateTime!
+  lastSeen: DateTime!
+  "At most 100 distinct account ids."
+  userIds: [UUID!]!
+  sampleMessage: String!
+}
+
+type UsageCount {
+  name: String!
+  count: Int!
+}
+
+"DAU, WAU and MAU are distinct accounts in the last 1, 7 and 30 days before `to`."
+type AdminUsageSummary {
+  from: DateTime!
+  to: DateTime!
+  dau: Int!
+  wau: Int!
+  mau: Int!
+  topEvents: [UsageCount!]!
+  topFeatures: [UsageCount!]!
+}
+
+type UserActivityEvent {
+  occurredAt: DateTime!
+  name: String!
+  props: JSON
+  platform: ClientPlatform!
+  appVersion: String
+}
+
+type FunnelStep {
+  name: String!
+  users: Int!
+}
+
+"Display name, email and role for the errors dashboard. Platform admins only."
+type AdminUserLookup {
+  id: UUID!
+  displayName: String!
+  email: String!
+  globalRole: GlobalRole!
+}
+
+extend type Query {
+  "Platform admins. Errors since `since`, or the last 90 days. Grouped by code."
+  adminErrors(since: DateTime): [AdminErrorGroup!]!
+  "Platform admins. Usage between `from` and `to`. Omit them for the last 30 days."
+  adminUsage(from: DateTime, to: DateTime): AdminUsageSummary!
+  "Platform admins. One account's usage, newest first."
+  adminUserActivity(userId: UUID!, first: Int): [UserActivityEvent!]!
+  "Platform admins. Ordered steps. A person counts at a step when each earlier step happened first."
+  adminFunnel(steps: [String!]!, since: DateTime): [FunnelStep!]!
+  "Platform admins. Resolves account ids for the errors dashboard. Unknown and deleted accounts are omitted."
+  usersByIds(ids: [UUID!]!): [AdminUserLookup!]!
+}
+
+extend type Mutation {
+  "Signed in. At most 40 events, 30 batches a minute. Unknown event names are refused."
+  ingestAnalytics(input: IngestAnalyticsInput!): OkPayload!
+  "Signed in. Stops or resumes usage analytics for this account."
+  setAnalyticsOptOut(optOut: Boolean!): OkPayload!
+}

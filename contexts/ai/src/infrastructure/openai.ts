@@ -1,7 +1,11 @@
 import { EMBEDDING_DIMENSIONS, HttpProviderError, mediaTypeOf, normalized, ProviderError, type AiProviderAdapter, type ChatMessage, type ChatRequest, type ChatResult, type EmbedResult } from '../domain/provider'
 import { callProvider, serverSentEvents } from './http'
 
-type Part = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } } | { type: 'input_audio'; input_audio: { data: string; format: 'wav' } }
+type Part =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+  | { type: 'input_audio'; input_audio: { data: string; format: 'wav' } }
+  | { type: 'file'; file: { filename: string; file_data: string } }
 
 interface Completion {
   choices?: { message?: { content?: string | null }; delta?: { content?: string | null } }[]
@@ -12,12 +16,14 @@ interface Completion {
 /** A guard against a server that never stops saying there are more models. Not a cap on the list. */
 const MAX_MODEL_PAGES = 500
 
-const toMessage = (m: ChatMessage): { role: string; content: string | Part[] } => {
+const toMessage = (m: ChatMessage, kind: string): { role: string; content: string | Part[] } => {
   if (!m.images?.length) return { role: m.role, content: m.content }
   const parts: Part[] = [{ type: 'text', text: m.content }]
   for (const data of m.images) {
     const type = mediaTypeOf(data)
-    parts.push(type === 'audio/wav' ? { type: 'input_audio', input_audio: { data, format: 'wav' } } : { type: 'image_url', image_url: { url: `data:${type};base64,${data}` } })
+    if (type === 'audio/wav') parts.push({ type: 'input_audio', input_audio: { data, format: 'wav' } })
+    else if (type === 'application/pdf' && kind !== 'GEMINI') parts.push({ type: 'file', file: { filename: 'document.pdf', file_data: `data:application/pdf;base64,${data}` } })
+    else parts.push({ type: 'image_url', image_url: { url: `data:${type};base64,${data}` } })
   }
   return { role: m.role, content: parts }
 }
@@ -44,7 +50,7 @@ export class OpenAiProvider implements AiProviderAdapter {
   async chat(request: ChatRequest, onDelta?: (text: string) => void): Promise<ChatResult> {
     const body: Record<string, unknown> = {
       model: request.model,
-      messages: request.messages.map(toMessage),
+      messages: request.messages.map((message) => toMessage(message, this.name)),
       stream: !!onDelta,
       ...(onDelta ? { stream_options: { include_usage: true } } : {}),
       ...(request.schema ? { response_format: { type: 'json_schema', json_schema: { name: 'answer', schema: request.schema, strict: false } } } : {}),

@@ -86,7 +86,7 @@ describe('provider sign-in and registration', () => {
       expect(again.data!.completeRegistration.userErrors[0]!.code).toBe('CONFLICT')
     })
 
-    it('erases an unfinished account whose own answer is under the minimum age, and only that one (ADR-0091)', async () => {
+    it('keeps an unfinished account whose own answer is under the minimum age, and signs that Google account in no further', async () => {
       const db = t.app.get(PrismaService)
       const uid = unique('young')
       const res = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${uid}:${uid}@gmail.com:Young One` })
@@ -96,18 +96,20 @@ describe('provider sign-in and registration', () => {
       young.setUTCFullYear(young.getUTCFullYear() - 16)
 
       const refused = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'Young One', dateOfBirth: young.toISOString().slice(0, 10), acceptedTermsVersion: terms } }, s.accessToken)
-      expect(refused.data!.completeRegistration).toEqual({ ok: false, userErrors: [{ code: 'UNDER_MINIMUM_AGE', field: ['input', 'dateOfBirth'], message: expect.stringMatching(/only for adults/) }] })
+      expect(refused.data!.completeRegistration).toEqual({ ok: false, userErrors: [{ code: 'AGE_RESTRICTED', field: ['input', 'dateOfBirth'], message: expect.stringMatching(/only for adults/) }] })
       const user = await db.user.findUniqueOrThrow({ where: { id } })
-      expect(user).toMatchObject({ displayName: 'Deleted user', dateOfBirth: null, registrationCompletedAt: null })
-      expect(user.deletedAt).not.toBeNull()
-      expect(await db.oAuthAccount.count({ where: { userId: id } })).toBe(0)
+      expect(user).toMatchObject({ displayName: 'Young One', accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.' })
+      expect(user.dateOfBirth).not.toBeNull()
+      expect(user.registrationCompletedAt).not.toBeNull()
+      expect(user.deletedAt).toBeNull()
+      expect(await db.oAuthAccount.count({ where: { userId: id } })).toBe(1)
       expect(await db.session.count({ where: { userId: id } })).toBe(0)
       expect((await t.gql(VIEWER, {}, s.accessToken)).data?.viewer ?? null).toBeNull()
 
-      // The same Google account starts again from nothing.
       const again = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${uid}:${uid}@gmail.com:Young One` })
-      expect(again.data!.signInWithGoogle.session!.user).toMatchObject({ registrationComplete: false })
-      expect(again.data!.signInWithGoogle.session!.user.id).not.toBe(id)
+      expect(again.data!.signInWithGoogle.session).toBeNull()
+      expect(again.data!.signInWithGoogle.userErrors[0]!.code).toBe('AGE_RESTRICTED')
+      expect(await db.user.count({ where: { email: `${uid}@gmail.com` } })).toBe(1)
     })
 
     it('signs the same Google account into the same LVN account', async () => {
@@ -197,7 +199,7 @@ describe('provider sign-in and registration', () => {
       const young = new Date()
       young.setUTCFullYear(young.getUTCFullYear() - 16)
       const minor = await t.gql<Payload<'signUp'>>(SIGN_UP, { input: { ...form, dateOfBirth: young.toISOString().slice(0, 10) } })
-      expect(minor.data!.signUp.userErrors[0]!.code).toBe('UNDER_MINIMUM_AGE')
+      expect(minor.data!.signUp.userErrors[0]!.code).toBe('AGE_RESTRICTED')
       expect(await db.user.findUnique({ where: { id: userId }, select: { passwordHash: true, deletedAt: true, displayName: true } })).toMatchObject({
         passwordHash: null,
         deletedAt: null,

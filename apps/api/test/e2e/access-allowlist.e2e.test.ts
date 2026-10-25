@@ -159,8 +159,9 @@ describe('beta access allowlist', () => {
     const child = emailOf('child')
     await allow(child, 'STUDENT')
     const young = await t.gql<{ signUp: { session: null; userErrors: Err[] } }>(SIGN_UP, { input: signUpInput(child, { dateOfBirth: yearsAgo(17) }) })
-    expect(young.data!.signUp.userErrors[0]!.code).toBe('UNDER_MINIMUM_AGE')
-    expect(await db.user.findFirst({ where: { email: child } })).toBeNull()
+    expect(young.data!.signUp.userErrors[0]!.code).toBe('AGE_RESTRICTED')
+    expect(young.data!.signUp.session).toBeNull()
+    expect(await db.user.findFirst({ where: { email: child } })).toMatchObject({ accountStatus: 'AGE_BLOCKED' })
   })
 
   it('refuses a refresh after the email is removed, and revokes the session at once', async () => {

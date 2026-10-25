@@ -504,17 +504,29 @@ describe('verification without an institutional email (ADR-0019)', () => {
     expect(can(minor, Action.ACCOUNT_REQUEST_VERIFICATION, byTeacher({ targetIsVerifiedTeacher: true }))).toBe(true)
   })
 
-  it('a verified teacher reviews only requests addressed to them, and never sees documents', () => {
+  it('a verified teacher reviews students who picked them or share their institution, documents included', () => {
     expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher({ addressedToActor: true }))).toBe(true)
     expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher())).toBe(false)
-    expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ addressedToActor: true }))).toBe(false)
+    expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ addressedToActor: true }))).toBe(true)
+    expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ sameInstitution: true }))).toBe(true)
+    expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(false)
+    expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ purpose: 'TEACHER_ROLE', sameInstitution: true }))).toBe(false)
     expect(can(student('t2', { globalRole: GlobalRole.TEACHER, institutionVerified: false }), Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher({ addressedToActor: true }))).toBe(false)
     expect(can(other, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher({ addressedToActor: true }))).toBe(false)
   })
 
-  it('platform admins review every request, documents included', () => {
+  it('a manager reviews every student request, including documents, and not teacher applications', () => {
+    const manager = student('m', { globalRole: GlobalRole.MANAGER })
+    expect(can(manager, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(true)
+    expect(can(manager, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher())).toBe(true)
+    expect(can(manager, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ purpose: 'TEACHER_ROLE' }))).toBe(false)
+    expect(can(student('m2', { globalRole: GlobalRole.MANAGER, institutionVerified: false }), Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(false)
+  })
+
+  it('platform admins review every request, documents and teacher applications included', () => {
     expect(can(admin, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(true)
     expect(can(admin, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher())).toBe(true)
+    expect(can(admin, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ purpose: 'TEACHER_ROLE' }))).toBe(true)
     expect(can(anon, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(false)
     expect(can(admin, Action.NOTE_READ, byDocuments())).toBe(false)
   })

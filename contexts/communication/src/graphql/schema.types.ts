@@ -22,7 +22,7 @@ export type DevicePlatform = 'ANDROID' | 'IOS'
 
 export type EmailKind = 'CLASSROOM_POST' | 'DIGEST'
 
-export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE'
+export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED'
 
 /** A group, owned by the core subgraph: null when the viewer may no longer see it */
 export interface Group {
@@ -171,4 +171,6 @@ export interface UserError {
   field: Array<string> | null
   message: string
   code: ErrorCode
+  /** One address on AGE_RESTRICTED and on a blocked sign-in: the earliest non-deleted platform admin (GlobalRole PLATFORM_ADMIN) by createdAt, or SUPPORT_EMAIL when none exists. */
+  supportEmail: string | null
 }

@@ -31,7 +31,7 @@ type UserError {
 
 enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL }
 enum Visibility { PRIVATE SHARED PUBLIC }
-enum GlobalRole { STUDENT TEACHER PLATFORM_ADMIN }
+enum GlobalRole { STUDENT TEACHER MANAGER PLATFORM_ADMIN }
 enum NoteRole { OWNER EDITOR VIEWER }
 "What a note is presented as (ADR-0014). BLOG, POST and PROJECT are teacher publications; all follow note rules."
 enum NoteKind { NOTE BLOG POST PROJECT }

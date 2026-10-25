@@ -9,8 +9,10 @@ export interface UsersConfig {
   webUrl: string
   codeHmacSecret: string
   digitalConsentAge: number
-  /** ADR-0091: below this age no account is created (0: everyone may register) */
+  /** ADR-0091: below this age the account is kept as AGE_BLOCKED and cannot sign in (0: everyone may register) */
   accountMinimumAge: number
+  /** Fallback contact when no non-deleted PLATFORM_ADMIN exists. SUPPORT_EMAIL, or support@learnvianotes.in when unset. */
+  supportEmail: string
   passwordBreachApiUrl?: string
   firebaseProjectId?: string
   github?: { clientId: string; clientSecret: string; oauthUrl: string; apiUrl: string }
@@ -52,6 +54,7 @@ export function usersConfigFrom(c: ApiConfig): UsersConfig {
     codeHmacSecret: c.CODE_HMAC_SECRET,
     digitalConsentAge: c.DIGITAL_CONSENT_AGE,
     accountMinimumAge: c.ACCOUNT_MINIMUM_AGE,
+    supportEmail: c.SUPPORT_EMAIL,
     passwordBreachApiUrl: c.PASSWORD_BREACH_API_URL,
     firebaseProjectId: c.FIREBASE_PROJECT_ID,
     github:

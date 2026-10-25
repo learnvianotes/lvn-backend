@@ -134,25 +134,27 @@ describe('college ID verification (ADR-0099)', () => {
 
     const approved = await t.gql<{ reviewStudentIdVerification: { request: CardRequest | null; userErrors: Err[] } }>(REVIEW, { input: { requestId: request.id, approve: true } }, admin.token)
     expect(approved.data!.reviewStudentIdVerification.userErrors).toEqual([])
-    expect(approved.data!.reviewStudentIdVerification.request).toMatchObject({ status: 'APPROVED', card: null })
+    expect(approved.data!.reviewStudentIdVerification.request).toMatchObject({ status: 'APPROVED', card: { fileId: sent.fileId } })
     expect((await t.gql(VIEWER, {}, s.token)).data).toEqual({ viewer: { verified: true, verificationMethod: 'DOCUMENTS' } })
     expect(await db.auditLog.findFirst({ where: { action: 'verification.approved', targetId: request.id } })).toMatchObject({ actorId: admin.id, metadata: { collegeIdCard: true, method: 'DOCUMENTS' } })
-    expect(await db.auditLog.findFirst({ where: { action: 'verification.documents.deleted', targetId: request.id } })).toMatchObject({ actorId: admin.id })
-    expect(await db.fileObject.findUniqueOrThrow({ where: { id: sent.fileId } })).toMatchObject({ status: 'DELETED' })
-    expect(await storage.head(row.bucket, row.storageKey)).toBeNull()
-    expect(await db.verificationRequest.findUniqueOrThrow({ where: { id: request.id } })).toMatchObject({ documentIds: [], status: 'APPROVED' })
-    expect((await t.gql(CARD, { id: request.id }, admin.token)).errors?.[0]?.extensions.code).toBe('NOT_FOUND')
+    expect(await db.auditLog.findFirst({ where: { action: 'verification.documents.deleted', targetId: request.id } })).toBeNull()
+    expect(await db.fileObject.findUniqueOrThrow({ where: { id: sent.fileId } })).toMatchObject({ status: 'READY' })
+    expect(await storage.head(row.bucket, row.storageKey)).not.toBeNull()
+    expect(await db.verificationRequest.findUniqueOrThrow({ where: { id: request.id } })).toMatchObject({ documentIds: [sent.fileId], status: 'APPROVED' })
+    expect((await t.gql(MINE, {}, s.token)).data).toMatchObject({ myStudentIdVerification: { status: 'APPROVED', card: null } })
+    const kept = await t.gql<{ studentIdCardUrl: { url: string } }>(CARD, { id: request.id }, admin.token)
+    expect(new Uint8Array(await (await fetch(kept.data!.studentIdCardUrl.url)).arrayBuffer())).toEqual(SAMPLES.png)
   })
 
-  it('rejects without a reason, deletes the card, and leaves the account unverified', async () => {
+  it('rejects without a reason, keeps the card until the retention window, and leaves the account unverified', async () => {
     const s = await student()
     const sent = await send(s.token, SAMPLES.pdf, 'application/pdf', 'id.pdf')
     const rejected = await t.gql<{ reviewStudentIdVerification: { request: CardRequest | null; userErrors: Err[] } }>(REVIEW, { input: { requestId: sent.request!.id, approve: false } }, admin.token)
     expect(rejected.data!.reviewStudentIdVerification.userErrors).toEqual([])
-    expect(rejected.data!.reviewStudentIdVerification.request).toMatchObject({ status: 'REJECTED', reason: null, card: null })
+    expect(rejected.data!.reviewStudentIdVerification.request).toMatchObject({ status: 'REJECTED', reason: null, card: { fileId: sent.fileId } })
     expect((await t.gql(VIEWER, {}, s.token)).data).toEqual({ viewer: { verified: false, verificationMethod: null } })
     expect(await db.auditLog.findFirst({ where: { action: 'verification.rejected', targetId: sent.request!.id } })).toMatchObject({ actorId: admin.id })
-    expect(await db.fileObject.findUniqueOrThrow({ where: { id: sent.fileId } })).toMatchObject({ status: 'DELETED' })
+    expect(await db.fileObject.findUniqueOrThrow({ where: { id: sent.fileId } })).toMatchObject({ status: 'READY' })
     expect((await t.gql(MINE, {}, s.token)).data).toMatchObject({ myStudentIdVerification: { status: 'REJECTED', reason: null, card: null } })
 
     const again = await send(s.token)
@@ -222,10 +224,13 @@ describe('college ID verification (ADR-0099)', () => {
     expect(already.data!.createStudentIdUploadIntent.userErrors[0]!.code).toBe('CONFLICT')
   })
 
-  it('purges a college ID card that is still stored after the decision, without waiting 30 days', async () => {
+  it('keeps a college ID card for the retention window after the decision', async () => {
     const s = await student()
     const sent = await send(s.token)
     await db.verificationRequest.update({ where: { id: sent.request!.id }, data: { status: 'APPROVED', decidedBy: admin.id, decidedAt: new Date() } })
+    expect(await t.app.get(UsersMaintenance).purgeVerificationDocuments(new Date())).toBe(0)
+    expect(await db.fileObject.findUniqueOrThrow({ where: { id: sent.fileId } })).toMatchObject({ status: 'READY' })
+    await db.verificationRequest.update({ where: { id: sent.request!.id }, data: { decidedAt: new Date(Date.now() - 31 * 24 * 3600 * 1000) } })
     expect(await t.app.get(UsersMaintenance).purgeVerificationDocuments(new Date())).toBe(1)
     expect(await db.fileObject.findUniqueOrThrow({ where: { id: sent.fileId } })).toMatchObject({ status: 'DELETED' })
     expect(await db.verificationRequest.findUniqueOrThrow({ where: { id: sent.request!.id } })).toMatchObject({ documentIds: [] })

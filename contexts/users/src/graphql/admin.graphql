@@ -209,6 +209,60 @@ input UpdateAdminPlanInput {
   entitlements: [AdminPlanEntitlementInput!]
 }
 
+enum AccountStatus { ACTIVE AGE_BLOCKED BLOCKED SUSPENDED }
+
+"Which accounts adminUsers returns. BLOCKED_OR_SUSPENDED is both reversible holds."
+enum AdminUserStatusFilter { AGE_BLOCKED BLOCKED_OR_SUSPENDED ACTIVE }
+
+"An account as a platform admin sees it, including a date of birth (YYYY-MM-DD) and the standing reason."
+type AdminManagedUser {
+  id: UUID!
+  email: String!
+  displayName: String!
+  handle: String!
+  dateOfBirth: String
+  accountStatus: AccountStatus!
+  statusReason: String
+  globalRole: GlobalRole!
+  createdAt: DateTime!
+}
+
+type AdminUserList {
+  users: [AdminManagedUser!]!
+  total: Int!
+}
+
+type AdminUserPayload {
+  user: AdminManagedUser
+  userErrors: [UserError!]!
+}
+
+input AdminUpdateUserInput {
+  userId: UUID!
+  displayName: String
+  email: String
+  "YYYY-MM-DD. The age gate runs again. A date that clears an age block needs reason."
+  dateOfBirth: String
+  "Why this change is being made. Required, including when a new date of birth lets an under-age account pass."
+  reason: String!
+}
+
+input AdminSetAccountStandingInput {
+  userId: UUID!
+  "ACTIVE lifts a block or suspension. BLOCKED is indefinite. SUSPENDED needs until. AGE_BLOCKED is refused: correct the date of birth."
+  status: AccountStatus!
+  reason: String!
+  "Required when status is SUSPENDED. A time in the future."
+  until: DateTime
+}
+
+input AdminDeleteUserInput {
+  userId: UUID!
+  reason: String!
+  "The exact word DELETE."
+  confirm: String!
+}
+
 extend type Query {
   "Platform admins. Counts for the dashboard."
   adminMetrics(from: DateTime, to: DateTime): AdminMetrics!
@@ -216,6 +270,8 @@ extend type Query {
   adminSettings: [AdminSetting!]!
   "Platform admins. Every plan, with its price, limits and how many accounts are on it."
   adminPlans: [AdminPlan!]!
+  "Platform admins. Accounts in one standing, optionally matched on name, email or handle."
+  adminUsers(status: AdminUserStatusFilter!, search: String, first: Int): AdminUserList!
 }
 
 extend type Mutation {
@@ -229,4 +285,10 @@ extend type Mutation {
   updateAdminPlan(input: UpdateAdminPlanInput!): AdminPlanPayload!
   "Platform admins. Deletes a plan nobody is on. FREE cannot be deleted. People on a plan are left where they are: mark it inactive instead."
   deleteAdminPlan(id: UUID!): OkPayload!
+  "Platform admins. Edits name, email or date of birth and re-runs the age gate. A passing date of birth clears AGE_BLOCKED. Audited."
+  adminUpdateUser(input: AdminUpdateUserInput!): AdminUserPayload!
+  "Platform admins. Blocks, suspends or restores an account. Block and suspend revoke every session. Audited."
+  adminSetAccountStanding(input: AdminSetAccountStandingInput!): AdminUserPayload!
+  "Platform admins. Permanently anonymises the account, deletes its files and sessions, and keeps a hashed-email tombstone. confirm must be DELETE."
+  adminDeleteUser(input: AdminDeleteUserInput!): OkPayload!
 }

@@ -21,7 +21,7 @@ extend type User {
   teacherStatus: TeacherStatus
 }
 
-"Shown to the requester, the addressed teacher and platform admins. Documents are listed for platform admins only."
+"Shown to the requester, the addressed teacher, a teacher at the same institution, a manager and platform admins. Documents are listed for those reviewers."
 type VerificationRequest {
   id: UUID!
   purpose: VerificationPurpose!
@@ -37,10 +37,31 @@ type VerificationRequest {
   requester: User!
   "TEACHER method: the teacher asked to vouch"
   teacher: User
-  "Platform admins only; open one with verificationDocumentUrl (every view is audited)"
+  "Reviewers who may decide this request. Open one with verificationDocumentUrl (every view is audited)."
   documents: [VerificationDocument!]!
-  "True when the proof is one college ID card (ADR-0099). Deleted when the request is decided or withdrawn."
+  "True when the proof is one college ID card (ADR-0099). Kept for the retention window after a decision, and deleted at once when withdrawn."
   collegeIdCard: Boolean!
+  "The automated reading, once it has run. The ID number is hidden from the student."
+  aiCheck: IdCardCheck
+}
+
+enum IdCardVerdict { MATCH MISMATCH UNREADABLE }
+
+"Fields read from the document. `idNumber` is null for the student."
+type IdCardFields {
+  name: String
+  institution: String
+  idNumber: String
+  validUntil: String
+}
+
+"match, mismatch or unreadable. A mismatch is never an automatic rejection."
+type IdCardCheck {
+  verdict: IdCardVerdict!
+  confidence: Float
+  reason: String
+  checkedAt: DateTime!
+  extracted: IdCardFields!
 }
 
 type VerificationDocument {
@@ -65,7 +86,7 @@ input RequestTeacherVerificationInput {
   message: String
 }
 
-"fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by platform admins only, deleted 30 days after the decision"
+"fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by reviewers of this request, deleted 30 days after the decision"
 input RequestDocumentVerificationInput {
   fileIds: [UUID!]!
   message: String
@@ -113,14 +134,16 @@ extend type Query {
   myVerificationRequests: [VerificationRequest!]!
   "Signed in: the viewer's latest application to teach (ADR-0073)"
   myTeacherApplication: VerificationRequest
-  "Teachers: pending requests addressed to them. Platform admins: every pending request. Oldest first; `after` is the last id seen."
+  "Teachers: student requests addressed to them, and students of their institution. Managers: every student request. Platform admins: every pending request. Oldest first; `after` is the last id seen."
   verificationRequestsToReview(first: Int, after: UUID): [VerificationRequest!]!
-  "Platform admins only: a 15-minute link to one document; the view is written to the audit log"
+  "A reviewer of this request: a 15-minute link to one document. The view is written to the audit log."
   verificationDocumentUrl(requestId: UUID!, fileId: UUID!): SignedUrl!
   "Verified teachers whose name or handle matches, to ask one of them for verification"
   teachers(search: String!): [User!]!
   "Platform admins: institutional email domains waiting for review (ADR-0017)"
   domainReviews(status: DomainReviewStatus): [DomainReview!]!
+  "Platform admins: the same queue, or every domain of one status. Omit status for domains still waiting."
+  institutionDomains(status: DomainReviewStatus, first: Int): [DomainReview!]!
 }
 
 extend type Mutation {
@@ -129,10 +152,12 @@ extend type Mutation {
   "Signed in, not a teacher yet, not a child account: apply to teach (ADR-0073); a teacher applicant until reviewed"
   applyToTeach(input: ApplyToTeachInput!): VerificationRequestPayload!
   withdrawVerificationRequest(requestId: UUID!): OkPayload!
-  "Teachers: requests addressed to them. Platform admins: all, including documents."
+  "Teachers: student requests in their scope. Managers: student requests. Platform admins: all, including teacher applications."
   reviewVerificationRequest(input: ReviewVerificationRequestInput!): VerificationRequestPayload!
   "Platform admins"
   decideDomainReview(input: DecideDomainReviewInput!): OkPayload!
-  "Platform admins: TEACHER is granted by review, not by an email address (§5, ADR-0017)"
+  "Platform admins: approve or reject a domain, including one nobody has asked for yet."
+  reviewInstitutionDomain(input: DecideDomainReviewInput!): OkPayload!
+  "Platform admins: TEACHER and MANAGER are granted here, not by an email address (§5, ADR-0017). Every change is audited."
   setGlobalRole(input: SetGlobalRoleInput!): OkPayload!
 }

@@ -4,6 +4,7 @@ import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { MAILER, type Mailer } from '@lvn-backend/facades'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
+import { ageRestrictedError } from '../domain/account-status'
 import {
   dateOfBirthSchema,
   displayNameSchema,
@@ -12,7 +13,6 @@ import {
   LIMITS,
   RESET_PASSWORD_TTL_MINUTES,
   TERMS_VERSION,
-  UNDER_MINIMUM_AGE_MESSAGE,
   VERIFY_EMAIL_TTL_HOURS,
 } from '../domain/rules'
 import { clientNetwork } from '../domain/network'
@@ -25,7 +25,9 @@ import { LegacyService } from './legacy.service'
 import { PasswordService } from './password.service'
 import { randomToken, sha256 } from './secrets'
 import { AccessGate } from './access-gate'
+import { AgeBlockService } from './age-block.service'
 import { PlatformSettingsStore } from './platform-settings.store'
+import { SupportContact } from './support-contact'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
 
 export interface SignUpInput {
@@ -63,14 +65,14 @@ export class AuthService {
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
     private readonly settings: PlatformSettingsStore,
     private readonly access: AccessGate,
+    private readonly ageBlock: AgeBlockService,
+    private readonly support: SupportContact,
   ) {}
 
   async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string): Promise<SignUpResult> {
     const email = parseField(emailSchema, input.email, 'email')
     const displayName = parseField(displayNameSchema, input.displayName, 'displayName')
     const dateOfBirth = parseField(dateOfBirthSchema, input.dateOfBirth, 'dateOfBirth')
-    // ADR-0091: too young for an account — nothing is created or kept, and an existing account is not touched.
-    if (isBelowMinimumAge(dateOfBirth, this.settings.minimumAge())) throw Errors.underMinimumAge(UNDER_MINIMUM_AGE_MESSAGE, ['input', 'dateOfBirth'])
     if (input.acceptedTermsVersion !== TERMS_VERSION) {
       throw Errors.validation('Accept the current Terms and Privacy Policy to continue.', ['input', 'acceptedTermsVersion'])
     }
@@ -78,6 +80,12 @@ export class AuthService {
     if (input.institutionalEmail) await this.institutional.check(input.institutionalEmail, ['input', 'institutionalEmail'])
     await this.access.assertAllowed(email)
     const role = (await this.access.roleFor(email)) ?? 'STUDENT'
+    // Below the minimum the account is kept as AGE_BLOCKED (no session). An address that already has an account is not changed.
+    if (isBelowMinimumAge(dateOfBirth, this.settings.minimumAge())) {
+      const passwordHash = await this.passwords.hash(input.password)
+      await this.ageBlock.holdSignUp({ email, displayName, dateOfBirth, passwordHash, globalRole: role })
+      throw ageRestrictedError(await this.support.email(), ['input', 'dateOfBirth'])
+    }
     const existing = await this.db.user.findUnique({
       where: { email },
       select: { id: true, email: true, deletedAt: true, emailVerifiedAt: true, passwordHash: true, displayName: true },

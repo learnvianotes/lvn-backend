@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { Errors } from '@lvn-backend/errors'
 import { PrismaService } from '@lvn-backend/prisma-base'
-import { decodeSettingValue, parseSettingInput, serializeSetting, SETTING_CATALOG, settingDef, type SettingDef } from '../domain/setting-catalog'
+import { decodeSettingValue, parseSettingInput, serializeSetting, SETTING_CATALOG, settingDef, STUDENT_ID_AI_AUTO_APPROVE_SETTING, STUDENT_ID_AI_CHECK_SETTING, STUDENT_ID_AI_THRESHOLD_SETTING, STUDENT_ID_IMAGE_RETENTION_SETTING, type SettingDef } from '../domain/setting-catalog'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { AuditService } from './audit.service'
 import { PlatformSettingsStore } from './platform-settings.store'
@@ -39,10 +39,23 @@ export class AppSettingsService {
     return this.store.boolean('student_id_verification', false)
   }
 
-  async studentIdVerificationSettings(adminId: string): Promise<{ enabled: boolean; updatedAt: Date | null }> {
+  async studentIdVerificationSettings(adminId: string): Promise<{ enabled: boolean; updatedAt: Date | null; aiCheckEnabled: boolean; autoApproveOnHighConfidence: boolean; confidenceThreshold: number; imageRetentionDays: number }> {
     await this.assertAdmin(adminId)
-    const view = await this.one('student_id_verification')
-    return { enabled: view.value === 'true', updatedAt: view.updatedAt }
+    const [view, ai, auto, threshold, retention] = await Promise.all([
+      this.one('student_id_verification'),
+      this.one(STUDENT_ID_AI_CHECK_SETTING),
+      this.one(STUDENT_ID_AI_AUTO_APPROVE_SETTING),
+      this.one(STUDENT_ID_AI_THRESHOLD_SETTING),
+      this.one(STUDENT_ID_IMAGE_RETENTION_SETTING),
+    ])
+    return {
+      enabled: view.value === 'true',
+      updatedAt: view.updatedAt,
+      aiCheckEnabled: ai.value === 'true',
+      autoApproveOnHighConfidence: auto.value === 'true',
+      confidenceThreshold: Number(threshold.value),
+      imageRetentionDays: Number(retention.value),
+    }
   }
 
   /** Public to sign-in. True until an admin writes the row off, including when the row has never been written. */

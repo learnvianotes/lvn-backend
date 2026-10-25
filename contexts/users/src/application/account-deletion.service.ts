@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { FILES, MAILER, type Files, type Mailer } from '@lvn-backend/facades'
-import { PrismaService } from '@lvn-backend/prisma-base'
+import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { AuditService } from './audit.service'
 import { PasswordService } from './password.service'
@@ -109,6 +109,8 @@ export class AccountDeletionService {
       this.db.teacherProfile.deleteMany({ where: { userId } }),
       this.db.userPlan.deleteMany({ where: { userId } }),
       this.db.legacyImport.deleteMany({ where: { userId } }),
+      this.db.usageEvent.deleteMany({ where: { userId } }),
+      this.db.errorEvent.updateMany({ where: { userId }, data: { userId: null } }),
       this.db.follow.deleteMany({ where: { OR: [{ followerId: userId }, { followeeId: userId }] } }),
       this.db.block.deleteMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] } }),
       this.db.restriction.deleteMany({ where: { OR: [{ restricterId: userId }, { restrictedId: userId }] } }),
@@ -126,13 +128,28 @@ export class AccountDeletionService {
           verifiedAt: null,
           verificationMethod: null,
           globalRole: 'STUDENT',
+          analyticsOptOut: true,
           avatarFileId: null,
           suspendedUntil: null,
           suspensionReason: null,
+          accountStatus: 'ACTIVE',
+          statusReason: null,
           deletedAt: now,
         },
       }),
     ])
     await this.audit.record({ actorId: null, action: 'account.deleted', targetType: 'USER', targetId: userId })
+  }
+
+  /**
+   * A platform admin's permanent delete. PII is anonymised the same way as a person's own deletion, files in object
+   * storage go with it, sessions end, and the only leftover of the address is a hashed tombstone.
+   */
+  async adminErase(userId: string, adminId: string, reason: string, emailHash: string): Promise<void> {
+    const now = new Date()
+    await this.db.accountTombstone.create({ data: { id: newId(), userId, emailHash, adminId, reason, deletedAt: now } })
+    await this.audit.record({ actorId: adminId, action: 'account.admin.deleted', targetType: 'USER', targetId: userId, metadata: { reason, emailHash } })
+    await this.erase(userId, now)
+    await this.events.publish('UserDeleted', { userId })
   }
 }

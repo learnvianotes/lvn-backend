@@ -93,7 +93,8 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `WEB_URL` | api | yes | — | lvn-web origin for links in emails and OAuth redirects |
 | `CODE_HMAC_SECRET` | api | yes (secret, ≥ 32 chars) | — | HMAC key for short codes (institutional email) |
 | `DIGITAL_CONSENT_AGE` | api | no | `18` | Below it an account needs guardian or institutional consent or is a restricted minor (§15.2; 18 under DPDP) |
-| `ACCOUNT_MINIMUM_AGE` | api | no | `18` | Below it no account is created: sign-up refuses, and a provider account's under-age answer erases it (ADR-0091). `0` lets everyone register (minors restricted by `DIGITAL_CONSENT_AGE`) |
+| `ACCOUNT_MINIMUM_AGE` | api | no | `18` | Below it sign-up keeps the account as `AGE_BLOCKED` (no session, nothing public) and returns `AGE_RESTRICTED`. `0` lets everyone register (minors restricted by `DIGITAL_CONSENT_AGE`) |
+| `SUPPORT_EMAIL` | api | no | `support@learnvianotes.in` | Fallback for `userErrors.supportEmail` when no non-deleted `PLATFORM_ADMIN` exists. Otherwise that field is the earliest platform admin by `createdAt` |
 | `PASSWORD_BREACH_API_URL` | api | no | — (check off) | k-anonymity range API, `https://api.pwnedpasswords.com/range` (§7.1) |
 | `FIREBASE_PROJECT_ID` | api | no | — (Google off) | Project whose ID tokens `signInWithGoogle` accepts (ADR-0007); no service account needed to verify. Unset turns Google sign-in off. A platform admin can also turn it off while this is set (`setGoogleSignInEnabled`, `AppSetting` key `google_sign_in`, ADR-0100); that switch is not an environment variable |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | api | no (secret) | — (GitHub off) | OAuth app for `oauthExchange` |

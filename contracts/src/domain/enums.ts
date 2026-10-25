@@ -8,7 +8,7 @@ const values = <T extends Record<string, string>>(o: T) => Object.values(o) as [
 export const Visibility = { PRIVATE: 'PRIVATE', SHARED: 'SHARED', PUBLIC: 'PUBLIC' } as const
 export type Visibility = (typeof Visibility)[keyof typeof Visibility]
 
-export const GlobalRole = { STUDENT: 'STUDENT', TEACHER: 'TEACHER', PLATFORM_ADMIN: 'PLATFORM_ADMIN' } as const
+export const GlobalRole = { STUDENT: 'STUDENT', TEACHER: 'TEACHER', MANAGER: 'MANAGER', PLATFORM_ADMIN: 'PLATFORM_ADMIN' } as const
 export type GlobalRole = (typeof GlobalRole)[keyof typeof GlobalRole]
 
 /** MENTOR exists only in PROJECT groups: a teacher the team invited (ADR-0015). */
@@ -85,8 +85,10 @@ export const ErrorCode = {
   CONFLICT: 'CONFLICT', RATE_LIMITED: 'RATE_LIMITED', INTERNAL: 'INTERNAL',
   /** A service the request needs is off or out of budget for now (AI, ADR-0058); worth trying later */
   UNAVAILABLE: 'UNAVAILABLE',
-  /** Sign-up refused: the date of birth given is below ACCOUNT_MINIMUM_AGE (ADR-0091) */
+  /** Sign-up refused: the date of birth given is below ACCOUNT_MINIMUM_AGE (ADR-0091). Kept for older clients. */
   UNDER_MINIMUM_AGE: 'UNDER_MINIMUM_AGE',
+  /** The account exists and is age-blocked. `userErrors[].supportEmail` is who to contact. */
+  AGE_RESTRICTED: 'AGE_RESTRICTED',
 } as const
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode]
 

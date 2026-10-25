@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
 import { presetOf } from '../domain/catalog'
+import { idCardPreference } from '../domain/id-card-route'
 import type { AiProviderAdapter } from '../domain/provider'
 import { AnthropicProvider } from '../infrastructure/anthropic'
 import { OllamaProvider } from '../infrastructure/ollama'
@@ -80,6 +81,48 @@ export class AiProviders {
     const via = route && (route.connectionId ? this.usable(state, route.connectionId) : this.defaultChat(state))
     if (route && via) return { connectionId: via.connectionId, adapter: via.adapter, model: route.model, inPrice: route.inputMicroUsdPerMTok, outPrice: route.outputMicroUsdPerMTok }
     return this.defaultChat(state)
+  }
+
+  /**
+   * Who may read an ID card, best first. A private `ID_CARD_CHECK` route wins. Then a private Gemini Flash
+   * connection, then GPT-4o-mini, then the default chat provider when it may receive private data.
+   * Providers that must not receive private data are left out: the image is the only thing sent.
+   */
+  async idCardCandidates(): Promise<Target[]> {
+    const state = await this.state()
+    const out: Target[] = []
+    const seen = new Set<string>()
+    const push = (target: Target | null | undefined) => {
+      if (!target?.adapter.mayReceivePrivate) return
+      const key = `${target.connectionId ?? 'env'}:${target.model}`
+      if (seen.has(key)) return
+      seen.add(key)
+      out.push(target)
+    }
+    const route = state.routes.get('ID_CARD_CHECK')
+    if (route) {
+      const via = route.connectionId ? this.usable(state, route.connectionId) : this.defaultChat(state)
+      if (via?.adapter.mayReceivePrivate) {
+        push({ connectionId: via.connectionId, adapter: via.adapter, model: route.model, inPrice: route.inputMicroUsdPerMTok, outPrice: route.outputMicroUsdPerMTok })
+      }
+    }
+    const ranked: { score: number; target: Target }[] = []
+    const consider = (kind: string, model: string, target: Target) => {
+      const score = idCardPreference({ kind, model, mayReceivePrivate: target.adapter.mayReceivePrivate })
+      if (score === null || score > 1) return
+      ranked.push({ score, target })
+    }
+    for (const { row, adapter } of state.connections.values()) {
+      if (!row.enabled || !adapter || !row.chatModel) continue
+      consider(row.kind, row.chatModel, { connectionId: row.id, adapter, model: row.chatModel, inPrice: row.inputMicroUsdPerMTok, outPrice: row.outputMicroUsdPerMTok })
+    }
+    if (this.environment && this.config.chatModel) {
+      consider(this.config.provider, this.config.chatModel, { connectionId: null, adapter: this.environment, model: this.config.chatModel, inPrice: 0, outPrice: 0 })
+    }
+    ranked.sort((a, b) => a.score - b.score)
+    for (const item of ranked) push(item.target)
+    push(this.defaultChat(state))
+    return out
   }
 
   /** Who makes embeddings: the EMBED route, the default embedding connection, else the environment's provider. */

@@ -36,11 +36,17 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
 
   async onApplicationBootstrap(): Promise<void> {
     this.queues.process(USERS_MAINTENANCE_QUEUE, {
-      // ADR-0019: identity documents are deleted 30 days after the decision.
+      // Identity documents are deleted after the retention window. Other proof waits 30 days. A college ID uses the admin setting (default 30) after approval or rejection, and a withdrawn card still stored is deleted on this run.
       'purge-verification-documents': async () => {
         const purged = await this.users.purgeVerificationDocuments()
         this.log.log(`purged documents of ${purged} decided verification requests`)
         return { purged }
+      },
+      // Usage events are kept 180 days, error events 90.
+      'purge-analytics': async () => {
+        const purged = await this.users.purgeAnalytics()
+        this.log.log(`purged ${purged.usage} usage events and ${purged.errors} error events`)
+        return purged
       },
       // ADR-0088: accounts past their 14 days are deleted; recent deletions announced again for a week.
       'delete-accounts': async () => {
@@ -50,6 +56,7 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
       },
     })
     await this.queues.repeat(USERS_MAINTENANCE_QUEUE, 'purge-verification-documents', '15 3 * * *')
+    await this.queues.repeat(USERS_MAINTENANCE_QUEUE, 'purge-analytics', '25 3 * * *')
     await this.queues.repeat(USERS_MAINTENANCE_QUEUE, 'delete-accounts', '20 3 * * *')
 
     this.queues.process(NOTES_MAINTENANCE_QUEUE, {

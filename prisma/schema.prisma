@@ -27,6 +27,8 @@ datasource db {
 enum GlobalRole {
   STUDENT
   TEACHER
+  /// Reviews student verification (documents included). Cannot grant roles or approve teacher applications.
+  MANAGER
   PLATFORM_ADMIN
 
   @@schema("users")
@@ -53,6 +55,24 @@ enum VerificationRequestStatus {
   APPROVED
   REJECTED
   WITHDRAWN
+
+  @@schema("users")
+}
+
+/// What the ID-card check decided. A mismatch is never an automatic rejection.
+enum IdCardVerdict {
+  MATCH
+  MISMATCH
+  UNREADABLE
+
+  @@schema("users")
+}
+
+/// Where an error or usage event was recorded.
+enum ClientPlatform {
+  WEB
+  MOBILE
+  BACKEND
 
   @@schema("users")
 }
@@ -159,6 +179,12 @@ model User {
   suspendedUntil          DateTime?           @db.Timestamptz(3)
   /// Why, for the account's owner alone
   suspensionReason        String?
+  /// When true, usage analytics for this account are not stored (DPDP). Error reports from the app are stored without this id.
+  analyticsOptOut         Boolean             @default(false)
+  /// AGE_BLOCKED has no session and is not public. BLOCKED and SUSPENDED are reversible admin holds.
+  accountStatus           AccountStatus       @default(ACTIVE)
+  /// Why the account is age-blocked, blocked, or suspended. Admins read it; it is not a public field.
+  statusReason            String?
   createdAt               DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt               DateTime            @updatedAt @db.Timestamptz(3)
 
@@ -186,6 +212,16 @@ model User {
   teacherProfile       TeacherProfile?
   teacherSkills        TeacherSkill[]
   externalIdentities   ExternalIdentity[]
+
+  @@index([accountStatus, createdAt(sort: Desc)])
+  @@schema("users")
+}
+
+enum AccountStatus {
+  ACTIVE
+  AGE_BLOCKED
+  BLOCKED
+  SUSPENDED
 
   @@schema("users")
 }
@@ -424,7 +460,16 @@ model VerificationRequest {
   decidedBy   String?                   @db.Uuid
   decidedAt   DateTime?                 @db.Timestamptz(3)
   reason      String?
-  createdAt   DateTime                  @default(now()) @db.Timestamptz(3)
+  /// Automated college-ID / proof check. Reviewers see it; the raw image is not stored here.
+  aiVerdict    IdCardVerdict?
+  /// 0–1. The model's confidence, not a second opinion.
+  aiConfidence Float?
+  /// Why the verdict was reached. Never the image and never a copy of the model's raw text beyond this sentence.
+  aiReason     String?
+  /// { name, institution, idNumber, validUntil }. Not written to logs.
+  aiExtracted  Json?
+  aiCheckedAt  DateTime?                 @db.Timestamptz(3)
+  createdAt    DateTime                  @default(now()) @db.Timestamptz(3)
 
   user User @relation("requester", fields: [userId], references: [id], onDelete: Cascade)
 
@@ -577,6 +622,61 @@ model AuditLog {
 
   @@index([targetType, targetId, createdAt])
   @@index([actorId, createdAt])
+  @@schema("users")
+}
+
+/// DPDP tombstone of an admin's permanent deletion. The email is a SHA-256 hex digest, never the address itself.
+model AccountTombstone {
+  id        String   @id @db.Uuid
+  userId    String   @db.Uuid
+  emailHash String
+  adminId   String   @db.Uuid
+  reason    String
+  deletedAt DateTime @db.Timestamptz(3)
+
+  @@index([emailHash])
+  @@map("account_tombstones")
+  @@schema("users")
+}
+
+/// Unexpected failures and client-reported errors. `message` is scrubbed (no email, token, or document bytes).
+/// Kept 90 days. `userId` is null for anonymous failures and for people who opted out of analytics on a client report.
+model ErrorEvent {
+  id         String         @id @db.Uuid
+  occurredAt DateTime       @default(now()) @db.Timestamptz(3)
+  userId     String?        @db.Uuid
+  /// GraphQL operation, HTTP route, or queue/job.
+  route      String?
+  /// Error code (VALIDATION, INTERNAL, …) or a client-supplied type.
+  code       String
+  message    String
+  release    String?
+  platform   ClientPlatform
+
+  @@index([code, occurredAt])
+  @@index([occurredAt])
+  @@index([userId, occurredAt])
+  @@map("error_events")
+  @@schema("users")
+}
+
+/// What people use. Dropped at ingest when the account's analytics opt-out is on. Kept 180 days.
+model UsageEvent {
+  id         String         @id @db.Uuid
+  occurredAt DateTime       @default(now()) @db.Timestamptz(3)
+  userId     String         @db.Uuid
+  sessionId  String?
+  /// Allow-listed: page_view, note_open, note_upload, search, download, sign_in.
+  name       String
+  /// Small JSON. A string `feature` is counted as a feature.
+  props      Json?
+  platform   ClientPlatform
+  appVersion String?
+
+  @@index([name, occurredAt])
+  @@index([userId, occurredAt])
+  @@index([occurredAt])
+  @@map("usage_events")
   @@schema("users")
 }
 
