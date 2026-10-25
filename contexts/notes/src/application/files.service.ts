@@ -173,7 +173,10 @@ export class FilesService implements Files {
     const detected = detectMimeType(await this.storage.firstBytes(file.bucket, file.storageKey))
     if (!sameKind(file.mimeType, detected)) await fail('The file content does not match its type.')
 
-    await this.db.fileObject.update({ where: { id: file.id }, data: { status: 'READY', detectedMimeType: detected, expiresAt: null } })
+    await this.db.fileObject.update({
+      where: { id: file.id },
+      data: { status: 'READY', detectedMimeType: detected, expiresAt: null, ...(this.config.scan.mode === 'remote' ? { scanResult: 'PENDING' as const } : {}) },
+    })
     await this.events.publish('FileReady', { fileId: file.id, ownerId, mimeType: file.mimeType })
   }
 
@@ -206,7 +209,7 @@ export class FilesService implements Files {
 
   async readUrl(fileId: string, opts?: { ttlSeconds?: number }): Promise<{ url: string; expiresAt: Date }> {
     const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
-    if (!file || file.status !== 'READY' || file.deletedAt) throw Errors.notFound('File not found.')
+    if (!file || file.status !== 'READY' || file.deletedAt || file.scanResult === 'PENDING') throw Errors.notFound('File not found.')
     await this.db.fileObject.update({ where: { id: fileId }, data: { accessCount: { increment: 1 }, lastAccessedAt: new Date() } })
     return this.storage.presignGet(file.bucket, file.storageKey, { expiresInSeconds: opts?.ttlSeconds ?? READ_URL_TTL_SECONDS, downloadName: file.originalFileName })
   }
@@ -263,13 +266,15 @@ export class FilesService implements Files {
     const detected = detectMimeType(await this.storage.firstBytes(file.bucket, file.storageKey))
     if (!sameKind(file.mimeType, detected)) await fail('The file content does not match its type.')
 
-    // READY, but not FileReady: the media pipeline would write derivative copies of an identity document.
+    // READY, but not FileReady and not scanned: the media pipeline would write derivative copies of an identity
+    // document, and a college ID card never enters it (ADR-0099, ADR-0102).
     await this.db.fileObject.update({ where: { id: file.id }, data: { status: 'READY', detectedMimeType: detected, expiresAt: null } })
   }
 
   async download(fileId: string, toPath: string, variant?: 'audio' | 'medium'): Promise<{ mimeType: string }> {
     const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
     if (!file || file.status !== 'READY' || file.deletedAt) throw Errors.notFound('File not found.')
+    if (file.scanResult === 'PENDING') throw Errors.unavailable('This file is still being scanned.')
     const made = variant ? ((file.variants ?? {}) as Record<string, string | undefined>)[variant] : undefined
     await this.storage.download(file.bucket, made ?? file.storageKey, toPath)
     return { mimeType: made ? (variant === 'audio' ? 'audio/mp4' : 'image/webp') : file.mimeType }
@@ -295,6 +300,7 @@ export class FilesService implements Files {
         originalFileName: file.fileName,
         status: 'READY',
         expiresAt: file.expiresAt,
+        ...(!file.restricted && this.config.scan.mode === 'remote' ? { scanResult: 'PENDING' as const } : {}),
       },
     })
     // Scanned and sized like an upload (ADR-0088): a cover copied from a link, a file inside an import. A restricted
@@ -343,12 +349,18 @@ export class FilesService implements Files {
   async readBytes(ownerId: string, fileId: string, maxBytes: number): Promise<{ bytes: Uint8Array; fileName: string; mimeType: string }> {
     const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
     if (!file || file.ownerId !== ownerId || file.status !== 'READY' || file.deletedAt) throw Errors.notFound('Upload not found.')
+    if (file.scanResult === 'PENDING') throw Errors.unavailable('This file is still being scanned.')
     return { bytes: await this.storage.getBytes(file.bucket, file.storageKey, maxBytes), fileName: file.originalFileName, mimeType: file.mimeType }
   }
 
   /** Read URLs for READY files the caller has already decided the reader may see; one access count update. */
   async readUrls(fileIds: string[], opts: { ttlSeconds?: number } = {}) {
-    const files = fileIds.length ? await this.db.fileObject.findMany({ where: { id: { in: [...new Set(fileIds)] }, status: 'READY', deletedAt: null } }) : []
+    // `not: PENDING` would also drop SQL NULL (never scanned, or the local mode's give-up is ERROR). List the results that may be served.
+    const files = fileIds.length
+      ? await this.db.fileObject.findMany({
+          where: { id: { in: [...new Set(fileIds)] }, status: 'READY', deletedAt: null, OR: [{ scanResult: null }, { scanResult: { in: ['CLEAN', 'ERROR'] } }] },
+        })
+      : []
     if (files.length) await this.db.fileObject.updateMany({ where: { id: { in: files.map((f) => f.id) } }, data: { accessCount: { increment: 1 }, lastAccessedAt: new Date() } })
     const ttl = opts.ttlSeconds ?? READ_URL_TTL_SECONDS
     const signed = await Promise.all(

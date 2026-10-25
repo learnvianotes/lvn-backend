@@ -14,6 +14,7 @@ import { PDFDocument } from 'pdf-lib'
 import sharp from 'sharp'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
 import { clamdScan } from './clamav'
+import { RemoteScanClient } from './remote-scan'
 
 const run = promisify(execFile)
 
@@ -31,14 +32,18 @@ export type Variants = Partial<Record<keyof typeof IMAGE_SIZES | 'video720' | 'p
 export const variantKey = (storageKey: string, name: string) => storageKey.replace(/\/original$/, `/${name}`)
 
 /**
- * Media processing after an upload (§8.1, §8.2, ADR-0041): the original is already READY and usable; this scans it
- * (ClamAV), quarantines what is infected, and adds what makes it better to show — three picture sizes, a 720p
- * transcode and a poster for video, normalised audio — and the facts §8.2 keeps (size, length, pages, SHA-256).
- * Runs in apps/worker; FileReady queues it.
+ * Media processing after an upload (§8.1, §8.2, ADR-0041, ADR-0102): the original is already READY. Local mode scans
+ * it here and still serves it if the scanner fails on the last attempt. Remote mode has already marked it pending, and
+ * this streams it to the scan service: a failure leaves it pending and unserved. Infected and unsafe files are
+ * quarantined. What makes it better to show — three picture sizes, a 720p transcode and a poster for video, normalised
+ * audio — and the facts §8.2 keeps (size, length, pages, SHA-256) are written only after a clean scan. Runs in
+ * apps/worker; FileReady queues it.
  */
 @Injectable()
 export class MediaProcessingService implements OnModuleInit {
   private readonly log = new Logger('Media')
+  /** One client per process so the circuit breaker survives from one file to the next. */
+  private remote: RemoteScanClient | null = null
 
   constructor(
     private readonly db: PrismaService,
@@ -64,9 +69,21 @@ export class MediaProcessingService implements OnModuleInit {
       await this.storage.download(file.bucket, file.storageKey, original)
       const data: Prisma.FileObjectUpdateInput = { checksumSha256: await sha256(original) }
 
-      if (this.config.clamav) {
+      if (this.config.scan.mode === 'remote') {
+        // Closed before the body is scanned, so a crash here cannot leave a READY file with no scan result.
+        if (file.scanResult !== 'PENDING') await this.db.fileObject.update({ where: { id: fileId }, data: { scanResult: 'PENDING' } })
+        // Always thrown: a remote failure is never recorded as ERROR and the file is never served unscanned.
+        const verdict = await this.scanner().scan(original, file.mimeType, file.ownerId)
+        data.scannedAt = new Date()
+        if (verdict.result === 'infected' || verdict.result === 'unsafe') {
+          await this.quarantine(file, verdict.signature)
+          return { status: 'QUARANTINED', variants: {} }
+        }
+        data.scanResult = 'CLEAN'
+        if (verdict.pageCount != null) data.pageCount = verdict.pageCount
+      } else if (this.config.scan.mode === 'local') {
         try {
-          const scan = await clamdScan(this.config.clamav, original)
+          const scan = await clamdScan(this.config.scan.clamav, original)
           data.scannedAt = new Date()
           if (scan.result === 'INFECTED') {
             await this.quarantine(file, scan.signature)
@@ -114,7 +131,7 @@ export class MediaProcessingService implements OnModuleInit {
           const audio = path.join(dir, 'audio.m4a')
           await run('ffmpeg', ['-v', 'error', '-y', '-i', original, '-vn', '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11', '-c:a', 'aac', '-b:a', '128k', audio], { timeout: FFMPEG_TIMEOUT_MS })
           variants.audio = await this.store(file.bucket, variantKey(file.storageKey, 'audio'), audio, 'audio/mp4')
-        } else if (file.mimeType === 'application/pdf') {
+        } else if (file.mimeType === 'application/pdf' && this.config.scan.mode !== 'remote') {
           try {
             const pdf = await PDFDocument.load(await readFile(original), { ignoreEncryption: true, updateMetadata: false })
             data.pageCount = pdf.getPageCount()
@@ -148,6 +165,41 @@ export class MediaProcessingService implements OnModuleInit {
   private async store(bucket: string, key: string, file: string, contentType: string): Promise<string> {
     await this.storage.putFile(bucket, key, file, { contentType })
     return key
+  }
+
+  /**
+   * Files still waiting on the scan service whose job is not queued. The worker runs this every ten minutes so an
+   * outage does not leave an upload pending after the service is back. No-op unless SCAN_MODE=remote.
+   */
+  async requeuePending(): Promise<number> {
+    if (this.config.scan.mode !== 'remote') return 0
+    const rows = await this.db.fileObject.findMany({
+      where: { status: 'READY', scanResult: 'PENDING', deletedAt: null },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+    })
+    const queue = this.queues.queue(NOTES_MEDIA_QUEUE)
+    const busy = new Set(['active', 'waiting', 'delayed', 'prioritized', 'waiting-children', 'paused'])
+    let n = 0
+    for (const row of rows) {
+      const jobId = `${row.id}.process`
+      const existing = await queue.getJob(jobId)
+      if (existing) {
+        const state = await existing.getState()
+        if (busy.has(state)) continue
+        await existing.remove()
+      }
+      await queue.add('process-file', { fileId: row.id }, { jobId, attempts: 3, backoff: { type: 'exponential', delay: 30_000 } })
+      n += 1
+    }
+    return n
+  }
+
+  private scanner(): RemoteScanClient {
+    if (this.config.scan.mode !== 'remote') throw new Error('the scan service is not configured')
+    this.remote ??= new RemoteScanClient(this.config.scan)
+    return this.remote
   }
 
   /**

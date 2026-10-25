@@ -20,8 +20,8 @@ const DROPPED_INTEGRATIONS = new Set(['LocalVariables', 'LocalVariablesAsync', '
 
 /**
  * Sentry for unexpected exceptions only (§16.5): no performance tracing (OpenTelemetry does that), no personal data.
- * Events keep the request id, operation, queue and job id as tags; cookies, bodies, query strings, most headers and
- * user details are removed before anything leaves the process.
+ * Events keep the request id, operation, queue and job id as tags. Cookies, bodies, query strings and most headers
+ * are removed. A caller may set the user id (the file owner, when a scan fails); email and address are never kept.
  */
 export function startErrorReporting(options: ErrorReportingOptions): boolean {
   if (!options.dsn) return false
@@ -46,6 +46,7 @@ export function reportError(error: unknown, tags: Record<string, string | undefi
   if (!Sentry.isInitialized()) return
   const ctx = logContext.getStore()
   Sentry.withScope((scope) => {
+    if (tags.userId) scope.setUser({ id: tags.userId })
     for (const [k, v] of Object.entries({ requestId: ctx?.requestId, operation: ctx?.operation, queue: ctx?.queue, jobId: ctx?.jobId, ...tags })) {
       if (v) scope.setTag(k, v)
     }
@@ -59,7 +60,11 @@ export async function flushErrors(timeoutMs = 2000): Promise<void> {
 }
 
 function scrub<E extends Sentry.ErrorEvent>(event: E): E {
-  delete event.user
+  if (event.user) {
+    const id = event.user.id
+    if (typeof id === 'string' && id) event.user = { id }
+    else delete event.user
+  }
   if (event.request) {
     delete event.request.cookies
     delete event.request.data

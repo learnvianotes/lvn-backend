@@ -1,5 +1,11 @@
 import type { ApiConfig } from '@lvn/contracts/config'
 
+/** Where an upload is scanned (ADR-0041, ADR-0102). */
+export type ScanConfig =
+  | { mode: 'off' }
+  | { mode: 'local'; clamav: { host: string; port: number } }
+  | { mode: 'remote'; url: string; secret: string; timeoutMs: number }
+
 /** What the notes context needs from the API configuration. */
 export interface NotesConfig {
   /** development | sandbox | production — the first segment of every storage key (§8.1) */
@@ -11,8 +17,10 @@ export interface NotesConfig {
   revalidate: { url: string; secret: string } | null
   /** ADR-0097: people may upload files; false refuses every upload intent */
   uploads: boolean
-  /** clamd for scanning uploads (ADR-0041); null: not scanned */
+  /** clamd beside this process (ADR-0041). Null unless scan.mode is local. */
   clamav: { host: string; port: number } | null
+  /** ADR-0102. Unset SCAN_MODE keeps the old rule: CLAMAV_URL means local, otherwise off. */
+  scan: ScanConfig
   /** Search (ADR-0055): who answers, and Typesense when configured (the worker keeps it whichever answers) */
   search: {
     provider: 'postgres' | 'typesense'
@@ -25,17 +33,31 @@ export interface NotesConfig {
 
 export const NOTES_CONFIG = Symbol('NOTES_CONFIG')
 
-export const notesConfigFrom = (c: ApiConfig): NotesConfig => ({
-  env: c.APP_ENV,
-  bucket: c.S3_BUCKET,
-  restrictedBucket: c.S3_RESTRICTED_BUCKET,
-  revalidate: c.WEB_REVALIDATE_URL && c.REVALIDATE_SECRET ? { url: c.WEB_REVALIDATE_URL, secret: c.REVALIDATE_SECRET } : null,
-  uploads: c.UPLOADS_ENABLED,
-  clamav: c.CLAMAV_URL ? { host: new URL(c.CLAMAV_URL).hostname, port: Number(new URL(c.CLAMAV_URL).port) } : null,
-  search: {
-    provider: c.SEARCH_PROVIDER,
-    typesense: c.TYPESENSE_URL && c.TYPESENSE_API_KEY ? { url: c.TYPESENSE_URL, apiKey: c.TYPESENSE_API_KEY, prefix: c.TYPESENSE_COLLECTION_PREFIX } : null,
-    timeoutMs: c.SEARCH_TIMEOUT_MS,
-    hybrid: c.SEARCH_HYBRID,
-  },
-})
+export const notesConfigFrom = (c: ApiConfig): NotesConfig => {
+  const scan = scanFrom(c)
+  return {
+    env: c.APP_ENV,
+    bucket: c.S3_BUCKET,
+    restrictedBucket: c.S3_RESTRICTED_BUCKET,
+    revalidate: c.WEB_REVALIDATE_URL && c.REVALIDATE_SECRET ? { url: c.WEB_REVALIDATE_URL, secret: c.REVALIDATE_SECRET } : null,
+    uploads: c.UPLOADS_ENABLED,
+    clamav: scan.mode === 'local' ? scan.clamav : null,
+    scan,
+    search: {
+      provider: c.SEARCH_PROVIDER,
+      typesense: c.TYPESENSE_URL && c.TYPESENSE_API_KEY ? { url: c.TYPESENSE_URL, apiKey: c.TYPESENSE_API_KEY, prefix: c.TYPESENSE_COLLECTION_PREFIX } : null,
+      timeoutMs: c.SEARCH_TIMEOUT_MS,
+      hybrid: c.SEARCH_HYBRID,
+    },
+  }
+}
+
+function scanFrom(c: ApiConfig): ScanConfig {
+  const mode = c.SCAN_MODE ?? (c.CLAMAV_URL ? 'local' : 'off')
+  if (mode === 'remote') return { mode: 'remote', url: c.SCANNER_URL ?? '', secret: c.SCANNER_SECRET ?? '', timeoutMs: c.SCANNER_TIMEOUT_MS }
+  if (mode === 'local' && c.CLAMAV_URL) {
+    const url = new URL(c.CLAMAV_URL)
+    return { mode: 'local', clamav: { host: url.hostname, port: Number(url.port) } }
+  }
+  return { mode: 'off' }
+}

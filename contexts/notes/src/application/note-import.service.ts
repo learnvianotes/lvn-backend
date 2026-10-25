@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { Action, can, HighlightColor, HighlightKind, LimitKey, startOfUtcDay, type CardType } from '@lvn/contracts/domain'
+import { Action, can, ErrorCode, HighlightColor, HighlightKind, LimitKey, startOfUtcDay, type CardType } from '@lvn/contracts/domain'
 import { CARD_LIMITS, HIGHLIGHT_LIMITS, NOTE_LIMITS, noteTitleSchema, pageRectSchema, parseCardContent, positionsBetween } from '@lvn/contracts/validation'
-import { assertWithinPlan, Errors } from '@lvn-backend/errors'
+import { AppError, assertWithinPlan, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { ENTITLEMENTS, POLICY, type Entitlements, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
@@ -16,6 +16,8 @@ import { NotesService } from './notes.service'
 import { OrganiseService } from './organise.service'
 
 export const NOTES_IMPORT_QUEUE = 'notes.import'
+/** A scan usually finishes in seconds. Enough attempts that a file still pending when the import starts can be read once it is clean. */
+const IMPORT_JOB = { attempts: 10, backoff: { type: 'exponential' as const, delay: 10_000 } }
 /** ADR-0018 guards: at most 200 MB uploaded, 1 GB unpacked, 5,000 files, and no file packed more than 200 times. */
 const LIMITS = { uploadBytes: 200 * 1024 ** 2, unpackedBytes: 1024 ** 3, files: 5_000, ratio: 200 }
 const TEXT = /\.(md|markdown|txt)$/i
@@ -87,7 +89,7 @@ export class NoteImportService {
     const id = newId()
     await this.files.attach([fileId], userId, 'IMPORT', { type: 'IMPORT_JOB', id })
     const row = await this.db.noteImport.create({ data: { id, userId, fileId, fileName: file.originalFileName } })
-    await this.queues.queue(NOTES_IMPORT_QUEUE).add('run-import', { importId: id }, { jobId: id })
+    await this.queues.queue(NOTES_IMPORT_QUEUE).add('run-import', { importId: id }, { jobId: id, ...IMPORT_JOB })
     return row
   }
 
@@ -97,7 +99,7 @@ export class NoteImportService {
     if (!row || row.userId !== userId) throw Errors.notFound('Import not found.')
     if (row.status !== 'NEEDS_CONFIRMATION') throw Errors.validation('This import does not need a confirmation.')
     const next = await this.db.noteImport.update({ where: { id: importId }, data: { allowDuplicate: true, status: 'PENDING' } })
-    await this.queues.queue(NOTES_IMPORT_QUEUE).add('run-import', { importId }, { jobId: `${importId}.confirmed` })
+    await this.queues.queue(NOTES_IMPORT_QUEUE).add('run-import', { importId }, { jobId: `${importId}.confirmed`, ...IMPORT_JOB })
     return next
   }
 
@@ -105,8 +107,8 @@ export class NoteImportService {
     return this.db.noteImport.findMany({ where: { userId }, orderBy: { createdAt: 'desc' }, take: 5 })
   }
 
-  /** The worker's job. */
-  async run(importId: string): Promise<void> {
+  /** The worker's job. `lastAttempt` is true when BullMQ will not run it again. */
+  async run(importId: string, lastAttempt = true): Promise<void> {
     const row = await this.db.noteImport.findUnique({ where: { id: importId } })
     if (!row || row.status !== 'PENDING') return
     await this.db.noteImport.update({ where: { id: importId }, data: { status: 'RUNNING', progress: 0 } })
@@ -137,6 +139,18 @@ export class NoteImportService {
       await this.db.noteImport.update({ where: { id: importId }, data: { status: 'DONE', progress: 100, report: report as unknown as Prisma.InputJsonValue, finishedAt: new Date() } })
       await this.events.publish('NotesImportCompleted', { importId, userId: row.userId, created: report.created, skipped: report.skipped.length, failed: 0 })
     } catch (e) {
+      // The upload is still waiting for the scan service. Retry the job; only the last attempt tells the person.
+      if (e instanceof AppError && e.code === ErrorCode.UNAVAILABLE) {
+        if (!lastAttempt) {
+          await this.db.noteImport.update({ where: { id: importId }, data: { status: 'PENDING', progress: 0, error: null, finishedAt: null } })
+          throw e
+        }
+        await this.db.noteImport.update({
+          where: { id: importId },
+          data: { status: 'FAILED', error: 'The file is still waiting to be scanned. Try the import again in a few minutes.', report: report as unknown as Prisma.InputJsonValue, finishedAt: new Date() },
+        })
+        throw Object.assign(new Error('The uploaded file is still waiting to be scanned.'), { userId: row.userId })
+      }
       const message = e instanceof ImportRefused ? e.message : 'The import failed. Try again, or import a smaller file.'
       if (!(e instanceof ImportRefused)) this.log.error(`import ${importId} failed: ${(e as Error).message}`)
       await this.db.noteImport.update({ where: { id: importId }, data: { status: 'FAILED', error: message, report: report as unknown as Prisma.InputJsonValue, finishedAt: new Date() } })

@@ -69,7 +69,11 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `AI_PUBLIC_PIPELINE` | api, worker | no | `true` | Study aids (summary, key concepts, questions, quiz, flashcards) made when a note is published PUBLIC: five model calls per version, as the platform's work (ADR-0061) |
 | `POSTHOG_HOST` | api, worker | with the key | — (off) | A self-hosted PostHog that gets a pseudonymous copy of learning events from the worker (type, platform, duration; an HMAC of the user id), ADR-0067 |
 | `POSTHOG_API_KEY` | api, worker | with the host | — (off) | The PostHog project's key |
-| `CLAMAV_URL` | worker | no | — (uploads not scanned) | ClamAV's clamd, `tcp://host:3310`: uploads are scanned and infected ones quarantined (ADR-0041) |
+| `CLAMAV_URL` | worker | when `SCAN_MODE=local`, or when `SCAN_MODE` is unset and scanning should run | — | ClamAV's clamd, `tcp://host:3310` (ADR-0041). Ignored when `SCAN_MODE` is `remote` or `off` |
+| `SCAN_MODE` | api, worker | no | unset | `remote`, `local` or `off` (ADR-0102). Unset keeps the older rule: `CLAMAV_URL` means local, otherwise nothing is scanned. `remote` marks each new upload `scanResult=PENDING` and does not serve it until the scan service says it is clean |
+| `SCANNER_URL` | api, worker | when `remote` | — | The scan service, `http://<private-ip>:8080`. Outside development the host must be a private IPv4 address |
+| `SCANNER_SECRET` | api, worker | when `remote` (secret) | — | HMAC key shared with the scan service, at least 32 characters. `openssl rand -hex 32` |
+| `SCANNER_TIMEOUT_MS` | api, worker | no | `180000` | How long one scan request may take. The worker tries three times inside a circuit breaker |
 | `API_HOST` | api | no | `0.0.0.0` | Bind address |
 | `API_PORT` | api | no | `4000` | HTTP + WebSocket port |
 | `CORS_ORIGINS` | api | yes | — | Comma-separated allow-list (§7.2) |
@@ -161,6 +165,27 @@ LinkedIn has no app variable: it does not redirect to app schemes.
 `GOOGLE_SERVICES_JSON` (build time, not `EXPO_PUBLIC_`): path of the variant's Firebase Android config,
 `firebase/<variant>/google-services.json` (git-ignored), applied with the Google Services Gradle plugin 4.5.0 when the
 file exists. Phase 3 (ADR-0021) adds `GOOGLE_SERVICE_INFO_PLIST`, its iOS counterpart, with FCM.
+
+## Scan service host (ADR-0102)
+
+Read by `apps/scanner` only, from `/opt/lvn-scan/scanner.env` on the scanner instance. The API and the worker do not
+have these. The service has no `DATABASE_URL` and no `S3_*` credentials. `docs/ops/scanner-host.md` is the runbook.
+
+| Variable | Default | What it is |
+| --- | --- | --- |
+| `SCANNER_PRIVATE_IP` | — | The instance's private address. Compose sets `SCANNER_BIND` to it |
+| `SCANNER_BIND` | `127.0.0.1` | Address the process listens on. A public address is refused. `0.0.0.0` only with `SCANNER_ALLOW_UNSPECIFIED_BIND=true` |
+| `SCANNER_PORT` | `8080` | HTTP port |
+| `SCANNER_SECRET` | — | The same value as the API's `SCANNER_SECRET` |
+| `SCANNER_ALLOW_FROM` | — | Comma-separated source addresses, required when the bind address is not loopback. Set the scanner's private IP and the main instance's private IP |
+| `CLAMAV_URL` | `tcp://127.0.0.1:3310` | clamd on the same host. Compose sets this |
+| `SCANNER_MAX_BYTES` | `524288000` | Largest body, matching the 500 MB video limit |
+| `SCANNER_PDF_MAX_BYTES` | `52428800` | A larger PDF is not parsed; the verdict is unsafe |
+| `SCANNER_CONCURRENCY` | `1` | Scans at once. 2 is the maximum |
+| `SCANNER_SIGNATURE_MAX_AGE_HOURS` | `48` | `/readyz` fails when the ClamAV database is older |
+| `SCANNER_BODY_TIMEOUT_MS` | `180000` | How long the body and the scan may take |
+| `SCANNER_CLOCK_SKEW_SECONDS` | `300` | How far a signed timestamp may be from this host's clock |
+| `SCANNER_TEMP_DIR` | `/tmp` | Where the body is spooled. Compose mounts a 640 MB tmpfs here |
 
 ## Lightsail deployments (ADR-0096)
 

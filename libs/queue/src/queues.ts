@@ -65,7 +65,7 @@ export class Queues implements OnApplicationShutdown {
       this.log.error(`${queueName}/${job?.name ?? '?'} failed: ${err.message}`)
       // Retries are expected; only a job that has used up its attempts is an error to report.
       if (!job || job.attemptsMade >= (job.opts.attempts ?? 1)) {
-        reportError(err, { queue: queueName, jobId: job?.id, job: job?.name })
+        reportError(err, reportedFailureTags(err, { queue: queueName, jobId: job?.id, job: job?.name }))
         finished.add(1, { queue: queueName, outcome: 'failed' })
       }
     })
@@ -93,6 +93,17 @@ export class Queues implements OnApplicationShutdown {
     await Promise.all(this.workers.map((w) => w.close()))
     await Promise.all([...this.queues.values()].map((q) => q.close()))
   }
+}
+
+/** Tags for a job that has used up its attempts. A `userId` on the error is the file owner (ADR-0102). */
+export function reportedFailureTags(err: unknown, tags: { queue: string; jobId?: string; job?: string }): Record<string, string | undefined> {
+  return { ...tags, userId: errorUserId(err) }
+}
+
+function errorUserId(err: unknown): string | undefined {
+  if (!err || typeof err !== 'object' || !('userId' in err)) return undefined
+  const id = (err as { userId?: unknown }).userId
+  return typeof id === 'string' && id.length > 0 ? id : undefined
 }
 
 @Global()

@@ -20,6 +20,11 @@ export class MediaJobs implements OnApplicationBootstrap {
       NOTES_MEDIA_QUEUE,
       {
         'process-file': async (data, job) => this.media.process((data as { fileId: string }).fileId, job.attemptsMade + 1 >= (job.opts.attempts ?? 1)),
+        'retry-pending-scans': async () => {
+          const requeued = await this.media.requeuePending()
+          if (requeued) this.log.log(`requeued ${requeued} files waiting for a scan`)
+          return { requeued }
+        },
         reconcile: async () => {
           const r = await this.media.reconcile()
           this.log.log(`reconciled ${r.objects} objects: ${r.orphanObjects.length} without a row, ${r.missingObjects.length} rows without their object`)
@@ -29,5 +34,7 @@ export class MediaJobs implements OnApplicationBootstrap {
       1,
     )
     await this.queues.repeat(NOTES_MEDIA_QUEUE, 'reconcile', '40 3 * * *')
+    // Files left pending while the scan service was down (ADR-0102).
+    await this.queues.repeat(NOTES_MEDIA_QUEUE, 'retry-pending-scans', '7-59/10 * * * *')
   }
 }

@@ -108,8 +108,20 @@ const auth = z.object({
   WEB_REVALIDATE_URL: httpUrl.optional(),
   /** Shared with the web app's REVALIDATE_SECRET; at least 32 characters. */
   REVALIDATE_SECRET: z.string().min(32).optional(),
-  /** ClamAV's clamd for scanning uploads (ADR-0041), `tcp://host:3310`; without it uploads are not scanned (development). */
+  /** ClamAV's clamd for scanning uploads (ADR-0041), `tcp://host:3310`. Used when SCAN_MODE is local, or when SCAN_MODE is unset. */
   CLAMAV_URL: z.string().regex(/^tcp:\/\/[^:/]+:\d+$/, 'Use tcp://host:port').optional(),
+  /**
+   * ADR-0102. `remote`: the worker streams each upload to the scan service and does not serve it until the verdict is
+   * clean. `local`: clamd in this process's network (CLAMAV_URL), and a scanner error on the last attempt is still
+   * served (ADR-0041). `off`: nothing is scanned. Unset keeps that older rule: CLAMAV_URL means local, otherwise off.
+   */
+  SCAN_MODE: z.enum(['remote', 'local', 'off']).optional(),
+  /** The scan service, `http://<private-ip>:8080`. Required when SCAN_MODE=remote. A private IPv4 address outside development. */
+  SCANNER_URL: httpUrl.optional(),
+  /** Shared with the scan service. HMAC key, at least 32 characters. Required when SCAN_MODE=remote. */
+  SCANNER_SECRET: z.string().min(32).optional(),
+  /** How long one scan request may take, including the upload of the body. The worker retries inside this budget. */
+  SCANNER_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(180_000),
   /** k-anonymity range API for the breached-password check (§7.1); unset only in tests. */
   PASSWORD_BREACH_API_URL: z.url().optional(),
   /** Firebase project whose ID tokens signInWithGoogle accepts (ADR-0007). */
@@ -248,6 +260,38 @@ const analyticsConfigured = <T extends { POSTHOG_HOST?: string; POSTHOG_API_KEY?
   if (!!c.POSTHOG_HOST !== !!c.POSTHOG_API_KEY) ctx.addIssue({ code: 'custom', path: [c.POSTHOG_HOST ? 'POSTHOG_API_KEY' : 'POSTHOG_HOST'], message: 'POSTHOG_HOST and POSTHOG_API_KEY go together' })
 }
 
+/** An RFC1918 address. Loopback and public names are refused for the scan service outside development. */
+function isPrivateIpv4(host: string): boolean {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
+  if (!match) return false
+  const parts = match.slice(1).map(Number)
+  if (parts.some((p) => p > 255)) return false
+  const a = parts[0] ?? 0
+  const b = parts[1] ?? 0
+  if (a === 10) return true
+  if (a === 192 && b === 168) return true
+  return a === 172 && b >= 16 && b <= 31
+}
+
+const scanConfigured = <T extends { APP_ENV: string; SCAN_MODE?: 'remote' | 'local' | 'off'; CLAMAV_URL?: string; SCANNER_URL?: string; SCANNER_SECRET?: string }>(c: T, ctx: z.RefinementCtx) => {
+  if (c.SCAN_MODE === 'local' && !c.CLAMAV_URL) ctx.addIssue({ code: 'custom', path: ['CLAMAV_URL'], message: 'required when SCAN_MODE=local' })
+  if (c.SCAN_MODE === 'remote') {
+    if (!c.SCANNER_URL) ctx.addIssue({ code: 'custom', path: ['SCANNER_URL'], message: 'required when SCAN_MODE=remote' })
+    if (!c.SCANNER_SECRET) ctx.addIssue({ code: 'custom', path: ['SCANNER_SECRET'], message: 'required when SCAN_MODE=remote' })
+    if (c.SCANNER_URL && c.APP_ENV !== 'development') {
+      let host = ''
+      try {
+        host = new URL(c.SCANNER_URL).hostname
+      } catch {
+        host = ''
+      }
+      if (!isPrivateIpv4(host)) ctx.addIssue({ code: 'custom', path: ['SCANNER_URL'], message: 'must be a private IPv4 address outside development' })
+    }
+  } else if (c.SCANNER_URL || c.SCANNER_SECRET) {
+    ctx.addIssue({ code: 'custom', path: ['SCAN_MODE'], message: 'set SCAN_MODE=remote to use the scan service' })
+  }
+}
+
 /** The safe fetcher's allow list is for tests and stand-ins: production fetches public addresses only (ADR-0074). */
 const safeFetchConfigured = <T extends { APP_ENV: string; SAFE_FETCH_ALLOW_HOSTS: string[] }>(c: T, ctx: z.RefinementCtx) => {
   if (c.APP_ENV === 'production' && c.SAFE_FETCH_ALLOW_HOSTS.length) ctx.addIssue({ code: 'custom', path: ['SAFE_FETCH_ALLOW_HOSTS'], message: 'never set in production' })
@@ -282,7 +326,7 @@ const apiShape = backendBase
   .extend(ai.shape)
   .extend(analytics.shape)
 
-export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(githubAppConfigured).superRefine(searchConfigured).superRefine(aiConfigured).superRefine(analyticsConfigured).superRefine(safeFetchConfigured)
+export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(githubAppConfigured).superRefine(searchConfigured).superRefine(aiConfigured).superRefine(analyticsConfigured).superRefine(safeFetchConfigured).superRefine(scanConfigured)
 export type ApiConfig = z.infer<typeof apiConfigSchema>
 
 /**
@@ -302,6 +346,7 @@ export const workerConfigSchema = apiShape
   .superRefine(aiConfigured)
   .superRefine(analyticsConfigured)
   .superRefine(safeFetchConfigured)
+  .superRefine(scanConfigured)
 export type WorkerConfig = z.infer<typeof workerConfigSchema>
 
 const publicId = z.string().min(1).optional()
