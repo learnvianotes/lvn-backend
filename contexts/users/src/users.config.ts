@@ -11,7 +11,7 @@ export interface UsersConfig {
   digitalConsentAge: number
   /** ADR-0091: below this age the account is kept as AGE_BLOCKED and cannot sign in (0: everyone may register) */
   accountMinimumAge: number
-  /** Returned with AGE_RESTRICTED. SUPPORT_EMAIL, or support@learnvianotes.in when unset. */
+  /** Fallback contact when no non-deleted PLATFORM_ADMIN exists. SUPPORT_EMAIL, or support@learnvianotes.in when unset. */
   supportEmail: string
   passwordBreachApiUrl?: string
   firebaseProjectId?: string

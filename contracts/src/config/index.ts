@@ -103,8 +103,8 @@ const auth = z.object({
    */
   ACCOUNT_MINIMUM_AGE: z.coerce.number().int().min(0).max(21).default(18),
   /**
-   * Address returned with AGE_RESTRICTED so a client can say "contact admin at <email>".
-   * No grievance address is configured elsewhere; this is the default until SUPPORT_EMAIL is set.
+   * Fallback for userErrors.supportEmail when no non-deleted PLATFORM_ADMIN exists.
+   * Otherwise that field is the earliest platform admin by createdAt.
    */
   SUPPORT_EMAIL: z.email().default('support@learnvianotes.in'),
   /** ADR-0037: extra `REASON: phrase` lines for the rule-based moderation scorer; the built-in spam phrases apply without it. */

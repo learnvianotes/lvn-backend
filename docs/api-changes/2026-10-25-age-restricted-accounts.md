@@ -8,7 +8,7 @@
 ## What changes for clients
 
 - Minimum age is still `account_minimum_age` / `ACCOUNT_MINIMUM_AGE` (default **18**, not 13). `0` turns the gate off.
-- `signUp` and `completeRegistration` below that age return `userErrors` with `code: AGE_RESTRICTED`, `field: ["input", "dateOfBirth"]`, and `supportEmail` (env `SUPPORT_EMAIL`, default `support@learnvianotes.in`). Show "contact admin at \<email\>". The message also names that address.
+- `signUp` and `completeRegistration` below that age return `userErrors` with `code: AGE_RESTRICTED`, `field: ["input", "dateOfBirth"]`, and `supportEmail`. That field stays a single `String`: the earliest non-deleted `PLATFORM_ADMIN` by `createdAt`. `SUPPORT_EMAIL` (default `support@learnvianotes.in`) is used only when no such account exists. Show "contact admin at \<email\>". The message also names that address.
 - The account is created or kept with `accountStatus: AGE_BLOCKED`. No session. Nothing public. A later sign-in of that account returns `AGE_RESTRICTED` again. An address that already has an account is not changed by someone else's date of birth.
 - `BLOCKED` and `SUSPENDED` sign-in returns `VALIDATION` ("This account is blocked…") with `supportEmail`. Refresh of a non-active account is `UNAUTHENTICATED`.
 
@@ -36,4 +36,4 @@ input AdminDeleteUserInput { userId: UUID! reason: String! confirm: String! }
 - `SUSPENDED` requires a future `until`. `BLOCKED` is indefinite. Both revoke sessions.
 - `adminDeleteUser` requires `confirm: "DELETE"`. PII is anonymised, sessions and files go, and a tombstone keeps a SHA-256 of the email, the admin, the reason, and the time.
 
-`UserError.supportEmail: String` is nullable and `@shareable` on every subgraph.
+`UserError.supportEmail: String` stays a single nullable `String` (`@shareable` on every subgraph). It is not a list. The value is the earliest non-deleted `PLATFORM_ADMIN` by `createdAt`, cached for about a minute in each API process. `SUPPORT_EMAIL` is the fallback when none exists. The study publisher is never the contact.

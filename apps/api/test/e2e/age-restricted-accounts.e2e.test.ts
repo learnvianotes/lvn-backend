@@ -35,7 +35,7 @@ const yearsAgo = (years: number) => {
 describe('age-restricted accounts', () => {
   let t: TestApp
   let db: PrismaService
-  let admin: { id: string; token: string }
+  let admin: { id: string; email: string; token: string }
   let studentToken: string
   const email = `young-${newId().slice(0, 8)}@example.com`
   const password = 'correct horse battery staple'
@@ -47,7 +47,7 @@ describe('age-restricted accounts', () => {
     t = await createTestApp()
     db = t.app.get(PrismaService)
     const a = await seedUser(t.app, { globalRole: 'PLATFORM_ADMIN', verified: true, displayName: 'Platform Admin' })
-    admin = { id: a.id, token: tokenFor(t.config, a.id, undefined, ['PLATFORM_ADMIN']) }
+    admin = { id: a.id, email: a.email, token: tokenFor(t.config, a.id, undefined, ['PLATFORM_ADMIN']) }
     const s = await seedUser(t.app)
     studentToken = tokenFor(t.config, s.id)
   })
@@ -62,8 +62,8 @@ describe('age-restricted accounts', () => {
     expect(res.data!.signUp.userErrors).toEqual([{
       code: 'AGE_RESTRICTED',
       field: ['input', 'dateOfBirth'],
-      message: expect.stringMatching(/Contact an admin at support@learnvianotes\.in/),
-      supportEmail: 'support@learnvianotes.in',
+      message: expect.stringContaining(`Contact an admin at ${admin.email}`),
+      supportEmail: admin.email,
     }])
     const user = await db.user.findUniqueOrThrow({ where: { email } })
     userId = user.id
@@ -73,7 +73,7 @@ describe('age-restricted accounts', () => {
     expect((await t.gql<{ userByHandle: { id: string } | null }>(BY_HANDLE, { h: handle })).data!.userByHandle).toBeNull()
     const signIn = await t.gql<{ signIn: { session: null; userErrors: Err[] } }>(SIGN_IN, { input: { email, password } })
     expect(signIn.data!.signIn.session).toBeNull()
-    expect(signIn.data!.signIn.userErrors[0]).toMatchObject({ code: 'AGE_RESTRICTED', supportEmail: 'support@learnvianotes.in' })
+    expect(signIn.data!.signIn.userErrors[0]).toMatchObject({ code: 'AGE_RESTRICTED', supportEmail: admin.email })
   })
 
   it('lets only a platform admin list and correct the date of birth', async () => {
@@ -112,7 +112,7 @@ describe('age-restricted accounts', () => {
     const blocked = await t.gql<{ adminSetAccountStanding: { user: { accountStatus: string }; userErrors: Err[] } }>(STANDING, { input: { userId, status: 'BLOCKED', reason: 'Spam reports' } }, admin.token)
     expect(blocked.data!.adminSetAccountStanding).toEqual({ user: { accountStatus: 'BLOCKED', statusReason: 'Spam reports' }, userErrors: [] })
     const again = await t.gql<{ signIn: { session: null; userErrors: Err[] } }>(SIGN_IN, { input: { email, password } })
-    expect(again.data!.signIn.userErrors[0]).toMatchObject({ code: 'VALIDATION', supportEmail: 'support@learnvianotes.in' })
+    expect(again.data!.signIn.userErrors[0]).toMatchObject({ code: 'VALIDATION', supportEmail: admin.email })
     const refresh = await request(t.app.getHttpServer()).post('/graphql').set('x-lvn-client', 'mobile').send({ query: REFRESH, variables: { input: { refreshToken } } })
     expect(refresh.body.errors[0].extensions.code).toBe('UNAUTHENTICATED')
     expect((await t.gql<{ userByHandle: { id: string } | null }>(BY_HANDLE, { h: handle })).data!.userByHandle).toBeNull()

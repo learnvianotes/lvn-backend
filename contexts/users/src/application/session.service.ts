@@ -10,6 +10,7 @@ import { SESSION_TTL_DAYS } from '../domain/rules'
 import { isStudyPublisher } from '../domain/study-publisher'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { AccessGate } from './access-gate'
+import { SupportContact } from './support-contact'
 import { randomToken, sha256 } from './secrets'
 
 export interface DeviceInfo {
@@ -35,7 +36,6 @@ const DAY_MS = 24 * 60 * 60 * 1000
 @Injectable()
 export class SessionService {
   private readonly signer: AccessTokenSigner
-  private readonly supportEmail: string
 
   constructor(
     private readonly db: PrismaService,
@@ -43,16 +43,16 @@ export class SessionService {
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(USERS_CONFIG) config: UsersConfig,
     private readonly access: AccessGate,
+    private readonly support: SupportContact,
   ) {
     this.signer = new AccessTokenSigner(config.jwtPrivateKey, config.jwtIssuer, config.tokenAudience)
-    this.supportEmail = config.supportEmail
   }
 
   /** A new session family for a user who just proved who they are. */
   async start(userId: string, device: DeviceInfo): Promise<IssuedSession> {
     const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, select: { globalRole: true, email: true, accountStatus: true } })
     if (isStudyPublisher(user)) throw Errors.forbidden('This account cannot sign in.')
-    const refused = refusalError(user.accountStatus, this.supportEmail)
+    const refused = refusalError(user.accountStatus, await this.support.email())
     if (refused) throw refused
     const familyId = newId()
     const refreshToken = randomToken()

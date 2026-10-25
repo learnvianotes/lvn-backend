@@ -13,7 +13,7 @@ export class AppError extends Error {
     readonly field?: string[],
     /** Seconds until a RATE_LIMITED caller may retry */
     readonly retryAfter?: number,
-    /** Set on AGE_RESTRICTED (and a blocked sign-in): the address a client shows as "contact admin at <email>". */
+    /** One address on AGE_RESTRICTED and on a blocked sign-in. The caller resolves the platform admin. */
     readonly supportEmail?: string,
   ) {
     super(message)

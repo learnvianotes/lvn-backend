@@ -27,6 +27,7 @@ import { randomToken, sha256 } from './secrets'
 import { AccessGate } from './access-gate'
 import { AgeBlockService } from './age-block.service'
 import { PlatformSettingsStore } from './platform-settings.store'
+import { SupportContact } from './support-contact'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
 
 export interface SignUpInput {
@@ -65,6 +66,7 @@ export class AuthService {
     private readonly settings: PlatformSettingsStore,
     private readonly access: AccessGate,
     private readonly ageBlock: AgeBlockService,
+    private readonly support: SupportContact,
   ) {}
 
   async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string): Promise<SignUpResult> {
@@ -82,7 +84,7 @@ export class AuthService {
     if (isBelowMinimumAge(dateOfBirth, this.settings.minimumAge())) {
       const passwordHash = await this.passwords.hash(input.password)
       await this.ageBlock.holdSignUp({ email, displayName, dateOfBirth, passwordHash, globalRole: role })
-      throw ageRestrictedError(this.config.supportEmail, ['input', 'dateOfBirth'])
+      throw ageRestrictedError(await this.support.email(), ['input', 'dateOfBirth'])
     }
     const existing = await this.db.user.findUnique({
       where: { email },

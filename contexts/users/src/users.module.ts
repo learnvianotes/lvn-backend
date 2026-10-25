@@ -45,6 +45,7 @@ import { USERS_CONFIG, type UsersConfig } from './users.config'
 import { AccountAdminService } from './application/account-admin.service'
 import { AccountDeletionService } from './application/account-deletion.service'
 import { AgeBlockService } from './application/age-block.service'
+import { SupportContact } from './application/support-contact'
 import { AccountResolver } from './graphql/account.resolver'
 import { AccessAllowlistResolver } from './graphql/access.resolver'
 import { AnalyticsOptOutResolver, AnalyticsResolver } from './graphql/analytics.resolver'
@@ -98,6 +99,7 @@ export class UsersModule {
         ProfileService,
         ConsentService,
         DataExportService,
+        SupportContact,
         AgeBlockService,
         AccountAdminService,
         AccountDeletionService,

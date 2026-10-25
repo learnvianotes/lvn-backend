@@ -8,6 +8,7 @@ import { ageRestrictedError, refusalError } from '../../src/domain/account-statu
 import { TERMS_VERSION } from '../../src/domain/rules'
 
 const SUPPORT = 'support@learnvianotes.in'
+const ADMIN_EMAIL = 'earliest-admin@learnvianotes.in'
 const pem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }) as string
 
 function rejection(run: () => Promise<unknown>): Promise<AppError> {
@@ -51,6 +52,7 @@ describe('AuthService age gate', () => {
       { minimumAge: () => opts.minimum ?? 18 } as never,
       { assertAllowed: async () => undefined, roleFor: async () => 'STUDENT' } as never,
       { holdSignUp: hold } as never,
+      { email: async () => ADMIN_EMAIL } as never,
     )
     return { service, hold, start }
   }
@@ -66,7 +68,8 @@ describe('AuthService age gate', () => {
   it('keeps an under-age sign-up and returns AGE_RESTRICTED', async () => {
     const { service, hold, start } = auth()
     const err = await rejection(() => service.signUp(input, { client: 'web' }))
-    expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, supportEmail: SUPPORT, field: ['input', 'dateOfBirth'] })
+    expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, supportEmail: ADMIN_EMAIL, field: ['input', 'dateOfBirth'] })
+    expect(err.message).toContain(`Contact an admin at ${ADMIN_EMAIL}`)
     expect(hold).toHaveBeenCalledWith(expect.objectContaining({ email: 'young@example.com', passwordHash: 'hashed-password', globalRole: 'STUDENT' }))
     expect(start).not.toHaveBeenCalled()
   })
@@ -100,7 +103,7 @@ describe('RegistrationService age gate', () => {
       { holdRegistration: held } as never,
       { publish: async () => undefined } as never,
       { minimumAge: () => 18 } as never,
-      { supportEmail: SUPPORT } as never,
+      { email: async () => ADMIN_EMAIL } as never,
     )
     return { service, held }
   }
@@ -108,7 +111,7 @@ describe('RegistrationService age gate', () => {
   it('holds the provider account instead of erasing it', async () => {
     const { service, held } = registration()
     const err = await rejection(() => service.complete('google-1', { displayName: 'Young One', dateOfBirth: '2012-01-01', acceptedTermsVersion: TERMS_VERSION }))
-    expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, supportEmail: SUPPORT })
+    expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, supportEmail: ADMIN_EMAIL })
     expect(held).toHaveBeenCalledWith('google-1', 'Young One', new Date('2012-01-01T00:00:00.000Z'))
   })
 
@@ -150,16 +153,17 @@ describe('SessionService standing', () => {
       { publish: async () => undefined } as never,
       { jwtPrivateKey: pem, jwtIssuer: 'http://localhost', tokenAudience: 'lvn', supportEmail: SUPPORT } as never,
       { allows: async () => true } as never,
+      { email: async () => ADMIN_EMAIL } as never,
     )
     return { service, created, revokedFamilies }
   }
 
   it('refuses a new session for an age-blocked or blocked account', async () => {
     const age = sessions('AGE_BLOCKED')
-    expect(await rejection(() => age.service.start('u', { client: 'web' }))).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, supportEmail: SUPPORT })
+    expect(await rejection(() => age.service.start('u', { client: 'web' }))).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, supportEmail: ADMIN_EMAIL })
     expect(age.created).toEqual([])
     const blocked = sessions('BLOCKED')
-    expect(await rejection(() => blocked.service.start('u', { client: 'web' }))).toMatchObject({ code: ErrorCode.VALIDATION, supportEmail: SUPPORT })
+    expect(await rejection(() => blocked.service.start('u', { client: 'web' }))).toMatchObject({ code: ErrorCode.VALIDATION, supportEmail: ADMIN_EMAIL })
     const ok = sessions('ACTIVE')
     const issued = await ok.service.start('u', { client: 'web' })
     expect(issued.refreshToken).toMatch(/^[A-Za-z0-9_-]+$/)

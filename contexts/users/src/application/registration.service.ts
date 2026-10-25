@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
@@ -7,6 +6,7 @@ import { ageRestrictedError } from '../domain/account-status'
 import { dateOfBirthSchema, displayNameSchema, isBelowMinimumAge, TERMS_VERSION } from '../domain/rules'
 import { AgeBlockService } from './age-block.service'
 import { PlatformSettingsStore } from './platform-settings.store'
+import { SupportContact } from './support-contact'
 import { InstitutionalEmailService } from './institutional-email.service'
 import { parseField } from './input'
 
@@ -31,7 +31,7 @@ export class RegistrationService {
     private readonly ageBlock: AgeBlockService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     private readonly settings: PlatformSettingsStore,
-    @Inject(USERS_CONFIG) private readonly config: UsersConfig,
+    private readonly support: SupportContact,
   ) {}
 
   async complete(userId: string, input: RegistrationDetails): Promise<void> {
@@ -45,7 +45,7 @@ export class RegistrationService {
     if (input.institutionalEmail) await this.institutional.check(input.institutionalEmail, ['input', 'institutionalEmail'])
     if (isBelowMinimumAge(dateOfBirth, this.settings.minimumAge())) {
       await this.ageBlock.holdRegistration(userId, displayName, dateOfBirth)
-      throw ageRestrictedError(this.config.supportEmail, ['input', 'dateOfBirth'])
+      throw ageRestrictedError(await this.support.email(), ['input', 'dateOfBirth'])
     }
 
     await this.db.$transaction([
