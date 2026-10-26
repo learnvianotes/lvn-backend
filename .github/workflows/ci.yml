@@ -15,7 +15,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with: { node-version: 24, cache: pnpm }
@@ -51,7 +51,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://lvn:lvn@localhost:5432/lvn
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with: { node-version: 24, cache: pnpm }
@@ -64,8 +64,8 @@ jobs:
     # The backend image (infra/docker/api.Dockerfile): API, worker and migrations from one build.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
         with:
           context: .
@@ -81,7 +81,7 @@ jobs:
     defaults:
       run: { working-directory: workers/pdf-engine }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with: { version: 0.11.31 }
       - run: uv sync --frozen --python 3.12
@@ -94,7 +94,7 @@ jobs:
     defaults:
       run: { working-directory: infra/terraform }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: hashicorp/setup-terraform@v4
         with: { terraform_version: 1.9.8 }
       - run: terraform fmt -check -recursive
@@ -115,7 +115,7 @@ jobs:
   secrets:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       # The free gitleaks CLI (gitleaks-action needs a paid licence for an organisation's repositories): a pinned
       # release, checked against its published checksum. Scans the whole history; .gitleaksignore (repository root)
@@ -133,7 +133,7 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with: { node-version: 24, cache: pnpm }

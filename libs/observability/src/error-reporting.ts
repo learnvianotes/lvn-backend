@@ -59,6 +59,11 @@ const DROPPED_INTEGRATIONS = new Set(['LocalVariables', 'LocalVariablesAsync', '
  * Sentry for unexpected exceptions only (§16.5): no performance tracing (OpenTelemetry does that), no personal data.
  * Events keep the request id, operation, queue and job id as tags, and user.id when the account is known.
  * A failed scan passes the file owner's id. Email, name, cookies, bodies, query strings and most headers are removed.
+ *
+ * v11 (`@sentry/node` 11): `sendDefaultPii` is gone and an unset `dataCollection` collects personal data.
+ * The block below is the v10 `sendDefaultPii: false` baseline, with stack frames and queue payloads off as well.
+ * `tracesSampleRate` stays unset (error `sampleRate` is 1) and `enableOpenTelemetrySetup` stays off, so Sentry
+ * does not register a tracer provider next to this process's OpenTelemetry SDK.
  */
 export function startErrorReporting(options: ErrorReportingOptions): boolean {
   configuredRelease = options.release
@@ -68,10 +73,25 @@ export function startErrorReporting(options: ErrorReportingOptions): boolean {
     environment: options.env,
     release: options.release,
     initialScope: { tags: { service: options.service } },
-    sendDefaultPii: false,
+    sampleRate: 1,
     includeLocalVariables: false,
+    dataCollection: {
+      userInfo: false,
+      cookies: false,
+      httpHeaders: {
+        request: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+        response: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+      },
+      httpBodies: [],
+      urlQueryParams: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+      genAI: { inputs: false, outputs: false },
+      databaseQueryData: false,
+      graphQL: { document: false, variables: false },
+      queues: false,
+      stackFrameVariables: false,
+      frameContextLines: 0,
+    },
     integrations: (defaults) => defaults.filter((i) => !DROPPED_INTEGRATIONS.has(i.name)),
-    skipOpenTelemetrySetup: true,
     transport: options.transport,
     beforeSend: (event) => scrubEvent(event),
     beforeBreadcrumb: (crumb) => ({ ...crumb, data: crumb.data?.url ? { url: String(crumb.data.url).split('?')[0] } : undefined }),
