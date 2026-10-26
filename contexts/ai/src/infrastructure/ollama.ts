@@ -74,19 +74,8 @@ export class OllamaProvider implements AiProviderAdapter {
     return (json.models ?? []).map((m) => m.name).sort()
   }
 
-  private async post(path: string, body: object, timeoutMs: number): Promise<Response> {
-    let res: Response
-    try {
-      res = await fetch(`${this.url.replace(/\/$/, '')}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) })
-    } catch (e) {
-      const timeout = (e as Error).name === 'TimeoutError'
-      throw new ProviderError(`ollama ${path}: ${timeout ? `no answer in ${timeoutMs} ms` : (e as Error).message}`, true)
-    }
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      // 5xx and 429 are worth another try; 4xx (an unknown model, a bad request) are not.
-      throw new ProviderError(`ollama ${path}: ${res.status} ${text.slice(0, 200)}`, res.status >= 500 || res.status === 429)
-    }
-    return res
+  private post(path: string, body: object, timeoutMs: number): Promise<Response> {
+    // Same guarded call as the other providers: no redirects, and no metadata or link-local address.
+    return callProvider(`ollama ${path}`, `${this.url.replace(/\/$/, '')}${path}`, {}, body, timeoutMs)
   }
 }
