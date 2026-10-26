@@ -5,10 +5,13 @@ packages:
   - contracts
 
 # One graphql-js in the process: Apollo Gateway, the subgraphs and Nest must share its classes.
-# Federation packages stay on one release so the gateway, composition and subgraphs agree.
+# Gateway and composition stay on federation-internals 2.14.4 (there is no 2.15 of those packages).
+# @apollo/subgraph 2.15 is the graphql-js rewrite and no longer depends on federation-internals;
+# the override keeps a single copy. graphql stays on 16: Apollo Server, Gateway, composition and
+# subgraph 2.15 all peer on ^16 only. Nest would accept graphql 17; Apollo would not.
 overrides:
   graphql: 16.14.2
-  '@apollo/subgraph': 2.14.4
+  '@apollo/subgraph': 2.15.1
   '@apollo/federation-internals': 2.14.4
   # @types/ssh2@1 still asks for @types/node 18. One Node type package for the whole workspace.
   '@types/node': 26.6.5

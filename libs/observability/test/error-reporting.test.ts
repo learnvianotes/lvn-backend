@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/node'
-import type { ErrorEvent } from '@sentry/node'
+import type { ErrorEvent, NodeOptions } from '@sentry/node'
 import { logContext } from '../src/log-context'
 import { flushErrors, reportError, scrubEvent, setBackendErrorSink, startErrorReporting } from '../src/error-reporting'
 
@@ -77,6 +77,14 @@ describe('reportError user id', () => {
       dsn: 'https://publickey@o0.ingest.sentry.io/0',
       transport: () => ({ send: async (envelope: unknown) => (sent.push(envelope as Envelope), {}), flush: async () => true }),
     })
+  })
+
+  it('sends every error, samples no traces, and tags the environment', () => {
+    const options = Sentry.getClient()?.getOptions() as NodeOptions | undefined
+    expect(options?.environment).toBe('development')
+    expect(options?.sampleRate).toBe(1)
+    expect(options?.tracesSampleRate).toBeUndefined()
+    expect(options?.enableOpenTelemetrySetup).toBe(false)
   })
 
   const events = () => sent.flatMap(([, items]) => items.filter(([h]) => h.type === 'event').map(([, payload]) => payload))
