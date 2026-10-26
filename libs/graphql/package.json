@@ -14,7 +14,7 @@
     "@apollo/composition": "2.14.4",
     "@apollo/gateway": "2.14.4",
     "@apollo/server": "^5.5.1",
-    "@apollo/subgraph": "2.14.4",
+    "@apollo/subgraph": "2.15.1",
     "@lvn-backend/errors": "workspace:*",
     "@lvn-backend/observability": "workspace:*",
     "@lvn/contracts": "workspace:@learnvianotes/contracts@*",
