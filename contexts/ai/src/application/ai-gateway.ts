@@ -7,6 +7,7 @@ import { ENTITLEMENTS, PLATFORM_SETTINGS, fallbackPlatformSettings, type Entitle
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
 import { mendAll } from '../domain/escapes'
+import { ID_CARD_CHECK_TASK } from '../domain/id-card-route'
 import { HttpProviderError, MODEL_UNSUPPORTED, ProviderError, UnsupportedInput, type ChatMessage } from '../domain/provider'
 import { AiProviders, type Target } from './ai-providers'
 import { PromptLibrary } from './prompts'
@@ -138,7 +139,8 @@ export class AiGateway {
 
   /**
    * Reads one ID image or PDF. The prompt has no account fields: only these bytes are attached.
-   * Gemini Flash is preferred, then GPT-4o-mini, then the default private chat model.
+   * An admin's ID_CARD_CHECK route is used when one is set, and only if that connection may receive private data.
+   * With no route: a private Gemini Flash, then GPT-4o-mini, then any other private chat model.
    * A provider that cannot take the file is skipped. Nothing about the image is logged.
    */
   async extractIdCard(imageBase64: string): Promise<IdCardReading> {
@@ -148,7 +150,7 @@ export class AiGateway {
     for (const target of targets) {
       try {
         const generated = await this.complete(target, {
-          task: 'ID_CARD_CHECK',
+          task: ID_CARD_CHECK_TASK,
           userId: null,
           private: true,
           prompt: 'id-card-check',

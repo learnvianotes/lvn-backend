@@ -5,6 +5,7 @@ import { AUDIT, POLICY, type Audit, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
 import { presetOf, PROVIDER_PRESETS, ROUTABLE_TASKS } from '../domain/catalog'
+import { ID_CARD_CHECK_TASK } from '../domain/id-card-route'
 import { classifyModels, rejectionFor, useForTask, type AiModelUse } from '../domain/model-capabilities'
 import { ProviderError, type AiProviderAdapter, type AiProviderKind } from '../domain/provider'
 import { parseProviderUrl, ProviderUrlError } from '../domain/provider-url'
@@ -172,6 +173,7 @@ export class AiSettingsService {
     if (!model || model.length > 200) throw Errors.validation('Name the model that answers this task.', ['input', 'model'])
     const connection = input.connectionId ? await this.db.aiConnection.findUnique({ where: { id: input.connectionId } }) : null
     if (input.connectionId && !connection) throw Errors.notFound('That connection no longer exists.')
+    if (input.task === ID_CARD_CHECK_TASK && connection && !connection.mayReceivePrivate) throw Errors.validation('ID cards can only go to a connection that may receive private data.', ['input', 'connectionId'])
     if (connection && input.task === 'EMBED' && !presetOf(connection.kind).canEmbed) throw Errors.validation(`${presetOf(connection.kind).name} has no embeddings.`, ['input', 'connectionId'])
     if (connection && input.task === 'TRANSCRIBE' && !presetOf(connection.kind).canHear) throw Errors.validation(`${presetOf(connection.kind).name} cannot hear recordings.`, ['input', 'connectionId'])
     if (connection) rejectUnlessSupported(model, connection.kind, useForTask(input.task), 'model')
