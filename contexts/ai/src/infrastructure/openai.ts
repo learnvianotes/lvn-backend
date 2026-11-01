@@ -1,5 +1,6 @@
+import { randomBytes } from 'node:crypto'
 import { EMBEDDING_DIMENSIONS, HttpProviderError, mediaTypeOf, normalized, ProviderError, type AiProviderAdapter, type ChatMessage, type ChatRequest, type ChatResult, type EmbedResult } from '../domain/provider'
-import { callProvider, serverSentEvents } from './http'
+import { callProvider, callProviderBytes, serverSentEvents } from './http'
 
 type Part =
   | { type: 'text'; text: string }
@@ -78,6 +79,19 @@ export class OpenAiProvider implements AiProviderAdapter {
       if (part.usage) usage = part.usage
     }
     return { text, promptTokens: usage?.prompt_tokens ?? 0, completionTokens: usage?.completion_tokens ?? 0 }
+  }
+
+  /** Whisper and *-transcribe. The body is multipart, not the JSON chat call. */
+  async transcribe(request: { model: string; wav: Uint8Array; timeoutMs: number }): Promise<{ text: string; promptTokens: number }> {
+    const form = multipart([
+      { name: 'model', value: request.model },
+      { name: 'response_format', value: 'json' },
+      { name: 'file', file: { filename: 'audio.wav', type: 'audio/wav', bytes: Buffer.from(request.wav) } },
+    ])
+    const res = await callProviderBytes(this.name, this.url('/audio/transcriptions'), this.headers(), form.body, form.contentType, request.timeoutMs)
+    const json = (await res.json()) as { text?: string; error?: { message?: string } }
+    if (json.error || typeof json.text !== 'string') throw new ProviderError(`${this.name}: ${json.error?.message ?? 'no transcript'}`, false)
+    return { text: json.text, promptTokens: 0 }
   }
 
   async embed(model: string, inputs: string[], timeoutMs: number): Promise<EmbedResult> {
@@ -175,4 +189,20 @@ export class OpenAiProvider implements AiProviderAdapter {
   private post(path: string, body: object, timeoutMs: number) {
     return callProvider(this.name, this.url(path), this.headers(), body, timeoutMs)
   }
+}
+
+function multipart(fields: { name: string; value?: string; file?: { filename: string; type: string; bytes: Buffer } }[]): { body: Buffer; contentType: string } {
+  const boundary = `lvn${randomBytes(12).toString('hex')}`
+  const parts: Buffer[] = []
+  for (const field of fields) {
+    if (field.file) {
+      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${field.name}"; filename="${field.file.filename}"\r\nContent-Type: ${field.file.type}\r\n\r\n`))
+      parts.push(field.file.bytes)
+      parts.push(Buffer.from('\r\n'))
+    } else {
+      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${field.name}"\r\n\r\n${field.value ?? ''}\r\n`))
+    }
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`))
+  return { body: Buffer.concat(parts), contentType: `multipart/form-data; boundary=${boundary}` }
 }

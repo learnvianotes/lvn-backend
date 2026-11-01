@@ -8,8 +8,9 @@ export type AiModelKind = 'CHAT' | 'EMBEDDING' | 'IMAGE' | 'AUDIO' | 'REALTIME' 
 
 /**
  * A picker on /admin/ai. A model is offered for a use only when this app's code can call it for that use.
- * IMAGE, TTS, AUDIO, REALTIME and MODERATION are pickers too, and they stay empty: those provider APIs are not called.
- * TRANSCRIBE is a recording sent through the chat API (`input_audio`), not the audio-transcriptions API.
+ * IMAGE, TTS, AUDIO, REALTIME and MODERATION are pickers too, and they stay empty.
+ * TRANSCRIBE offers models that can hear. Whisper and *-transcribe go to POST /audio/transcriptions.
+ * gpt-audio, Gemini and Gemma take the recording on the chat call (`input_audio`).
  */
 export type AiModelUse = 'CHAT' | 'EMBEDDING' | 'TRANSCRIBE' | 'IMAGE' | 'TTS' | 'AUDIO' | 'REALTIME' | 'MODERATION'
 
@@ -60,8 +61,8 @@ export const MODEL_RULES: readonly ModelRule[] = [
   { id: /embedding|(^|-)embed($|-)/, kind: 'EMBEDDING', supports: EMBED },
   { id: /(^|-)tts($|-)/, kind: 'TTS', supports: NONE },
   { id: /realtime|(^|-)live($|-)/, kind: 'REALTIME', supports: NONE },
-  // Whisper and *-transcribe speak the audio transcriptions API, which this app does not call.
-  { id: /transcribe|whisper/, kind: 'AUDIO', supports: NONE },
+  // Whisper and *-transcribe answer POST /audio/transcriptions. Realtime ids are already taken by the rule above.
+  { id: /transcribe|whisper/, kind: 'AUDIO', supports: HEAR },
   // gpt-audio and the audio-preview models take a recording on the chat request, which is how TRANSCRIBE hears.
   { id: /^gpt-audio($|-)|audio-preview/, kind: 'AUDIO', supports: HEAR },
   { id: /gpt-image|chatgpt-image|(^|-)image($|-)|^dall-e|^imagen|^dalle/, kind: 'IMAGE', supports: NONE },
@@ -120,6 +121,18 @@ export function classifyModels(ids: readonly string[], provider: AiProviderKind)
   return { all, pickers: MODEL_USES.map((use) => ({ use, models: all.filter((model) => model.supports.includes(use)) })) }
 }
 
+/** Whisper and *-transcribe (not a realtime or live model) use POST /audio/transcriptions. Everything else that hears uses the chat call. */
+export function audioTransport(model: string): 'chat' | 'transcriptions' {
+  const name = bareModelId(model)
+  if (/realtime|(^|-)live($|-)/.test(name)) return 'chat'
+  if (/transcribe|whisper/.test(name)) return 'transcriptions'
+  return 'chat'
+}
+
+export function modelCanHear(model: string, provider: AiProviderKind): boolean {
+  return classifyModel(model, provider).supports.includes('TRANSCRIBE')
+}
+
 /** The picker a task route's model has to come from. */
 export function useForTask(task: string): AiModelUse {
   if (task === 'EMBED') return 'EMBEDDING'
@@ -141,10 +154,10 @@ const USE_LABEL: Record<AiModelUse, string> = {
 const NEED: Record<AiModelUse, string> = {
   CHAT: 'Choose a chat model.',
   EMBEDDING: 'Choose an embedding model that can give 768 numbers.',
-  TRANSCRIBE: 'Choose a chat model that can hear recordings.',
+  TRANSCRIBE: 'Choose a model from the Transcribe list.',
   IMAGE: 'This app does not generate images.',
   TTS: 'This app does not speak.',
-  AUDIO: 'This app does not call the audio transcriptions API.',
+  AUDIO: 'Whisper models are chosen on the Transcribe list.',
   REALTIME: 'This app does not use realtime models.',
   MODERATION: 'This app does not call moderation models.',
 }

@@ -168,8 +168,9 @@ export interface AiModelPicker {
   models: Array<AiListedModel>
 }
 
-/** A select on /admin/ai. IMAGE, TTS, AUDIO, REALTIME and MODERATION stay empty: this app does not call those APIs.
- * TRANSCRIBE is a recording sent through the chat API, not the audio-transcriptions API. */
+/** A select on /admin/ai. IMAGE, TTS, AUDIO, REALTIME and MODERATION stay empty.
+ * TRANSCRIBE offers models that can hear. Whisper and *-transcribe go to POST /audio/transcriptions.
+ * gpt-audio, Gemini and Gemma take the recording on the chat call. */
 export type AiModelUse = 'CHAT' | 'EMBEDDING' | 'TRANSCRIBE' | 'IMAGE' | 'TTS' | 'AUDIO' | 'REALTIME' | 'MODERATION'
 
 /** Who answers AI calls */
@@ -351,6 +352,18 @@ export interface MutationDeleteAiTaskRouteArgs {
   input: AiTaskRouteInput
 }
 
+export interface MutationTranscribeAudioArgs {
+  fileId: string
+}
+
+export interface MutationTranscribeCaptionClipArgs {
+  input: TranscribeCaptionClipInput
+}
+
+export interface MutationMakeNotesFromTranscriptArgs {
+  transcript: string
+}
+
 /** A note, owned by the notes subgraph; ai adds the viewer's AI results */
 export interface Note {
   id: string
@@ -373,6 +386,17 @@ export interface NoteProcessing {
 export interface NoteProcessingStep {
   task: AiTask
   status: AiArtifactStatus
+}
+
+export interface NotesFromTranscript {
+  noteId: string
+  title: string
+  summary: string
+}
+
+export interface NotesFromTranscriptPayload {
+  notes: NotesFromTranscript | null
+  userErrors: Array<UserError>
 }
 
 export interface OkPayload {
@@ -439,6 +463,23 @@ export interface SetAiDefaultsInput {
   embedConnectionId?: string | null
 }
 
+export interface TranscribeCaptionClipInput {
+  /** Base64 audio, at most about 15 seconds and 2.5 MB */
+  audioBase64: string
+  mimeType: string
+}
+
+export interface Transcript {
+  text: string
+  /** The recording was longer than 30 minutes and the rest was not transcribed */
+  cut: boolean
+}
+
+export interface TranscriptPayload {
+  transcript: Transcript | null
+  userErrors: Array<UserError>
+}
+
 export interface UserError {
   field: Array<string> | null
   message: string
@@ -447,4 +488,15 @@ export interface UserError {
   retryAfter: number | null
   /** One address on AGE_RESTRICTED and on a blocked sign-in: the earliest non-deleted platform admin (GlobalRole PLATFORM_ADMIN) by createdAt, or SUPPORT_EMAIL when none exists. */
   supportEmail: string | null
+}
+
+export interface VoiceCapture {
+  /** The browser API: SpeechRecognition (webkitSpeechRecognition where that is the name) */
+  api: string
+  interimResults: boolean
+  continuous: boolean
+  /** BCP-47 tags the apps may pass as the recognition language */
+  languages: Array<string>
+  /** The mutation to call with a short clip when the browser cannot caption */
+  streamingFallback: string
 }

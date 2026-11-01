@@ -1,12 +1,13 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common'
-import { Action, can, type Visibility } from '@lvn/contracts/domain'
+import { Action, can, PUBLIC_NOTES_REQUIRE_VERIFICATION, type Visibility } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { AUDIT, PEOPLE, type Audit, type People } from '@lvn-backend/facades'
+import { AUDIT, PEOPLE, PLATFORM_SETTINGS, type Audit, type People, type PlatformSettings } from '@lvn-backend/facades'
 import { decodeCursor, pageSize } from '@lvn-backend/graphql'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { noteFacts, visibleNotesWhere } from '../domain/note-access'
+import { gatePublic, visibilityChoices, type VisibilityChoice } from '../domain/visibility-choices'
 import { AttachmentsService } from './attachments.service'
 import { NoteModerationService } from './moderation.service'
 import type { SnapshotCard } from '../domain/snapshot'
@@ -29,38 +30,56 @@ export class SharingService implements OnModuleInit {
     @Inject(PEOPLE) private readonly people: People,
     @Inject(AUDIT) private readonly audit: Audit,
     @Inject(EVENT_BUS) private readonly events: EventBus,
+    @Inject(PLATFORM_SETTINGS) private readonly settings: PlatformSettings,
   ) {}
 
   onModuleInit(): void {
     this.events.subscribe('ConnectionChanged', ({ payload }) => this.onConnectionChanged(payload.userIds, payload.change))
   }
 
-  /** PRIVATE ⇄ SHARED ⇄ PUBLIC (§4.2). PUBLIC needs a published version, a verified account and no minor restriction. */
+  /** PRIVATE, SHARED, UNLISTED or PUBLIC. Public follows the admin setting; Unlisted is the link and is not listed. */
   async changeVisibility(ownerId: string, noteId: string, visibility: Visibility): Promise<OpenedNote> {
     const opened = await this.notes.require(ownerId, noteId, 'owner')
-    const { note, actor } = opened
+    const note = opened.note
+    const actor = this.gated(opened.actor)
     if (note.deletedAt) throw Errors.validation('Restore the note from the trash first.')
     if (note.visibility === visibility) return opened
     if (!can(actor, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: noteFacts(note, null), targetVisibility: visibility })) {
-      if (!actor.institutionVerified) throw Errors.forbidden('Verify your account to share notes.')
       if (visibility === 'PUBLIC' && actor.restrictedMinor) throw Errors.forbidden('Your account cannot make notes public.')
-      if (visibility === 'PUBLIC' && note.forkedFromVisibility) throw Errors.forbidden('This note is a copy of a note that was not public, so it cannot be made public.')
+      if (visibility === 'PUBLIC' && note.forkedFromVisibility && note.forkedFromVisibility !== 'PUBLIC' && note.forkedAsRole !== 'OWNER' && note.forkedAsRole !== 'EDITOR') {
+        throw Errors.forbidden('This note is a copy of a note that was not public, so it cannot be made public.')
+      }
+      if (visibility === 'PUBLIC') throw Errors.forbidden('Your account cannot make notes public.')
       throw Errors.forbidden()
     }
-    if (visibility === 'PUBLIC' && !note.publishedVersionId) throw Errors.validation('Publish the note first: readers see the published version.', ['input', 'visibility'])
-    if (visibility === 'PUBLIC' && (note.moderation === 'HIDDEN' || note.moderation === 'REMOVED')) {
+    const listed = visibility === 'PUBLIC' || visibility === 'UNLISTED'
+    if (listed && !note.publishedVersionId) throw Errors.validation('Publish the note first: readers see the published version.', ['input', 'visibility'])
+    if (listed && (note.moderation === 'HIDDEN' || note.moderation === 'REMOVED')) {
       throw Errors.forbidden('Moderators took this note off the public pages. You can appeal from the note.')
     }
     await this.db.note.update({ where: { id: noteId }, data: { visibility } })
     await this.audit.record({ actorId: ownerId, action: 'note.visibility', targetType: 'NOTE', targetId: noteId, metadata: { from: note.visibility, to: visibility } })
-    if (visibility === 'PUBLIC') {
+    if (visibility === 'PUBLIC' || visibility === 'UNLISTED') {
       // ADR-0037: the published version is screened first; a held note waits for a moderator.
-      if (await this.moderation.screen(noteId)) await this.events.publish('NotePublished', { noteId, versionId: note.publishedVersionId!, ownerId, visibility, kind: note.kind })
+      // Unlisted is screened the same way and then left out of search: no NotePublished.
+      const clear = await this.moderation.screen(noteId)
+      if (clear && visibility === 'PUBLIC') await this.events.publish('NotePublished', { noteId, versionId: note.publishedVersionId!, ownerId, visibility, kind: note.kind })
     } else if (note.visibility === 'PUBLIC') {
       // §4.2: leaving PUBLIC removes the note from search and recommendations (the listeners act on this).
       await this.events.publish('NoteUnpublished', { noteId, ownerId })
     }
     return (await this.notes.open(ownerId, noteId, actor))!
+  }
+
+  /** The owner's visibility control. Null is not asked for: the resolver shows this only to the owner. */
+  choices(actor: OpenedNote['actor'], note: OpenedNote['note']): VisibilityChoice[] {
+    if (!actor) return []
+    return visibilityChoices(this.gated(actor), note, note.publishedVersionId !== null)
+  }
+
+  /** Public is the admin switch unless the actor already carries the gate's answer. */
+  private gated(actor: NonNullable<OpenedNote['actor']>): NonNullable<OpenedNote['actor']> {
+    return gatePublic(actor, this.settings.boolean(PUBLIC_NOTES_REQUIRE_VERIFICATION, true))
   }
 
   /** Both are the teacher or a TA of one class (ADR-0013), from notes' copy of class membership (ADR-0046). */
@@ -222,6 +241,8 @@ export class SharingService implements OnModuleInit {
       if (cards.length) await tx.card.createMany({ data: cards.map((c) => ({ id: newId(), noteId: id, type: c.type, position: c.position, content: c.content as Prisma.InputJsonValue })) })
       if (topics.length) await tx.noteTopic.createMany({ data: topics.map((t) => ({ noteId: id, topicId: t.topicId })) })
       await this.attachments.carryOver(tx, noteId, id, cards)
+      await this.copyPages(tx, noteId, id)
+      await tx.note.update({ where: { id: noteId }, data: { forkCount: { increment: 1 } } })
     })
     if (usedVersion) await this.events.publish('NoteForked', { noteId: id, forkedFromNoteId: noteId, forkedFromVersionId: usedVersion, ownerId: viewerId })
     return (await this.notes.open(viewerId, id, actor))!
@@ -231,5 +252,19 @@ export class SharingService implements OnModuleInit {
     const { actor } = await this.notes.require(ownerId, noteId, 'owner')
     await this.db.note.update({ where: { id: noteId }, data: { forkingEnabled: enabled } })
     return (await this.notes.open(ownerId, noteId, actor))!
+  }
+
+  /** Pages travel with the copy. Image rows point at the same scanned files; the bytes are not copied. */
+  private async copyPages(tx: Prisma.TransactionClient, fromId: string, toId: string): Promise<void> {
+    const pages = await tx.notePage.findMany({ where: { noteId: fromId, deletedAt: null }, include: { images: true }, orderBy: [{ index: 'asc' }, { id: 'asc' }] })
+    for (const page of pages) {
+      const pageId = newId()
+      await tx.notePage.create({ data: { id: pageId, noteId: toId, index: page.index, drawing: page.drawing as Prisma.InputJsonValue } })
+      if (page.images.length) {
+        await tx.notePageImage.createMany({
+          data: page.images.map((image) => ({ id: newId(), pageId, fileId: image.fileId, x: image.x, y: image.y, width: image.width, height: image.height, rotation: image.rotation })),
+        })
+      }
+    }
   }
 }

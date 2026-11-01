@@ -1,4 +1,5 @@
 /** One admin-editable application setting (ADR-0101). Ports, URLs and secrets stay in the environment. */
+import { PUBLIC_NOTES_REQUIRE_VERIFICATION } from '@lvn/contracts/domain'
 
 export type SettingType = 'BOOLEAN' | 'INTEGER' | 'STRING'
 
@@ -246,6 +247,15 @@ export const SETTING_CATALOG: SettingDef[] = [
     nullable: false,
     min: 13,
     max: 21,
+  },
+  {
+    key: PUBLIC_NOTES_REQUIRE_VERIFICATION,
+    type: 'BOOLEAN',
+    category: 'notes',
+    description: 'When on, an unverified account cannot set a note or a quiz to Public. Private and Unlisted stay available. A missing row means on. A verification gate may set the actor flag mayPublishPublic, which wins over this switch.',
+    defaultValue: true,
+    environmentFallback: false,
+    nullable: false,
   },
 ]
 

@@ -35,9 +35,14 @@ interface PurposeRule {
   restricted: boolean
 }
 
-/** Purposes open so far; VOICE_NOTE arrives with its feature. */
+const AUDIO = Object.keys(NOTE_MEDIA).filter((mime) => mime.startsWith('audio/'))
+const PAGE_IMAGES = ['image/png', 'image/jpeg']
+
+/** Purposes open to clients. PAGE_IMAGE and VOICE_NOTE finish through completeUpload, so a remote scan still runs. */
 const PURPOSES: Partial<Record<FilePurposeKind, PurposeRule>> = {
   ATTACHMENT: { parentType: 'NOTE', mimeTypes: Object.keys(NOTE_MEDIA), maxBytes: (m) => NOTE_MEDIA[m]!, restricted: false },
+  PAGE_IMAGE: { parentType: 'NOTE', mimeTypes: PAGE_IMAGES, maxBytes: UploadLimits.image, restricted: false },
+  VOICE_NOTE: { parentType: 'NOTE', mimeTypes: AUDIO, maxBytes: UploadLimits.audio, restricted: false },
   // ADR-0018: notes to import — an LVN export, a ZIP of Markdown, or one Markdown or text file.
   IMPORT: { parentType: 'IMPORT_JOB', mimeTypes: ['application/zip', 'text/markdown', 'text/plain'], maxBytes: 200 * 1024 ** 2, restricted: false },
   AVATAR: { parentType: 'AVATAR', mimeTypes: IMAGES, maxBytes: UploadLimits.image, restricted: false },
@@ -117,8 +122,9 @@ export class FilesService implements Files {
       if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many documents today. Try again tomorrow.')
     }
     if (input.purpose === 'AVATAR' && input.parentId && input.parentId !== ownerId) throw Errors.forbidden()
-    if (input.purpose === 'ATTACHMENT') {
-      // Files go to a note the uploader may edit: its owner or a share editor (§5). Its readers then see them.
+    // A page image always belongs to a note. A voice note may stand alone (parent is the owner, so the orphan sweep leaves it).
+    const onANote = input.purpose === 'ATTACHMENT' || input.purpose === 'PAGE_IMAGE' || (input.purpose === 'VOICE_NOTE' && !!input.parentId)
+    if (onANote) {
       if (!input.parentId) throw Errors.validation('Say which note the file is for.', field('parentId'))
       await this.notes.require(ownerId, input.parentId, 'edit')
       const limit = await this.limiter.hit(`uploads:${ownerId}`, { max: 300, windowSeconds: 3600 })
@@ -130,7 +136,8 @@ export class FilesService implements Files {
     const id = newId()
     const bucket = rule.restricted ? this.config.restrictedBucket : this.config.bucket
     const storageKey = `${this.config.env}/${ownerId}/${id}/original`
-    const parentId = input.purpose === 'AVATAR' ? ownerId : input.purpose === 'ATTACHMENT' ? input.parentId! : null
+    const parentId = input.purpose === 'AVATAR' ? ownerId : input.purpose === 'ATTACHMENT' || input.purpose === 'PAGE_IMAGE' ? input.parentId! : input.purpose === 'VOICE_NOTE' ? (input.parentId ?? ownerId) : null
+    const attachToNote = input.purpose === 'ATTACHMENT' || (input.purpose === 'VOICE_NOTE' && !!input.parentId)
     await this.db.fileObject.create({
       data: {
         id,
@@ -144,7 +151,7 @@ export class FilesService implements Files {
         sizeBytes: BigInt(input.sizeBytes),
         originalFileName: fileName,
         expiresAt: new Date(Date.now() + PENDING_TTL_MS),
-        ...(input.purpose === 'ATTACHMENT' ? { attachments: { create: { noteId: parentId! } } } : {}),
+        ...(attachToNote ? { attachments: { create: { noteId: input.parentId! } } } : {}),
       },
     })
     // S3 metadata mirrors the identity fields so lifecycle rules and forensics work from S3 alone (§8.2).

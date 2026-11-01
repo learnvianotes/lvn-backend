@@ -32,7 +32,7 @@ export interface ModeratedNote {
   title: string
   /** The start of what readers see (the published version), for moderators */
   excerpt: string
-  visibility: 'PRIVATE' | 'SHARED' | 'PUBLIC'
+  visibility: 'PRIVATE' | 'SHARED' | 'UNLISTED' | 'PUBLIC'
   moderation: ModerationStateKind
   moderationReason: string | null
   deleted: boolean

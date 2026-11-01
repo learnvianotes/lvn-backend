@@ -53,6 +53,19 @@ export class SharingResolver {
     return n.opened.access === 'OWNER' ? n.sharedWithConnections : null
   }
 
+  @ResolveField('visibilityChoices')
+  visibilityChoices(@Parent() n: NoteParent) {
+    if (n.opened.access !== 'OWNER') return null
+    return this.sharing.choices(n.opened.actor, n)
+  }
+
+  @ResolveField('sharePath')
+  sharePath(@Parent() n: NoteParent) {
+    if (n.opened.access !== 'OWNER' || !n.publishedVersionId) return null
+    if (n.visibility !== 'UNLISTED' && n.visibility !== 'PUBLIC') return null
+    return `/n/${n.slug}-${n.id}`
+  }
+
   @Mutation('setNoteSharedWithConnections')
   @UseGuards(SignedInGuard)
   setNoteSharedWithConnections(@Args() { input }: { input: { noteId: string; shared: boolean } }, @CurrentViewer() viewer: Viewer): Promise<NotePayload> {

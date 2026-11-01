@@ -14,8 +14,9 @@ const list = (ids: string[]) => `[${ids.map(quote).join(',')}]`
 
 /**
  * `visibleNotesWhere` (domain/note-access) as a Typesense filter (§5: "a matching Typesense filter string"), for
- * documents that only ever hold published notes outside the trash. The owner; PUBLIC notes that are OK; SHARED or
- * PUBLIC notes, OK or held for review, shared with the viewer, a group of theirs or a class of theirs. Never a blocked
+ * documents that only ever hold published notes outside the trash. The owner; PUBLIC notes that are OK; SHARED,
+ * UNLISTED or PUBLIC notes, OK or held for review, shared with the viewer, a group of theirs or a class of theirs. An
+ * Unlisted note with no share is opened by its link, not by search. Never a blocked
  * person's. A test holds this to `visibleNotesWhere` on seeded data.
  */
 export function visibleNotesFilter(reach: SearchReach): string {
@@ -23,7 +24,7 @@ export function visibleNotesFilter(reach: SearchReach): string {
   if (!reach.viewerId) return open
   const me = quote(reach.viewerId)
   const through = [`sharedUserIds:=${me}`, ...(reach.groupIds.length ? [`groupIds:=${list(reach.groupIds)}`] : []), ...(reach.classroomIds.length ? [`classroomIds:=${list(reach.classroomIds)}`] : [])]
-  const shared = `(visibility:=[SHARED,PUBLIC] && moderation:=[OK,PENDING_REVIEW] && (${through.join(' || ')}))`
+  const shared = `(visibility:=[SHARED,UNLISTED,PUBLIC] && moderation:=[OK,PENDING_REVIEW] && (${through.join(' || ')}))`
   const readable = `(ownerId:=${me} || (${open}) || ${shared})`
   return reach.blockedIds.length ? `${readable} && ownerId:!=${list(reach.blockedIds)}` : readable
 }

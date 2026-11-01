@@ -12,6 +12,7 @@ import { AiEmbeddings } from './application/ai-embeddings'
 import { AskService } from './application/ask.service'
 import { PublicPipeline } from './application/public-pipeline'
 import { MediaInput } from './application/media-input'
+import { VoiceNotesService } from './application/voice-notes.service'
 import { NoteMaterial } from './application/note-material'
 import { AiPageVision } from './application/page-vision'
 import { AiSkillsReader } from './application/skills-reader'
@@ -22,6 +23,7 @@ import { AiResolver } from './graphql/ai.resolver'
 import { AiSettingsResolver } from './graphql/ai-settings.resolver'
 import { AiTasksResolver, NoteAiArtifactsResolver } from './graphql/ai-tasks.resolver'
 import { AskResolver } from './graphql/ai-ask.resolver'
+import { VoiceResolver } from './graphql/voice.resolver'
 import { InsightsResolver, NoteInsightsResolver } from './graphql/ai-insights.resolver'
 import { OllamaProvider } from './infrastructure/ollama'
 
@@ -51,6 +53,7 @@ export class AiModule {
         AiSettingsService,
         AiTasksService,
         MediaInput,
+        VoiceNotesService,
         NoteMaterial,
         AiPageVision,
         AiSkillsReader,
@@ -67,6 +70,7 @@ export class AiModule {
         NoteInsightsResolver,
         InsightsResolver,
         AiSettingsResolver,
+        VoiceResolver,
       ],
       exports: [AiGateway, AiAdminStats, AiTasksService, AskService, PublicPipeline, AiEmbeddings, AiExport, AiPageVision, AiSkillsReader, AiDailyLines],
     }

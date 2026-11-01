@@ -5,7 +5,7 @@
 
 const values = <T extends Record<string, string>>(o: T) => Object.values(o) as [T[keyof T], ...T[keyof T][]]
 
-export const Visibility = { PRIVATE: 'PRIVATE', SHARED: 'SHARED', PUBLIC: 'PUBLIC' } as const
+export const Visibility = { PRIVATE: 'PRIVATE', SHARED: 'SHARED', UNLISTED: 'UNLISTED', PUBLIC: 'PUBLIC' } as const
 export type Visibility = (typeof Visibility)[keyof typeof Visibility]
 
 export const GlobalRole = { STUDENT: 'STUDENT', TEACHER: 'TEACHER', MANAGER: 'MANAGER', PLATFORM_ADMIN: 'PLATFORM_ADMIN' } as const

@@ -723,6 +723,8 @@ enum FilePurpose {
   GROUP_PICTURE
   /// ADR-0099: a college ID card. Not accepted by createUploadIntent. Restricted bucket only.
   COLLEGE_ID
+  /// A PNG or JPEG placed on a note page. Scanned like every other upload.
+  PAGE_IMAGE
 
   @@schema("notes")
 }
@@ -771,6 +773,7 @@ model FileObject {
   deletedAt          DateTime?      @db.Timestamptz(3)
 
   attachments NoteAttachment[]
+  pageImages  NotePageImage[]
 
   @@index([ownerId, status])
   @@index([parentType, parentId])
@@ -793,6 +796,8 @@ enum NoteKind {
 enum Visibility {
   PRIVATE
   SHARED
+  /// Anyone with the link can read the published version. Left out of public lists, search and profiles.
+  UNLISTED
   PUBLIC
 
   @@schema("notes")
@@ -935,6 +940,8 @@ model Note {
   publishedVersionId    String?              @unique @db.Uuid
   publishedAt           DateTime?            @db.Timestamptz(3)
   forkingEnabled        Boolean              @default(true)
+  /// Private copies other people have made. Incremented when someone forks.
+  forkCount             Int                  @default(0)
   /// Every connection of the owner reads it, live (ADR-0013, ADR-0044): materialised as CONNECTIONS share rows
   sharedWithConnections Boolean              @default(false)
   groupShares           GroupShare[]
@@ -969,6 +976,7 @@ model Note {
   chunks           NoteChunk[]
   saves            NoteSave[]
   legacyContent    LegacyContentItem?
+  pages            NotePage[]
 
   @@index([ownerId, deletedAt, draftUpdatedAt(sort: Desc)])
   @@index([folderId])
@@ -1075,6 +1083,45 @@ model NoteShare {
 
   @@id([noteId, userId])
   @@index([userId])
+  @@schema("notes")
+}
+
+/// One page of a note. The drawing is vector ink (pen, marker, eraser, ruler); pictures sit on top of it.
+model NotePage {
+  id        String    @id @db.Uuid
+  noteId    String    @db.Uuid
+  /// Order on the note, 0-based. Gaps are fine; the reader sorts by this, then id.
+  index     Int
+  /// `{ strokes: [{ id, tool, color, width, points: [{x,y}] }] }`
+  drawing   Json      @default("{\"strokes\":[]}")
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  note   Note            @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  images NotePageImage[]
+
+  @@index([noteId, index])
+  @@schema("notes")
+}
+
+/// A PNG or JPEG placed on a page. The file is a normal upload (scanned, counted against storage).
+model NotePageImage {
+  id       String @id @db.Uuid
+  pageId   String @db.Uuid
+  fileId   String @db.Uuid
+  x        Float
+  y        Float
+  width    Float
+  height   Float
+  /// Degrees, clockwise
+  rotation Float  @default(0)
+
+  page NotePage   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  file FileObject @relation(fields: [fileId], references: [id])
+
+  @@index([pageId])
+  @@index([fileId])
   @@schema("notes")
 }
 
@@ -2349,6 +2396,78 @@ model QuizAnswer {
   correct    Boolean
   attempt    QuizAttempt       @relation(fields: [attemptId], references: [id], onDelete: Cascade)
   question   ClassQuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@id([attemptId, questionId])
+  @@schema("core")
+}
+
+/// Who can open a quiz that is not tied to a class. UNLISTED is the link.
+enum QuizVisibility {
+  PRIVATE
+  UNLISTED
+  PUBLIC
+
+  @@schema("core")
+}
+
+/// A quiz a person made and can share. Attempts are private to the taker; the owner sees aggregates only.
+model SharedQuiz {
+  id          String         @id @db.Uuid
+  /// Cross-context reference to users.User
+  ownerId     String         @db.Uuid
+  title       String
+  visibility  QuizVisibility @default(PRIVATE)
+  /// Opaque share link. Stops working when the quiz is Private or in the trash.
+  linkToken   String         @unique
+  publishedAt DateTime?      @db.Timestamptz(3)
+  deletedAt   DateTime?      @db.Timestamptz(3)
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
+
+  questions SharedQuizQuestion[]
+  attempts  SharedQuizAttempt[]
+
+  @@index([ownerId, deletedAt, updatedAt(sort: Desc)])
+  @@schema("core")
+}
+
+model SharedQuizQuestion {
+  id       String     @id @db.Uuid
+  quizId   String     @db.Uuid
+  position Int
+  content  Json
+  quiz     SharedQuiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers  SharedQuizAnswer[]
+
+  @@unique([quizId, position])
+  @@schema("core")
+}
+
+model SharedQuizAttempt {
+  id          String   @id @db.Uuid
+  quizId      String   @db.Uuid
+  /// Cross-context reference to users.User. Never listed to the quiz's owner.
+  userId      String   @db.Uuid
+  clientOpId  String   @unique @db.Uuid
+  score       Int
+  total       Int
+  submittedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  quiz    SharedQuiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers SharedQuizAnswer[]
+
+  @@index([quizId, userId, submittedAt])
+  @@index([userId])
+  @@schema("core")
+}
+
+model SharedQuizAnswer {
+  attemptId  String             @db.Uuid
+  questionId String             @db.Uuid
+  choiceIds  String[]
+  correct    Boolean
+  attempt    SharedQuizAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question   SharedQuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
   @@id([attemptId, questionId])
   @@schema("core")

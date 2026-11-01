@@ -17,8 +17,8 @@ type PageInfo @shareable {
 "What a note is presented as (ADR-0014, ADR-0015). Phase 2 creates NOTE only."
 enum NoteKind { NOTE BLOG POST PROJECT }
 
-"Who can read a note (§4.2)"
-enum Visibility { PRIVATE SHARED PUBLIC }
+"Who can read a note (§4.2). UNLISTED is the link: anyone with it can read, and it is left out of lists, search and profiles."
+enum Visibility { PRIVATE SHARED UNLISTED PUBLIC }
 
 "The sixteen card types (§4.1); content is validated per type (@lvn/contracts/validation)"
 enum CardType { text heading markdown code image video audio file diagram quote callout checklist table question quiz flashcard }
@@ -66,6 +66,8 @@ type Note @key(fields: "id") {
   publishedVersion: NoteVersion
   publishedAt: DateTime
   forkingEnabled: Boolean!
+  "Private copies other people have made"
+  forkCount: Int!
   cardCount: Int!
   "The first words of the note (at most 180 characters), for lists and previews"
   excerpt: String!
