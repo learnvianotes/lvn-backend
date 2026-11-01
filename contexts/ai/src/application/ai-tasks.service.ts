@@ -296,7 +296,10 @@ export class AiTasksService {
   private async allowed(viewerId: string, noteId: string, task: AiTaskType): Promise<NoteAiSource> {
     const source = await this.notes.source(viewerId, noteId)
     if (!source) throw Errors.notFound('Note not found.')
-    if (DERIVATIVE_AI_TASKS.has(task) ? !source.mayFork : !source.mayAskAi) throw Errors.forbidden(DERIVATIVE_AI_TASKS.has(task) ? 'The owner does not allow copies of this note.' : 'You cannot use AI on this note.')
+    if (DERIVATIVE_AI_TASKS.has(task)) {
+      if (!source.mayFork) throw Errors.forbidden('The owner does not allow copies of this note.')
+      if (!source.mayBulkAi) throw Errors.forbidden('Verify your account before AI writes notes for you.')
+    } else if (!source.mayAskAi) throw Errors.forbidden('You cannot use AI on this note.')
     return source
   }
 

@@ -1,5 +1,5 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common'
-import { Action, can, type Visibility } from '@lvn/contracts/domain'
+import { Action, can, verificationBlocks, type Visibility } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { AUDIT, PEOPLE, type Audit, type People } from '@lvn-backend/facades'
@@ -41,8 +41,9 @@ export class SharingService implements OnModuleInit {
     const { note, actor } = opened
     if (note.deletedAt) throw Errors.validation('Restore the note from the trash first.')
     if (note.visibility === visibility) return opened
-    if (!can(actor, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: noteFacts(note, null), targetVisibility: visibility })) {
-      if (!actor.institutionVerified) throw Errors.forbidden('Verify your account to share notes.')
+    const visibilityResource = { kind: 'note' as const, note: noteFacts(note, null), targetVisibility: visibility }
+    if (!can(actor, Action.NOTE_CHANGE_VISIBILITY, visibilityResource)) {
+      if (verificationBlocks(actor, Action.NOTE_CHANGE_VISIBILITY, visibilityResource)) throw Errors.forbidden('Verify your account to share notes.')
       if (visibility === 'PUBLIC' && actor.restrictedMinor) throw Errors.forbidden('Your account cannot make notes public.')
       if (visibility === 'PUBLIC' && note.forkedFromVisibility) throw Errors.forbidden('This note is a copy of a note that was not public, so it cannot be made public.')
       throw Errors.forbidden()
@@ -85,7 +86,7 @@ export class SharingService implements OnModuleInit {
     const [connectedToRecipient, coTeachesWithRecipient] = recipientIsTeacher ? await Promise.all([this.people.connected(ownerId, person.id), this.coTeach(ownerId, person.id)]) : [false, false]
     const target = { kind: 'USER' as const, recipientIsTeacher, connectedToRecipient, coTeachesWithRecipient }
     if (!can(actor, Action.NOTE_SHARE, { kind: 'note', note: noteFacts(note, null), shareTarget: target })) {
-      if (!actor.institutionVerified) throw Errors.forbidden('Verify your account to share notes.')
+      if (verificationBlocks(actor, Action.NOTE_SHARE, { kind: 'note', note: noteFacts(note, null), shareTarget: target })) throw Errors.forbidden('Verify your account to share notes.')
       throw Errors.forbidden('Teachers share with other teachers once they are connected or teach a class together.')
     }
     const limit = await this.limiter.hit(`notes:share:${ownerId}`, { max: 200, windowSeconds: 3600 })
@@ -120,7 +121,7 @@ export class SharingService implements OnModuleInit {
     const { note, actor } = await this.notes.require(ownerId, noteId, 'owner')
     if (note.deletedAt) throw Errors.validation('Restore the note from the trash first.')
     if (shared && !can(actor, Action.NOTE_SHARE, { kind: 'note', note: noteFacts(note, null), shareTarget: { kind: 'CONNECTIONS' } })) {
-      throw Errors.forbidden(actor.institutionVerified ? 'Only teachers share with their connections.' : 'Verify your account to share notes.')
+      throw Errors.forbidden(verificationBlocks(actor, Action.NOTE_SHARE, { kind: 'note', note: noteFacts(note, null), shareTarget: { kind: 'CONNECTIONS' } }) ? 'Verify your account to share notes.' : 'Only teachers share with their connections.')
     }
     if (shared) {
       const connections = await this.people.connectionIds(ownerId)

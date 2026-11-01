@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { Errors } from '@lvn-backend/errors'
 import { PrismaService } from '@lvn-backend/prisma-base'
-import { decodeSettingValue, parseSettingInput, serializeSetting, SETTING_CATALOG, settingDef, STUDENT_ID_AI_AUTO_APPROVE_SETTING, STUDENT_ID_AI_CHECK_SETTING, STUDENT_ID_AI_THRESHOLD_SETTING, STUDENT_ID_IMAGE_RETENTION_SETTING, type SettingDef } from '../domain/setting-catalog'
+import { unverifiedGatesFromSetting } from '@lvn/contracts/domain'
+import { decodeSettingValue, parseSettingInput, serializeSetting, SETTING_CATALOG, settingDef, STUDENT_ID_AI_AUTO_APPROVE_SETTING, STUDENT_ID_AI_CHECK_SETTING, STUDENT_ID_AI_THRESHOLD_SETTING, STUDENT_ID_IMAGE_RETENTION_SETTING, UNVERIFIED_GATED_ACTIONS_SETTING, type SettingDef } from '../domain/setting-catalog'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { AuditService } from './audit.service'
 import { PlatformSettingsStore } from './platform-settings.store'
@@ -56,6 +57,11 @@ export class AppSettingsService {
       confidenceThreshold: Number(threshold.value),
       imageRetentionDays: Number(retention.value),
     }
+  }
+
+  /** Public. Missing row is the built-in list. A saved empty value gates nothing. */
+  unverifiedGatedActions(): string[] {
+    return [...unverifiedGatesFromSetting(this.store.string(UNVERIFIED_GATED_ACTIONS_SETTING, null))]
   }
 
   /** Public to sign-in. True until an admin writes the row off, including when the row has never been written. */

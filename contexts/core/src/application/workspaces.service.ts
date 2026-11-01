@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common'
-import { Action, can, GlobalRole, GroupRole as Role } from '@lvn/contracts/domain'
+import { Action, can, GlobalRole, GroupRole as Role, verificationBlocks } from '@lvn/contracts/domain'
 import { docSchema, docText } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
@@ -204,7 +204,7 @@ export class WorkspacesService implements OnModuleInit {
       await this.db.mentorInvite.update({ where: { id: inviteId }, data: { declinedAt: new Date() } })
       return inv.groupId
     }
-    if (!can(actor, Action.GROUP_ACCEPT_MENTOR_INVITE, resource)) throw Errors.forbidden(actor.institutionVerified ? 'Only teachers mentor workspaces.' : 'Verify your account to mentor.')
+    if (!can(actor, Action.GROUP_ACCEPT_MENTOR_INVITE, resource)) throw Errors.forbidden(verificationBlocks(actor, Action.GROUP_ACCEPT_MENTOR_INVITE, resource) ? 'Verify your account to mentor.' : 'Only teachers mentor workspaces.')
     await this.db.$transaction([
       this.db.mentorInvite.update({ where: { id: inviteId }, data: { acceptedAt: new Date() } }),
       this.db.groupMember.createMany({ data: [{ groupId: inv.groupId, userId: teacherId, role: 'MENTOR' }], skipDuplicates: true }),
@@ -221,7 +221,7 @@ export class WorkspacesService implements OnModuleInit {
 
   async ask(actorId: string, groupId: string, input: { title: string; body: unknown; repoRef?: string | null }): Promise<string> {
     const { resource, actor } = await this.workspace(actorId, groupId)
-    if (!can(actor, Action.GROUP_ASK_DOUBT, resource)) throw Errors.forbidden(actor.institutionVerified ? 'The team asks doubts.' : 'Verify your account to ask.')
+    if (!can(actor, Action.GROUP_ASK_DOUBT, resource)) throw Errors.forbidden(verificationBlocks(actor, Action.GROUP_ASK_DOUBT, resource) ? 'Verify your account to ask.' : 'The team asks doubts.')
     await this.notMuted(groupId, actorId)
     const title = input.title.replace(/\s+/g, ' ').trim()
     if (title.length < 3) throw Errors.validation('Give the doubt a title of at least 3 characters.', ['input', 'title'])

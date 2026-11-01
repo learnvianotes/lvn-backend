@@ -57,7 +57,9 @@ describe('groups', () => {
   it('a verified person starts a group and owns it; a private group always approves members', async () => {
     const id = await create(owner, { name: '  Algorithms   study ', description: 'Weekly problems', privacy: 'PRIVATE', joinPolicy: 'OPEN' })
     expect(await group(id, owner)).toMatchObject({ name: 'Algorithms study', privacy: 'PRIVATE', joinPolicy: 'APPROVAL', viewerRole: 'OWNER', memberCount: 1, viewerCan: { manage: true, delete: true, leave: false } })
-    expect((await mutate('createGroup', { name: 'Mine', privacy: 'PUBLIC' }, await person(false))).error).toBe('Verify your account to create groups.')
+    const unverifiedGroup = await mutate('createGroup', { name: 'Mine', privacy: 'PUBLIC' }, await person(false))
+    expect(unverifiedGroup.error).toBeUndefined()
+    expect(unverifiedGroup.payload?.group?.id).toEqual(expect.any(String))
     expect((await mutate('createGroup', { name: 'ab', privacy: 'PUBLIC' }, owner)).error).toMatch(/at least 3 characters/)
   })
 

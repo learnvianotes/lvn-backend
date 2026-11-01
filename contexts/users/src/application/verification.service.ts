@@ -143,6 +143,7 @@ export class VerificationService {
     const reviewer = await this.policy.actor(reviewerId)
     const request = await this.db.verificationRequest.findUnique({ where: { id: requestId } })
     if (!reviewer || !request) throw Errors.notFound('Request not found.')
+    if (reviewerId === request.userId) throw Errors.forbidden('You cannot review your own request.')
     if (!(await this.mayReview(reviewerId, request))) throw Errors.forbidden()
     if (request.status !== 'PENDING') throw Errors.conflict('This request was already decided.')
     const trimmed = reason?.trim().slice(0, 500) || null
@@ -342,6 +343,7 @@ export class VerificationService {
 
   /** True when this reviewer may decide the request or open its documents. */
   private async mayReview(reviewerId: string, request: { userId: string; method: string; purpose: string; teacherId: string | null }): Promise<boolean> {
+    if (reviewerId === request.userId) return false
     const reviewer = await this.policy.actor(reviewerId)
     if (!reviewer) return false
     const sameInstitution = reviewer.globalRole === 'TEACHER' ? await this.sameInstitution(reviewerId, request.userId) : false

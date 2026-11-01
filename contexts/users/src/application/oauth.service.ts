@@ -18,8 +18,9 @@ const NAMES = { GOOGLE: 'Google', GITHUB: 'GitHub', LINKEDIN: 'LinkedIn' } as co
 
 /**
  * Sign-in with Google (Firebase ID token, ADR-0007), GitHub and LinkedIn (Authorization Code + PKCE, §7.1), and
- * account linking by verified email only (ADR-0100). A provider is linked to an existing account only when both the
- * provider and that account have verified the same email. A new provider account still owes its registration details
+ * account linking by a provider-verified email (amends ADR-0100). A provider that says the email is verified links
+ * to the existing account and marks the login email verified, even when the local email was not confirmed yet. It
+ * does not set institution `verifiedAt`. A new provider account still owes its registration details
  * (completeRegistration, ADR-0017); the adults-only gate runs there (ADR-0091).
  */
 @Injectable()
@@ -74,9 +75,10 @@ export class OAuthService {
   }
 
   /**
-   * The account behind a provider identity: the one already linked; else the account whose verified email matches,
-   * linked now without changing its password, role or sessions; else a new account. An account whose email is not
-   * verified is left alone (ADR-0100) — linking it would hand a provider sign-in to whoever registered the address.
+   * The account behind a provider identity: the one already linked; else the account with the same email when the
+   * provider has verified that email, linked now and marked email-verified, without changing its password, role,
+   * name, date of birth or sessions; else a new account. A provider that has not verified the email is refused.
+   * Two first sign-ins for one email lose to the unique email and (provider, subject) constraints, then retry.
    */
   private async signInWith(identity: ProviderIdentity, device: DeviceInfo, correlationId?: string): Promise<IssuedSession> {
     const key = { provider: identity.provider, providerSubject: identity.providerSubject }
@@ -100,13 +102,12 @@ export class OAuthService {
     if (existing && isStudyPublisher(existing)) throw Errors.forbidden('This account cannot sign in.')
     if (existing) {
       if (existing.deletedAt) throw Errors.forbidden('This account was deleted.')
-      if (!existing.emailVerifiedAt) {
-        throw Errors.validation(
-          `An account with this email is not verified yet. Confirm it from the email we sent, then try ${NAMES[identity.provider]} again.`,
-        )
-      }
       try {
-        await this.db.oAuthAccount.create({ data: { id: newId(), userId: existing.id, ...key } })
+        await this.db.$transaction(async (tx) => {
+          await tx.oAuthAccount.create({ data: { id: newId(), userId: existing.id, ...key } })
+          // The provider proved the inbox. Login email only: institution verification stays a separate decision.
+          if (!existing.emailVerifiedAt) await tx.user.update({ where: { id: existing.id }, data: { emailVerifiedAt: new Date() } })
+        })
       } catch (e) {
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return this.signInWith(identity, device, correlationId)
         throw e

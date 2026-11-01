@@ -72,8 +72,9 @@ describe('auth', () => {
       const email = await mail.latestTo(input.email)
       expect(email.subject).toBe('Confirm your email')
       const token = new URL(/href="([^"]+\/verify\?token=[^"]+)"/.exec(email.html)![1]!.replace(/&amp;/g, '&')).searchParams.get('token')!
-      const verified = await t.gql<{ verifyEmail: { ok: boolean } }>('mutation ($t: String!) { verifyEmail(input: { token: $t }) { ok userErrors { code } } }', { t: token })
+      const verified = await t.gql<{ verifyEmail: { ok: boolean; user: { id: string; emailVerified: boolean; verified: boolean } | null } }>('mutation ($t: String!) { verifyEmail(input: { token: $t }) { ok user { id emailVerified verified } userErrors { code } } }', { t: token })
       expect(verified.data!.verifyEmail.ok).toBe(true)
+      expect(verified.data!.verifyEmail.user).toEqual({ id: session.user.id, emailVerified: true, verified: false })
       expect((await t.gql(VIEWER, {}, session.accessToken)).data).toEqual({ viewer: { id: session.user.id, emailVerified: true } })
 
       const again = await t.gql<{ verifyEmail: { ok: boolean; userErrors: { code: string }[] } }>('mutation ($t: String!) { verifyEmail(input: { token: $t }) { ok userErrors { code } } }', { t: token })
@@ -239,10 +240,14 @@ describe('auth', () => {
     const RESET_REQ = 'mutation ($e: String!) { requestPasswordReset(input: { email: $e }) { ok userErrors { code } } }'
     const RESET = 'mutation ($t: String!, $p: String!) { resetPassword(input: { token: $t, password: $p }) { ok userErrors { code field message } } }'
 
-    it('answers ok for an unknown email and sends nothing', async () => {
+    it('answers ok for an unknown email, sends nothing and stores no token', async () => {
       const email = newEmail()
-      expect((await t.gql<{ requestPasswordReset: { ok: boolean } }>(RESET_REQ, { e: email })).data!.requestPasswordReset.ok).toBe(true)
+      const db = t.app.get(PrismaService)
+      const before = await db.emailToken.count()
+      const res = await t.gql<{ requestPasswordReset: { ok: boolean; userErrors: unknown[] } }>(RESET_REQ, { e: email })
+      expect(res.data!.requestPasswordReset).toEqual({ ok: true, userErrors: [] })
       expect(await mail.countTo(email)).toBe(0)
+      expect(await db.emailToken.count()).toBe(before)
     })
 
     it('resets the password from the emailed link and signs out every device', async () => {

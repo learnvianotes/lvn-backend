@@ -19,9 +19,20 @@ describe('identityFromGoogleClaims', () => {
     })
   })
 
+  it('keeps an unverified Google email as an identity so it is not treated as a forged token', () => {
+    expect(identityFromGoogleClaims({ ...verified, email_verified: false })).toMatchObject({ emailVerified: false, email: verified.email })
+    expect(identityFromGoogleClaims({ ...verified, email_verified: undefined })).toMatchObject({ emailVerified: false })
+    expect(identityFromGoogleClaims({ ...verified, email_verified: 'true' as unknown as boolean })!.emailVerified).toBe(false)
+  })
+
+  it('uses firebase.identities.email when the top-level email is missing', () => {
+    expect(identityFromGoogleClaims({ ...verified, email: undefined, firebase: { sign_in_provider: 'google.com', identities: { email: ['person@gmail.com'] } } })).toMatchObject({
+      email: 'person@gmail.com',
+      emailVerified: true,
+    })
+  })
+
   it.each([
-    ['email_verified is false', { email_verified: false }],
-    ['email_verified is missing', { email_verified: undefined }],
     ['the provider is not Google', { firebase: { sign_in_provider: 'password' } }],
     ['there is no email', { email: '   ' }],
     ['the email is missing', { email: undefined }],

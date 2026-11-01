@@ -1,5 +1,5 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common'
-import { Action, can } from '@lvn/contracts/domain'
+import { Action, can, verificationBlocks } from '@lvn/contracts/domain'
 import { RESOURCE_LIMITS } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
@@ -115,7 +115,7 @@ export class ResourceCatalogueService implements OnModuleInit {
    */
   async recommend(viewerId: string, input: { resourceId: string; to: RecommendationPlace; reason?: string | null }): Promise<string> {
     const actor = await this.policy.actor(viewerId)
-    if (!can(actor, Action.RESOURCE_RECOMMEND)) throw Errors.forbidden(actor?.suspended ? undefined : 'Verify your account to recommend resources.')
+    if (!can(actor, Action.RESOURCE_RECOMMEND)) throw Errors.forbidden(verificationBlocks(actor, Action.RESOURCE_RECOMMEND) ? 'Verify your account to recommend resources.' : undefined)
     await this.approved(viewerId, input.resourceId)
     const reason = input.reason?.replace(/\s+/g, ' ').trim() || null
     if (reason && reason.length > RESOURCE_LIMITS.reason) throw Errors.validation(`Keep the reason under ${RESOURCE_LIMITS.reason} characters.`, ['input', 'reason'])

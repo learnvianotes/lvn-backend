@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto'
 import { Inject, Injectable } from '@nestjs/common'
-import { Action, can, ClassroomRole as Role, type Actor, type Resource } from '@lvn/contracts/domain'
+import { Action, can, ClassroomRole as Role, verificationBlocks, type Actor, type Resource } from '@lvn/contracts/domain'
 import { docSchema, docText } from '@lvn/contracts/validation'
 import { assertWithinPlan, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
@@ -180,7 +180,8 @@ export class ClassroomsService {
     if (view?.role) throw Errors.conflict('You are already in this class.')
     if (view?.pendingRequestId) return classroom.id
     const actor = await this.actor(actorId)
-    if (!can(actor, Action.CLASSROOM_REQUEST_JOIN, { kind: 'classroom', pendingJoinRequest: false })) throw Errors.forbidden('Verify your account to join classes.')
+    const joinResource = { kind: 'classroom' as const, pendingJoinRequest: false }
+    if (!can(actor, Action.CLASSROOM_REQUEST_JOIN, joinResource)) throw Errors.forbidden(verificationBlocks(actor, Action.CLASSROOM_REQUEST_JOIN, joinResource) ? 'Verify your account to join classes.' : undefined)
     const id = newId()
     await this.db.classroomJoinRequest.create({ data: { id, classroomId: classroom.id, userId: actorId, via } })
     const staff = await this.db.classroomMember.findMany({ where: { classroomId: classroom.id, role: { in: ['TEACHER', 'TA'] } }, select: { userId: true }, take: 100 })
@@ -246,7 +247,7 @@ export class ClassroomsService {
       await this.db.classroomInvite.update({ where: { id: inviteId }, data: { declinedAt: new Date() } })
       return classroom.id
     }
-    if (!can(actor, Action.CLASSROOM_ACCEPT_INVITE, resource)) throw Errors.forbidden(actor.institutionVerified ? undefined : 'Verify your account to join classes.')
+    if (!can(actor, Action.CLASSROOM_ACCEPT_INVITE, resource)) throw Errors.forbidden(verificationBlocks(actor, Action.CLASSROOM_ACCEPT_INVITE, resource) ? 'Verify your account to join classes.' : undefined)
     await this.db.classroomInvite.update({ where: { id: inviteId }, data: { acceptedAt: new Date() } })
     await this.db.classroomJoinRequest.updateMany({ where: { classroomId: classroom.id, userId: actorId, status: 'PENDING' }, data: { status: 'WITHDRAWN' } })
     await this.addMember(classroom, actorId, inv.role as StoredClassRole)

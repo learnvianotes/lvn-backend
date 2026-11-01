@@ -1,3 +1,5 @@
+import { DEFAULT_UNVERIFIED_GATED_ACTIONS, parseUnverifiedGateSetting } from '@lvn/contracts/domain'
+
 /** One admin-editable application setting (ADR-0101). Ports, URLs and secrets stay in the environment. */
 
 export type SettingType = 'BOOLEAN' | 'INTEGER' | 'STRING'
@@ -21,6 +23,8 @@ export interface SettingDef {
 
 export const GOOGLE_SIGN_IN_SETTING = 'google_sign_in'
 export const ACCESS_ALLOWLIST_SETTING = 'access_allowlist_enabled'
+/** Comma-separated action ids an institution-unverified account cannot do. Empty gates nothing. A missing row is the default list. */
+export const UNVERIFIED_GATED_ACTIONS_SETTING = 'unverified_gated_actions'
 export const STUDENT_ID_VERIFICATION_SETTING = 'student_id_verification'
 /** AI reads a college ID or proof image. Off until an admin turns it on. */
 export const STUDENT_ID_AI_CHECK_SETTING = 'student_id_ai_check'
@@ -49,6 +53,16 @@ export const SETTING_CATALOG: SettingDef[] = [
     defaultValue: false,
     environmentFallback: false,
     nullable: false,
+  },
+  {
+    key: UNVERIFIED_GATED_ACTIONS_SETTING,
+    type: 'STRING',
+    category: 'auth',
+    description: 'Actions an account cannot do until it is institution-verified. Comma-separated action ids such as note.publish. Empty gates nothing. A missing row uses the built-in list: publishing, sharing, contests, payouts, bulk AI and submitting resources.',
+    defaultValue: DEFAULT_UNVERIFIED_GATED_ACTIONS.join(','),
+    environmentFallback: false,
+    nullable: false,
+    maxLength: 500,
   },
   {
     key: STUDENT_ID_VERIFICATION_SETTING,
@@ -139,6 +153,7 @@ export const SETTING_CATALOG: SettingDef[] = [
     environmentFallback: true,
     nullable: false,
     min: 1,
+    // 50 GiB. Above the GraphQL Int limit (2^31-1); AdminSettingConstraints.max is a Float.
     max: 50 * 1024 * 1024 * 1024,
   },
   {
@@ -288,6 +303,11 @@ export function parseSettingInput(def: SettingDef, raw: string): { ok: true; val
     if (def.min !== undefined && n < def.min) return { ok: false, message: `Use at least ${def.min}.` }
     if (def.max !== undefined && n > def.max) return { ok: false, message: `Use at most ${def.max}.` }
     return { ok: true, value: n }
+  }
+  if (def.key === UNVERIFIED_GATED_ACTIONS_SETTING) {
+    const parsed = parseUnverifiedGateSetting(raw)
+    if (!parsed.ok) return parsed
+    return { ok: true, value: [...parsed.actions].join(',') }
   }
   if (def.maxLength !== undefined && raw.length > def.maxLength) return { ok: false, message: `Use at most ${def.maxLength} characters.` }
   if (def.pattern && !new RegExp(def.pattern).test(raw)) return { ok: false, message: 'That value does not match the expected pattern.' }

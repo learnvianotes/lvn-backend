@@ -177,7 +177,7 @@ export class AuthService {
    * Confirms the sign-in email from the link in the verification email. A LINK_EMAIL link instead attaches the
    * password chosen at sign-up to the account that already had this address, and does not sign anyone in.
    */
-  async verifyEmail(token: string): Promise<void> {
+  async verifyEmail(token: string): Promise<{ userId: string }> {
     const preview = await this.readableToken(token, ['VERIFY_EMAIL', 'LINK_EMAIL'])
     const owner = await this.db.user.findUnique({ where: { id: preview.userId }, select: { id: true, email: true, deletedAt: true } })
     if (!owner || owner.deletedAt || isStudyPublisher(owner)) throw Errors.validation(INVALID_LINK, ['input', 'token'])
@@ -192,11 +192,26 @@ export class AuthService {
       if (count !== 1) throw Errors.validation(INVALID_LINK, ['input', 'token'])
       const user = await this.db.user.findUniqueOrThrow({ where: { id: row.userId }, select: { id: true, email: true } })
       await this.legacy.match(user.id, { verifiedEmail: user.email })
-      return
+      return { userId: user.id }
     }
     const user = await this.db.user.update({ where: { id: row.userId }, data: { emailVerifiedAt: new Date() }, select: { id: true, email: true } })
-    // A verified email may find the learner's data from the old site (ADR-0023).
+    // A verified email may find the learner's data from the old site (ADR-0023). Institution verification is unchanged.
     await this.legacy.match(user.id, { verifiedEmail: user.email })
+    return { userId: user.id }
+  }
+
+  /**
+   * Emails another login-email link to the signed-in account. Already verified: ok, and no mail. The limit is
+   * three an hour and is spent only when a mail is sent.
+   */
+  async resendVerification(userId: string): Promise<void> {
+    const user = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { id: true, email: true, displayName: true, emailVerifiedAt: true } })
+    if (!user || isStudyPublisher(user)) throw Errors.unauthenticated()
+    if (user.emailVerifiedAt) return
+    await this.access.assertAllowed(user.email)
+    const limit = await this.limiter.hit(`verify-resend:${userId}`, LIMITS.verifyEmailResend)
+    if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many verification emails. Try again later.')
+    await this.sendEmailVerification(user.id, user.email, user.displayName)
   }
 
   /** Always succeeds for the caller (no account enumeration); emails a link only if an account exists. */

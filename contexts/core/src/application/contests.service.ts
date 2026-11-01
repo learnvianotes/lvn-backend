@@ -1,5 +1,5 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common'
-import { milestoneFor } from '@lvn/contracts/domain'
+import { Action, can, milestoneFor, verificationBlocks } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { PEOPLE, POLICY, TOPICS, type People, type Policy, type Topics } from '@lvn-backend/facades'
@@ -175,6 +175,9 @@ export class ContestsService implements OnModuleInit {
   }
 
   async start(viewerId: string, contestId: string, now = new Date()): Promise<ContestView> {
+    const actor = await this.policy.actor(viewerId)
+    if (!actor) throw Errors.unauthenticated()
+    if (!can(actor, Action.CONTEST_ENTER)) throw Errors.forbidden(verificationBlocks(actor, Action.CONTEST_ENTER) ? 'Verify your account to enter contests.' : undefined)
     const c = await this.db.contest.findFirst({ where: { id: contestId, status: 'PUBLISHED' }, include: { questions: true } })
     if (!c) throw Errors.notFound('That contest is not there any more.')
     if (stateOf(c, now) !== 'OPEN') throw Errors.validation(stateOf(c, now) === 'UPCOMING' ? 'It has not opened yet.' : 'It has closed.')
