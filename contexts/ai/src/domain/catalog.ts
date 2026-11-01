@@ -1,4 +1,5 @@
 import { AiTaskType } from '@lvn/contracts/domain'
+import { ID_CARD_CHECK_TASK } from './id-card-route'
 import type { AiProviderKind } from './provider'
 
 /** What a kind of provider is and can do, for the settings page and its checks (ADR-0065). */
@@ -28,5 +29,5 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
 
 export const presetOf = (kind: AiProviderKind): ProviderPreset => PROVIDER_PRESETS.find((p) => p.kind === kind)!
 
-/** Tasks a route can send to a connection and model: the AI tasks, Ask AI, pages read again, Home's line, and embeddings. */
-export const ROUTABLE_TASKS: readonly string[] = [...Object.values(AiTaskType), 'ASK', 'READ_PAGE', 'READ_SKILLS', 'DAILY_LINE', 'EMBED']
+/** Tasks a route can send to a connection and model: the AI tasks, Ask AI, pages read again, Home's line, embeddings, and the ID-card check. */
+export const ROUTABLE_TASKS: readonly string[] = [...Object.values(AiTaskType), 'ASK', 'READ_PAGE', 'READ_SKILLS', 'DAILY_LINE', 'EMBED', ID_CARD_CHECK_TASK]
