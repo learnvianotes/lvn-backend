@@ -7,6 +7,7 @@ import { AI_CONFIG, type AiConfig } from '../ai.config'
 import { presetOf, PROVIDER_PRESETS, ROUTABLE_TASKS } from '../domain/catalog'
 import { classifyModels, rejectionFor, useForTask, type AiModelUse } from '../domain/model-capabilities'
 import { ProviderError, type AiProviderAdapter, type AiProviderKind } from '../domain/provider'
+import { parseProviderUrl, ProviderUrlError } from '../domain/provider-url'
 import { AiGateway } from './ai-gateway'
 import { AiKeys } from './ai-keys'
 import { AI_PROVIDER_ADAPTER, AiProviders, type Target } from './ai-providers'
@@ -109,7 +110,14 @@ export class AiSettingsService {
     const label = input.label.trim()
     if (!label || label.length > 60) throw Errors.validation('Give the connection a name of at most 60 characters.', ['input', 'label'])
     const baseUrl = trimmed(input.baseUrl)
-    if (baseUrl && !/^https?:\/\/[^\s/]+/.test(baseUrl)) throw Errors.validation('The address starts with http:// or https://.', ['input', 'baseUrl'])
+    if (baseUrl) {
+      try {
+        parseProviderUrl(baseUrl)
+      } catch (e) {
+        if (e instanceof ProviderUrlError) throw Errors.validation(e.message, ['input', 'baseUrl'])
+        throw e
+      }
+    }
     if (!baseUrl && !preset.defaultBaseUrl) throw Errors.validation(`${preset.name} needs an address, such as ${input.kind === 'OLLAMA' ? 'http://gpu-host:11434' : 'http://litellm:4000/v1'}.`, ['input', 'baseUrl'])
     const apiKey = trimmed(input.apiKey)
     if (apiKey && !this.keys.available) throw Errors.unavailable('Keys cannot be saved here: set AI_KEYS_SECRET on the API and the worker first.')

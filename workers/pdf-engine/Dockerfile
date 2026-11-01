@@ -1,9 +1,10 @@
 # The PDF engine (ADR-0028): Docling and RapidOCR on CPU. Models are downloaded while the image is built (a warm-up
 # conversion), so a running engine never reaches the internet. Build context: workers/pdf-engine.
-FROM python:3.12.12-slim-bookworm
+FROM python:3.12.15-slim-bookworm
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HF_HOME=/opt/models UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 # OpenCV (RapidOCR) needs libGL and GLib; tini stops the worker cleanly.
-RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 tini && rm -rf /var/lib/apt/lists/*
+# Upgrade pulls bookworm security fixes newer than the published slim tag (OpenSSL deb12u2 and the like).
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 tini && rm -rf /var/lib/apt/lists/*
 COPY --from=ghcr.io/astral-sh/uv:0.11.31 /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
