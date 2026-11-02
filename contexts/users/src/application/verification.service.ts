@@ -184,7 +184,7 @@ export class VerificationService {
     return this.db.verificationRequest.findMany({ where: { userId }, orderBy: { createdAt: 'desc' }, take: 50 })
   }
 
-  /** Platform admins: every pending request. Managers: student requests. Teachers: students who picked them, and students of their institution. */
+  /** Platform admins: every pending request. Verified teachers: students who picked them, and students of their institution. */
   async toReview(reviewerId: string, first = 20, after?: string | null) {
     const where = await this.reviewQueueWhere(reviewerId, {})
     return this.db.verificationRequest.findMany({
@@ -283,7 +283,7 @@ export class VerificationService {
   }
 
   /**
-   * Pending college-ID requests, oldest first. Platform admins and managers see every one. A teacher sees students of
+   * Pending college-ID requests, oldest first. Platform admins see every one. A verified teacher sees students of
    * their institution, and is refused when they have none (a college ID is not addressed to a teacher).
    */
   async collegeIdQueue(reviewerId: string, first = 20, after?: string | null) {
@@ -291,7 +291,7 @@ export class VerificationService {
     if (!reviewer) throw Errors.unauthenticated()
     const base = { status: 'PENDING' as const, collegeIdCard: true, ...(after ? { id: { gt: after } } : {}) }
     let where: object
-    if (reviewer.globalRole === 'PLATFORM_ADMIN' || reviewer.globalRole === 'MANAGER') {
+    if (reviewer.globalRole === 'PLATFORM_ADMIN') {
       if (!can(reviewer, Action.ACCOUNT_REVIEW_VERIFICATION, { kind: 'verification', method: VerificationMethod.DOCUMENTS, purpose: 'ACCOUNT' })) throw Errors.forbidden()
       where = base
     } else if (reviewer.globalRole === 'TEACHER') {
@@ -327,10 +327,6 @@ export class VerificationService {
     const reviewer = await this.policy.actor(reviewerId)
     if (!reviewer) throw Errors.unauthenticated()
     if (reviewer.globalRole === 'PLATFORM_ADMIN') return { status: 'PENDING' as const, ...extra }
-    if (reviewer.globalRole === 'MANAGER') {
-      if (!can(reviewer, Action.ACCOUNT_REVIEW_VERIFICATION, { kind: 'verification', method: VerificationMethod.DOCUMENTS, purpose: 'ACCOUNT' })) throw Errors.forbidden()
-      return { status: 'PENDING' as const, purpose: 'ACCOUNT' as const, ...extra }
-    }
     if (reviewer.globalRole !== 'TEACHER' || !can(reviewer, Action.ACCOUNT_REVIEW_VERIFICATION, { kind: 'verification', method: VerificationMethod.TEACHER, addressedToActor: true, purpose: 'ACCOUNT' })) throw Errors.forbidden()
     const ids = await this.institutionStudentIds(reviewerId)
     return {

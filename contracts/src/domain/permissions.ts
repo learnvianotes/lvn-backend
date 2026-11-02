@@ -16,9 +16,11 @@ import { type AiTaskType, ClassroomRole, DERIVATIVE_AI_TASKS, GlobalRole, GroupJ
  *   classes. Publishing, sharing, contests, payouts, bulk AI and submitting resources stay gated by default.
  *   Changing a note toward SHARED or PUBLIC follows share and publish. Taking it back to PRIVATE stays allowed
  *   unless `note.changeVisibility` is itself on the list. Without an institutional email, a student asks a verified
- *   teacher to vouch for them, or sends proof of enrolment. Platform admins and managers review that proof even
- *   when their own account is not institution-verified. A teacher reviews only once their own account is
- *   institution-verified (ADR-0019). Teacher applications and role changes stay with platform admins.
+ *   teacher to vouch for them, or sends proof of enrolment. A platform admin never needs institution verification:
+ *   the role skips every verified-account gate, including review, even when `verifiedAt` is null. A teacher reviews
+ *   only once their own account is institution-verified, and only students who addressed them or share their
+ *   institution (ADR-0019). Managers, unverified teachers, students and everyone else cannot review. Teacher
+ *   applications and role changes stay with platform admins.
  * - Restricted minors cannot make a note PUBLIC (§5, §15.2); the flag is applied before the matrix.
  *
  * A fork can be made PUBLIC only if its origin was PUBLIC when forked, or the forker was the origin's owner or
@@ -319,8 +321,8 @@ function shareTargetAllowed(actor: Actor, target: ShareTargetFacts | undefined):
 
 /**
  * Default actions an institution-unverified account cannot do. Comments, follows, groups and classrooms are not
- * here: an admin list can add them. `account.reviewVerification` is not here either; teachers stay gated inside
- * `can()` so dropping it from the admin list cannot let an unverified teacher review IDs.
+ * here: an admin list can add them. `account.reviewVerification` stays a domain check inside `can()` so an
+ * unverified teacher still cannot review. A platform admin skips every institution-verification gate by role.
  */
 export const DEFAULT_UNVERIFIED_GATED_ACTIONS: readonly Action[] = [
   Action.NOTE_PUBLISH,
@@ -413,10 +415,6 @@ function backToPrivate(action: Action, resource: Resource): boolean {
 /** A teacher applicant makes a class before their account is verified: a class with no students reaches nobody. */
 const applicantMayDo = (actor: Actor, action: Action) => actor.teacherApplicant === true && action === Action.CLASSROOM_CREATE
 
-/** Platform admins and managers review verification even when their own account is not institution-verified. */
-const staffReviewExempt = (actor: Actor, action: Action) =>
-  action === Action.ACCOUNT_REVIEW_VERIFICATION && (actor.globalRole === GlobalRole.PLATFORM_ADMIN || actor.globalRole === GlobalRole.MANAGER)
-
 function gateSetOf(actor: Actor): ReadonlySet<Action> {
   return actor.unverifiedGates ?? NEEDS_VERIFIED_ACCOUNT
 }
@@ -426,7 +424,8 @@ function gateSetOf(actor: Actor): ReadonlySet<Action> {
  * `note.publish`, and PRIVATE stays open unless `note.changeVisibility` is itself on the list.
  */
 function gateApplies(actor: Actor, action: Action, resource: Resource): boolean {
-  if (staffReviewExempt(actor, action) || applicantMayDo(actor, action)) return false
+  // The role is enough: a platform admin is never stopped for a missing institution verification.
+  if (actor.globalRole === GlobalRole.PLATFORM_ADMIN || applicantMayDo(actor, action)) return false
   const gates = gateSetOf(actor)
   if (action === Action.NOTE_CHANGE_VISIBILITY && resource.kind === 'note') {
     if (gates.has(Action.NOTE_CHANGE_VISIBILITY)) return true
@@ -587,9 +586,8 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
           // Teacher applications grant the TEACHER role: platform admins only.
           if (actor.globalRole === GlobalRole.PLATFORM_ADMIN) return true
           if (resource.purpose === 'TEACHER_ROLE') return false
-          // Managers review every student request, documents and college IDs included.
-          if (actor.globalRole === GlobalRole.MANAGER) return true
           // A verified teacher reviews students who picked them and students of their own institution, with documents.
+          // Managers, unverified teachers and students do not review.
           if (actor.globalRole !== GlobalRole.TEACHER || !actor.institutionVerified) return false
           return resource.addressedToActor === true || resource.sameInstitution === true
         default:

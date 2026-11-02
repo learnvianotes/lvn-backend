@@ -3458,7 +3458,7 @@ type Mutation {
   reviewStudentIdVerification(input: ReviewStudentIdVerificationInput!): StudentIdVerificationPayload!
 
   """
-  Teachers: student requests in their scope. Managers: student requests. Platform admins: all, including teacher applications.
+  Verified teachers: student requests in their scope. Platform admins: all, including teacher applications. A reviewer cannot decide their own request. Managers are refused.
   """
   reviewVerificationRequest(input: ReviewVerificationRequestInput!): VerificationRequestPayload!
 
@@ -4756,7 +4756,7 @@ type Query {
   studentIdVerificationEnabled: Boolean!
 
   """
-  Platform admins and managers: every pending college-ID request. A teacher: students of their institution. Oldest first. `after` is the last id seen.
+  Platform admins: every pending college-ID request. A verified teacher: students of their institution. Managers, unverified teachers and students are refused. Oldest first. `after` is the last id seen.
   """
   studentIdVerificationQueue(after: UUID, first: Int): [StudentIdVerificationRequest!]!
 
@@ -4817,7 +4817,7 @@ type Query {
   verificationDocumentUrl(fileId: UUID!, requestId: UUID!): SignedUrl!
 
   """
-  Teachers: student requests addressed to them, and students of their institution. Managers: every student request. Platform admins: every pending request. Oldest first; `after` is the last id seen.
+  Verified teachers: student requests addressed to them, and students of their institution. Platform admins: every pending request. Managers, unverified teachers and students are refused. Oldest first; `after` is the last id seen.
   """
   verificationRequestsToReview(after: UUID, first: Int): [VerificationRequest!]!
 
@@ -6559,9 +6559,14 @@ type User {
   verificationMethod: VerificationMethod
 
   """
-  Verified by institutional email, a teacher, or platform admins (ADR-0019)
+  Verified by institutional email, a teacher, or platform admins (ADR-0019). The stored institution flag. A platform admin can be false here and still need no verification.
   """
   verified: Boolean!
+
+  """
+  Viewer only. False for a platform admin, and for an account that is already institution-verified. True when this signed-in person should still verify. Null on anyone else's User. Clients hide verify-your-account prompts when this is false; do not key those prompts off verified alone.
+  """
+  viewerNeedsVerification: Boolean
 }
 
 type UserActivityEvent {
@@ -6613,7 +6618,7 @@ enum VerificationPurpose {
 }
 
 """
-Shown to the requester, the addressed teacher, a teacher at the same institution, a manager and platform admins. Documents are listed for those reviewers.
+Shown to the requester, a verified teacher who was addressed or shares the institution, and platform admins. Documents are listed for those reviewers. Managers cannot review.
 """
 type VerificationRequest {
   """

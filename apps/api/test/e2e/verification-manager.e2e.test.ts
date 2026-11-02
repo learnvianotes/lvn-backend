@@ -4,7 +4,7 @@ import { createTestApp, type TestApp } from '../support/app'
 import { SAMPLES, upload } from '../support/flows'
 import { seedUser, tokenFor } from '../support/seed'
 
-/** Manager and teacher review of student verification, domain review, and the errors-dashboard lookup. */
+/** Verified-teacher review of student verification. Managers cannot review. Domain review and the errors-dashboard lookup stay with platform admins. */
 
 const REQ_DOCS = `mutation ($input: RequestDocumentVerificationInput!) { requestDocumentVerification(input: $input) {
   request { id status } userErrors { code message } } }`
@@ -42,7 +42,7 @@ describe('manager verification, domains and account lookup', () => {
     return { id: u.id, token: tokenFor(t.config, u.id), email: u.email, displayName: u.displayName }
   }
 
-  it('lets a manager and a teacher at the institution review student proof, and only an admin grant MANAGER', async () => {
+  it('lets a verified teacher at the institution review student proof, refuses a manager, and grants roles without verifying', async () => {
     const s = await student()
     const teacher = await seedUser(t.app, { globalRole: 'TEACHER', verified: true, displayName: 'Prof Rao' })
     const other = await seedUser(t.app, { globalRole: 'TEACHER', verified: true, displayName: 'Other' })
@@ -57,34 +57,52 @@ describe('manager verification, domains and account lookup', () => {
     const sent = await t.gql<{ requestDocumentVerification: { request: { id: string } | null; userErrors: { code: string }[] } }>(REQ_DOCS, { input: { fileIds: [fileId], message: 'First year' } }, s.token)
     const requestId = sent.data!.requestDocumentVerification.request!.id
 
-    const managerQueue = await t.gql<{ verificationRequestsToReview: { id: string; documents: { fileId: string; fileName: string }[] }[] }>(QUEUE, {}, manager.token)
-    expect(managerQueue.data!.verificationRequestsToReview.find((row) => row.id === requestId)!.documents).toEqual([{ fileId, fileName: 'id.png' }])
-    const link = await t.gql<{ verificationDocumentUrl: { url: string } }>(DOC, { r: requestId, f: fileId }, manager.token)
-    expect(link.data!.verificationDocumentUrl.url).toEqual(expect.any(String))
+    expect((await t.gql(QUEUE, {}, manager.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+    expect((await t.gql(DOC, { r: requestId, f: fileId }, manager.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+    expect((await t.gql(REVIEW, { input: { requestId, approve: true } }, manager.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
 
     const teacherQueue = await t.gql<{ verificationRequestsToReview: { id: string; documents: { fileName: string }[] }[] }>(QUEUE, {}, teacherToken)
     expect(teacherQueue.data!.verificationRequestsToReview.find((row) => row.id === requestId)!.documents[0]!.fileName).toBe('id.png')
+    const link = await t.gql<{ verificationDocumentUrl: { url: string } }>(DOC, { r: requestId, f: fileId }, teacherToken)
+    expect(link.data!.verificationDocumentUrl.url).toEqual(expect.any(String))
     expect((await t.gql(DOC, { r: requestId, f: fileId }, otherToken)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     expect((await t.gql<{ verificationRequestsToReview: { id: string }[] }>(QUEUE, {}, otherToken)).data!.verificationRequestsToReview.map((row) => row.id)).not.toContain(requestId)
 
-    const approved = await t.gql<{ reviewVerificationRequest: { request: { status: string } | null; userErrors: { code: string }[] } }>(REVIEW, { input: { requestId, approve: true } }, manager.token)
+    const approved = await t.gql<{ reviewVerificationRequest: { request: { status: string } | null; userErrors: { code: string }[] } }>(REVIEW, { input: { requestId, approve: true } }, teacherToken)
     expect(approved.data!.reviewVerificationRequest.userErrors).toEqual([])
     expect(approved.data!.reviewVerificationRequest.request!.status).toBe('APPROVED')
-    expect(await db.auditLog.findFirst({ where: { action: 'verification.approved', targetId: requestId } })).toMatchObject({ actorId: manager.id })
-    expect(await db.auditLog.findFirst({ where: { action: 'verification.document.viewed', targetId: requestId, actorId: manager.id } })).toBeTruthy()
+    expect(await db.auditLog.findFirst({ where: { action: 'verification.approved', targetId: requestId } })).toMatchObject({ actorId: teacher.id })
+    expect(await db.auditLog.findFirst({ where: { action: 'verification.document.viewed', targetId: requestId, actorId: teacher.id } })).toBeTruthy()
 
     const applicant = await student('Kiran Rao')
     const applied = await t.gql<{ applyToTeach: { request: { id: string; purpose: string } | null; userErrors: { code: string }[] } }>(APPLY, { input: { institution: 'City College', subjects: 'Physics' } }, applicant.token)
     const applicationId = applied.data!.applyToTeach.request!.id
     expect(applied.data!.applyToTeach.request!.purpose).toBe('TEACHER_ROLE')
-    expect((await t.gql<{ verificationRequestsToReview: { id: string }[] }>(QUEUE, {}, manager.token)).data!.verificationRequestsToReview.map((row) => row.id)).not.toContain(applicationId)
+    expect((await t.gql(QUEUE, {}, manager.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     expect((await t.gql(REVIEW, { input: { requestId: applicationId, approve: true } }, manager.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+    expect((await t.gql(REVIEW, { input: { requestId: applicationId, approve: true } }, teacherToken)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
 
     const promoted = await student('New Manager')
     expect((await t.gql(SET_ROLE, { u: promoted.id, r: 'MANAGER' }, manager.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     expect((await t.gql<{ setGlobalRole: { ok: boolean } }>(SET_ROLE, { u: promoted.id, r: 'MANAGER' }, admin.token)).data!.setGlobalRole.ok).toBe(true)
-    expect(await db.user.findUniqueOrThrow({ where: { id: promoted.id } })).toMatchObject({ globalRole: 'MANAGER' })
+    expect(await db.user.findUniqueOrThrow({ where: { id: promoted.id } })).toMatchObject({ globalRole: 'MANAGER', verifiedAt: null })
     expect(await db.auditLog.findFirst({ where: { action: 'role.changed', targetId: promoted.id } })).toMatchObject({ actorId: admin.id, metadata: { from: 'STUDENT', to: 'MANAGER' } })
+    const managerViewer = await t.gql<{ viewer: { verified: boolean; globalRole: string; viewerNeedsVerification: boolean } }>(
+      '{ viewer { verified globalRole viewerNeedsVerification } }',
+      {},
+      tokenFor(t.config, promoted.id, undefined, ['MANAGER']),
+    )
+    expect(managerViewer.data!.viewer).toEqual({ verified: false, globalRole: 'MANAGER', viewerNeedsVerification: true })
+
+    const madeAdmin = await student('New Admin')
+    expect((await t.gql<{ setGlobalRole: { ok: boolean } }>(SET_ROLE, { u: madeAdmin.id, r: 'PLATFORM_ADMIN' }, admin.token)).data!.setGlobalRole.ok).toBe(true)
+    expect(await db.user.findUniqueOrThrow({ where: { id: madeAdmin.id } })).toMatchObject({ globalRole: 'PLATFORM_ADMIN', verifiedAt: null })
+    const adminViewer = await t.gql<{ viewer: { verified: boolean; globalRole: string; viewerNeedsVerification: boolean } }>(
+      '{ viewer { verified globalRole viewerNeedsVerification } }',
+      {},
+      tokenFor(t.config, madeAdmin.id, undefined, ['PLATFORM_ADMIN']),
+    )
+    expect(adminViewer.data!.viewer).toEqual({ verified: false, globalRole: 'PLATFORM_ADMIN', viewerNeedsVerification: false })
   })
 
   it('lets an admin approve a domain before anyone asks, and resolve account ids', async () => {

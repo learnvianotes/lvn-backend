@@ -82,7 +82,7 @@ extend type Query {
   studentIdVerificationEnabled: Boolean!
   "Signed in: the viewer's latest college-ID request, or null if they have never sent one."
   myStudentIdVerification: StudentIdVerificationRequest
-  "Platform admins and managers: every pending college-ID request. A teacher: students of their institution. Oldest first. `after` is the last id seen."
+  "Platform admins: every pending college-ID request. A verified teacher: students of their institution. Managers, unverified teachers and students are refused. Oldest first. `after` is the last id seen."
   studentIdVerificationQueue(first: Int, after: UUID): [StudentIdVerificationRequest!]!
   "A reviewer of this card: a 5-minute link. Every view is written to the audit log. The student is refused."
   studentIdCardUrl(requestId: UUID!): SignedUrl!

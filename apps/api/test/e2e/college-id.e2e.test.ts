@@ -34,6 +34,7 @@ describe('college ID verification (ADR-0099)', () => {
   let storage: Storage
   let admin: { id: string; token: string }
   let teacher: { id: string; token: string }
+  let manager: { token: string }
 
   const student = async (dob = '2004-05-01') => {
     const u = await seedUser(t.app)
@@ -71,6 +72,8 @@ describe('college ID verification (ADR-0099)', () => {
     admin = { id: a.id, token: tokenFor(t.config, a.id, undefined, ['PLATFORM_ADMIN']) }
     const teacherUser = await seedUser(t.app, { globalRole: 'TEACHER', verified: true })
     teacher = { id: teacherUser.id, token: tokenFor(t.config, teacherUser.id, undefined, ['TEACHER']) }
+    const managerUser = await seedUser(t.app, { globalRole: 'MANAGER', verified: true })
+    manager = { token: tokenFor(t.config, managerUser.id, undefined, ['MANAGER']) }
     expect((await t.gql(ENABLED)).data).toEqual({ studentIdVerificationEnabled: false })
     expect((await t.gql<{ studentIdVerificationSettings: { enabled: boolean } }>(SETTINGS, {}, admin.token)).data!.studentIdVerificationSettings.enabled).toBe(false)
     const probe = await student()
@@ -110,13 +113,15 @@ describe('college ID verification (ADR-0099)', () => {
     const listed = await t.gql<{ myVerificationRequests: { id: string; collegeIdCard: boolean; documents: unknown[] }[] }>('{ myVerificationRequests { id collegeIdCard documents { fileId } } }', {}, s.token)
     expect(listed.data!.myVerificationRequests.find((r) => r.id === request.id)).toEqual({ id: request.id, collegeIdCard: true, documents: [] })
 
-    for (const token of [s.token, other.token, teacher.token]) {
+    for (const token of [s.token, other.token, teacher.token, manager.token]) {
       expect((await t.gql(CARD, { id: request.id }, token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     }
     expect((await t.gql(QUEUE, {}, s.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     expect((await t.gql(QUEUE, {}, teacher.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+    expect((await t.gql(QUEUE, {}, manager.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     expect((await t.gql<{ verificationRequestsToReview: { id: string }[] }>('{ verificationRequestsToReview { id } }', {}, teacher.token)).data!.verificationRequestsToReview.map((r) => r.id)).not.toContain(request.id)
-    for (const token of [s.token, teacher.token]) {
+    expect((await t.gql('{ verificationRequestsToReview { id } }', {}, manager.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+    for (const token of [s.token, teacher.token, manager.token]) {
       expect((await t.gql(REVIEW, { input: { requestId: request.id, approve: true } }, token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     }
 

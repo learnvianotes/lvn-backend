@@ -1,5 +1,7 @@
 # Sign-in linking, verification, and review
 
+Review and platform-admin verification in this note were superseded on 2026-11-02 by [verification review rules](2026-11-02-verification-review-rules.md) (`@lvn/contracts` 0.75.0).
+
 - Date: 2026-11-01
 - Package: `@lvn/contracts` 0.73.0 → **0.74.0**
 - Spec: ADR-0100 (amended), ADR-0017, ADR-0019, ADR-0005

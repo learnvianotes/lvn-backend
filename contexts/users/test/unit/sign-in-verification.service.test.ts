@@ -4,6 +4,7 @@ import { GlobalRole } from '@lvn/contracts/domain'
 import { AdminService } from '../../src/application/admin.service'
 import { AuthService } from '../../src/application/auth.service'
 import { OAuthService } from '../../src/application/oauth.service'
+import { UsersService } from '../../src/application/users.service'
 import { VerificationService } from '../../src/application/verification.service'
 
 function rejection(run: () => Promise<unknown>): Promise<AppError> {
@@ -188,14 +189,13 @@ describe('setGlobalRole verification', () => {
     return { service, updates, current: () => user }
   }
 
-  it('sets verifiedAt when the grant is PLATFORM_ADMIN or MANAGER, and leaves it alone for TEACHER', async () => {
-    const { service, updates } = admin()
+  it('changes the role only, and never sets verifiedAt', async () => {
+    const { service, updates, current } = admin()
     await service.setGlobalRole('admin', 'user', GlobalRole.MANAGER)
-    expect(updates[0]).toMatchObject({ globalRole: 'MANAGER', verifiedAt: expect.any(Date) })
     await service.setGlobalRole('admin', 'user', GlobalRole.PLATFORM_ADMIN)
-    expect(updates[1]).toEqual({ globalRole: 'PLATFORM_ADMIN' })
     await service.setGlobalRole('admin', 'user', GlobalRole.TEACHER)
-    expect(updates[2]).toEqual({ globalRole: 'TEACHER' })
+    expect(updates).toEqual([{ globalRole: 'MANAGER' }, { globalRole: 'PLATFORM_ADMIN' }, { globalRole: 'TEACHER' }])
+    expect(current().verifiedAt).toBeNull()
   })
 })
 
@@ -245,8 +245,61 @@ describe('reviewing your own verification request', () => {
     await expect(service.documentsFor('admin', other)).resolves.toEqual([{ id: 'file' }])
   })
 
-  it('still hides documents from an unverified teacher', async () => {
-    const { service } = verification({ id: 'teacher', globalRole: 'TEACHER', institutionVerified: false })
-    await expect(service.documentsFor('teacher', { ...request, userId: 'student', teacherId: 'teacher' })).resolves.toEqual([])
+  it('lets a verified teacher open documents addressed to them', async () => {
+    const { service } = verification({ id: 'teacher', globalRole: 'TEACHER', institutionVerified: true })
+    const other = { ...request, userId: 'student', teacherId: 'teacher' }
+    await expect(service.documentsFor('teacher', other)).resolves.toEqual([{ id: 'file' }])
+  })
+
+  it('hides documents from an unverified teacher, a manager and a student', async () => {
+    const hidden = { ...request, userId: 'student', teacherId: 'teacher' }
+    const unverifiedTeacher = verification({ id: 'teacher', globalRole: 'TEACHER', institutionVerified: false })
+    await expect(unverifiedTeacher.service.documentsFor('teacher', hidden)).resolves.toEqual([])
+    const manager = verification({ id: 'manager', globalRole: 'MANAGER', institutionVerified: true })
+    await expect(manager.service.documentsFor('manager', hidden)).resolves.toEqual([])
+    const error = await rejection(() => manager.service.review('manager', 'req', true))
+    expect(error).toMatchObject({ code: ErrorCode.FORBIDDEN })
+    await expect(manager.service.collegeIdQueue('manager')).rejects.toMatchObject({ code: ErrorCode.FORBIDDEN })
+    await expect(manager.service.toReview('manager')).rejects.toMatchObject({ code: ErrorCode.FORBIDDEN })
+    const student = verification({ id: 'student', globalRole: 'STUDENT', institutionVerified: true })
+    await expect(student.service.documentsFor('student', hidden)).resolves.toEqual([])
+    await expect(student.service.documentUrl('student', 'req', 'file')).rejects.toMatchObject({ code: ErrorCode.FORBIDDEN })
+  })
+})
+
+describe('viewerNeedsVerification', () => {
+  function users(row: { globalRole: string; verifiedAt: Date | null }) {
+    return new UsersService(
+      {
+        user: {
+          findFirst: async () => ({
+            id: 'u',
+            handle: 'ada',
+            displayName: 'Ada',
+            email: 'ada@example.com',
+            emailVerifiedAt: new Date(),
+            registrationCompletedAt: new Date(),
+            verificationMethod: null,
+            createdAt: new Date(),
+            dateOfBirth: new Date('2000-01-01'),
+            accountStatus: 'ACTIVE',
+            deletionRequestedAt: null,
+            analyticsOptOut: false,
+            consents: [],
+            ...row,
+          }),
+        },
+      } as never,
+      { statusOf: async () => ({ email: null, status: 'NONE', institution: null }) } as never,
+      { consentAge: () => 18 } as never,
+    )
+  }
+
+  it('is false for a platform admin with no verifiedAt, and true for everyone else until they are verified', async () => {
+    expect((await users({ globalRole: 'PLATFORM_ADMIN', verifiedAt: null }).viewerProfile('u'))!.viewerNeedsVerification).toBe(false)
+    expect((await users({ globalRole: 'TEACHER', verifiedAt: null }).viewerProfile('u'))!.viewerNeedsVerification).toBe(true)
+    expect((await users({ globalRole: 'MANAGER', verifiedAt: null }).viewerProfile('u'))!.viewerNeedsVerification).toBe(true)
+    expect((await users({ globalRole: 'STUDENT', verifiedAt: new Date() }).viewerProfile('u'))!.viewerNeedsVerification).toBe(false)
+    expect((await users({ globalRole: 'STUDENT', verifiedAt: null }).publicProfile('u'))!.viewerNeedsVerification).toBeNull()
   })
 })
