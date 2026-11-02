@@ -553,11 +553,15 @@ type AdminSetting
 type AdminSettingConstraints
   @join__type(graph: USERS)
 {
-  """Whole numbers: the smallest value, when the setting is an integer."""
-  min: Int
+  """
+  The smallest value, when the setting is an integer. Float so a byte cap above 2^31-1 can be listed.
+  """
+  min: Float
 
-  """Whole numbers: the largest value, when the setting is an integer."""
-  max: Int
+  """
+  The largest value, when the setting is an integer. Float so a byte cap above 2^31-1 can be listed.
+  """
+  max: Float
 
   """Text: the longest value, in characters."""
   maxLength: Int
@@ -4186,9 +4190,20 @@ type Mutation
 
   """Ends this device's session (its whole refresh-token family)"""
   signOut: OkPayload! @join__field(graph: USERS)
-  verifyEmail(input: VerifyEmailInput!): OkPayload! @join__field(graph: USERS)
 
-  """Always ok, whether or not an account exists"""
+  """
+  Confirms the login email, or attaches a password from a link. Returns the user so clients can replace the session snapshot.
+  """
+  verifyEmail(input: VerifyEmailInput!): VerifyEmailPayload! @join__field(graph: USERS)
+
+  """
+  Sends another login-email link to the signed-in account. Already verified: ok, and no mail. Three an hour.
+  """
+  resendVerification: OkPayload! @join__field(graph: USERS)
+
+  """
+  Always ok, whether or not an account exists. No mail is sent when no live account has that address.
+  """
   requestPasswordReset(input: RequestPasswordResetInput!): OkPayload! @join__field(graph: USERS)
 
   """Sets the password and signs out every device"""
@@ -5721,6 +5736,11 @@ type Query
   Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2)
   """
   termsVersion: String! @join__field(graph: USERS)
+
+  """
+  Action ids an institution-unverified account cannot do. Empty means none. Pass these into can() on web and mobile.
+  """
+  unverifiedGatedActions: [String!]! @join__field(graph: USERS)
 
   """
   Public. False until a platform admin turns it on. Clients hide the college-ID control while it is false. Independent of uploadsEnabled.
@@ -8236,6 +8256,21 @@ input VerifyEmailInput
   @join__type(graph: USERS)
 {
   token: String!
+}
+
+"""
+The account after a verification link is used. `user` is null when the link fails.
+"""
+type VerifyEmailPayload
+  @join__type(graph: USERS)
+{
+  ok: Boolean!
+
+  """
+  Login email is `emailVerified`. Institution verification is `verified` and is not set by this link.
+  """
+  user: User
+  userErrors: [UserError!]!
 }
 
 input VerifyInstitutionalEmailInput

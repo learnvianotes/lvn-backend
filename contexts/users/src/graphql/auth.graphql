@@ -19,6 +19,14 @@ type OkPayload @shareable {
   userErrors: [UserError!]!
 }
 
+"The account after a verification link is used. `user` is null when the link fails."
+type VerifyEmailPayload {
+  ok: Boolean!
+  "Login email is `emailVerified`. Institution verification is `verified` and is not set by this link."
+  user: User
+  userErrors: [UserError!]!
+}
+
 type Session {
   "15-minute RS256 JWT. Web keeps it in memory; mobile in expo-secure-store."
   accessToken: String!
@@ -79,6 +87,8 @@ input ResetPasswordInput {
 extend type Query {
   "Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2)"
   termsVersion: String!
+  "Action ids an institution-unverified account cannot do. Empty means none. Pass these into can() on web and mobile."
+  unverifiedGatedActions: [String!]!
 }
 
 type Mutation {
@@ -87,8 +97,11 @@ type Mutation {
   refreshSession(input: RefreshSessionInput!): AuthPayload!
   "Ends this device's session (its whole refresh-token family)"
   signOut: OkPayload!
-  verifyEmail(input: VerifyEmailInput!): OkPayload!
-  "Always ok, whether or not an account exists"
+  "Confirms the login email, or attaches a password from a link. Returns the user so clients can replace the session snapshot."
+  verifyEmail(input: VerifyEmailInput!): VerifyEmailPayload!
+  "Sends another login-email link to the signed-in account. Already verified: ok, and no mail. Three an hour."
+  resendVerification: OkPayload!
+  "Always ok, whether or not an account exists. No mail is sent when no live account has that address."
   requestPasswordReset(input: RequestPasswordResetInput!): OkPayload!
   "Sets the password and signs out every device"
   resetPassword(input: ResetPasswordInput!): OkPayload!

@@ -1,5 +1,5 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common'
-import { Action, can } from '@lvn/contracts/domain'
+import { Action, can, verificationBlocks } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { AUDIT, type Audit } from '@lvn-backend/facades'
@@ -59,7 +59,8 @@ export class ClassroomSharesService implements OnModuleInit {
     const role = await this.role(ownerId, classroomId)
     if (!role) throw Errors.notFound('Class not found.')
     if (!STAFF.includes(role)) throw Errors.forbidden('The class’s teacher and TAs share notes with it.')
-    if (!can(actor, Action.NOTE_SHARE, { kind: 'note', note: noteFacts(note, null), shareTarget: { kind: 'CLASSROOM' } })) throw Errors.forbidden('Verify your account to share notes.')
+    const shareResource = { kind: 'note' as const, note: noteFacts(note, null), shareTarget: { kind: 'CLASSROOM' as const } }
+    if (!can(actor, Action.NOTE_SHARE, shareResource)) throw Errors.forbidden(verificationBlocks(actor, Action.NOTE_SHARE, shareResource) ? 'Verify your account to share notes.' : undefined)
     const existing = await this.db.classroomShare.findUnique({ where: { noteId_classroomId: { noteId, classroomId } } })
     if (!existing) {
       await this.db.$transaction(async (tx) => {

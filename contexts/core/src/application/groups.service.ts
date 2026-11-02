@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { Action, can, GroupJoinPolicy, GroupPrivacy, GroupRole as Role, GroupType, type Actor, type Resource } from '@lvn/contracts/domain'
+import { Action, can, GroupJoinPolicy, GroupPrivacy, GroupRole as Role, GroupType, verificationBlocks, type Actor, type Resource } from '@lvn/contracts/domain'
 import { docSchema, docText } from '@lvn/contracts/validation'
 import { assertWithinPlan, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
@@ -123,7 +123,7 @@ export class GroupsService {
 
   async create(actorId: string, input: { name: string; description?: string | null; privacy: 'PUBLIC' | 'PRIVATE'; joinPolicy?: 'OPEN' | 'APPROVAL' | null; type?: 'COMMUNITY' | 'PROJECT' | null }): Promise<string> {
     const actor = await this.actor(actorId)
-    if (!can(actor, Action.GROUP_CREATE)) throw Errors.forbidden(actor.institutionVerified ? undefined : 'Verify your account to create groups.')
+    if (!can(actor, Action.GROUP_CREATE)) throw Errors.forbidden(verificationBlocks(actor, Action.GROUP_CREATE) ? 'Verify your account to create groups.' : undefined)
     const { name, description } = this.clean(input.name, input.description)
     // Project workspaces have their own limit (ADR-0048).
     const type = input.type ?? 'COMMUNITY'
@@ -209,7 +209,7 @@ export class GroupsService {
     const { group, role, resource, actor } = await this.require(actorId, groupId)
     if (role) return
     if (!can(actor, Action.GROUP_JOIN, resource)) {
-      if (!actor.institutionVerified) throw Errors.forbidden('Verify your account to join groups.')
+      if (verificationBlocks(actor, Action.GROUP_JOIN, resource)) throw Errors.forbidden('Verify your account to join groups.')
       throw Errors.forbidden('This group approves its members: ask to join instead.')
     }
     await this.addMember(group, actorId)
@@ -220,7 +220,7 @@ export class GroupsService {
     if (role) throw Errors.conflict('You are already in this group.')
     if (pending) return pending.id
     if (!can(actor, Action.GROUP_REQUEST_JOIN, resource)) {
-      if (!actor.institutionVerified) throw Errors.forbidden('Verify your account to join groups.')
+      if (verificationBlocks(actor, Action.GROUP_REQUEST_JOIN, resource)) throw Errors.forbidden('Verify your account to join groups.')
       throw Errors.forbidden('This group is open: join it directly.')
     }
     const text = message?.trim() || null
@@ -356,7 +356,7 @@ export class GroupsService {
 
   async post(actorId: string, groupId: string, body: unknown, kind: 'POST' | 'IDEA' = 'POST'): Promise<string> {
     const { group, resource, actor } = await this.require(actorId, groupId)
-    if (!can(actor, Action.GROUP_POST, resource)) throw Errors.forbidden(actor.institutionVerified ? 'Join the group to post in it.' : 'Verify your account to post.')
+    if (!can(actor, Action.GROUP_POST, resource)) throw Errors.forbidden(verificationBlocks(actor, Action.GROUP_POST, resource) ? 'Verify your account to post.' : 'Join the group to post in it.')
     if (kind === 'IDEA' && group.type !== 'PROJECT') throw Errors.validation('Ideas are for project workspaces.', ['input', 'kind'])
     const member = await this.db.groupMember.findUnique({ where: { groupId_userId: { groupId, userId: actorId } } })
     if (member?.mutedUntil && member.mutedUntil > new Date()) throw Errors.forbidden('You are muted in this group for now.')

@@ -443,14 +443,18 @@ type AdminSetting {
 
 """What an admin may send for this setting."""
 type AdminSettingConstraints {
-  """Whole numbers: the largest value, when the setting is an integer."""
-  max: Int
+  """
+  The largest value, when the setting is an integer. Float so a byte cap above 2^31-1 can be listed.
+  """
+  max: Float
 
   """Text: the longest value, in characters."""
   maxLength: Int
 
-  """Whole numbers: the smallest value, when the setting is an integer."""
-  min: Int
+  """
+  The smallest value, when the setting is an integer. Float so a byte cap above 2^31-1 can be listed.
+  """
+  min: Float
 
   """
   An integer may be cleared. Send an empty value. Empty means no cap for ai_monthly_budget_micro_usd.
@@ -3413,7 +3417,9 @@ type Mutation {
   requestDataExport: DataExportPayload!
   requestDocumentVerification(input: RequestDocumentVerificationInput!): VerificationRequestPayload!
 
-  """Always ok, whether or not an account exists"""
+  """
+  Always ok, whether or not an account exists. No mail is sent when no live account has that address.
+  """
   requestPasswordReset(input: RequestPasswordResetInput!): OkPayload!
   requestTeacherVerification(input: RequestTeacherVerificationInput!): VerificationRequestPayload!
 
@@ -3425,6 +3431,11 @@ type Mutation {
   """Every other group: the admins accept or reject"""
   requestToJoinGroup(input: RequestToJoinGroupInput!): GroupPayload!
   resendInstitutionalEmailCode: OkPayload!
+
+  """
+  Sends another login-email link to the signed-in account. Already verified: ok, and no mail. Three an hour.
+  """
+  resendVerification: OkPayload!
 
   """
   Platform admins. Forgets the saved row. The environment variable or the built-in default applies again.
@@ -3683,7 +3694,11 @@ type Mutation {
   """Replaces the items written by hand; imported items stay"""
   updateTeacherProfile(input: UpdateTeacherProfileInput!): TeacherProfilePayload!
   updateWeeklyTask(input: UpdateWeeklyTaskInput!): WeeklyTaskPayload!
-  verifyEmail(input: VerifyEmailInput!): OkPayload!
+
+  """
+  Confirms the login email, or attaches a password from a link. Returns the user so clients can replace the session snapshot.
+  """
+  verifyEmail(input: VerifyEmailInput!): VerifyEmailPayload!
   verifyInstitutionalEmail(input: VerifyInstitutionalEmailInput!): OkPayload!
   withdrawClassroomJoinRequest(input: JoinRequestIdInput!): ClassroomPayload!
 
@@ -4907,6 +4922,11 @@ type Query {
   """
   trendingFeed(after: String, first: Int): CommunityConnection!
   unreadNotificationCount: Int!
+
+  """
+  Action ids an institution-unverified account cannot do. Empty means none. Pass these into can() on web and mobile.
+  """
+  unverifiedGatedActions: [String!]!
 
   """
   ADR-0097: whether people may upload files here. Off, clients hide every upload control and createUploadIntent answers UNAVAILABLE.
@@ -6933,6 +6953,19 @@ enum VerificationRequestStatus {
 
 input VerifyEmailInput {
   token: String!
+}
+
+"""
+The account after a verification link is used. `user` is null when the link fails.
+"""
+type VerifyEmailPayload {
+  ok: Boolean!
+
+  """
+  Login email is `emailVerified`. Institution verification is `verified` and is not set by this link.
+  """
+  user: User
+  userErrors: [UserError!]!
 }
 
 input VerifyInstitutionalEmailInput {

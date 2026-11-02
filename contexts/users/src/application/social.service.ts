@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { Action, can, milestoneFor, type Actor, type GlobalRole, type Resource } from '@lvn/contracts/domain'
+import { Action, can, milestoneFor, verificationBlocks, type Actor, type GlobalRole, type Resource } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
@@ -135,7 +135,7 @@ export class SocialService {
     const { actor, resource } = await this.facts(actorId, targetId)
     if (resource.following) return
     if (!can(actor, Action.USER_FOLLOW, resource)) {
-      if (!actor.institutionVerified) throw Errors.forbidden('Verify your account to follow people.')
+      if (verificationBlocks(actor, Action.USER_FOLLOW, resource)) throw Errors.forbidden('Verify your account to follow people.')
       // Blocks and restricted minors get the same answer: neither is revealed (ADR-0016).
       throw Errors.forbidden("You can't follow this person.")
     }
@@ -216,7 +216,7 @@ export class SocialService {
     if (resource.connected || resource.pendingConnection === 'OUTGOING') return
     if (resource.pendingConnection === 'INCOMING') throw Errors.conflict('They already asked to connect with you: accept their request instead.')
     if (!can(actor, Action.USER_REQUEST_CONNECTION, resource)) {
-      if (!actor.institutionVerified) throw Errors.forbidden('Verify your account to connect with teachers.')
+      if (verificationBlocks(actor, Action.USER_REQUEST_CONNECTION, resource)) throw Errors.forbidden('Verify your account to connect with teachers.')
       throw Errors.forbidden('Teachers connect with other teachers.')
     }
     const limit = await this.limiter.hit(`users:connect:${actorId}`, { max: CONNECTION_REQUESTS_PER_DAY, windowSeconds: 86_400 })
@@ -232,7 +232,7 @@ export class SocialService {
     if (!request) throw Errors.notFound('That request is not there any more.')
     if (request.status !== 'PENDING') throw Errors.conflict('That request was already answered.')
     const { actor, resource } = await this.facts(actorId, request.fromUserId)
-    if (accept && !can(actor, Action.USER_RESPOND_TO_CONNECTION, resource)) throw Errors.forbidden(actor.institutionVerified ? undefined : 'Verify your account to connect with teachers.')
+    if (accept && !can(actor, Action.USER_RESPOND_TO_CONNECTION, resource)) throw Errors.forbidden(verificationBlocks(actor, Action.USER_RESPOND_TO_CONNECTION, resource) ? 'Verify your account to connect with teachers.' : undefined)
     await this.db.$transaction(async (tx) => {
       await tx.connectionRequest.update({ where: { id: requestId }, data: { status: accept ? 'ACCEPTED' : 'DECLINED', respondedAt: new Date() } })
       if (accept) await tx.connection.createMany({ data: [pair(actorId, request.fromUserId)], skipDuplicates: true })

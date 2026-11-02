@@ -23,18 +23,23 @@ Firebase UID, the GitHub user id, or the LinkedIn `sub`. The email method is the
 second row: the address is already unique.
 
 **Google ID tokens are verified on the server** (`firebase-admin` `verifyIdToken` for `FIREBASE_PROJECT_ID`,
-`sign_in_provider == "google.com"`, `email_verified == true`). Anything else is refused and is not used to look up an
-account.
+`sign_in_provider == "google.com"`). `email_verified === true` is the only value treated as a verified email. A real
+Google sign-in whose email is not verified is refused as "no verified email" and is not used to find or create an
+account. A token `verifyIdToken` rejects is unauthenticated. The rejection code is logged; the token is not.
 
-**Auto-link only when both sides have verified the email.**
+**Auto-link when the provider has verified the email.** Amended: the existing account's own `emailVerifiedAt` is no
+longer required. The provider's proof of the inbox is what stops a stranger from attaching Google to an address they
+do not control.
 
 - The provider identity is already linked: sign in to that user. Password, role, sessions and other data stay.
-- Else the provider verified the email and a user with that verified email exists: add the `OAuthAccount` row and sign
-  in. Do not change the password, role, name, date of birth or existing sessions.
-- Else the email matches a user whose email is not verified: do not link, do not create a second user, do not start a
-  session, do not drop the password. The caller is told to confirm the address first.
-- Else create a new user. Registration details, including the adults-only gate (ADR-0091), are still collected by
-  `completeRegistration`.
+- Else the provider verified the email and a user with that email exists: add the `OAuthAccount` row, set
+  `emailVerifiedAt` when it was null, and sign in. Do not change the password, role, name, date of birth, institution
+  `verifiedAt`, or existing sessions. Do not create a second user.
+- Else the provider has not verified the email: do not link, do not create a user, do not start a session.
+- Else create a new user with `emailVerifiedAt` set. Registration details, including the adults-only gate (ADR-0091),
+  are still collected by `completeRegistration`.
+- Two first sign-ins for the same email lose to the unique `User.email` and `(provider, providerSubject)` constraints.
+  The loser retries `signInWith` and links to the row that won.
 
 **Email sign-up joins an existing account only after a link is used.** `signUp` with an email that already belongs to
 a verified account with no password (a Google, GitHub or LinkedIn account) does not create a user and does not return
@@ -61,7 +66,7 @@ anyone else's `User`.
 
 - Web and mobile draw buttons from `signInOptions`, and after `signUp` they branch on `emailLinkPending` (show the
   "check your email" screen; `verifyEmail` then `signIn`). The verify page is the one they already have.
-- Linking no longer drops an unverified password. The owner of that inbox confirms it, or uses password reset, and
-  only then can Google attach.
+- Linking does not drop a password that was set before the provider sign-in. The person who owns the inbox can replace
+  that password with a reset. A Google sign-in does not wipe it.
 - Contracts **0.65.0**. 0.63.0 shipped with the AI connection models (PR #17) and 0.64.0 shipped with college ID
   verification (PR #18, ADR-0099).

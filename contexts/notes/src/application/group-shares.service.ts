@@ -1,5 +1,5 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common'
-import { Action, can } from '@lvn/contracts/domain'
+import { Action, can, verificationBlocks } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { AUDIT, type Audit } from '@lvn-backend/facades'
@@ -53,7 +53,8 @@ export class GroupSharesService implements OnModuleInit {
     const { note, actor } = await this.notes.require(ownerId, noteId, 'owner')
     if (note.deletedAt) throw Errors.validation('Restore the note from the trash first.')
     if (!(await this.isMember(ownerId, groupId))) throw Errors.forbidden('Share notes only with groups you are in.')
-    if (!can(actor, Action.NOTE_SHARE, { kind: 'note', note: noteFacts(note, null), shareTarget: { kind: 'GROUP' } })) throw Errors.forbidden('Verify your account to share notes.')
+    const shareResource = { kind: 'note' as const, note: noteFacts(note, null), shareTarget: { kind: 'GROUP' as const } }
+    if (!can(actor, Action.NOTE_SHARE, shareResource)) throw Errors.forbidden(verificationBlocks(actor, Action.NOTE_SHARE, shareResource) ? 'Verify your account to share notes.' : undefined)
     const existing = await this.db.groupShare.findUnique({ where: { noteId_groupId: { noteId, groupId } } })
     if (!existing) {
       await this.db.$transaction(async (tx) => {

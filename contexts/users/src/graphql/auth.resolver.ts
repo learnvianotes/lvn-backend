@@ -1,7 +1,8 @@
-import { Inject } from '@nestjs/common'
+import { Inject, UseGuards } from '@nestjs/common'
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql'
-import { requireViewer, type RequestContext } from '@lvn-backend/auth-guard'
+import { CurrentViewer, requireViewer, SignedInGuard, type RequestContext, type Viewer } from '@lvn-backend/auth-guard'
 import { Errors, withUserErrors } from '@lvn-backend/errors'
+import { AppSettingsService } from '../application/app-settings.service'
 import { AuthService } from '../application/auth.service'
 import { withInviteError } from './access.resolver'
 import { SessionService } from '../application/session.service'
@@ -18,6 +19,7 @@ import type {
   MutationSignUpArgs,
   MutationVerifyEmailArgs,
   OkPayload,
+  VerifyEmailPayload,
 } from './schema.types'
 
 @Resolver()
@@ -28,6 +30,7 @@ export class AuthResolver {
     private readonly auth: AuthService,
     private readonly sessions: SessionService,
     private readonly users: UsersService,
+    private readonly settings: AppSettingsService,
     @Inject(USERS_CONFIG) config: UsersConfig,
   ) {
     this.cookie = refreshCookieOptions(config.jwtIssuer)
@@ -36,6 +39,11 @@ export class AuthResolver {
   @Query('termsVersion')
   termsVersion(): string {
     return TERMS_VERSION
+  }
+
+  @Query('unverifiedGatedActions')
+  unverifiedGatedActions(): string[] {
+    return this.settings.unverifiedGatedActions()
   }
 
   @Mutation('signUp')
@@ -80,9 +88,18 @@ export class AuthResolver {
   }
 
   @Mutation('verifyEmail')
-  verifyEmail(@Args() { input }: MutationVerifyEmailArgs): Promise<OkPayload> {
+  verifyEmail(@Args() { input }: MutationVerifyEmailArgs): Promise<VerifyEmailPayload> {
+    return withInviteError<VerifyEmailPayload>(async () => {
+      const { userId } = await this.auth.verifyEmail(input.token)
+      return { ok: true, user: await this.users.viewerProfile(userId) }
+    }, { ok: false, user: null })
+  }
+
+  @Mutation('resendVerification')
+  @UseGuards(SignedInGuard)
+  resendVerification(@CurrentViewer() viewer: Viewer): Promise<OkPayload> {
     return withInviteError<OkPayload>(async () => {
-      await this.auth.verifyEmail(input.token)
+      await this.auth.resendVerification(viewer.userId)
       return { ok: true }
     }, { ok: false })
   }

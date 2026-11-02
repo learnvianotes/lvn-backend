@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { Action, can, type CardType } from '@lvn/contracts/domain'
+import { Action, can, verificationBlocks, type CardType } from '@lvn/contracts/domain'
 import { cardPlainText, inlineText, isValidPosition, NOTE_LIMITS, noteTitleSchema, slugify } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
@@ -175,8 +175,9 @@ export class DraftsService {
   async publish(ownerId: string, noteId: string): Promise<OpenedNote> {
     const opened = await this.notes.require(ownerId, noteId, 'owner')
     if (opened.note.deletedAt) throw Errors.validation('Restore the note from the trash first.')
-    if (!can(opened.actor, Action.NOTE_PUBLISH, { kind: 'note', note: noteFacts(opened.note, null) })) {
-      throw Errors.forbidden(opened.actor.institutionVerified ? 'You cannot publish this note.' : 'Verify your account to publish notes.')
+    const publishResource = { kind: 'note' as const, note: noteFacts(opened.note, null) }
+    if (!can(opened.actor, Action.NOTE_PUBLISH, publishResource)) {
+      throw Errors.forbidden(verificationBlocks(opened.actor, Action.NOTE_PUBLISH, publishResource) ? 'Verify your account to publish notes.' : 'You cannot publish this note.')
     }
     const versionId = await this.db.$transaction(async (tx) => {
       await this.lock(tx, noteId)
