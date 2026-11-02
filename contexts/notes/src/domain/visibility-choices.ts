@@ -13,6 +13,7 @@ export interface VisibilityChoice {
  * That flag wins, so this stays a setting check and not a second verification policy.
  */
 export function gatePublic(actor: Actor, requireVerification: boolean): Actor {
+  if (actor.globalRole === 'PLATFORM_ADMIN') return { ...actor, mayPublishPublic: true }
   if (actor.mayPublishPublic !== undefined) return actor
   return { ...actor, mayPublishPublic: actor.institutionVerified || !requireVerification }
 }

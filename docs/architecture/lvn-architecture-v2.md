@@ -279,7 +279,7 @@ Authorization is enforced in the backend by a single `PolicyService` (`can(user,
 | Share note (user, group, class) *[Amended: ADR-0013 — teacher→teacher needs a connection or a shared classroom; teachers can also share with all connections]* | ✓ | – | – | – | – | – | – | – | – |
 | Follow a teacher *[Added: ADR-0013, ADR-0014]* |  |  |  |  |  |  |  | ✓ any signed-in user | – |
 | Follow a student *[Added: ADR-0016, ADR-0020]* |  |  |  |  |  |  |  | ✓ students and teachers, never a restricted minor | – |
-| Ask for verification; review it *[Added: ADR-0019]* |  |  |  |  |  |  |  | ask: unverified users; review: the addressed verified teacher (no documents) or platform admins | – |
+| Ask for verification; review it *[Added: ADR-0019]* *[Amended: a platform admin reviews without institution verification; a verified teacher reviews students who addressed them or share their institution, documents included; managers do not review]* |  |  |  |  |  |  |  | ask: unverified users; review: platform admins, or a verified teacher (addressed or same institution) | – |
 | Block, restrict, remove a follower *[Added: ADR-0016]* |  |  |  |  |  |  |  | ✓ | – |
 | Send or answer a connection request *[Added: ADR-0013]* |  |  |  |  |  |  |  | ✓ TEACHER role, to other teachers | – |
 | Create a blog or post *[Added: ADR-0014]* |  |  |  |  |  |  |  | ✓ TEACHER role | – |

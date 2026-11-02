@@ -27,6 +27,7 @@ export interface QuizStats {
 /** Public follows the same admin switch as notes. A gate that already set mayPublishPublic wins. */
 export function maySetQuizPublic(actor: Actor, requireVerification: boolean): boolean {
   if (actor.restrictedMinor || actor.suspended) return false
+  if (actor.globalRole === 'PLATFORM_ADMIN') return true
   if (actor.mayPublishPublic !== undefined) return actor.mayPublishPublic
   return actor.institutionVerified || !requireVerification
 }

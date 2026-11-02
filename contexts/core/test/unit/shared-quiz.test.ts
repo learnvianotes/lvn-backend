@@ -16,6 +16,7 @@ describe('shared quizzes', () => {
 
   it('uses the same public gate as notes', () => {
     expect(maySetQuizPublic(person(), true)).toBe(false)
+    expect(maySetQuizPublic(person({ globalRole: GlobalRole.PLATFORM_ADMIN }), true)).toBe(true)
     expect(maySetQuizPublic(person(), false)).toBe(true)
     expect(maySetQuizPublic(person({ mayPublishPublic: true }), true)).toBe(true)
     expect(maySetQuizPublic(person({ restrictedMinor: true, mayPublishPublic: true }), false)).toBe(false)

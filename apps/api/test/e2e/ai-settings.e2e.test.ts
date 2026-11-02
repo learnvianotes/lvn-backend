@@ -133,7 +133,7 @@ describe('AI provider settings', () => {
     expect(picker('CHAT')).toEqual(expect.arrayContaining(['gpt-4o', 'gpt-page-000']))
     expect(picker('CHAT')).not.toEqual(expect.arrayContaining(['gpt-image-1', 'tts-1', 'whisper-1', 'text-embedding-3-small', 'text-embedding-ada-002', 'brand-new-model', 'sora-2', 'gpt-audio-mini']))
     expect(picker('EMBEDDING')).toEqual(['text-embedding-3-small'])
-    expect(picker('TRANSCRIBE')).toEqual(['gpt-audio-mini'])
+    expect(picker('TRANSCRIBE')).toEqual(['gpt-audio-mini', 'whisper-1'])
     expect(picker('IMAGE')).toEqual([])
     expect(picker('TTS')).toEqual([])
     expect(openai.requests.slice(openaiBefore).filter((r) => r.path === '/v1/models').length).toBeGreaterThan(1)
@@ -142,7 +142,8 @@ describe('AI provider settings', () => {
     const ada = await save(app, admin, { id: gptId, kind: 'OPENAI', label: 'ChatGPT', baseUrl: openai.url, mayReceivePrivate: false, enabled: true, chatModel: 'gpt-4o', embedModel: 'text-embedding-ada-002' })
     expect(ada.data!.saveAiConnection.userErrors[0]).toMatchObject({ field: ['input', 'embedModel'], message: expect.stringMatching(/768/) })
     const whisper = await mutate('saveAiTaskRoute', 'SaveAiTaskRouteInput', { task: 'TRANSCRIBE', connectionId: gptId, model: 'whisper-1' })
-    expect(whisper.userErrors[0]!.message).toMatch(/cannot hear recordings/)
+    expect(whisper.userErrors).toEqual([])
+    expect(whisper.settings!.routes).toEqual([{ task: 'TRANSCRIBE', connectionId: gptId, model: 'whisper-1' }])
     openai.modelPageSize = null
     openai.models = ['gpt-test', 'text-embedding-test']
     const restored = await save(app, admin, { id: gptId, kind: 'OPENAI', label: 'ChatGPT', baseUrl: openai.url, mayReceivePrivate: false, enabled: true, chatModel: 'gpt-test', embedModel: 'text-embedding-test' })

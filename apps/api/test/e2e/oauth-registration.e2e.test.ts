@@ -14,7 +14,7 @@ const REDIRECT = 'http://localhost:3000/oauth/callback'
 const VERIFIER = 'v'.repeat(43)
 
 const GOOGLE = `mutation ($t: String!) { signInWithGoogle(input: { idToken: $t }) {
-  session { accessToken user { id email emailVerified registrationComplete displayName globalRole signInMethods } } userErrors { field message code } } }`
+  session { accessToken user { id email emailVerified verified registrationComplete displayName globalRole signInMethods } } userErrors { field message code } } }`
 const EXCHANGE = `mutation ($input: OAuthExchangeInput!) { oauthExchange(input: $input) {
   session { accessToken user { id email displayName emailVerified registrationComplete } } userErrors { field message code } } }`
 const SIGN_UP = `mutation ($input: SignUpInput!) { signUp(input: $input) { emailLinkPending session { accessToken user { id } } userErrors { field message code } } }`
@@ -173,7 +173,7 @@ describe('provider sign-in and registration', () => {
       expect(user.verifiedAt).toBeNull()
       expect(user.passwordHash).not.toBeNull()
       expect((await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password } })).data!.signIn.session!.user.id).toBe(userId)
-      expect((await t.gql<{ viewer: { id: string; emailVerified: boolean } }>(VIEWER, {}, attackerToken)).data!.viewer).toEqual({ id: userId, emailVerified: true })
+      expect((await t.gql<{ viewer: { id: string; emailVerified: boolean; verified: boolean } }>(`{ viewer { id emailVerified verified } }`, {}, attackerToken)).data!.viewer).toEqual({ id: userId, emailVerified: true, verified: false })
     })
 
     it('refuses a Google token whose email is not verified, and stores nothing', async () => {

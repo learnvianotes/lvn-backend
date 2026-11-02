@@ -37,6 +37,8 @@ export class PolicyService implements Policy {
     return {
       id: u.id,
       globalRole: u.globalRole as GlobalRole,
+      // Stored flag only. PLATFORM_ADMIN skips every institution-verification gate inside can(), so a null
+      // verifiedAt does not block an admin. Clients read viewer.viewerNeedsVerification for prompts.
       institutionVerified: u.verifiedAt !== null,
       // The age threshold is configuration, cached briefly (ADR-0101). The account itself is read every time.
       restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.settings.consentAge(), u.consents.length > 0),

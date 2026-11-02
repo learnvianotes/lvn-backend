@@ -82,8 +82,8 @@ describe('people', () => {
     expect(await profile(minor.handle, asha)).toBeNull()
     expect(await profile(minor.id)).toBeNull()
     expect(await profile(minor.handle, minor)).toMatchObject({ id: minor.id, displayName: 'Young Learner' })
-    expect(await followers(teacher)).toEqual([asha.id])
-    expect((await profile(teacher.handle, teacher))!.followerCount).toBe(2)
+    expect(await followers(teacher)).toEqual([unverified.id, asha.id])
+    expect((await profile(teacher.handle, teacher))!.followerCount).toBe(3)
   })
 
   it('finds a profile by handle, with or without @, or by id, for anyone', async () => {
@@ -94,7 +94,7 @@ describe('people', () => {
   it('removing a follower is silent', async () => {
     const before = (await notified(asha)).length
     expect((await act('removeFollower', teacher, asha)).userErrors).toEqual([])
-    expect(await followers(teacher)).toEqual([])
+    expect(await followers(teacher)).toEqual([unverified.id])
     expect((await profile(teacher.handle, asha))!.relation).toMatchObject({ following: false })
     expect(await notified(asha)).toHaveLength(before)
   })
