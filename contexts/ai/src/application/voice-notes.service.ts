@@ -16,6 +16,13 @@ export const VOICE_CAPTURE = {
   streamingFallback: 'transcribeCaptionClip',
 } as const
 
+export interface VoiceNoteInput {
+  noteId: string
+  fileId?: string | null
+  captions?: string | null
+  transcript?: string | null
+}
+
 const TRANSCRIPT_CHARS = 20_000
 const notesSchema = z.object({
   summary: z.string().min(1),
@@ -25,7 +32,7 @@ const notesSchema = z.object({
 
 /**
  * Voice notes: transcribe an uploaded recording, a short caption clip, or turn a transcript into a private note.
- * Uploads are scanned by completeUpload. Caption clips are not stored.
+ * Uploads are scanned by completeUpload. Browser captions are text and are not stored.
  */
 @Injectable()
 export class VoiceNotesService {
@@ -36,33 +43,34 @@ export class VoiceNotesService {
     private readonly gateway: AiGateway,
   ) {}
 
-  capture() {
+  /** Describes the browser. The note must be one this person can read, or a public note when they are signed out. */
+  async captureFor(userId: string | null, input: VoiceNoteInput) {
+    await this.readable(userId, input.noteId)
     return VOICE_CAPTURE
   }
 
-  async transcribeFile(userId: string, fileId: string): Promise<{ text: string; cut: boolean }> {
-    const [file] = await this.files.describe([fileId])
-    if (!file || file.ownerId !== userId || file.status !== 'READY') throw Errors.notFound('Recording not found.')
-    if (file.purpose !== 'VOICE_NOTE' && file.purpose !== 'ATTACHMENT') throw Errors.validation('That file is not a recording.', ['fileId'])
-    if (!file.mimeType.startsWith('audio/') && !file.mimeType.startsWith('video/')) throw Errors.validation('That file is not a recording.', ['fileId'])
-    return this.media.transcribe(fileId, { userId, private: true })
+  async transcribeFile(userId: string, input: VoiceNoteInput): Promise<{ text: string; cut: boolean }> {
+    await this.readable(userId, input.noteId)
+    if (!input.fileId) throw Errors.validation('Upload the recording first.', ['input', 'fileId'])
+    return this.recording(userId, input.noteId, input.fileId)
   }
 
-  async transcribeClip(userId: string, audioBase64: string, mimeType: string): Promise<{ text: string; cut: boolean }> {
-    let bytes: Buffer
-    try {
-      bytes = Buffer.from(audioBase64, 'base64')
-    } catch {
-      throw Errors.validation('The clip is not base64.', ['input', 'audioBase64'])
-    }
-    if (!bytes.length) throw Errors.validation('The clip is empty.', ['input', 'audioBase64'])
-    return this.media.transcribeClip(bytes, mimeType, { userId, private: true })
+  /** Browser captions when they are present. Otherwise the uploaded clip. */
+  async transcribeCaption(userId: string, input: VoiceNoteInput): Promise<{ text: string; cut: boolean }> {
+    await this.readable(userId, input.noteId)
+    const captions = input.captions?.trim() ?? ''
+    if (captions) return { text: captions.slice(0, TRANSCRIPT_CHARS), cut: captions.length > TRANSCRIPT_CHARS }
+    if (input.fileId) return this.recording(userId, input.noteId, input.fileId)
+    throw Errors.validation('Send the captions or the clip.', ['input', 'captions'])
   }
 
   /** A private note: a summary, then a heading and text for each section. The transcript is capped at 20,000 characters. */
-  async notesFromTranscript(userId: string, transcript: string): Promise<{ noteId: string; title: string; summary: string }> {
-    const text = transcript.trim().slice(0, TRANSCRIPT_CHARS)
-    if (!text) throw Errors.validation('There is nothing to turn into notes.', ['transcript'])
+  async notesFromTranscript(userId: string, input: VoiceNoteInput): Promise<{ noteId: string; title: string; summary: string }> {
+    await this.readable(userId, input.noteId)
+    const written = (input.transcript ?? input.captions ?? '').trim()
+    const heard = written ? { text: written, cut: written.length > TRANSCRIPT_CHARS } : input.fileId ? await this.recording(userId, input.noteId, input.fileId) : null
+    const text = heard?.text.trim().slice(0, TRANSCRIPT_CHARS) ?? ''
+    if (!text) throw Errors.validation('There is nothing to turn into notes.', ['input', 'transcript'])
     const generated = await this.gateway.generate({
       task: 'NOTES_FROM_TRANSCRIPT',
       userId,
@@ -83,5 +91,19 @@ export class VoiceNotesService {
     if (!cards.length) throw Errors.unavailable('The AI’s answer could not be used. Try again.')
     const noteId = await this.notes.createNote(userId, { title: title.slice(0, 200), cards })
     return { noteId, title: title.slice(0, 200), summary }
+  }
+
+  private async readable(userId: string | null, noteId: string): Promise<void> {
+    const source = userId ? await this.notes.source(userId, noteId) : await this.notes.publicSource(noteId)
+    if (!source) throw Errors.notFound('Note not found.')
+  }
+
+  private async recording(userId: string, noteId: string, fileId: string): Promise<{ text: string; cut: boolean }> {
+    const [file] = await this.files.describe([fileId])
+    if (!file || file.ownerId !== userId || file.status !== 'READY') throw Errors.notFound('Recording not found.')
+    if (file.parentId && file.parentId !== noteId && file.parentId !== userId) throw Errors.validation('That recording belongs to another note.', ['input', 'fileId'])
+    if (file.purpose !== 'VOICE_NOTE' && file.purpose !== 'ATTACHMENT') throw Errors.validation('That file is not a recording.', ['input', 'fileId'])
+    if (!file.mimeType.startsWith('audio/') && !file.mimeType.startsWith('video/')) throw Errors.validation('That file is not a recording.', ['input', 'fileId'])
+    return this.media.transcribe(fileId, { userId, private: true })
   }
 }

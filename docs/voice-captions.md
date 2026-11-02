@@ -8,7 +8,7 @@ Transcription always sent a WAV through the chat API as `input_audio`. Whisper a
 
 ## What to call
 
-Live captions stay on the device. `voiceCapture` describes that:
+Live captions stay on the device. `voiceCapture(input: { noteId })` describes that and returns `userErrors`:
 
 - `api`: `SpeechRecognition` (use `webkitSpeechRecognition` where that is the name the browser exposes)
 - `interimResults`: true
@@ -16,15 +16,15 @@ Live captions stay on the device. `voiceCapture` describes that:
 - `languages`: `en-US`, `en-IN`, `hi-IN`, `te-IN`
 - `streamingFallback`: `transcribeCaptionClip`
 
-When the browser cannot caption, send a short clip with `transcribeCaptionClip`. The clip is at most about 15 seconds and 2.5 MB of base64 audio (WebM, WAV, MP3, M4A or Ogg). It is turned into 16 kHz mono WAV and sent to the model. It is not stored, so it is not scanned.
+When the browser recognised speech, call `transcribeCaptionClip(input: { noteId, captions })`. The text is not stored. When it could not, upload a short clip and call `transcribeCaptionClip(input: { noteId, fileId })`.
 
 A full recording is an upload:
 
 1. `createUploadIntent` with `purpose: VOICE_NOTE` (or `ATTACHMENT` for audio on a note). Pass `parentId` when the recording belongs to a note.
 2. PUT the bytes, then `completeUpload`. When `SCAN_MODE` is remote, the file stays unscanned-and-unserved until the scanner finishes. Storage still counts against `STORAGE_BYTES`.
-3. `transcribeAudio(fileId)`.
+3. `transcribeAudio(input: { noteId, fileId })`.
 
-`makeNotesFromTranscript(transcript)` writes a private note: a summary card, then a heading and text for each section. The transcript is cut at 20,000 characters. The task is `NOTES_FROM_TRANSCRIPT` (a chat route, not an `AiTask` value).
+`makeNotesFromTranscript(input: { noteId, transcript })` writes a private note: a summary card, then a heading and text for each section. The transcript is cut at 20,000 characters. `fileId` is used when `transcript` and `captions` are empty. The task is `NOTES_FROM_TRANSCRIPT` (a chat route, not an `AiTask` value). Every voice payload includes `userErrors`.
 
 ## Which model
 

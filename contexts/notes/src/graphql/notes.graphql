@@ -65,7 +65,8 @@ type Note @key(fields: "id") {
   draftUpdatedAt: DateTime
   publishedVersion: NoteVersion
   publishedAt: DateTime
-  forkingEnabled: Boolean!
+  "Whether other people may copy this note"
+  allowForks: Boolean!
   "Private copies other people have made"
   forkCount: Int!
   cardCount: Int!

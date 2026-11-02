@@ -46,6 +46,11 @@ export class AuthResolver {
     return this.settings.unverifiedGatedActions()
   }
 
+  @Query('publicNotesRequireVerification')
+  publicNotesRequireVerification(): boolean {
+    return this.settings.publicNotesRequireVerification()
+  }
+
   @Mutation('signUp')
   signUp(@Args() { input }: MutationSignUpArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
     return withInviteError<AuthPayload>(async () => {

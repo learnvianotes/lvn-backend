@@ -289,8 +289,8 @@ export interface MutationProposeTopicArgs {
   input: ProposeTopicInput
 }
 
-export interface MutationSaveNotePageArgs {
-  input: SaveNotePageInput
+export interface MutationSaveNotePagesArgs {
+  input: SaveNotePagesInput
 }
 
 export interface MutationDeleteNotePageArgs {
@@ -401,7 +401,8 @@ export interface Note {
   draftUpdatedAt: Date | null
   publishedVersion: NoteVersion | null
   publishedAt: Date | null
-  forkingEnabled: boolean
+  /** Whether other people may copy this note */
+  allowForks: boolean
   /** Private copies other people have made */
   forkCount: number
   cardCount: number
@@ -564,18 +565,24 @@ export interface NotePageIdInput {
 export interface NotePageImage {
   id: string
   fileId: string
+  /** Null while the scan is pending or failed */
+  href: string | null
+  /** The file's name */
+  name: string
   x: number
   y: number
-  width: number
-  height: number
+  w: number
+  h: number
   rotation: number
-  /** Null while the scan is pending or failed */
-  url: string | null
-  urlExpiresAt: Date | null
 }
 
 export interface NotePagePayload {
   page: NotePage | null
+  userErrors: Array<UserError>
+}
+
+export interface NotePagesPayload {
+  pages: Array<NotePage> | null
   userErrors: Array<UserError>
 }
 
@@ -735,10 +742,11 @@ export interface PlacePageImageInput {
   pageId: string
   /** A PAGE_IMAGE upload for this note, finished with completeUpload */
   fileId: string
+  name?: string | null
   x: number
   y: number
-  width: number
-  height: number
+  w: number
+  h: number
   rotation?: number | null
 }
 
@@ -804,6 +812,10 @@ export interface QuerySharedWithMeArgs {
   after?: string | null
 }
 
+export interface QueryForkingEnabledArgs {
+  noteId: string
+}
+
 export interface QuerySyncPullArgs {
   since?: string | null
   after?: string | null
@@ -825,12 +837,31 @@ export interface RestoreNoteVersionInput {
   versionId: string
 }
 
+export interface SaveNotePageImageInput {
+  /** Absent: a new picture on this page */
+  id?: string | null
+  fileId: string
+  /** Stored as the file's name when set */
+  name?: string | null
+  x: number
+  y: number
+  w: number
+  h: number
+  rotation?: number | null
+}
+
 export interface SaveNotePageInput {
-  noteId: string
   /** Absent: a new page */
-  pageId?: string | null
+  id?: string | null
   index: number
   drawing: unknown
+  /** When set, replaces the pictures on this page. Omit to leave them. */
+  images?: Array<SaveNotePageImageInput> | null
+}
+
+export interface SaveNotePagesInput {
+  noteId: string
+  pages: Array<SaveNotePageInput>
 }
 
 /** Narrows the notes found (and topics, by subject); never widens what the viewer may read */
@@ -1021,10 +1052,11 @@ export interface UpdateNoteDraftPayload {
 
 export interface UpdatePageImageInput {
   imageId: string
+  name?: string | null
   x: number
   y: number
-  width: number
-  height: number
+  w: number
+  h: number
   rotation?: number | null
 }
 

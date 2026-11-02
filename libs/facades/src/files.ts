@@ -12,6 +12,8 @@ export interface FileSummary {
   ownerId: string
   purpose: FilePurposeKind
   originalFileName: string
+  /** The record this file is attached to. A standalone voice note uses the owner's id. */
+  parentId: string | null
   mimeType: string
   sizeBytes: number
   status: string

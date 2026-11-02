@@ -70,6 +70,8 @@ input SetNoteForkingInput {
 extend type Query {
   "Notes other people shared with the viewer, most recently changed first"
   sharedWithMe(first: Int, after: String): NoteConnection!
+  "Whether this note allows copies. False when the viewer cannot read it. The same value as Note.allowForks."
+  forkingEnabled(noteId: UUID!): Boolean!
 }
 
 extend type Mutation {
