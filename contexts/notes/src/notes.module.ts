@@ -25,6 +25,7 @@ import { NoteChunks, NoteRetrievalFacade, PgvectorSemanticSearch } from './appli
 import { SearchService } from './application/search.service'
 import { Typesense } from './infrastructure/typesense'
 import { SyncService } from './application/sync.service'
+import { PagesService } from './application/pages.service'
 import { SharingService } from './application/sharing.service'
 import { FilesResolver, UploadsResolver } from './graphql/files.resolver'
 import { ImportResolver } from './graphql/import.resolver'
@@ -49,6 +50,7 @@ import { OrganiseResolver, SubjectResolver, TopicResolver } from './graphql/orga
 import { ReaderResolver } from './graphql/reader.resolver'
 import { ConversionResolver, NoteConversionResolver } from './graphql/convert.resolver'
 import { SearchResolver } from './graphql/search.resolver'
+import { NotePagesResolver, PageMutationsResolver, PagesResolver } from './graphql/pages.resolver'
 import { SharingResolver } from './graphql/sharing.resolver'
 import { SyncResolver } from './graphql/sync.resolver'
 import { NOTES_CONFIG, type NotesConfig } from './notes.config'
@@ -80,6 +82,7 @@ export class NotesModule {
         DraftsService,
         OrganiseService,
         SharingService,
+        PagesService,
         NotesMaintenance,
         NotesExport,
         NoteImportService,
@@ -129,6 +132,9 @@ export class NotesModule {
         SubjectResolver,
         TopicResolver,
         SharingResolver,
+        PagesResolver,
+        NotePagesResolver,
+        PageMutationsResolver,
         PdfReaderService,
         ReaderResolver,
         PdfConversionService,

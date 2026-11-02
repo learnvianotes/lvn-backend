@@ -43,6 +43,34 @@ export async function callProvider(label: string, target: string, headers: Recor
   return response
 }
 
+/** A POST whose body is not JSON (the audio transcriptions upload). Same address checks as `callProvider`. */
+export async function callProviderBytes(label: string, target: string, headers: Record<string, string>, body: Buffer, contentType: string, timeoutMs: number): Promise<Response> {
+  let url: URL
+  try {
+    url = parseProviderUrl(target)
+  } catch (e) {
+    throw providerFailure(label, e, timeoutMs)
+  }
+  const signal = AbortSignal.timeout(timeoutMs)
+  let res: IncomingMessage
+  try {
+    res = await send(url, 'POST', { 'content-type': contentType, ...headers }, body, signal)
+  } catch (e) {
+    throw providerFailure(label, e, timeoutMs)
+  }
+  if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400) {
+    res.resume()
+    throw new ProviderError(`${label}: the provider redirected the call; give its address directly`, false)
+  }
+  const response = toResponse(res)
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    const status = res.statusCode ?? response.status
+    throw new HttpProviderError(`${label}: ${status} ${text.slice(0, 300)}`, status >= 500 || status === 429, status, text)
+  }
+  return response
+}
+
 /** Server-sent events: each `data:` payload as it arrives (OpenAI's and Anthropic's streams). */
 export async function* serverSentEvents(res: Response): AsyncGenerator<string> {
   const decoder = new TextDecoder()
@@ -77,7 +105,7 @@ function metadataLookup(hostname: string, options: LookupOptions, callback: Look
   })
 }
 
-function send(url: URL, method: string, headers: Record<string, string>, body: string | undefined, signal: AbortSignal): Promise<IncomingMessage> {
+function send(url: URL, method: string, headers: Record<string, string>, body: string | Buffer | undefined, signal: AbortSignal): Promise<IncomingMessage> {
   const request = url.protocol === 'https:' ? httpsRequest : httpRequest
   return new Promise((resolve, reject) => {
     const req = request(url, { method, agent: false, lookup: metadataLookup, signal, headers: { 'content-type': 'application/json', ...headers } }, resolve)

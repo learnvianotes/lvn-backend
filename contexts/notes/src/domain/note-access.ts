@@ -72,12 +72,12 @@ export function visibleNotesWhere(actorId: string | null): Prisma.NoteWhereInput
     OR: [
       { ownerId: actorId },
       { visibility: 'PUBLIC', ...open, ...published },
-      { visibility: { in: ['SHARED', 'PUBLIC'] }, ...shared, shares: { some: { userId: actorId, role: 'EDITOR' } } },
-      { visibility: { in: ['SHARED', 'PUBLIC'] }, ...shared, shares: { some: { userId: actorId, role: 'VIEWER' } }, ...published },
+      { visibility: { in: ['SHARED', 'UNLISTED', 'PUBLIC'] }, ...shared, shares: { some: { userId: actorId, role: 'EDITOR' } } },
+      { visibility: { in: ['SHARED', 'UNLISTED', 'PUBLIC'] }, ...shared, shares: { some: { userId: actorId, role: 'VIEWER' } }, ...published },
       // Shared to a group the viewer is in (ADR-0045): notes' own copy of membership, fed by core's events.
-      { visibility: { in: ['SHARED', 'PUBLIC'] }, ...shared, ...published, groupShares: { some: { group: { deletedAt: null, members: { some: { userId: actorId } } } } } },
+      { visibility: { in: ['SHARED', 'UNLISTED', 'PUBLIC'] }, ...shared, ...published, groupShares: { some: { group: { deletedAt: null, members: { some: { userId: actorId } } } } } },
       // Shared to a class the viewer is in (ADR-0046), from the same kind of copy.
-      { visibility: { in: ['SHARED', 'PUBLIC'] }, ...shared, ...published, classroomShares: { some: { classroom: { deletedAt: null, members: { some: { userId: actorId } } } } } },
+      { visibility: { in: ['SHARED', 'UNLISTED', 'PUBLIC'] }, ...shared, ...published, classroomShares: { some: { classroom: { deletedAt: null, members: { some: { userId: actorId } } } } } },
     ],
   }
 }

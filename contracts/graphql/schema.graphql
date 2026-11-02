@@ -801,12 +801,13 @@ type AiModelPicker {
 }
 
 """
-A select on /admin/ai. IMAGE, TTS, AUDIO, REALTIME and MODERATION stay empty: this app does not call those APIs.
-TRANSCRIBE is a recording sent through the chat API, not the audio-transcriptions API.
+A select on /admin/ai. IMAGE, TTS, AUDIO, REALTIME and MODERATION stay empty.
+TRANSCRIBE offers models that can hear. Whisper and *-transcribe go to POST /audio/transcriptions.
+gpt-audio, Gemini and Gemma take the recording on the chat call.
 """
 enum AiModelUse {
   """
-  The audio transcriptions API. This app does not call it, so the picker is empty.
+  Reserved. Whisper is offered on TRANSCRIBE, so this picker stays empty.
   """
   AUDIO
 
@@ -831,7 +832,7 @@ enum AiModelUse {
   """Realtime. This app does not call it, so the picker is empty."""
   REALTIME
 
-  """The TRANSCRIBE route: a chat model that can hear a recording"""
+  """The TRANSCRIBE route: a model that can hear a recording"""
   TRANSCRIBE
 
   """Speech. This app does not call it, so the picker is empty."""
@@ -2313,7 +2314,7 @@ type ExternalIdentityPayload {
 }
 
 """
-What an upload is for: AVATAR, VERIFICATION_DOCUMENT, and ATTACHMENT (a picture, video, audio or PDF for a note you can edit, given as parentId). Other purposes arrive with their features.
+What an upload is for. ATTACHMENT is a picture, video, audio or PDF for a note you can edit (parentId). PAGE_IMAGE is a PNG or JPEG for a note page (parentId). VOICE_NOTE is audio; parentId is the note when the recording belongs to one, and omitted when it stands alone. Every one of these finishes with completeUpload, so a remote scan still runs.
 """
 enum FilePurpose {
   ATTACHMENT
@@ -2322,6 +2323,7 @@ enum FilePurpose {
   EXPORT
   GROUP_PICTURE
   IMPORT
+  PAGE_IMAGE
   VERIFICATION_DOCUMENT
   VOICE_NOTE
 }
@@ -2671,6 +2673,15 @@ type ImportedNote {
 input IngestAnalyticsInput {
   errors: [ClientErrorInput!]
   events: [UsageEventInput!]
+}
+
+type InkStroke {
+  """Set for pen and marker"""
+  color: String
+  id: String!
+  points: [StrokePoint!]!
+  tool: StrokeTool!
+  width: Float!
 }
 
 type Institution {
@@ -3165,7 +3176,7 @@ type Mutation {
   cancelAccountDeletion: AccountDeletionPayload!
 
   """
-  PRIVATE, SHARED or PUBLIC (owner, verified account); PUBLIC needs a published version
+  PRIVATE, SHARED, UNLISTED or PUBLIC (owner). Unlisted and Public need a published version. Public follows the admin setting public_notes_require_verification.
   """
   changeNoteVisibility(input: ChangeNoteVisibilityInput!): NotePayload!
 
@@ -3208,6 +3219,7 @@ type Mutation {
   createGroup(input: CreateGroupInput!): GroupPayload!
   createGroupPost(input: CreateGroupPostInput!): GroupPostPayload!
   createNote(input: CreateNoteInput!): NotePayload!
+  createSharedQuiz(input: SharedQuizWriteInput!): SharedQuizPayload!
 
   """
   Signed in, unverified, no request already waiting. UNAVAILABLE while the switch is off — nothing is stored.
@@ -3263,7 +3275,9 @@ type Mutation {
 
   """Delete a note in the trash now, for good"""
   deleteNoteForever(input: NoteIdInput!): OkPayload!
+  deleteNotePage(input: NotePageIdInput!): OkPayload!
   deleteResource(input: ResourceIdInput!): OkPayload!
+  deleteSharedQuiz(input: SharedQuizIdInput!): OkPayload!
 
   """Removes the tag from every note"""
   deleteTag(input: IdInput!): OkPayload!
@@ -3317,6 +3331,11 @@ type Mutation {
 
   """The owner hands the group over first"""
   leaveGroup(input: GroupIdInput!): GroupPayload!
+
+  """
+  A private note from a transcript: a summary, then headings and text. At most 20,000 characters are read.
+  """
+  makeNotesFromTranscript(transcript: String!): NotesFromTranscriptPayload!
   markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload!
 
   """
@@ -3327,6 +3346,9 @@ type Mutation {
   oauthExchange(input: OAuthExchangeInput!): AuthPayload!
   pauseRhythm(input: PauseRhythmInput!): OkPayload!
   pinGroupPost(input: PinGroupPostInput!): GroupPostPayload!
+
+  """Place a scanned PNG or JPEG on a page."""
+  placePageImage(input: PlacePageImageInput!): NotePagePayload!
   proposeTopic(input: ProposeTopicInput!): TopicPayload!
 
   """
@@ -3364,6 +3386,7 @@ type Mutation {
   """Stops someone following you; they are not told"""
   removeFollower(input: PersonInput!): PersonPayload!
   removeGroupMember(input: GroupMemberInput!): GroupPayload!
+  removePageImage(input: PageImageIdInput!): OkPayload!
   removePdfHighlight(input: PdfHighlightIdInput!): OkPayload!
   removeResourceRecommendation(input: ResourceRecommendationIdInput!): OkPayload!
 
@@ -3478,6 +3501,9 @@ type Mutation {
   Saves a note the viewer can read to their saved notes (ADR-0076); saving it again changes nothing
   """
   saveNote(input: NoteIdInput!): NotePayload!
+
+  """Write one page's drawing. Editors of the note."""
+  saveNotePage(input: SaveNotePageInput!): NotePagePayload!
   saveResource(input: ResourceIdInput!): ResourcePayload!
 
   """
@@ -3541,6 +3567,7 @@ type Mutation {
   Shows, or stops showing, the viewer's name and counted days on their classes' Rhythm ring
   """
   setRhythmSharing(input: SetRhythmSharingInput!): OkPayload!
+  setSharedQuizVisibility(input: SetSharedQuizVisibilityInput!): SharedQuizPayload!
 
   """Platform admins. Does not change UPLOADS_ENABLED. Off is the default."""
   setStudentIdVerificationEnabled(enabled: Boolean!): OkPayload!
@@ -3593,6 +3620,9 @@ type Mutation {
   """
   submitResource(input: SubmitResourceInput!): ResourcePayload!
 
+  """The taker's own result. The owner is not told who submitted."""
+  submitSharedQuizAttempt(input: SubmitSharedQuizAttemptInput!): SharedQuizAttemptPayload!
+
   """
   Signed in. One pending account-verification request at a time; three requests a week. UNAVAILABLE while the switch is off.
   """
@@ -3606,6 +3636,14 @@ type Mutation {
   Signed in only. Clients send every 10 s or 20 events, and keep what they could not send
   """
   trackEvents(input: TrackEventsInput!): TrackEventsPayload!
+
+  """
+  A VOICE_NOTE or audio ATTACHMENT the viewer uploaded and finished with completeUpload.
+  """
+  transcribeAudio(fileId: UUID!): TranscriptPayload!
+
+  """A few seconds of audio for live captions. Not stored and not scanned."""
+  transcribeCaptionClip(input: TranscribeCaptionClipInput!): TranscriptPayload!
   unblockUser(input: PersonInput!): PersonPayload!
   unfollowUser(input: PersonInput!): PersonPayload!
 
@@ -3645,9 +3683,13 @@ type Mutation {
   updateGroup(input: UpdateGroupInput!): GroupPayload!
   updateNoteDraft(input: UpdateNoteDraftInput!): UpdateNoteDraftPayload!
   updateNotificationSettings(input: UpdateNotificationSettingsInput!): NotificationSettingsPayload!
+  updatePageImage(input: UpdatePageImageInput!): NotePagePayload!
   updatePdfHighlight(input: UpdatePdfHighlightInput!): PdfHighlightPayload!
   updateProfile(input: UpdateProfileInput!): ProfilePayload!
   updateResource(input: UpdateResourceInput!): ResourcePayload!
+
+  """Refused once anyone has taken the quiz"""
+  updateSharedQuiz(input: UpdateSharedQuizInput!): SharedQuizPayload!
 
   """Replaces the items written by hand; imported items stay"""
   updateTeacherProfile(input: UpdateTeacherProfileInput!): TeacherProfilePayload!
@@ -3731,6 +3773,9 @@ type Note {
   """The owner's folder; null for anyone else"""
   folder: Folder
 
+  """Private copies other people have made"""
+  forkCount: Int!
+
   """Set on a copy of another note; it cannot be removed"""
   forkedFrom: ForkCredit
   forkingEnabled: Boolean!
@@ -3757,6 +3802,9 @@ type Note {
   outline: [OutlineItem!]!
   owner: User!
 
+  """In index order. Empty when the note has no pages."""
+  pages: [NotePage!]!
+
   """
   The latest conversion filling this note, for the person who asked for it
   """
@@ -3768,6 +3816,11 @@ type Note {
   previewPicture: MediaFile
   publishedAt: DateTime
   publishedVersion: NoteVersion
+
+  """
+  Owner only, once the note is published and Unlisted or Public: /n/{slug}-{id}
+  """
+  sharePath: String
 
   """
   Owner only: every connection of the owner reads it, and new connections will too (teachers, ADR-0013)
@@ -3806,6 +3859,11 @@ type Note {
   """
   viewerStudying: Boolean
   visibility: Visibility!
+
+  """
+  Owner only: Private, Unlisted and Public, plus Shared while the note is already Shared
+  """
+  visibilityChoices: [VisibilityChoice!]
 }
 
 """
@@ -3919,6 +3977,40 @@ type NoteModeration {
   state: ModerationState!
 }
 
+type NotePage {
+  """
+  The drawing as stored: { strokes: [{ id, tool, color, width, points }] }. tool is pen, marker, eraser or ruler.
+  """
+  drawing: JSON!
+  id: UUID!
+  images: [NotePageImage!]!
+  index: Int!
+  strokes: [InkStroke!]!
+}
+
+input NotePageIdInput {
+  pageId: UUID!
+}
+
+type NotePageImage {
+  fileId: UUID!
+  height: Float!
+  id: UUID!
+  rotation: Float!
+
+  """Null while the scan is pending or failed"""
+  url: String
+  urlExpiresAt: DateTime
+  width: Float!
+  x: Float!
+  y: Float!
+}
+
+type NotePagePayload {
+  page: NotePage
+  userErrors: [UserError!]!
+}
+
 type NotePayload {
   note: Note
   userErrors: [UserError!]!
@@ -4021,6 +4113,17 @@ enum NoteVersionKind {
   CONFLICT
   DRAFT
   PUBLISHED
+}
+
+type NotesFromTranscript {
+  noteId: UUID!
+  summary: String!
+  title: String!
+}
+
+type NotesFromTranscriptPayload {
+  notes: NotesFromTranscript
+  userErrors: [UserError!]!
 }
 
 """
@@ -4153,6 +4256,10 @@ type OutlineItem {
   cardId: UUID!
   level: Int!
   text: String!
+}
+
+input PageImageIdInput {
+  imageId: UUID!
 }
 
 type PageInfo {
@@ -4293,6 +4400,17 @@ type PersonPayload {
 input PinGroupPostInput {
   pinned: Boolean!
   postId: UUID!
+}
+
+input PlacePageImageInput {
+  """A PAGE_IMAGE upload for this note, finished with completeUpload"""
+  fileId: UUID!
+  height: Float!
+  pageId: UUID!
+  rotation: Float
+  width: Float!
+  x: Float!
+  y: Float!
 }
 
 enum PlanInterval {
@@ -4635,6 +4753,9 @@ type Query {
   """The viewer's points history, newest first"""
   myPoints(after: String, first: Int): PointsEntryConnection!
 
+  """The viewer's quizzes, newest first"""
+  myQuizzes(first: Int): [SharedQuiz!]!
+
   """The viewer's resources, newest first, whatever their state"""
   myResources: [Resource!]!
   myRestricted: [PersonEdge!]!
@@ -4688,6 +4809,9 @@ type Query {
   """
   publicNotes(after: String, first: Int): NoteConnection!
 
+  """Public quizzes, newest published first. Unlisted quizzes are not here."""
+  publicQuizzes(first: Int): [SharedQuiz!]!
+
   """Signed in only: best first, at most 20 (default 10)"""
   recommendations(limit: Int): [Recommendation!]!
 
@@ -4740,6 +4864,14 @@ type Query {
   only. Works signed out too: public notes, people and topics (group and class pages need an account).
   """
   search(after: String, filters: SearchFilters, first: Int, query: String!, scopes: [SearchScope!]): SearchResults!
+
+  """
+  A quiz the viewer may open by id. Public and Unlisted are open to anyone who has the id. Null when it is private to someone else.
+  """
+  sharedQuiz(id: UUID!): SharedQuiz
+
+  """The share link. A private token opens the quiz only for its owner."""
+  sharedQuizByLink(token: String!): SharedQuiz
 
   """Notes other people shared with the viewer, most recently changed first"""
   sharedWithMe(after: String, first: Int): NoteConnection!
@@ -4824,6 +4956,11 @@ type Query {
   """The signed-in user, null for anonymous visitors"""
   viewer: User
 
+  """
+  How to caption live. Works signed out: it describes the browser, it does not call a model.
+  """
+  voiceCapture: VoiceCapture!
+
   """Signed in only: weak topics, each with why; an upcoming exam's first"""
   weakTopics: [WeakTopic!]!
 
@@ -4857,6 +4994,18 @@ type QuizAttemptPayload {
   """The quiz again, now with its answers for the viewer"""
   quiz: ClassQuiz
   userErrors: [UserError!]!
+}
+
+enum QuizVisibility {
+  PRIVATE
+  PUBLIC
+  UNLISTED
+}
+
+type QuizVisibilityChoice {
+  enabled: Boolean!
+  reason: String
+  visibility: QuizVisibility!
 }
 
 input ReactInput {
@@ -5613,6 +5762,15 @@ input SaveAiTaskRouteInput {
   task: String!
 }
 
+input SaveNotePageInput {
+  drawing: JSON!
+  index: Int!
+  noteId: UUID!
+
+  """Absent: a new page"""
+  pageId: UUID
+}
+
 """
 Narrows the notes found (and topics, by subject); never widens what the viewer may read
 """
@@ -5786,12 +5944,93 @@ input SetRhythmSharingInput {
   share: Boolean!
 }
 
+input SetSharedQuizVisibilityInput {
+  quizId: UUID!
+  visibility: QuizVisibility!
+}
+
 input ShareNoteInput {
   noteId: UUID!
 
   """A handle (@asha or asha) or an email address"""
   person: String!
   role: NoteShareRole!
+}
+
+type SharedQuiz {
+  id: UUID!
+
+  """The viewer's own attempts, newest first"""
+  myAttempts: [QuizAttempt!]!
+  owner: User!
+  publishedAt: DateTime
+  questionCount: Int!
+  questions: [SharedQuizQuestion!]!
+
+  """Owner only, when the quiz is not Private: /q/{linkToken}"""
+  sharePath: String
+
+  """Owner only. Counts, never who took it."""
+  stats: SharedQuizStats
+  title: String!
+  viewerIsOwner: Boolean!
+  visibility: QuizVisibility!
+
+  """Owner only"""
+  visibilityChoices: [QuizVisibilityChoice!]
+}
+
+type SharedQuizAttemptPayload {
+  attempt: QuizAttempt
+  quiz: SharedQuiz
+  userErrors: [UserError!]!
+}
+
+input SharedQuizIdInput {
+  quizId: UUID!
+}
+
+type SharedQuizPayload {
+  quiz: SharedQuiz
+  userErrors: [UserError!]!
+}
+
+type SharedQuizQuestion {
+  choices: [ClassQuizChoice!]!
+
+  """Null until the viewer has submitted, or is the owner"""
+  correct: [String!]
+  explanation: JSON
+  id: UUID!
+  multiple: Boolean!
+  position: Int!
+  question: JSON!
+}
+
+type SharedQuizQuestionStats {
+  """
+  How many scored attempts (the first one of each person) got this question right
+  """
+  correctCount: Int!
+  questionId: UUID!
+}
+
+type SharedQuizStats {
+  """
+  Mean of each person's first score, as a fraction of the questions. Null when nobody has taken it.
+  """
+  averageScore: Float
+  practiceAttempts: Int!
+  questions: [SharedQuizQuestionStats!]!
+  scoredAttempts: Int!
+  takerCount: Int!
+}
+
+input SharedQuizWriteInput {
+  """1 to 50 questions, each quiz card content"""
+  questions: [JSON!]!
+  title: String!
+  visibility: QuizVisibility
 }
 
 input SignInInput {
@@ -5877,6 +6116,18 @@ input StartFocusSessionInput {
   """A note the viewer can read"""
   noteId: UUID
   topicKey: String
+}
+
+type StrokePoint {
+  x: Float!
+  y: Float!
+}
+
+enum StrokeTool {
+  ERASER
+  MARKER
+  PEN
+  RULER
 }
 
 """
@@ -6008,6 +6259,12 @@ input SubmitResourceInput {
   topicIds: [UUID!]!
   type: ResourceType!
   url: String!
+}
+
+input SubmitSharedQuizAttemptInput {
+  answers: [QuizAnswerInput!]!
+  clientOpId: UUID!
+  quizId: UUID!
 }
 
 input SubmitStudentIdVerificationInput {
@@ -6244,6 +6501,25 @@ type TrackEventsPayload {
   userErrors: [UserError!]!
 }
 
+input TranscribeCaptionClipInput {
+  """Base64 audio, at most about 15 seconds and 2.5 MB"""
+  audioBase64: String!
+  mimeType: String!
+}
+
+type Transcript {
+  """
+  The recording was longer than 30 minutes and the rest was not transcribed
+  """
+  cut: Boolean!
+  text: String!
+}
+
+type TranscriptPayload {
+  transcript: Transcript
+  userErrors: [UserError!]!
+}
+
 scalar UUID
 
 input UnregisterDeviceInput {
@@ -6374,6 +6650,15 @@ input UpdateNotificationSettingsInput {
   weeklyDigest: Boolean
 }
 
+input UpdatePageImageInput {
+  height: Float!
+  imageId: UUID!
+  rotation: Float
+  width: Float!
+  x: Float!
+  y: Float!
+}
+
 input UpdatePdfHighlightInput {
   """null unlinks the card"""
   cardId: UUID
@@ -6406,6 +6691,12 @@ input UpdateResourceInput {
   topicIds: [UUID!]!
   type: ResourceType!
   url: String!
+}
+
+input UpdateSharedQuizInput {
+  questions: [JSON!]!
+  quizId: UUID!
+  title: String!
 }
 
 """
@@ -6681,11 +6972,38 @@ input VerifyInstitutionalEmailInput {
   code: String!
 }
 
-"""Who can read a note (§4.2)"""
+"""
+Who can read a note (§4.2). UNLISTED is the link: anyone with it can read, and it is left out of lists, search and profiles.
+"""
 enum Visibility {
   PRIVATE
   PUBLIC
   SHARED
+  UNLISTED
+}
+
+"""
+One visibility the owner may set. reason is set only when enabled is false.
+"""
+type VisibilityChoice {
+  enabled: Boolean!
+  reason: String
+  visibility: Visibility!
+}
+
+type VoiceCapture {
+  """
+  The browser API: SpeechRecognition (webkitSpeechRecognition where that is the name)
+  """
+  api: String!
+  continuous: Boolean!
+  interimResults: Boolean!
+
+  """BCP-47 tags the apps may pass as the recognition language"""
+  languages: [String!]!
+
+  """The mutation to call with a short clip when the browser cannot caption"""
+  streamingFallback: String!
 }
 
 type WeakTopic {

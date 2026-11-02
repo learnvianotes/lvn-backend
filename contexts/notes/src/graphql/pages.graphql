@@ -1,0 +1,95 @@
+# Pages of a note: vector ink and pictures placed on it. Anyone who can read the note sees them; editors change them.
+
+enum StrokeTool { PEN MARKER ERASER RULER }
+
+type StrokePoint {
+  x: Float!
+  y: Float!
+}
+
+type InkStroke {
+  id: String!
+  tool: StrokeTool!
+  "Set for pen and marker"
+  color: String
+  width: Float!
+  points: [StrokePoint!]!
+}
+
+type NotePageImage {
+  id: UUID!
+  fileId: UUID!
+  x: Float!
+  y: Float!
+  width: Float!
+  height: Float!
+  rotation: Float!
+  "Null while the scan is pending or failed"
+  url: String
+  urlExpiresAt: DateTime
+}
+
+type NotePage {
+  id: UUID!
+  index: Int!
+  "The drawing as stored: { strokes: [{ id, tool, color, width, points }] }. tool is pen, marker, eraser or ruler."
+  drawing: JSON!
+  strokes: [InkStroke!]!
+  images: [NotePageImage!]!
+}
+
+extend type Note {
+  "In index order. Empty when the note has no pages."
+  pages: [NotePage!]!
+}
+
+input SaveNotePageInput {
+  noteId: UUID!
+  "Absent: a new page"
+  pageId: UUID
+  index: Int!
+  drawing: JSON!
+}
+
+input NotePageIdInput {
+  pageId: UUID!
+}
+
+input PlacePageImageInput {
+  pageId: UUID!
+  "A PAGE_IMAGE upload for this note, finished with completeUpload"
+  fileId: UUID!
+  x: Float!
+  y: Float!
+  width: Float!
+  height: Float!
+  rotation: Float
+}
+
+input UpdatePageImageInput {
+  imageId: UUID!
+  x: Float!
+  y: Float!
+  width: Float!
+  height: Float!
+  rotation: Float
+}
+
+input PageImageIdInput {
+  imageId: UUID!
+}
+
+type NotePagePayload {
+  page: NotePage
+  userErrors: [UserError!]!
+}
+
+extend type Mutation {
+  "Write one page's drawing. Editors of the note."
+  saveNotePage(input: SaveNotePageInput!): NotePagePayload!
+  deleteNotePage(input: NotePageIdInput!): OkPayload!
+  "Place a scanned PNG or JPEG on a page."
+  placePageImage(input: PlacePageImageInput!): NotePagePayload!
+  updatePageImage(input: UpdatePageImageInput!): NotePagePayload!
+  removePageImage(input: PageImageIdInput!): OkPayload!
+}

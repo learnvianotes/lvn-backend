@@ -55,8 +55,10 @@ missing admin row is the default list:
 
 `note.publish`, `note.share`, `contest.enter`, `payout.request`, `ai.bulk`, `resource.submit`.
 
-Pass the result into `can()` as `actor.unverifiedGates`. Changing a note to SHARED follows `note.share`; to PUBLIC
-follows `note.publish`. Back to PRIVATE stays allowed unless `note.changeVisibility` is itself in the list.
+Pass the result into `can()` as `actor.unverifiedGates`. `note.share` gates sharing a note with a person, a group
+or a class. It does not block Private, Shared or Unlisted. Public follows `public_notes_require_verification`
+(`Actor.mayPublishPublic`, contracts 0.75.0). Listing `note.changeVisibility` itself blocks every target, including
+Private.
 `account.reviewVerification` is not controlled by this list: an unverified teacher still cannot review.
 
 Admins edit it with the existing `updateAdminSetting`:

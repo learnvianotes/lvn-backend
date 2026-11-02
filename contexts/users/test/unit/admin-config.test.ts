@@ -35,6 +35,7 @@ describe('admin setting catalog', () => {
       'search_timeout_ms',
       'account_minimum_age',
       'digital_consent_age',
+      'public_notes_require_verification',
     ])
   })
 

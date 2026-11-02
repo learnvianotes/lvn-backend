@@ -43,6 +43,7 @@ describe('note rows of §5', () => {
   it('read', () => {
     expectRow(Action.NOTE_READ, 'PRIVATE', ['owner'])
     expectRow(Action.NOTE_READ, 'SHARED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare'])
+    expectRow(Action.NOTE_READ, 'UNLISTED', RELATIONS)
     expectRow(Action.NOTE_READ, 'PUBLIC', RELATIONS)
   })
 
@@ -58,6 +59,7 @@ describe('note rows of §5', () => {
   it('edit draft: owner always, share editor while SHARED or PUBLIC (ADR-0005)', () => {
     expectRow(Action.NOTE_EDIT_DRAFT, 'PRIVATE', ['owner'])
     expectRow(Action.NOTE_EDIT_DRAFT, 'SHARED', ['owner', 'editor'])
+    expectRow(Action.NOTE_EDIT_DRAFT, 'UNLISTED', ['owner', 'editor'])
     expectRow(Action.NOTE_EDIT_DRAFT, 'PUBLIC', ['owner', 'editor'])
   })
 
@@ -75,6 +77,7 @@ describe('note rows of §5', () => {
   it('fork: anyone who can read it and is signed in; owners fork their own PRIVATE notes (ADR-0005)', () => {
     expectRow(Action.NOTE_FORK, 'PRIVATE', ['owner'])
     expectRow(Action.NOTE_FORK, 'SHARED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare'])
+    expectRow(Action.NOTE_FORK, 'UNLISTED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare', 'anyUser'])
     expectRow(Action.NOTE_FORK, 'PUBLIC', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare', 'anyUser'])
   })
 
@@ -103,6 +106,7 @@ describe('note rows of §5', () => {
     for (const a of [Action.NOTE_COMMENT, Action.NOTE_ASK_AI]) {
       expectRow(a, 'PRIVATE', ['owner'])
       expectRow(a, 'SHARED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare'])
+      expectRow(a, 'UNLISTED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare', 'anyUser'])
       expectRow(a, 'PUBLIC', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare', 'anyUser'])
     }
   })
@@ -111,6 +115,19 @@ describe('note rows of §5', () => {
     const unverified = student('owner', { institutionVerified: false })
     expect(can(unverified, Action.NOTE_COMMENT, { kind: 'note', note: note('PUBLIC') })).toBe(true)
     expect(can(unverified, Action.NOTE_PUBLISH, { kind: 'note', note: note('PRIVATE') })).toBe(false)
+  })
+
+  it('an unverified owner can set Private, Shared and Unlisted; Public waits on mayPublishPublic', () => {
+    const unverified = student('owner', { institutionVerified: false })
+    const n = note('PRIVATE', { ownerId: 'owner' })
+    const change = (target: Visibility, extra: Partial<Actor> = {}) =>
+      can({ ...unverified, ...extra }, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: n, targetVisibility: target })
+    expect(change('PRIVATE')).toBe(true)
+    expect(change('SHARED')).toBe(true)
+    expect(change('UNLISTED')).toBe(true)
+    expect(change('PUBLIC')).toBe(false)
+    expect(change('PUBLIC', { mayPublishPublic: true })).toBe(true)
+    expect(can(unverified, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: n })).toBe(true)
   })
 
   it('restricted minors comment and react on notes shared with them, never on PUBLIC notes (§15.2, ADR-0047)', () => {
@@ -475,16 +492,19 @@ describe('verified account (ADR-0017)', () => {
     expect(can(unverified, Action.RESOURCE_RECOMMEND)).toBe(true)
   })
 
-  it('visibility toward shared or public follows share and publish; private stays open unless listed', () => {
+  it('visibility other than Public is not blocked by note.share; Public follows mayPublishPublic', () => {
     const mine = { kind: 'note' as const, note: note('PUBLIC', { ownerId: 'u' }) }
     expect(can(unverified, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'PRIVATE' })).toBe(true)
-    expect(can(unverified, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'SHARED' })).toBe(false)
+    expect(can(unverified, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'SHARED' })).toBe(true)
+    expect(can(unverified, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'UNLISTED' })).toBe(true)
     expect(can(unverified, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'PUBLIC' })).toBe(false)
+    expect(can({ ...unverified, mayPublishPublic: true }, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'PUBLIC' })).toBe(true)
     const listed = { ...unverified, unverifiedGates: new Set<Action>([Action.NOTE_CHANGE_VISIBILITY]) }
     expect(can(listed, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'PRIVATE' })).toBe(false)
     const open = { ...unverified, unverifiedGates: new Set<Action>() }
     expect(can(open, Action.NOTE_PUBLISH, pub)).toBe(true)
-    expect(can(open, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'PUBLIC' })).toBe(true)
+    expect(can(open, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'PUBLIC' })).toBe(false)
+    expect(can({ ...open, mayPublishPublic: true }, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'PUBLIC' })).toBe(true)
   })
 
   it('parses the admin list, and verificationBlocks follows it', () => {
@@ -499,7 +519,7 @@ describe('verified account (ADR-0017)', () => {
     expect(verificationBlocks(student('v'), Action.NOTE_PUBLISH)).toBe(false)
     expect(verificationBlocks(unverified, Action.NOTE_PUBLISH, pub)).toBe(true)
     expect(verificationBlocks(unverified, Action.NOTE_COMMENT, pub)).toBe(false)
-    expect(can(unverified, Action.NOTE_CHANGE_VISIBILITY, pub)).toBe(false)
+    expect(can(unverified, Action.NOTE_CHANGE_VISIBILITY, pub)).toBe(true)
     expect(can(student('v'), Action.CONTEST_ENTER)).toBe(true)
     expect(can(student('v'), Action.PAYOUT_REQUEST)).toBe(true)
     expect(can(student('v'), Action.AI_BULK)).toBe(true)
@@ -633,6 +653,8 @@ describe('a suspended account (ADR-0053)', () => {
     expect(can(suspended, Action.NOTE_EDIT_DRAFT, mine(Visibility.PUBLIC))).toBe(true)
     expect(can(suspended, Action.NOTE_DELETE, mine(Visibility.PUBLIC))).toBe(true)
     expect(can(suspended, Action.NOTE_CHANGE_VISIBILITY, mine(Visibility.PUBLIC, Visibility.PRIVATE))).toBe(true)
+    expect(can(suspended, Action.NOTE_CHANGE_VISIBILITY, mine(Visibility.PRIVATE, Visibility.UNLISTED))).toBe(false)
+    expect(can(suspended, Action.NOTE_CHANGE_VISIBILITY, mine(Visibility.PRIVATE, Visibility.PUBLIC))).toBe(false)
     expect(can(suspended, Action.NOTE_FORK, { kind: 'note', note: note(Visibility.PUBLIC, { ownerId: 'x' }) })).toBe(true)
     expect(can(suspended, Action.USER_BLOCK, { kind: 'user', targetId: 't2', targetGlobalRole: GlobalRole.STUDENT })).toBe(true)
     expect(can(suspended, Action.CONTENT_REPORT)).toBe(true)

@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
 import { presetOf } from '../domain/catalog'
+import { modelCanHear } from '../domain/model-capabilities'
 import { chooseIdCardTargets, ID_CARD_CHECK_TASK, type IdCardRouteTarget } from '../domain/id-card-route'
 import type { AiProviderAdapter } from '../domain/provider'
 import { AnthropicProvider } from '../infrastructure/anthropic'
@@ -72,6 +73,29 @@ export class AiProviders {
       default:
         return new OpenAiProvider(row.kind, url, key, row.mayReceivePrivate)
     }
+  }
+
+  /**
+   * Who transcribes a recording. A TRANSCRIBE route is used as saved, even when that model cannot hear:
+   * the caller names it and does not try another. With no route, the default chat model when it can hear,
+   * otherwise another enabled connection whose chat model can hear. Null when nothing is configured.
+   */
+  async transcriptionChoice(): Promise<Target | null> {
+    const state = await this.state()
+    const route = state.routes.get('TRANSCRIBE')
+    if (route) {
+      const via = route.connectionId ? this.usable(state, route.connectionId) : this.defaultChat(state)
+      if (!via) return null
+      return { connectionId: via.connectionId, adapter: via.adapter, model: route.model, inPrice: route.inputMicroUsdPerMTok, outPrice: route.outputMicroUsdPerMTok }
+    }
+    const chat = this.defaultChat(state)
+    if (chat && modelCanHear(chat.model, chat.adapter.name)) return chat
+    for (const { row, adapter } of state.connections.values()) {
+      if (!row.enabled || !adapter || !row.chatModel || row.chatModel === chat?.model) continue
+      if (!modelCanHear(row.chatModel, adapter.name)) continue
+      return { connectionId: row.id, adapter, model: row.chatModel, inPrice: row.inputMicroUsdPerMTok, outPrice: row.outputMicroUsdPerMTok }
+    }
+    return chat
   }
 
   /** Who answers a chat for this task (null: the default chat provider), or null when nothing can. */

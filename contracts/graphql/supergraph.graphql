@@ -974,8 +974,9 @@ type AiModelPicker
 }
 
 """
-A select on /admin/ai. IMAGE, TTS, AUDIO, REALTIME and MODERATION stay empty: this app does not call those APIs.
-TRANSCRIBE is a recording sent through the chat API, not the audio-transcriptions API.
+A select on /admin/ai. IMAGE, TTS, AUDIO, REALTIME and MODERATION stay empty.
+TRANSCRIBE offers models that can hear. Whisper and *-transcribe go to POST /audio/transcriptions.
+gpt-audio, Gemini and Gemma take the recording on the chat call.
 """
 enum AiModelUse
   @join__type(graph: AI)
@@ -990,7 +991,7 @@ enum AiModelUse
   """
   EMBEDDING @join__enumValue(graph: AI)
 
-  """The TRANSCRIBE route: a chat model that can hear a recording"""
+  """The TRANSCRIBE route: a model that can hear a recording"""
   TRANSCRIBE @join__enumValue(graph: AI)
 
   """Image generation. This app does not call it, so the picker is empty."""
@@ -1000,7 +1001,7 @@ enum AiModelUse
   TTS @join__enumValue(graph: AI)
 
   """
-  The audio transcriptions API. This app does not call it, so the picker is empty.
+  Reserved. Whisper is offered on TRANSCRIBE, so this picker stays empty.
   """
   AUDIO @join__enumValue(graph: AI)
 
@@ -2813,7 +2814,7 @@ type ExternalIdentityPayload
 }
 
 """
-What an upload is for: AVATAR, VERIFICATION_DOCUMENT, and ATTACHMENT (a picture, video, audio or PDF for a note you can edit, given as parentId). Other purposes arrive with their features.
+What an upload is for. ATTACHMENT is a picture, video, audio or PDF for a note you can edit (parentId). PAGE_IMAGE is a PNG or JPEG for a note page (parentId). VOICE_NOTE is audio; parentId is the note when the recording belongs to one, and omitted when it stands alone. Every one of these finishes with completeUpload, so a remote scan still runs.
 """
 enum FilePurpose
   @join__type(graph: NOTES)
@@ -2826,6 +2827,7 @@ enum FilePurpose
   EXPORT @join__enumValue(graph: NOTES)
   VERIFICATION_DOCUMENT @join__enumValue(graph: NOTES)
   GROUP_PICTURE @join__enumValue(graph: NOTES)
+  PAGE_IMAGE @join__enumValue(graph: NOTES)
 }
 
 type FocusSession
@@ -3250,6 +3252,18 @@ input IngestAnalyticsInput
 {
   events: [UsageEventInput!]
   errors: [ClientErrorInput!]
+}
+
+type InkStroke
+  @join__type(graph: NOTES)
+{
+  id: String!
+  tool: StrokeTool!
+
+  """Set for pen and marker"""
+  color: String
+  width: Float!
+  points: [StrokePoint!]!
 }
 
 type Institution
@@ -3807,6 +3821,19 @@ type Mutation
   testAiConnection(input: AiConnectionIdInput!): AiConnectionTestPayload! @join__field(graph: AI)
   saveAiTaskRoute(input: SaveAiTaskRouteInput!): AiSettingsPayload! @join__field(graph: AI)
   deleteAiTaskRoute(input: AiTaskRouteInput!): AiSettingsPayload! @join__field(graph: AI)
+
+  """
+  A VOICE_NOTE or audio ATTACHMENT the viewer uploaded and finished with completeUpload.
+  """
+  transcribeAudio(fileId: UUID!): TranscriptPayload! @join__field(graph: AI)
+
+  """A few seconds of audio for live captions. Not stored and not scanned."""
+  transcribeCaptionClip(input: TranscribeCaptionClipInput!): TranscriptPayload! @join__field(graph: AI)
+
+  """
+  A private note from a transcript: a summary, then headings and text. At most 20,000 characters are read.
+  """
+  makeNotesFromTranscript(transcript: String!): NotesFromTranscriptPayload! @join__field(graph: AI)
   markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload! @join__field(graph: COMMUNICATION)
   updateNotificationSettings(input: UpdateNotificationSettingsInput!): NotificationSettingsPayload! @join__field(graph: COMMUNICATION)
 
@@ -3999,6 +4026,15 @@ type Mutation
   Shows, or stops showing, the viewer's name and counted days on their classes' Rhythm ring
   """
   setRhythmSharing(input: SetRhythmSharingInput!): OkPayload! @join__field(graph: CORE)
+  createSharedQuiz(input: SharedQuizWriteInput!): SharedQuizPayload! @join__field(graph: CORE)
+
+  """Refused once anyone has taken the quiz"""
+  updateSharedQuiz(input: UpdateSharedQuizInput!): SharedQuizPayload! @join__field(graph: CORE)
+  setSharedQuizVisibility(input: SetSharedQuizVisibilityInput!): SharedQuizPayload! @join__field(graph: CORE)
+
+  """The taker's own result. The owner is not told who submitted."""
+  submitSharedQuizAttempt(input: SubmitSharedQuizAttemptInput!): SharedQuizAttemptPayload! @join__field(graph: CORE)
+  deleteSharedQuiz(input: SharedQuizIdInput!): OkPayload! @join__field(graph: CORE)
 
   """Adds a task to this week (at most three)"""
   addWeeklyTask(input: AddWeeklyTaskInput!): WeeklyTaskPayload! @join__field(graph: CORE)
@@ -4084,6 +4120,15 @@ type Mutation
   deleteTag(input: IdInput!): OkPayload! @join__field(graph: NOTES)
   proposeTopic(input: ProposeTopicInput!): TopicPayload! @join__field(graph: NOTES)
 
+  """Write one page's drawing. Editors of the note."""
+  saveNotePage(input: SaveNotePageInput!): NotePagePayload! @join__field(graph: NOTES)
+  deleteNotePage(input: NotePageIdInput!): OkPayload! @join__field(graph: NOTES)
+
+  """Place a scanned PNG or JPEG on a page."""
+  placePageImage(input: PlacePageImageInput!): NotePagePayload! @join__field(graph: NOTES)
+  updatePageImage(input: UpdatePageImageInput!): NotePagePayload! @join__field(graph: NOTES)
+  removePageImage(input: PageImageIdInput!): OkPayload! @join__field(graph: NOTES)
+
   """Owner and editors"""
   addPdfHighlight(input: AddPdfHighlightInput!): PdfHighlightPayload! @join__field(graph: NOTES)
   updatePdfHighlight(input: UpdatePdfHighlightInput!): PdfHighlightPayload! @join__field(graph: NOTES)
@@ -4104,7 +4149,7 @@ type Mutation
   unsaveNote(input: NoteIdInput!): NotePayload! @join__field(graph: NOTES)
 
   """
-  PRIVATE, SHARED or PUBLIC (owner, verified account); PUBLIC needs a published version
+  PRIVATE, SHARED, UNLISTED or PUBLIC (owner). Unlisted and Public need a published version. Public follows the admin setting public_notes_require_verification.
   """
   changeNoteVisibility(input: ChangeNoteVisibilityInput!): NotePayload! @join__field(graph: NOTES)
 
@@ -4437,6 +4482,9 @@ type Note
   publishedVersion: NoteVersion @join__field(graph: NOTES)
   publishedAt: DateTime @join__field(graph: NOTES)
   forkingEnabled: Boolean! @join__field(graph: NOTES)
+
+  """Private copies other people have made"""
+  forkCount: Int! @join__field(graph: NOTES)
   cardCount: Int! @join__field(graph: NOTES)
 
   """
@@ -4474,6 +4522,9 @@ type Note
   """Owner only; null for everyone else"""
   moderation: NoteModeration @join__field(graph: NOTES)
 
+  """In index order. Empty when the note has no pages."""
+  pages: [NotePage!]! @join__field(graph: NOTES)
+
   """
   Its first picture as the viewer sees it (ADR-0076): a card's preview in Community; null without one
   """
@@ -4499,6 +4550,16 @@ type Note
   Owner only: every connection of the owner reads it, and new connections will too (teachers, ADR-0013)
   """
   sharedWithConnections: Boolean @join__field(graph: NOTES)
+
+  """
+  Owner only: Private, Unlisted and Public, plus Shared while the note is already Shared
+  """
+  visibilityChoices: [VisibilityChoice!] @join__field(graph: NOTES)
+
+  """
+  Owner only, once the note is published and Unlisted or Public: /n/{slug}-{id}
+  """
+  sharePath: String @join__field(graph: NOTES)
 
   """Owner only: the groups the note is shared to"""
   groups: [Group!] @join__field(graph: NOTES)
@@ -4644,6 +4705,49 @@ type NoteModeration
   canAppeal: Boolean!
 }
 
+type NotePage
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  index: Int!
+
+  """
+  The drawing as stored: { strokes: [{ id, tool, color, width, points }] }. tool is pen, marker, eraser or ruler.
+  """
+  drawing: JSON!
+  strokes: [InkStroke!]!
+  images: [NotePageImage!]!
+}
+
+input NotePageIdInput
+  @join__type(graph: NOTES)
+{
+  pageId: UUID!
+}
+
+type NotePageImage
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  fileId: UUID!
+  x: Float!
+  y: Float!
+  width: Float!
+  height: Float!
+  rotation: Float!
+
+  """Null while the scan is pending or failed"""
+  url: String
+  urlExpiresAt: DateTime
+}
+
+type NotePagePayload
+  @join__type(graph: NOTES)
+{
+  page: NotePage
+  userErrors: [UserError!]!
+}
+
 type NotePayload
   @join__type(graph: NOTES)
 {
@@ -4692,6 +4796,21 @@ type NoteSearchHit
   Words around the match from the published version; each match is wrapped in U+E000 … U+E001
   """
   snippet: String!
+}
+
+type NotesFromTranscript
+  @join__type(graph: AI)
+{
+  noteId: UUID!
+  title: String!
+  summary: String!
+}
+
+type NotesFromTranscriptPayload
+  @join__type(graph: AI)
+{
+  notes: NotesFromTranscript
+  userErrors: [UserError!]!
 }
 
 """
@@ -4933,6 +5052,12 @@ type OutlineItem
   text: String!
 }
 
+input PageImageIdInput
+  @join__type(graph: NOTES)
+{
+  imageId: UUID!
+}
+
 type PageInfo
   @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
@@ -5106,6 +5231,20 @@ input PinGroupPostInput
 {
   postId: UUID!
   pinned: Boolean!
+}
+
+input PlacePageImageInput
+  @join__type(graph: NOTES)
+{
+  pageId: UUID!
+
+  """A PAGE_IMAGE upload for this note, finished with completeUpload"""
+  fileId: UUID!
+  x: Float!
+  y: Float!
+  width: Float!
+  height: Float!
+  rotation: Float
 }
 
 enum PlanInterval
@@ -5307,6 +5446,11 @@ type Query
   """Signed in only"""
   myAiAllowance: AiAllowance! @join__field(graph: AI)
 
+  """
+  How to caption live. Works signed out: it describes the browser, it does not call a model.
+  """
+  voiceCapture: VoiceCapture! @join__field(graph: AI)
+
   """The viewer's notifications, newest first"""
   notifications(first: Int, after: String): NotificationConnection! @join__field(graph: COMMUNICATION)
   unreadNotificationCount: Int! @join__field(graph: COMMUNICATION)
@@ -5447,6 +5591,20 @@ type Query
 
   """Signed in only"""
   rhythm: Rhythm! @join__field(graph: CORE)
+
+  """
+  A quiz the viewer may open by id. Public and Unlisted are open to anyone who has the id. Null when it is private to someone else.
+  """
+  sharedQuiz(id: UUID!): SharedQuiz @join__field(graph: CORE)
+
+  """The share link. A private token opens the quiz only for its owner."""
+  sharedQuizByLink(token: String!): SharedQuiz @join__field(graph: CORE)
+
+  """The viewer's quizzes, newest first"""
+  myQuizzes(first: Int): [SharedQuiz!]! @join__field(graph: CORE)
+
+  """Public quizzes, newest published first. Unlisted quizzes are not here."""
+  publicQuizzes(first: Int): [SharedQuiz!]! @join__field(graph: CORE)
 
   """The viewer's tasks this week, with how far each has come"""
   weeklyTasks: WeeklyTasks! @join__field(graph: CORE)
@@ -5713,6 +5871,22 @@ type QuizAttemptPayload
   """The quiz again, now with its answers for the viewer"""
   quiz: ClassQuiz
   userErrors: [UserError!]!
+}
+
+enum QuizVisibility
+  @join__type(graph: CORE)
+{
+  PRIVATE @join__enumValue(graph: CORE)
+  UNLISTED @join__enumValue(graph: CORE)
+  PUBLIC @join__enumValue(graph: CORE)
+}
+
+type QuizVisibilityChoice
+  @join__type(graph: CORE)
+{
+  visibility: QuizVisibility!
+  enabled: Boolean!
+  reason: String
 }
 
 input ReactInput
@@ -6627,6 +6801,17 @@ input SaveAiTaskRouteInput
   outputMicroUsdPerMTok: Int
 }
 
+input SaveNotePageInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+
+  """Absent: a new page"""
+  pageId: UUID
+  index: Int!
+  drawing: JSON!
+}
+
 """
 Narrows the notes found (and topics, by subject); never widens what the viewer may read
 """
@@ -6840,6 +7025,108 @@ input SetRhythmSharingInput
   share: Boolean!
 }
 
+input SetSharedQuizVisibilityInput
+  @join__type(graph: CORE)
+{
+  quizId: UUID!
+  visibility: QuizVisibility!
+}
+
+type SharedQuiz
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  title: String!
+  visibility: QuizVisibility!
+  owner: User!
+  publishedAt: DateTime
+  questionCount: Int!
+  questions: [SharedQuizQuestion!]!
+
+  """Owner only, when the quiz is not Private: /q/{linkToken}"""
+  sharePath: String
+
+  """Owner only"""
+  visibilityChoices: [QuizVisibilityChoice!]
+
+  """The viewer's own attempts, newest first"""
+  myAttempts: [QuizAttempt!]!
+
+  """Owner only. Counts, never who took it."""
+  stats: SharedQuizStats
+  viewerIsOwner: Boolean!
+}
+
+type SharedQuizAttemptPayload
+  @join__type(graph: CORE)
+{
+  attempt: QuizAttempt
+  quiz: SharedQuiz
+  userErrors: [UserError!]!
+}
+
+input SharedQuizIdInput
+  @join__type(graph: CORE)
+{
+  quizId: UUID!
+}
+
+type SharedQuizPayload
+  @join__type(graph: CORE)
+{
+  quiz: SharedQuiz
+  userErrors: [UserError!]!
+}
+
+type SharedQuizQuestion
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  position: Int!
+  question: JSON!
+  choices: [ClassQuizChoice!]!
+  multiple: Boolean!
+
+  """Null until the viewer has submitted, or is the owner"""
+  correct: [String!]
+  explanation: JSON
+}
+
+type SharedQuizQuestionStats
+  @join__type(graph: CORE)
+{
+  questionId: UUID!
+
+  """
+  How many scored attempts (the first one of each person) got this question right
+  """
+  correctCount: Int!
+}
+
+type SharedQuizStats
+  @join__type(graph: CORE)
+{
+  takerCount: Int!
+  scoredAttempts: Int!
+  practiceAttempts: Int!
+
+  """
+  Mean of each person's first score, as a fraction of the questions. Null when nobody has taken it.
+  """
+  averageScore: Float
+  questions: [SharedQuizQuestionStats!]!
+}
+
+input SharedQuizWriteInput
+  @join__type(graph: CORE)
+{
+  title: String!
+
+  """1 to 50 questions, each quiz card content"""
+  questions: [JSON!]!
+  visibility: QuizVisibility
+}
+
 input ShareNoteInput
   @join__type(graph: NOTES)
 {
@@ -6952,6 +7239,22 @@ input StartFocusSessionInput
   https://meet.google.com/abc-defg-hij; buddies see it during the session
   """
   meetUrl: String
+}
+
+type StrokePoint
+  @join__type(graph: NOTES)
+{
+  x: Float!
+  y: Float!
+}
+
+enum StrokeTool
+  @join__type(graph: NOTES)
+{
+  PEN @join__enumValue(graph: NOTES)
+  MARKER @join__enumValue(graph: NOTES)
+  ERASER @join__enumValue(graph: NOTES)
+  RULER @join__enumValue(graph: NOTES)
 }
 
 """
@@ -7109,6 +7412,14 @@ input SubmitResourceInput
 
   """Else the preview's imageUrl, copied into storage"""
   imageUrl: String
+}
+
+input SubmitSharedQuizAttemptInput
+  @join__type(graph: CORE)
+{
+  quizId: UUID!
+  clientOpId: UUID!
+  answers: [QuizAnswerInput!]!
 }
 
 input SubmitStudentIdVerificationInput
@@ -7399,6 +7710,32 @@ type TrackEventsPayload
   userErrors: [UserError!]!
 }
 
+input TranscribeCaptionClipInput
+  @join__type(graph: AI)
+{
+  """Base64 audio, at most about 15 seconds and 2.5 MB"""
+  audioBase64: String!
+  mimeType: String!
+}
+
+type Transcript
+  @join__type(graph: AI)
+{
+  text: String!
+
+  """
+  The recording was longer than 30 minutes and the rest was not transcribed
+  """
+  cut: Boolean!
+}
+
+type TranscriptPayload
+  @join__type(graph: AI)
+{
+  transcript: Transcript
+  userErrors: [UserError!]!
+}
+
 input UnregisterDeviceInput
   @join__type(graph: COMMUNICATION)
 {
@@ -7556,6 +7893,17 @@ input UpdateNotificationSettingsInput
   weeklyDigest: Boolean
 }
 
+input UpdatePageImageInput
+  @join__type(graph: NOTES)
+{
+  imageId: UUID!
+  x: Float!
+  y: Float!
+  width: Float!
+  height: Float!
+  rotation: Float
+}
+
 input UpdatePdfHighlightInput
   @join__type(graph: NOTES)
 {
@@ -7595,6 +7943,14 @@ input UpdateResourceInput
 
   """Take the cover away"""
   removeCover: Boolean
+}
+
+input UpdateSharedQuizInput
+  @join__type(graph: CORE)
+{
+  quizId: UUID!
+  title: String!
+  questions: [JSON!]!
 }
 
 """
@@ -7923,13 +8279,44 @@ input VerifyInstitutionalEmailInput
   code: String!
 }
 
-"""Who can read a note (§4.2)"""
+"""
+Who can read a note (§4.2). UNLISTED is the link: anyone with it can read, and it is left out of lists, search and profiles.
+"""
 enum Visibility
   @join__type(graph: NOTES)
 {
   PRIVATE @join__enumValue(graph: NOTES)
   SHARED @join__enumValue(graph: NOTES)
+  UNLISTED @join__enumValue(graph: NOTES)
   PUBLIC @join__enumValue(graph: NOTES)
+}
+
+"""
+One visibility the owner may set. reason is set only when enabled is false.
+"""
+type VisibilityChoice
+  @join__type(graph: NOTES)
+{
+  visibility: Visibility!
+  enabled: Boolean!
+  reason: String
+}
+
+type VoiceCapture
+  @join__type(graph: AI)
+{
+  """
+  The browser API: SpeechRecognition (webkitSpeechRecognition where that is the name)
+  """
+  api: String!
+  interimResults: Boolean!
+  continuous: Boolean!
+
+  """BCP-47 tags the apps may pass as the recognition language"""
+  languages: [String!]!
+
+  """The mutation to call with a short clip when the browser cannot caption"""
+  streamingFallback: String!
 }
 
 type WeakTopic

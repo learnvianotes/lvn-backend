@@ -8,6 +8,7 @@ import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
 import { mendAll } from '../domain/escapes'
 import { ID_CARD_CHECK_TASK } from '../domain/id-card-route'
+import { audioTransport, modelCanHear } from '../domain/model-capabilities'
 import { HttpProviderError, MODEL_UNSUPPORTED, ProviderError, UnsupportedInput, type ChatMessage } from '../domain/provider'
 import { AiProviders, type Target } from './ai-providers'
 import { PromptLibrary } from './prompts'
@@ -135,6 +136,38 @@ export class AiGateway {
 
   async generate<T = string>(call: GenerateCall<T>): Promise<Generated<T>> {
     return this.complete(await this.ready(await this.providers.forTask(call.task), call.userId, call.private), call)
+  }
+
+  /**
+   * One piece of a recording. Whisper and *-transcribe go to /audio/transcriptions. A chat model that can hear
+   * takes the WAV on the chat call. A TRANSCRIBE route that names a deaf model is not replaced.
+   */
+  async transcribeBytes(wav: Buffer, who: { userId: string | null; private: boolean }, piece: { part: number; parts: number } = { part: 1, parts: 1 }): Promise<string> {
+    const target = await this.providers.transcriptionChoice()
+    if (!target) throw Errors.unavailable('AI is not switched on here.')
+    if (!modelCanHear(target.model, target.adapter.name)) {
+      throw Errors.unavailable(`${target.model} cannot hear recordings. Pick a model from the Transcribe list in Admin.`)
+    }
+    if (audioTransport(target.model) === 'transcriptions') {
+      if (!target.adapter.transcribe) {
+        throw Errors.unavailable(`${target.model} needs the transcriptions API, which ${target.adapter.name} does not offer. Pick a chat model that can hear, or an OpenAI transcription model.`)
+      }
+      const route = await this.ready(target, who.userId, who.private)
+      const started = Date.now()
+      try {
+        const heard = await this.withRetries(route, () => route.adapter.transcribe!({ model: route.model, wav, timeoutMs: this.timeoutMs() }))
+        await this.record({ userId: who.userId, task: 'TRANSCRIBE', model: route.model, promptTokens: heard.promptTokens, completionTokens: 0, ok: true, started, route })
+        return heard.text.trim()
+      } catch (e) {
+        if (e instanceof ProviderError) {
+          await this.record({ userId: who.userId, task: 'TRANSCRIBE', model: route.model, promptTokens: 0, completionTokens: 0, ok: false, started, route })
+          throw Errors.unavailable(failureText(e, route, this.log))
+        }
+        throw e
+      }
+    }
+    const generated = await this.complete<string>(target, { task: 'TRANSCRIBE', userId: who.userId, private: who.private, prompt: 'transcribe', vars: { part: piece.part, parts: piece.parts }, images: [wav.toString('base64')], temperature: 0 })
+    return generated.output.replace(/<\/?content>/g, '').trim()
   }
 
   /**

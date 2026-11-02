@@ -1,0 +1,114 @@
+# Quizzes shared outside a class. Unlisted is the link. Attempts stay with the taker; the owner sees aggregates only.
+
+enum QuizVisibility { PRIVATE UNLISTED PUBLIC }
+
+type QuizVisibilityChoice {
+  visibility: QuizVisibility!
+  enabled: Boolean!
+  reason: String
+}
+
+type SharedQuizQuestion {
+  id: UUID!
+  position: Int!
+  question: JSON!
+  choices: [ClassQuizChoice!]!
+  multiple: Boolean!
+  "Null until the viewer has submitted, or is the owner"
+  correct: [String!]
+  explanation: JSON
+}
+
+type SharedQuizQuestionStats {
+  questionId: UUID!
+  "How many scored attempts (the first one of each person) got this question right"
+  correctCount: Int!
+}
+
+type SharedQuizStats {
+  takerCount: Int!
+  scoredAttempts: Int!
+  practiceAttempts: Int!
+  "Mean of each person's first score, as a fraction of the questions. Null when nobody has taken it."
+  averageScore: Float
+  questions: [SharedQuizQuestionStats!]!
+}
+
+type SharedQuiz {
+  id: UUID!
+  title: String!
+  visibility: QuizVisibility!
+  owner: User!
+  publishedAt: DateTime
+  questionCount: Int!
+  questions: [SharedQuizQuestion!]!
+  "Owner only, when the quiz is not Private: /q/{linkToken}"
+  sharePath: String
+  "Owner only"
+  visibilityChoices: [QuizVisibilityChoice!]
+  "The viewer's own attempts, newest first"
+  myAttempts: [QuizAttempt!]!
+  "Owner only. Counts, never who took it."
+  stats: SharedQuizStats
+  viewerIsOwner: Boolean!
+}
+
+input SharedQuizWriteInput {
+  title: String!
+  "1 to 50 questions, each quiz card content"
+  questions: [JSON!]!
+  visibility: QuizVisibility
+}
+
+input UpdateSharedQuizInput {
+  quizId: UUID!
+  title: String!
+  questions: [JSON!]!
+}
+
+input SetSharedQuizVisibilityInput {
+  quizId: UUID!
+  visibility: QuizVisibility!
+}
+
+input SubmitSharedQuizAttemptInput {
+  quizId: UUID!
+  clientOpId: UUID!
+  answers: [QuizAnswerInput!]!
+}
+
+input SharedQuizIdInput {
+  quizId: UUID!
+}
+
+type SharedQuizPayload {
+  quiz: SharedQuiz
+  userErrors: [UserError!]!
+}
+
+type SharedQuizAttemptPayload {
+  attempt: QuizAttempt
+  quiz: SharedQuiz
+  userErrors: [UserError!]!
+}
+
+extend type Query {
+  "A quiz the viewer may open by id. Public and Unlisted are open to anyone who has the id. Null when it is private to someone else."
+  sharedQuiz(id: UUID!): SharedQuiz
+  "The share link. A private token opens the quiz only for its owner."
+  sharedQuizByLink(token: String!): SharedQuiz
+  "The viewer's quizzes, newest first"
+  myQuizzes(first: Int): [SharedQuiz!]!
+  "Public quizzes, newest published first. Unlisted quizzes are not here."
+  publicQuizzes(first: Int): [SharedQuiz!]!
+}
+
+extend type Mutation {
+  createSharedQuiz(input: SharedQuizWriteInput!): SharedQuizPayload!
+  "Refused once anyone has taken the quiz"
+  updateSharedQuiz(input: UpdateSharedQuizInput!): SharedQuizPayload!
+  setSharedQuizVisibility(input: SetSharedQuizVisibilityInput!): SharedQuizPayload!
+  "The taker's own result. The owner is not told who submitted."
+  submitSharedQuizAttempt(input: SubmitSharedQuizAttemptInput!): SharedQuizAttemptPayload!
+  deleteSharedQuiz(input: SharedQuizIdInput!): OkPayload!
+}
