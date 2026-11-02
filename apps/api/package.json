@@ -48,7 +48,7 @@
     "@lvn-backend/scanner-protocol": "workspace:*",
     "@lvn-backend/testing": "workspace:*",
     "@nestjs/cli": "^12.0.10",
-    "@nestjs/testing": "^12.1.3",
+    "@nestjs/testing": "^12.3.2",
     "@types/cookie-parser": "^1.4.9",
     "@types/express": "^5.0.6",
     "@types/supertest": "^7.2.1",
