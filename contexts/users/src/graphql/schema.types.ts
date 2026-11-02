@@ -218,9 +218,9 @@ export interface AdminSetting {
 
 /** What an admin may send for this setting. */
 export interface AdminSettingConstraints {
-  /** Whole numbers: the smallest value, when the setting is an integer. */
+  /** The smallest value, when the setting is an integer. Float so a byte cap above 2^31-1 can be listed. */
   min: number | null
-  /** Whole numbers: the largest value, when the setting is an integer. */
+  /** The largest value, when the setting is an integer. Float so a byte cap above 2^31-1 can be listed. */
   max: number | null
   /** Text: the longest value, in characters. */
   maxLength: number | null
@@ -1373,6 +1373,14 @@ export type VerificationRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'W
 
 export interface VerifyEmailInput {
   token: string
+}
+
+/** The account after a verification link is used. `user` is null when the link fails. */
+export interface VerifyEmailPayload {
+  ok: boolean
+  /** Login email is `emailVerified`. Institution verification is `verified` and is not set by this link. */
+  user: User | null
+  userErrors: Array<UserError>
 }
 
 export interface VerifyInstitutionalEmailInput {

@@ -15,6 +15,7 @@ describe('admin setting catalog', () => {
     expect(SETTING_CATALOG.map((d) => d.key)).toEqual([
       'google_sign_in',
       'access_allowlist_enabled',
+      'unverified_gated_actions',
       'student_id_verification',
       'student_id_ai_check',
       'student_id_ai_auto_approve',
@@ -35,6 +36,19 @@ describe('admin setting catalog', () => {
       'account_minimum_age',
       'digital_consent_age',
     ])
+  })
+
+  it('lists a 50 GiB upload cap that does not fit in a GraphQL Int', () => {
+    const cap = settingDef('upload_bytes_per_day')!
+    expect(cap.max).toBe(53_687_091_200)
+    expect(cap.max!).toBeGreaterThan(2_147_483_647)
+  })
+
+  it('parses the unverified action list and refuses an unknown id', () => {
+    const gates = settingDef('unverified_gated_actions')!
+    expect(parseSettingInput(gates, '')).toEqual({ ok: true, value: '' })
+    expect(parseSettingInput(gates, ' note.publish, note.share ')).toEqual({ ok: true, value: 'note.publish,note.share' })
+    expect(parseSettingInput(gates, 'not.an.action').ok).toBe(false)
   })
 
   it('reads the wrapped value, and a legacy boolean row', () => {

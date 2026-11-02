@@ -44,6 +44,12 @@ export class PlatformSettingsStore implements OnModuleInit, OnModuleDestroy, Pla
     return typeof value === 'number' && Number.isInteger(value) ? value : fallback
   }
 
+  string(key: string, fallback: string | null): string | null {
+    if (!this.cache.has(key)) return fallback
+    const value = this.cache.get(key)
+    return typeof value === 'string' ? value : fallback
+  }
+
   /** Youngest age that may register. The environment applies until an admin saves `account_minimum_age`. */
   minimumAge(): number {
     return this.integer('account_minimum_age', this.config.settingFallbacks.account_minimum_age) ?? this.config.settingFallbacks.account_minimum_age

@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common'
-import type { Actor, GlobalRole } from '@lvn/contracts/domain'
+import { unverifiedGatesFromSetting, type Actor, type GlobalRole } from '@lvn/contracts/domain'
 import type { Policy } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { isRestrictedMinor } from '../domain/rules'
+import { UNVERIFIED_GATED_ACTIONS_SETTING } from '../domain/setting-catalog'
 import { PlatformSettingsStore } from './platform-settings.store'
 
 /**
@@ -44,6 +45,7 @@ export class PolicyService implements Policy {
         ? u.suspendedUntil === null || u.suspendedUntil.getTime() > Date.now()
         : u.suspendedUntil !== null && u.suspendedUntil.getTime() > Date.now(),
       teacherApplicant: u.globalRole === 'STUDENT' && u.verificationRequests.length > 0,
+      unverifiedGates: unverifiedGatesFromSetting(this.settings.string(UNVERIFIED_GATED_ACTIONS_SETTING, null)),
     }
   }
 

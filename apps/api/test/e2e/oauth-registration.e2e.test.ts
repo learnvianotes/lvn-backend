@@ -153,7 +153,7 @@ describe('provider sign-in and registration', () => {
       expect(seen.data!.userByHandle!.signInMethods).toBeNull()
     })
 
-    it('does not link Google to an account whose email is not verified, and does not create another user', async () => {
+    it('links Google to an account whose email is not verified, marks the login email verified, and does not create another user', async () => {
       const email = `${unique('victim')}@example.com`
       const password = 'attacker chosen password'
       const attacker = await t.gql<Payload<'signUp'>>(SIGN_UP, {
@@ -164,15 +164,16 @@ describe('provider sign-in and registration', () => {
       const db = t.app.get(PrismaService)
       const before = await db.user.count()
       const g = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${unique('uid')}:${email}` })
-      expect(g.data!.signInWithGoogle.session).toBeNull()
-      expect(g.data!.signInWithGoogle.userErrors[0]).toMatchObject({ code: 'VALIDATION', message: expect.stringMatching(/not verified/) })
+      expect(g.data!.signInWithGoogle.userErrors).toEqual([])
+      expect(g.data!.signInWithGoogle.session!.user).toMatchObject({ id: userId, emailVerified: true, verified: false, displayName: 'Not the owner' })
       expect(await db.user.count()).toBe(before)
-      expect(await db.oAuthAccount.count({ where: { userId } })).toBe(0)
+      expect(await db.oAuthAccount.count({ where: { userId, provider: 'GOOGLE' } })).toBe(1)
       const user = await db.user.findUniqueOrThrow({ where: { id: userId } })
-      expect(user.emailVerifiedAt).toBeNull()
+      expect(user.emailVerifiedAt).not.toBeNull()
+      expect(user.verifiedAt).toBeNull()
       expect(user.passwordHash).not.toBeNull()
-      expect((await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password } })).data!.signIn.session).not.toBeNull()
-      expect((await t.gql<{ viewer: { id: string } }>(VIEWER, {}, attackerToken)).data!.viewer.id).toBe(userId)
+      expect((await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password } })).data!.signIn.session!.user.id).toBe(userId)
+      expect((await t.gql<{ viewer: { id: string; emailVerified: boolean } }>(VIEWER, {}, attackerToken)).data!.viewer).toEqual({ id: userId, emailVerified: true })
     })
 
     it('refuses a Google token whose email is not verified, and stores nothing', async () => {

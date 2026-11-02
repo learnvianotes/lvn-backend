@@ -114,7 +114,7 @@ describe('comments and reactions', () => {
     expect(texts(await comments(target, owner))).toEqual(['(removed)'])
   })
 
-  it('comments follow the note’s read rule, need a verified account, and a card must be in the note', async () => {
+  it('comments follow the note’s read rule, and a card must be in the note', async () => {
     const { target, cardId } = await note(owner, 'PRIVATE')
     expect(await discussion(target, asha)).toBeNull()
     expect((await say(asha, target, 'Hello')).code).toBe('NOT_FOUND')
@@ -130,8 +130,8 @@ describe('comments and reactions', () => {
     const open = await note(owner)
     expect((await t.gql<{ note: { discussion: unknown } }>('query ($id: UUID!) { note(id: $id) { discussion { commentCount } } }', { id: open.target.id })).data!.note.discussion).toBeNull()
     const unverified = await person({ verified: false })
-    expect(await discussion(open.target, unverified)).toMatchObject({ viewerCanComment: false, whyNot: 'Verify your account to comment.' })
-    expect(await say(unverified, open.target, 'Hi')).toMatchObject({ code: 'FORBIDDEN', error: 'Verify your account to comment.' })
+    expect(await discussion(open.target, unverified)).toMatchObject({ viewerCanComment: true, whyNot: null })
+    expect((await say(unverified, open.target, 'Hi')).comment).toMatchObject({ author: { id: unverified.id } })
   })
 
   it('a restricted minor comments on notes shared with them, never on public ones (§15.2)', async () => {

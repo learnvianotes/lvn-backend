@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { milestoneFor } from '@lvn/contracts/domain'
+import { Action, milestoneFor, verificationBlocks } from '@lvn/contracts/domain'
 import { docSchema, docText } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
@@ -88,7 +88,7 @@ export class CommentsService {
       const r = await this.resources.one(viewerId, target.id)
       if (!r || r.status !== 'APPROVED') return null
       const actor = await this.policy.actor(viewerId)
-      const canComment = !!actor?.institutionVerified && !actor.suspended && !actor.restrictedMinor
+      const canComment = !!actor && !actor.suspended && !actor.restrictedMinor && !verificationBlocks(actor, Action.NOTE_COMMENT)
       place = { ...base, ownerId: r.submittedById, canComment, whyNot: canComment ? null : await this.whyNot(viewerId, true, undefined, 'resources'), canModerate: false, publicNote: true, link: { kind: 'RESOURCE', resourceId: target.id } }
     } else {
       const p = await this.classrooms.postPlace(viewerId, target.id)
@@ -104,7 +104,8 @@ export class CommentsService {
 
   private async whyNot(viewerId: string, publicNote: boolean, otherwise = "You can't comment here.", publicWhat = 'public notes'): Promise<string> {
     const actor = await this.policy.actor(viewerId)
-    if (!actor?.institutionVerified) return 'Verify your account to comment.'
+    if (!actor) return otherwise
+    if (verificationBlocks(actor, Action.NOTE_COMMENT)) return 'Verify your account to comment.'
     if (publicNote && actor.restrictedMinor) return `Comments on ${publicWhat} are not open to your account yet.`
     return otherwise
   }

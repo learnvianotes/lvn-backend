@@ -27,6 +27,8 @@ export interface NoteAiSource {
   mayAskAi: boolean
   /** `note.fork`: tasks that make the person's own copy (CREATE_NOTES, OUTLINE_TO_NOTE) */
   mayFork: boolean
+  /** `ai.bulk`: those copy-writing tasks also need the unverified-account gate to allow them */
+  mayBulkAi: boolean
   /** May add cards to this note's draft */
   canEdit: boolean
   cards: NoteAiCard[]

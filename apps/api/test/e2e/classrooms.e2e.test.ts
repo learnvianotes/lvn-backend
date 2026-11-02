@@ -128,7 +128,7 @@ describe('classrooms', () => {
     expect((await mutate('reviewClassroomJoinRequest', { requestId: second.id, decision: 'APPROVED' }, teacher)).error).toBe('That request was already answered.')
     expect(await classroom(id, other)).toBeNull()
     expect((await mutate('requestToJoinClassroom', { code: await codeOf(id, teacher) }, student)).error).toBe('You are already in this class.')
-    expect((await mutate('requestToJoinClassroom', { code: await codeOf(id, teacher) }, await person({ verified: false }))).error).toBe('Verify your account to join classes.')
+    expect((await mutate('requestToJoinClassroom', { code: await codeOf(id, teacher) }, await person({ verified: false }))).error).toBeUndefined()
   })
 
   it('staff invite by handle or email; the invite is accepted within 14 days; only the teacher invites TAs', async () => {

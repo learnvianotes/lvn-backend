@@ -119,10 +119,14 @@ export class AdminService {
   async setGlobalRole(adminId: string, userId: string, role: GlobalRole): Promise<void> {
     await this.assertAdmin(adminId)
     if (adminId === userId) throw Errors.forbidden('Ask another platform admin to change your own role.')
-    const user = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { globalRole: true } })
+    const user = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { globalRole: true, verifiedAt: true } })
     if (!user) throw Errors.notFound('User not found.')
     if (user.globalRole === role) return
-    await this.db.user.update({ where: { id: userId }, data: { globalRole: role } })
+    const staff = role === GlobalRole.PLATFORM_ADMIN || role === GlobalRole.MANAGER
+    await this.db.user.update({
+      where: { id: userId },
+      data: { globalRole: role, ...(staff && !user.verifiedAt ? { verifiedAt: new Date() } : {}) },
+    })
     await this.audit.record({ actorId: adminId, action: 'role.changed', targetType: 'User', targetId: userId, metadata: { from: user.globalRole, to: role } })
     await this.events.publish('RoleChanged', { userId, globalRole: role })
   }

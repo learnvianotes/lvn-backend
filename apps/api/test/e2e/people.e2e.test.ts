@@ -66,10 +66,11 @@ describe('people', () => {
     expect(await followers(teacher)).toEqual([asha.id])
   })
 
-  it('nobody follows themselves or a restricted minor, and an unverified account follows nobody', async () => {
+  it('nobody follows themselves or a restricted minor, and an unverified account can follow a teacher', async () => {
     expect((await act('followUser', asha, asha)).userErrors[0]).toMatchObject({ code: 'VALIDATION' })
     expect((await act('followUser', asha, minor)).userErrors[0]).toMatchObject({ code: 'FORBIDDEN', message: "You can't follow this person." })
-    expect((await act('followUser', unverified, teacher)).userErrors[0]).toMatchObject({ code: 'FORBIDDEN', message: 'Verify your account to follow people.' })
+    expect((await act('followUser', unverified, teacher)).userErrors).toEqual([])
+    expect((await act('followUser', unverified, teacher)).user?.relation?.following).toBe(true)
     expect((await t.gql('mutation ($input: PersonInput!) { followUser(input: $input) { userErrors { message } } }', { input: { userId: teacher.id } })).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
   })
 
