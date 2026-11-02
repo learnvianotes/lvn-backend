@@ -34,22 +34,50 @@ type NotesFromTranscriptPayload {
   userErrors: [UserError!]!
 }
 
+"Shared by the voice operations. captions is browser SpeechRecognition text. transcript is the finished text. fileId is an uploaded recording."
+input VoiceCaptureInput {
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
+}
+
 input TranscribeCaptionClipInput {
-  "Base64 audio, at most about 15 seconds and 2.5 MB"
-  audioBase64: String!
-  mimeType: String!
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
+}
+
+input TranscribeAudioInput {
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
+}
+
+input MakeNotesFromTranscriptInput {
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
+}
+
+type VoiceCapturePayload {
+  voiceCapture: VoiceCapture
+  userErrors: [UserError!]!
 }
 
 extend type Query {
-  "How to caption live. Works signed out: it describes the browser, it does not call a model."
-  voiceCapture: VoiceCapture!
+  "How to caption live. It describes the browser and does not call a model. Signed out, the note must be public."
+  voiceCapture(input: VoiceCaptureInput!): VoiceCapturePayload!
 }
 
 extend type Mutation {
-  "A VOICE_NOTE or audio ATTACHMENT the viewer uploaded and finished with completeUpload."
-  transcribeAudio(fileId: UUID!): TranscriptPayload!
-  "A few seconds of audio for live captions. Not stored and not scanned."
+  "A VOICE_NOTE or audio ATTACHMENT on this note, finished with completeUpload."
+  transcribeAudio(input: TranscribeAudioInput!): TranscriptPayload!
+  "Browser captions, or a short uploaded clip when the browser cannot caption."
   transcribeCaptionClip(input: TranscribeCaptionClipInput!): TranscriptPayload!
   "A private note from a transcript: a summary, then headings and text. At most 20,000 characters are read."
-  makeNotesFromTranscript(transcript: String!): NotesFromTranscriptPayload!
+  makeNotesFromTranscript(input: MakeNotesFromTranscriptInput!): NotesFromTranscriptPayload!
 }

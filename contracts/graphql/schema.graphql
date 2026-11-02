@@ -2910,6 +2910,13 @@ enum LimitKey {
   STORAGE_BYTES
 }
 
+input MakeNotesFromTranscriptInput {
+  captions: String
+  fileId: UUID
+  noteId: UUID!
+  transcript: String
+}
+
 input MarkNotificationsReadInput {
   all: Boolean
 
@@ -3335,7 +3342,7 @@ type Mutation {
   """
   A private note from a transcript: a summary, then headings and text. At most 20,000 characters are read.
   """
-  makeNotesFromTranscript(transcript: String!): NotesFromTranscriptPayload!
+  makeNotesFromTranscript(input: MakeNotesFromTranscriptInput!): NotesFromTranscriptPayload!
   markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload!
 
   """
@@ -3502,8 +3509,8 @@ type Mutation {
   """
   saveNote(input: NoteIdInput!): NotePayload!
 
-  """Write one page's drawing. Editors of the note."""
-  saveNotePage(input: SaveNotePageInput!): NotePagePayload!
+  """Write the ink and pictures of these pages. Editors of the note."""
+  saveNotePages(input: SaveNotePagesInput!): NotePagesPayload!
   saveResource(input: ResourceIdInput!): ResourcePayload!
 
   """
@@ -3638,11 +3645,13 @@ type Mutation {
   trackEvents(input: TrackEventsInput!): TrackEventsPayload!
 
   """
-  A VOICE_NOTE or audio ATTACHMENT the viewer uploaded and finished with completeUpload.
+  A VOICE_NOTE or audio ATTACHMENT on this note, finished with completeUpload.
   """
-  transcribeAudio(fileId: UUID!): TranscriptPayload!
+  transcribeAudio(input: TranscribeAudioInput!): TranscriptPayload!
 
-  """A few seconds of audio for live captions. Not stored and not scanned."""
+  """
+  Browser captions, or a short uploaded clip when the browser cannot caption.
+  """
   transcribeCaptionClip(input: TranscribeCaptionClipInput!): TranscriptPayload!
   unblockUser(input: PersonInput!): PersonPayload!
   unfollowUser(input: PersonInput!): PersonPayload!
@@ -3737,6 +3746,9 @@ type Note {
   Readers (signed in or not, while they may read the note): the READY aids the owner has not hidden. The owner: every step
   """
   aiInsights: [AiInsight!]!
+
+  """Whether other people may copy this note"""
+  allowForks: Boolean!
   cardCount: Int!
 
   """In order; at most 100 per page"""
@@ -3778,7 +3790,6 @@ type Note {
 
   """Set on a copy of another note; it cannot be removed"""
   forkedFrom: ForkCredit
-  forkingEnabled: Boolean!
 
   """Owner only: the groups the note is shared to"""
   groups: [Group!]
@@ -3994,20 +4005,27 @@ input NotePageIdInput {
 
 type NotePageImage {
   fileId: UUID!
-  height: Float!
-  id: UUID!
-  rotation: Float!
+  h: Float!
 
   """Null while the scan is pending or failed"""
-  url: String
-  urlExpiresAt: DateTime
-  width: Float!
+  href: String
+  id: UUID!
+
+  """The file's name"""
+  name: String!
+  rotation: Float!
+  w: Float!
   x: Float!
   y: Float!
 }
 
 type NotePagePayload {
   page: NotePage
+  userErrors: [UserError!]!
+}
+
+type NotePagesPayload {
+  pages: [NotePage!]
   userErrors: [UserError!]!
 }
 
@@ -4405,10 +4423,11 @@ input PinGroupPostInput {
 input PlacePageImageInput {
   """A PAGE_IMAGE upload for this note, finished with completeUpload"""
   fileId: UUID!
-  height: Float!
+  h: Float!
+  name: String
   pageId: UUID!
   rotation: Float
-  width: Float!
+  w: Float!
   x: Float!
   y: Float!
 }
@@ -4688,6 +4707,11 @@ type Query {
   forYouFeed(after: String, first: Int): CommunityConnection!
 
   """
+  Whether this note allows copies. False when the viewer cannot read it. The same value as Note.allowForks.
+  """
+  forkingEnabled(noteId: UUID!): Boolean!
+
+  """
   A group the viewer may know about: public ones, and private ones they are in or asked to join
   """
   group(id: UUID!): Group
@@ -4808,6 +4832,11 @@ type Query {
   Notes anyone may read, newest published first (at most 100 a page): sitemaps and public pages
   """
   publicNotes(after: String, first: Int): NoteConnection!
+
+  """
+  Whether Public notes and quizzes require an institution-verified account. True when the admin has not saved the row. Anyone may read it.
+  """
+  publicNotesRequireVerification: Boolean!
 
   """Public quizzes, newest published first. Unlisted quizzes are not here."""
   publicQuizzes(first: Int): [SharedQuiz!]!
@@ -4957,9 +4986,9 @@ type Query {
   viewer: User
 
   """
-  How to caption live. Works signed out: it describes the browser, it does not call a model.
+  How to caption live. It describes the browser and does not call a model. Signed out, the note must be public.
   """
-  voiceCapture: VoiceCapture!
+  voiceCapture(input: VoiceCaptureInput!): VoiceCapturePayload!
 
   """Signed in only: weak topics, each with why; an upcoming exam's first"""
   weakTopics: [WeakTopic!]!
@@ -5762,13 +5791,35 @@ input SaveAiTaskRouteInput {
   task: String!
 }
 
+input SaveNotePageImageInput {
+  fileId: UUID!
+  h: Float!
+
+  """Absent: a new picture on this page"""
+  id: UUID
+
+  """Stored as the file's name when set"""
+  name: String
+  rotation: Float
+  w: Float!
+  x: Float!
+  y: Float!
+}
+
 input SaveNotePageInput {
   drawing: JSON!
-  index: Int!
-  noteId: UUID!
 
   """Absent: a new page"""
-  pageId: UUID
+  id: UUID
+
+  """When set, replaces the pictures on this page. Omit to leave them."""
+  images: [SaveNotePageImageInput!]
+  index: Int!
+}
+
+input SaveNotePagesInput {
+  noteId: UUID!
+  pages: [SaveNotePageInput!]!
 }
 
 """
@@ -6501,10 +6552,18 @@ type TrackEventsPayload {
   userErrors: [UserError!]!
 }
 
+input TranscribeAudioInput {
+  captions: String
+  fileId: UUID
+  noteId: UUID!
+  transcript: String
+}
+
 input TranscribeCaptionClipInput {
-  """Base64 audio, at most about 15 seconds and 2.5 MB"""
-  audioBase64: String!
-  mimeType: String!
+  captions: String
+  fileId: UUID
+  noteId: UUID!
+  transcript: String
 }
 
 type Transcript {
@@ -6651,10 +6710,11 @@ input UpdateNotificationSettingsInput {
 }
 
 input UpdatePageImageInput {
-  height: Float!
+  h: Float!
   imageId: UUID!
+  name: String
   rotation: Float
-  width: Float!
+  w: Float!
   x: Float!
   y: Float!
 }
@@ -7004,6 +7064,21 @@ type VoiceCapture {
 
   """The mutation to call with a short clip when the browser cannot caption"""
   streamingFallback: String!
+}
+
+"""
+Shared by the voice operations. captions is browser SpeechRecognition text. transcript is the finished text. fileId is an uploaded recording.
+"""
+input VoiceCaptureInput {
+  captions: String
+  fileId: UUID
+  noteId: UUID!
+  transcript: String
+}
+
+type VoiceCapturePayload {
+  userErrors: [UserError!]!
+  voiceCapture: VoiceCapture
 }
 
 type WeakTopic {

@@ -212,6 +212,7 @@ export class FilesService implements Files {
       ownerId: f.ownerId,
       purpose: f.purpose,
       originalFileName: f.originalFileName,
+      parentId: f.parentId,
       mimeType: f.mimeType,
       sizeBytes: Number(f.sizeBytes),
       status: f.status,

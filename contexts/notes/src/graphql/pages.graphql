@@ -19,14 +19,15 @@ type InkStroke {
 type NotePageImage {
   id: UUID!
   fileId: UUID!
+  "Null while the scan is pending or failed"
+  href: String
+  "The file's name"
+  name: String!
   x: Float!
   y: Float!
-  width: Float!
-  height: Float!
+  w: Float!
+  h: Float!
   rotation: Float!
-  "Null while the scan is pending or failed"
-  url: String
-  urlExpiresAt: DateTime
 }
 
 type NotePage {
@@ -43,12 +44,31 @@ extend type Note {
   pages: [NotePage!]!
 }
 
+input SaveNotePageImageInput {
+  "Absent: a new picture on this page"
+  id: UUID
+  fileId: UUID!
+  "Stored as the file's name when set"
+  name: String
+  x: Float!
+  y: Float!
+  w: Float!
+  h: Float!
+  rotation: Float
+}
+
 input SaveNotePageInput {
-  noteId: UUID!
   "Absent: a new page"
-  pageId: UUID
+  id: UUID
   index: Int!
   drawing: JSON!
+  "When set, replaces the pictures on this page. Omit to leave them."
+  images: [SaveNotePageImageInput!]
+}
+
+input SaveNotePagesInput {
+  noteId: UUID!
+  pages: [SaveNotePageInput!]!
 }
 
 input NotePageIdInput {
@@ -59,19 +79,21 @@ input PlacePageImageInput {
   pageId: UUID!
   "A PAGE_IMAGE upload for this note, finished with completeUpload"
   fileId: UUID!
+  name: String
   x: Float!
   y: Float!
-  width: Float!
-  height: Float!
+  w: Float!
+  h: Float!
   rotation: Float
 }
 
 input UpdatePageImageInput {
   imageId: UUID!
+  name: String
   x: Float!
   y: Float!
-  width: Float!
-  height: Float!
+  w: Float!
+  h: Float!
   rotation: Float
 }
 
@@ -84,9 +106,14 @@ type NotePagePayload {
   userErrors: [UserError!]!
 }
 
+type NotePagesPayload {
+  pages: [NotePage!]
+  userErrors: [UserError!]!
+}
+
 extend type Mutation {
-  "Write one page's drawing. Editors of the note."
-  saveNotePage(input: SaveNotePageInput!): NotePagePayload!
+  "Write the ink and pictures of these pages. Editors of the note."
+  saveNotePages(input: SaveNotePagesInput!): NotePagesPayload!
   deleteNotePage(input: NotePageIdInput!): OkPayload!
   "Place a scanned PNG or JPEG on a page."
   placePageImage(input: PlacePageImageInput!): NotePagePayload!

@@ -295,6 +295,13 @@ export interface KeepAiCardsPayload {
 
 export type KeepCardsInto = 'NOTE' | 'NEW_NOTE'
 
+export interface MakeNotesFromTranscriptInput {
+  noteId: string
+  fileId?: string | null
+  captions?: string | null
+  transcript?: string | null
+}
+
 export interface MutationRunAiTaskArgs {
   input: RunAiTaskInput
 }
@@ -353,7 +360,7 @@ export interface MutationDeleteAiTaskRouteArgs {
 }
 
 export interface MutationTranscribeAudioArgs {
-  fileId: string
+  input: TranscribeAudioInput
 }
 
 export interface MutationTranscribeCaptionClipArgs {
@@ -361,7 +368,7 @@ export interface MutationTranscribeCaptionClipArgs {
 }
 
 export interface MutationMakeNotesFromTranscriptArgs {
-  transcript: string
+  input: MakeNotesFromTranscriptInput
 }
 
 /** A note, owned by the notes subgraph; ai adds the viewer's AI results */
@@ -422,6 +429,10 @@ export interface QueryAiArtifactArgs {
   id: string
 }
 
+export interface QueryVoiceCaptureArgs {
+  input: VoiceCaptureInput
+}
+
 export interface RunAiTaskInput {
   noteId: string
   task: AiTask
@@ -463,10 +474,18 @@ export interface SetAiDefaultsInput {
   embedConnectionId?: string | null
 }
 
+export interface TranscribeAudioInput {
+  noteId: string
+  fileId?: string | null
+  captions?: string | null
+  transcript?: string | null
+}
+
 export interface TranscribeCaptionClipInput {
-  /** Base64 audio, at most about 15 seconds and 2.5 MB */
-  audioBase64: string
-  mimeType: string
+  noteId: string
+  fileId?: string | null
+  captions?: string | null
+  transcript?: string | null
 }
 
 export interface Transcript {
@@ -499,4 +518,17 @@ export interface VoiceCapture {
   languages: Array<string>
   /** The mutation to call with a short clip when the browser cannot caption */
   streamingFallback: string
+}
+
+/** Shared by the voice operations. captions is browser SpeechRecognition text. transcript is the finished text. fileId is an uploaded recording. */
+export interface VoiceCaptureInput {
+  noteId: string
+  fileId?: string | null
+  captions?: string | null
+  transcript?: string | null
+}
+
+export interface VoiceCapturePayload {
+  voiceCapture: VoiceCapture | null
+  userErrors: Array<UserError>
 }

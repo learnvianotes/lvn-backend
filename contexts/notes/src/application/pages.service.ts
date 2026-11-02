@@ -8,6 +8,7 @@ import { NotesService } from './notes.service'
 export interface PageImageRow {
   id: string
   fileId: string
+  name: string
   x: number
   y: number
   width: number
@@ -33,6 +34,25 @@ export interface SavePageInput {
 export interface PlaceImageInput extends PageImagePlacement {
   pageId: string
   fileId: string
+  name?: string | null
+}
+
+export interface SavePagesImageInput {
+  id?: string | null
+  fileId: string
+  name?: string | null
+  x: number
+  y: number
+  w: number
+  h: number
+  rotation?: number | null
+}
+
+export interface SavePagesPageInput {
+  id?: string | null
+  index: number
+  drawing: unknown
+  images?: SavePagesImageInput[] | null
 }
 
 /**
@@ -73,6 +93,30 @@ export class PagesService {
     return (await this.rows(input.noteId, id))[0]!
   }
 
+  /** Upsert these pages. An `images` array replaces the pictures on that page; omitting it leaves them. */
+  async saveAll(editorId: string, noteId: string, pages: SavePagesPageInput[]): Promise<PageRow[]> {
+    await this.notes.require(editorId, noteId, 'edit')
+    if (pages.length > DRAWING_LIMITS.pages) throw Errors.validation(`A note has at most ${DRAWING_LIMITS.pages} pages.`, ['input', 'pages'])
+    const seen = new Set<number>()
+    for (const [i, page] of pages.entries()) {
+      if (!Number.isInteger(page.index) || page.index < 0 || page.index >= DRAWING_LIMITS.pages) {
+        throw Errors.validation(`A note has at most ${DRAWING_LIMITS.pages} pages.`, ['input', 'pages', String(i), 'index'])
+      }
+      if (seen.has(page.index)) throw Errors.validation('Two pages cannot share an index.', ['input', 'pages', String(i), 'index'])
+      seen.add(page.index)
+      const parsed = parseDrawing(page.drawing)
+      if (!parsed.ok) throw Errors.validation(parsed.message, ['input', 'pages', String(i), 'drawing'])
+      if (page.images && page.images.length > DRAWING_LIMITS.imagesPerPage) {
+        throw Errors.validation(`A page holds at most ${DRAWING_LIMITS.imagesPerPage} images.`, ['input', 'pages', String(i), 'images'])
+      }
+    }
+    for (const page of pages) {
+      const saved = await this.save(editorId, { noteId, pageId: page.id, index: page.index, drawing: page.drawing })
+      if (page.images) await this.syncImages(editorId, noteId, saved.id, page.images)
+    }
+    return this.rows(noteId)
+  }
+
   async remove(editorId: string, pageId: string): Promise<void> {
     const page = await this.page(pageId)
     await this.notes.require(editorId, page.noteId, 'edit')
@@ -86,6 +130,7 @@ export class PagesService {
     await this.notes.require(editorId, page.noteId, 'edit')
     const placement = this.placement(input)
     await this.assertImage(editorId, page.noteId, input.fileId)
+    await this.rememberName(input.fileId, input.name)
     const count = await this.db.notePageImage.count({ where: { pageId: page.id } })
     if (count >= DRAWING_LIMITS.imagesPerPage) throw Errors.validation(`A page holds at most ${DRAWING_LIMITS.imagesPerPage} images.`, ['input', 'fileId'])
     await this.db.notePageImage.create({ data: { id: newId(), pageId: page.id, fileId: input.fileId, ...placement } })
@@ -97,6 +142,8 @@ export class PagesService {
     await this.notes.require(editorId, image.page.noteId, 'edit')
     const placement = this.placement(raw)
     await this.db.notePageImage.update({ where: { id: imageId }, data: placement })
+    const named = raw && typeof raw === 'object' ? (raw as { name?: string | null }).name : undefined
+    await this.rememberName(image.fileId, named)
     return (await this.rows(image.page.noteId, image.pageId))[0]!
   }
 
@@ -112,6 +159,39 @@ export class PagesService {
     const parsed = parsePageImagePlacement({ x: source.x, y: source.y, width: source.width, height: source.height, rotation: source.rotation ?? 0 })
     if (!parsed.ok) throw Errors.validation(parsed.message, ['input'])
     return parsed.placement
+  }
+
+  private async syncImages(editorId: string, noteId: string, pageId: string, images: SavePagesImageInput[]): Promise<void> {
+    const existing = await this.db.notePageImage.findMany({ where: { pageId } })
+    const keep = new Set<string>()
+    for (const image of images) {
+      const placement = this.placement({ x: image.x, y: image.y, width: image.w, height: image.h, rotation: image.rotation ?? 0 })
+      await this.assertImage(editorId, noteId, image.fileId)
+      await this.rememberName(image.fileId, image.name)
+      if (image.id) {
+        const row = existing.find((item) => item.id === image.id)
+        if (!row) throw Errors.notFound('Picture not found.')
+        await this.db.notePageImage.update({ where: { id: image.id }, data: { fileId: image.fileId, ...placement } })
+        if (row.fileId !== image.fileId) await this.deleteIfUnused(row.fileId)
+        keep.add(image.id)
+      } else {
+        const id = newId()
+        await this.db.notePageImage.create({ data: { id, pageId, fileId: image.fileId, ...placement } })
+        keep.add(id)
+      }
+    }
+    const dropped = existing.filter((item) => !keep.has(item.id))
+    if (dropped.length) {
+      await this.db.notePageImage.deleteMany({ where: { id: { in: dropped.map((item) => item.id) } } })
+      for (const image of dropped) await this.deleteIfUnused(image.fileId)
+    }
+  }
+
+  private async rememberName(fileId: string, name: string | null | undefined): Promise<void> {
+    if (!name) return
+    const cleaned = [...name].filter((c) => c !== '/' && c !== '\\' && c.charCodeAt(0) >= 0x20).join('').trim().slice(0, 255)
+    if (!cleaned) return
+    await this.db.fileObject.update({ where: { id: fileId }, data: { originalFileName: cleaned } })
   }
 
   /** A finished page image the editor uploaded for this note, and that a scan has not refused. */
@@ -154,7 +234,7 @@ export class PagesService {
   private async rows(noteId: string, only?: string): Promise<PageRow[]> {
     const pages = await this.db.notePage.findMany({
       where: { noteId, deletedAt: null, ...(only ? { id: only } : {}) },
-      include: { images: { orderBy: { id: 'asc' } } },
+      include: { images: { orderBy: { id: 'asc' }, include: { file: { select: { originalFileName: true } } } } },
       orderBy: [{ index: 'asc' }, { id: 'asc' }],
     })
     return pages.map((page) => ({
@@ -162,7 +242,7 @@ export class PagesService {
       noteId: page.noteId,
       index: page.index,
       drawing: page.drawing as Drawing,
-      images: page.images.map((image) => ({ id: image.id, fileId: image.fileId, x: image.x, y: image.y, width: image.width, height: image.height, rotation: image.rotation })),
+      images: page.images.map((image) => ({ id: image.id, fileId: image.fileId, name: image.file.originalFileName, x: image.x, y: image.y, width: image.width, height: image.height, rotation: image.rotation })),
     }))
   }
 }

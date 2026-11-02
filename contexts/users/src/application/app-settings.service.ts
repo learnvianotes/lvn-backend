@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { Errors } from '@lvn-backend/errors'
 import { PrismaService } from '@lvn-backend/prisma-base'
-import { unverifiedGatesFromSetting } from '@lvn/contracts/domain'
+import { PUBLIC_NOTES_REQUIRE_VERIFICATION, unverifiedGatesFromSetting } from '@lvn/contracts/domain'
 import { decodeSettingValue, parseSettingInput, serializeSetting, SETTING_CATALOG, settingDef, STUDENT_ID_AI_AUTO_APPROVE_SETTING, STUDENT_ID_AI_CHECK_SETTING, STUDENT_ID_AI_THRESHOLD_SETTING, STUDENT_ID_IMAGE_RETENTION_SETTING, UNVERIFIED_GATED_ACTIONS_SETTING, type SettingDef } from '../domain/setting-catalog'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { AuditService } from './audit.service'
@@ -62,6 +62,11 @@ export class AppSettingsService {
   /** Public. Missing row is the built-in list. A saved empty value gates nothing. */
   unverifiedGatedActions(): string[] {
     return [...unverifiedGatesFromSetting(this.store.string(UNVERIFIED_GATED_ACTIONS_SETTING, null))]
+  }
+
+  /** Public. Missing row means Public notes and quizzes require a verified account. */
+  publicNotesRequireVerification(): boolean {
+    return this.store.boolean(PUBLIC_NOTES_REQUIRE_VERIFICATION, true)
   }
 
   /** Public to sign-in. True until an admin writes the row off, including when the row has never been written. */

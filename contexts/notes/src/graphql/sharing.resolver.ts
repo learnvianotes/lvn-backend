@@ -72,6 +72,17 @@ export class SharingResolver {
     return withUserErrors<NotePayload>(async () => ({ note: toNote(await this.sharing.setSharedWithConnections(viewer.userId, input.noteId, input.shared)) }), { note: null })
   }
 
+  @Query('forkingEnabled')
+  async forkingEnabled(@Args('noteId') noteId: string, @CurrentViewer() viewer: Viewer | null): Promise<boolean> {
+    const opened = await this.notes.open(viewer?.userId ?? null, noteId)
+    return opened?.note.forkingEnabled ?? false
+  }
+
+  @ResolveField('allowForks')
+  allowForks(@Parent() n: NoteParent): boolean {
+    return n.forkingEnabled
+  }
+
   @ResolveField('forkedFrom')
   async forkedFrom(@Parent() n: NoteParent, @CurrentViewer() viewer: Viewer | null) {
     if (!n.forkedFromOwnerId) return null

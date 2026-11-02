@@ -127,7 +127,8 @@ type Note implements Node {             # [notes]
   cards(first: Int, after: String): CardConnection!
   publishedVersion: NoteVersion
   draftRevision: Int!
-  forkingEnabled: Boolean!
+  allowForks: Boolean!
+  forkCount: Int!
   forkedFrom: NoteAttribution
   createdAt: DateTime!
   updatedAt: DateTime!

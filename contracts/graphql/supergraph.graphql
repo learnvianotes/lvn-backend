@@ -3563,6 +3563,15 @@ enum link__Purpose {
   EXECUTION
 }
 
+input MakeNotesFromTranscriptInput
+  @join__type(graph: AI)
+{
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
+}
+
 input MarkNotificationsReadInput
   @join__type(graph: COMMUNICATION)
 {
@@ -3823,17 +3832,19 @@ type Mutation
   deleteAiTaskRoute(input: AiTaskRouteInput!): AiSettingsPayload! @join__field(graph: AI)
 
   """
-  A VOICE_NOTE or audio ATTACHMENT the viewer uploaded and finished with completeUpload.
+  A VOICE_NOTE or audio ATTACHMENT on this note, finished with completeUpload.
   """
-  transcribeAudio(fileId: UUID!): TranscriptPayload! @join__field(graph: AI)
+  transcribeAudio(input: TranscribeAudioInput!): TranscriptPayload! @join__field(graph: AI)
 
-  """A few seconds of audio for live captions. Not stored and not scanned."""
+  """
+  Browser captions, or a short uploaded clip when the browser cannot caption.
+  """
   transcribeCaptionClip(input: TranscribeCaptionClipInput!): TranscriptPayload! @join__field(graph: AI)
 
   """
   A private note from a transcript: a summary, then headings and text. At most 20,000 characters are read.
   """
-  makeNotesFromTranscript(transcript: String!): NotesFromTranscriptPayload! @join__field(graph: AI)
+  makeNotesFromTranscript(input: MakeNotesFromTranscriptInput!): NotesFromTranscriptPayload! @join__field(graph: AI)
   markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload! @join__field(graph: COMMUNICATION)
   updateNotificationSettings(input: UpdateNotificationSettingsInput!): NotificationSettingsPayload! @join__field(graph: COMMUNICATION)
 
@@ -4120,8 +4131,8 @@ type Mutation
   deleteTag(input: IdInput!): OkPayload! @join__field(graph: NOTES)
   proposeTopic(input: ProposeTopicInput!): TopicPayload! @join__field(graph: NOTES)
 
-  """Write one page's drawing. Editors of the note."""
-  saveNotePage(input: SaveNotePageInput!): NotePagePayload! @join__field(graph: NOTES)
+  """Write the ink and pictures of these pages. Editors of the note."""
+  saveNotePages(input: SaveNotePagesInput!): NotePagesPayload! @join__field(graph: NOTES)
   deleteNotePage(input: NotePageIdInput!): OkPayload! @join__field(graph: NOTES)
 
   """Place a scanned PNG or JPEG on a page."""
@@ -4481,7 +4492,9 @@ type Note
   draftUpdatedAt: DateTime @join__field(graph: NOTES)
   publishedVersion: NoteVersion @join__field(graph: NOTES)
   publishedAt: DateTime @join__field(graph: NOTES)
-  forkingEnabled: Boolean! @join__field(graph: NOTES)
+
+  """Whether other people may copy this note"""
+  allowForks: Boolean! @join__field(graph: NOTES)
 
   """Private copies other people have made"""
   forkCount: Int! @join__field(graph: NOTES)
@@ -4730,21 +4743,30 @@ type NotePageImage
 {
   id: UUID!
   fileId: UUID!
-  x: Float!
-  y: Float!
-  width: Float!
-  height: Float!
-  rotation: Float!
 
   """Null while the scan is pending or failed"""
-  url: String
-  urlExpiresAt: DateTime
+  href: String
+
+  """The file's name"""
+  name: String!
+  x: Float!
+  y: Float!
+  w: Float!
+  h: Float!
+  rotation: Float!
 }
 
 type NotePagePayload
   @join__type(graph: NOTES)
 {
   page: NotePage
+  userErrors: [UserError!]!
+}
+
+type NotePagesPayload
+  @join__type(graph: NOTES)
+{
+  pages: [NotePage!]
   userErrors: [UserError!]!
 }
 
@@ -5240,10 +5262,11 @@ input PlacePageImageInput
 
   """A PAGE_IMAGE upload for this note, finished with completeUpload"""
   fileId: UUID!
+  name: String
   x: Float!
   y: Float!
-  width: Float!
-  height: Float!
+  w: Float!
+  h: Float!
   rotation: Float
 }
 
@@ -5447,9 +5470,9 @@ type Query
   myAiAllowance: AiAllowance! @join__field(graph: AI)
 
   """
-  How to caption live. Works signed out: it describes the browser, it does not call a model.
+  How to caption live. It describes the browser and does not call a model. Signed out, the note must be public.
   """
-  voiceCapture: VoiceCapture! @join__field(graph: AI)
+  voiceCapture(input: VoiceCaptureInput!): VoiceCapturePayload! @join__field(graph: AI)
 
   """The viewer's notifications, newest first"""
   notifications(first: Int, after: String): NotificationConnection! @join__field(graph: COMMUNICATION)
@@ -5678,6 +5701,11 @@ type Query
   sharedWithMe(first: Int, after: String): NoteConnection! @join__field(graph: NOTES)
 
   """
+  Whether this note allows copies. False when the viewer cannot read it. The same value as Note.allowForks.
+  """
+  forkingEnabled(noteId: UUID!): Boolean! @join__field(graph: NOTES)
+
+  """
   What changed since `since` (the cursor of the last completed sync) or `after` (the previous page); 1 to 50 notes (default 20)
   """
   syncPull(since: String, after: String, first: Int): SyncPullResult! @join__field(graph: NOTES)
@@ -5741,6 +5769,11 @@ type Query
   Action ids an institution-unverified account cannot do. Empty means none. Pass these into can() on web and mobile.
   """
   unverifiedGatedActions: [String!]! @join__field(graph: USERS)
+
+  """
+  Whether Public notes and quizzes require an institution-verified account. True when the admin has not saved the row. Anyone may read it.
+  """
+  publicNotesRequireVerification: Boolean! @join__field(graph: USERS)
 
   """
   Public. False until a platform admin turns it on. Clients hide the college-ID control while it is false. Independent of uploadsEnabled.
@@ -6801,15 +6834,39 @@ input SaveAiTaskRouteInput
   outputMicroUsdPerMTok: Int
 }
 
+input SaveNotePageImageInput
+  @join__type(graph: NOTES)
+{
+  """Absent: a new picture on this page"""
+  id: UUID
+  fileId: UUID!
+
+  """Stored as the file's name when set"""
+  name: String
+  x: Float!
+  y: Float!
+  w: Float!
+  h: Float!
+  rotation: Float
+}
+
 input SaveNotePageInput
   @join__type(graph: NOTES)
 {
-  noteId: UUID!
-
   """Absent: a new page"""
-  pageId: UUID
+  id: UUID
   index: Int!
   drawing: JSON!
+
+  """When set, replaces the pictures on this page. Omit to leave them."""
+  images: [SaveNotePageImageInput!]
+}
+
+input SaveNotePagesInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+  pages: [SaveNotePageInput!]!
 }
 
 """
@@ -7710,12 +7767,22 @@ type TrackEventsPayload
   userErrors: [UserError!]!
 }
 
+input TranscribeAudioInput
+  @join__type(graph: AI)
+{
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
+}
+
 input TranscribeCaptionClipInput
   @join__type(graph: AI)
 {
-  """Base64 audio, at most about 15 seconds and 2.5 MB"""
-  audioBase64: String!
-  mimeType: String!
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
 }
 
 type Transcript
@@ -7897,10 +7964,11 @@ input UpdatePageImageInput
   @join__type(graph: NOTES)
 {
   imageId: UUID!
+  name: String
   x: Float!
   y: Float!
-  width: Float!
-  height: Float!
+  w: Float!
+  h: Float!
   rotation: Float
 }
 
@@ -8317,6 +8385,25 @@ type VoiceCapture
 
   """The mutation to call with a short clip when the browser cannot caption"""
   streamingFallback: String!
+}
+
+"""
+Shared by the voice operations. captions is browser SpeechRecognition text. transcript is the finished text. fileId is an uploaded recording.
+"""
+input VoiceCaptureInput
+  @join__type(graph: AI)
+{
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
+}
+
+type VoiceCapturePayload
+  @join__type(graph: AI)
+{
+  voiceCapture: VoiceCapture
+  userErrors: [UserError!]!
 }
 
 type WeakTopic

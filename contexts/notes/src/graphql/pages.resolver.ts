@@ -3,13 +3,25 @@ import { Args, Mutation, Parent, ResolveField, Resolver } from '@nestjs/graphql'
 import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { withUserErrors, type UserError } from '@lvn-backend/errors'
 import { FilesService } from '../application/files.service'
-import { PagesService, type PageImageRow, type PageRow, type SavePageInput } from '../application/pages.service'
+import { PagesService, type PageImageRow, type PageRow, type SavePagesPageInput } from '../application/pages.service'
 import type { NoteParent } from './notes.resolver'
 
 const TOOLS = { pen: 'PEN', marker: 'MARKER', eraser: 'ERASER', ruler: 'RULER' } as const
 
 type PagePayload = { page: PageRow | null; userErrors: UserError[] }
+type PagesPayload = { pages: PageRow[] | null; userErrors: UserError[] }
 type Ok = { ok: boolean; userErrors: UserError[] }
+
+interface PlacedImageInput {
+  pageId: string
+  fileId: string
+  name?: string | null
+  x: number
+  y: number
+  w: number
+  h: number
+  rotation?: number | null
+}
 
 /** Pages, their ink and the pictures on them. */
 @Resolver('NotePage')
@@ -35,7 +47,7 @@ export class PagesResolver {
   @ResolveField('images')
   async images(@Parent() page: PageRow) {
     const signed = await this.files.readUrls(page.images.map((image) => image.fileId))
-    return page.images.map((image) => withUrl(image, signed.get(image.fileId)))
+    return page.images.map((image) => present(image, signed.get(image.fileId)))
   }
 }
 
@@ -53,10 +65,10 @@ export class NotePagesResolver {
 export class PageMutationsResolver {
   constructor(private readonly pages: PagesService) {}
 
-  @Mutation('saveNotePage')
+  @Mutation('saveNotePages')
   @UseGuards(SignedInGuard)
-  saveNotePage(@Args('input') input: SavePageInput, @CurrentViewer() viewer: Viewer): Promise<PagePayload> {
-    return withUserErrors<PagePayload>(async () => ({ page: await this.pages.save(viewer.userId, input) }), { page: null })
+  saveNotePages(@Args('input') input: { noteId: string; pages: SavePagesPageInput[] }, @CurrentViewer() viewer: Viewer): Promise<PagesPayload> {
+    return withUserErrors<PagesPayload>(async () => ({ pages: await this.pages.saveAll(viewer.userId, input.noteId, input.pages) }), { pages: null })
   }
 
   @Mutation('deleteNotePage')
@@ -67,14 +79,14 @@ export class PageMutationsResolver {
 
   @Mutation('placePageImage')
   @UseGuards(SignedInGuard)
-  placePageImage(@Args('input') input: { pageId: string; fileId: string; x: number; y: number; width: number; height: number; rotation?: number | null }, @CurrentViewer() viewer: Viewer): Promise<PagePayload> {
-    return withUserErrors<PagePayload>(async () => ({ page: await this.pages.place(viewer.userId, { ...input, rotation: input.rotation ?? 0 }) }), { page: null })
+  placePageImage(@Args('input') input: PlacedImageInput, @CurrentViewer() viewer: Viewer): Promise<PagePayload> {
+    return withUserErrors<PagePayload>(async () => ({ page: await this.pages.place(viewer.userId, { ...placed(input), pageId: input.pageId, fileId: input.fileId, name: input.name }) }), { page: null })
   }
 
   @Mutation('updatePageImage')
   @UseGuards(SignedInGuard)
-  updatePageImage(@Args('input') input: { imageId: string; x: number; y: number; width: number; height: number; rotation?: number | null }, @CurrentViewer() viewer: Viewer): Promise<PagePayload> {
-    return withUserErrors<PagePayload>(async () => ({ page: await this.pages.move(viewer.userId, input.imageId, input) }), { page: null })
+  updatePageImage(@Args('input') input: { imageId: string; name?: string | null; x: number; y: number; w: number; h: number; rotation?: number | null }, @CurrentViewer() viewer: Viewer): Promise<PagePayload> {
+    return withUserErrors<PagePayload>(async () => ({ page: await this.pages.move(viewer.userId, input.imageId, { ...placed(input), name: input.name }) }), { page: null })
   }
 
   @Mutation('removePageImage')
@@ -84,6 +96,10 @@ export class PageMutationsResolver {
   }
 }
 
-function withUrl(image: PageImageRow, signed: { url: string; expiresAt: Date } | undefined) {
-  return { ...image, url: signed?.url ?? null, urlExpiresAt: signed?.expiresAt ?? null }
+function placed(input: { x: number; y: number; w: number; h: number; rotation?: number | null }) {
+  return { x: input.x, y: input.y, width: input.w, height: input.h, rotation: input.rotation ?? 0 }
+}
+
+function present(image: PageImageRow, signed: { url: string; expiresAt: Date } | undefined) {
+  return { id: image.id, fileId: image.fileId, name: image.name, x: image.x, y: image.y, w: image.width, h: image.height, rotation: image.rotation, href: signed?.url ?? null }
 }

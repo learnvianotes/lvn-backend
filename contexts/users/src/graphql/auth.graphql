@@ -89,6 +89,8 @@ extend type Query {
   termsVersion: String!
   "Action ids an institution-unverified account cannot do. Empty means none. Pass these into can() on web and mobile."
   unverifiedGatedActions: [String!]!
+  "Whether Public notes and quizzes require an institution-verified account. True when the admin has not saved the row. Anyone may read it."
+  publicNotesRequireVerification: Boolean!
 }
 
 type Mutation {

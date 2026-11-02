@@ -344,8 +344,8 @@ describe('notes', () => {
   })
 
   describe('visibility, sharing and forking (§4.2, §4.4, ADR-0010)', () => {
-    const run = async (mutation: string, input: object, token: string, selection = 'note { id visibility forkingEnabled }') => {
-      const res = await t.gql<Record<string, { note: { id: string; visibility: string; forkingEnabled: boolean } | null; userErrors: UserErrors }>>(`mutation ($input: ${mutation[0]!.toUpperCase()}${mutation.slice(1)}Input!) { ${mutation}(input: $input) { ${selection} ${ERRORS} } }`, { input }, token)
+    const run = async (mutation: string, input: object, token: string, selection = 'note { id visibility allowForks }') => {
+      const res = await t.gql<Record<string, { note: { id: string; visibility: string; allowForks: boolean } | null; userErrors: UserErrors }>>(`mutation ($input: ${mutation[0]!.toUpperCase()}${mutation.slice(1)}Input!) { ${mutation}(input: $input) { ${selection} ${ERRORS} } }`, { input }, token)
       return { payload: res.data?.[mutation], error: res.errors?.[0] }
     }
     const fork = (noteId: string, token: string) =>
@@ -436,7 +436,7 @@ describe('notes', () => {
     it('stops copies when the owner turns forking off, except the owner’s own', async () => {
       const id = await publishedNote(owner.token, 'No copies please')
       await run('changeNoteVisibility', { noteId: id, visibility: 'PUBLIC' }, owner.token)
-      expect((await run('setNoteForking', { noteId: id, enabled: false }, owner.token)).payload!.note!.forkingEnabled).toBe(false)
+      expect((await run('setNoteForking', { noteId: id, enabled: false }, owner.token)).payload!.note!.allowForks).toBe(false)
       expect((await fork(id, other.token)).errors?.[0]).toMatchObject({ extensions: { code: 'FORBIDDEN' } })
       expect((await fork(id, owner.token)).data!.forkNote.note!.forkedFrom).toMatchObject({ note: { id } })
       // Nobody else can fork what they cannot read.
