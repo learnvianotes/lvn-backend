@@ -173,7 +173,7 @@ describe('provider sign-in and registration', () => {
       expect(user.verifiedAt).toBeNull()
       expect(user.passwordHash).not.toBeNull()
       expect((await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password } })).data!.signIn.session!.user.id).toBe(userId)
-      expect((await t.gql<{ viewer: { id: string; emailVerified: boolean } }>(VIEWER, {}, attackerToken)).data!.viewer).toEqual({ id: userId, emailVerified: true })
+      expect((await t.gql<{ viewer: { id: string; emailVerified: boolean; verified: boolean } }>(`{ viewer { id emailVerified verified } }`, {}, attackerToken)).data!.viewer).toEqual({ id: userId, emailVerified: true, verified: false })
     })
 
     it('refuses a Google token whose email is not verified, and stores nothing', async () => {
