@@ -28,7 +28,7 @@
     "search:bench": "node scripts/search-bench.mjs"
   },
   "dependencies": {
-    "prisma": "7.10.0",
+    "prisma": "7.10.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
