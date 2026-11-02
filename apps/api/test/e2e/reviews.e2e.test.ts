@@ -27,6 +27,15 @@ describe('flashcard reviews', () => {
     (await app.gql<{ createNote: { note: { id: string } } }>('mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } } }', { input: { title, cards } }, token)).data!.createNote.note.id
   const queue = async (token: string) => (await app.gql<Queue>(QUEUE, {}, token)).data!.reviewQueue
   const review = async (token: string, cardId: string, rating: string, over: Record<string, unknown> = {}) => (await app.gql<Reviewed>(REVIEW, { input: { cardId, rating, clientOpId: randomUUID(), durationMs: 6_000, ...over } }, token)).data!.reviewCard
+  /** A moment before now that still belongs to the current learning day (04:00–04:00 UTC). */
+  const earlierToday = () => {
+    const now = Date.now()
+    const utc = new Date(now)
+    const rollover = Date.UTC(utc.getUTCFullYear(), utc.getUTCMonth(), utc.getUTCDate(), 4)
+    const dayStart = now >= rollover ? rollover : rollover - 86_400_000
+    const hourAgo = now - 3_600_000
+    return new Date(hourAgo >= dayStart ? hourAgo : Math.max(dayStart, now - 1_000))
+  }
 
   beforeAll(async () => {
     app = await createTestApp()
@@ -60,9 +69,10 @@ describe('flashcard reviews', () => {
     // The phone sends the same grade again after a lost answer: still one grade.
     expect((await review(me.token, first!.cardId, 'EASY', { clientOpId })).review).toEqual(easy.review)
     expect(await db.cardReviewLog.count({ where: { userId: me.id, cardId: first!.cardId } })).toBe(1)
-    // A grade made offline an hour earlier arrives now: the card's state is the replay in the order given.
+    // A grade made offline earlier arrives now: the card's state is the replay in the order given.
+    // The learning day rolls at 04:00 UTC, so an hour ago is yesterday during the hour after rollover.
     await review(me.token, second!.cardId, 'GOOD')
-    const late = await review(me.token, second!.cardId, 'AGAIN', { reviewedAt: new Date(Date.now() - 3_600_000).toISOString() })
+    const late = await review(me.token, second!.cardId, 'AGAIN', { reviewedAt: earlierToday().toISOString() })
     const log = await db.cardReviewLog.findMany({ where: { userId: me.id, cardId: second!.cardId }, orderBy: { reviewedAt: 'asc' } })
     expect(log.map((l) => l.rating)).toEqual([1, 3])
     expect(late.review!.state).not.toBe('NEW')

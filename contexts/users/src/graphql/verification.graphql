@@ -21,7 +21,7 @@ extend type User {
   teacherStatus: TeacherStatus
 }
 
-"Shown to the requester, the addressed teacher, a teacher at the same institution, a manager and platform admins. Documents are listed for those reviewers."
+"Shown to the requester, a verified teacher who was addressed or shares the institution, and platform admins. Documents are listed for those reviewers. Managers cannot review."
 type VerificationRequest {
   id: UUID!
   purpose: VerificationPurpose!
@@ -134,7 +134,7 @@ extend type Query {
   myVerificationRequests: [VerificationRequest!]!
   "Signed in: the viewer's latest application to teach (ADR-0073)"
   myTeacherApplication: VerificationRequest
-  "Teachers: student requests addressed to them, and students of their institution. Managers: every student request. Platform admins: every pending request. Oldest first; `after` is the last id seen."
+  "Verified teachers: student requests addressed to them, and students of their institution. Platform admins: every pending request. Managers, unverified teachers and students are refused. Oldest first; `after` is the last id seen."
   verificationRequestsToReview(first: Int, after: UUID): [VerificationRequest!]!
   "A reviewer of this request: a 15-minute link to one document. The view is written to the audit log."
   verificationDocumentUrl(requestId: UUID!, fileId: UUID!): SignedUrl!
@@ -152,7 +152,7 @@ extend type Mutation {
   "Signed in, not a teacher yet, not a child account: apply to teach (ADR-0073); a teacher applicant until reviewed"
   applyToTeach(input: ApplyToTeachInput!): VerificationRequestPayload!
   withdrawVerificationRequest(requestId: UUID!): OkPayload!
-  "Teachers: student requests in their scope. Managers: student requests. Platform admins: all, including teacher applications."
+  "Verified teachers: student requests in their scope. Platform admins: all, including teacher applications. A reviewer cannot decide their own request. Managers are refused."
   reviewVerificationRequest(input: ReviewVerificationRequestInput!): VerificationRequestPayload!
   "Platform admins"
   decideDomainReview(input: DecideDomainReviewInput!): OkPayload!

@@ -1095,7 +1095,7 @@ model NotePage {
   /// `{ strokes: [{ id, tool, color, width, points: [{x,y}] }] }`
   drawing   Json      @default("{\"strokes\":[]}")
   createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  updatedAt DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)
 
   note   Note            @relation(fields: [noteId], references: [id], onDelete: Cascade)
@@ -2422,7 +2422,7 @@ model SharedQuiz {
   publishedAt DateTime?      @db.Timestamptz(3)
   deletedAt   DateTime?      @db.Timestamptz(3)
   createdAt   DateTime       @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
+  updatedAt   DateTime       @default(now()) @updatedAt @db.Timestamptz(3)
 
   questions SharedQuizQuestion[]
   attempts  SharedQuizAttempt[]

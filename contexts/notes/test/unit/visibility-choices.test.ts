@@ -28,6 +28,7 @@ describe('visibility choices', () => {
     const open = visibilityChoices(gatePublic(owner(), false), row(), true)
     expect(open.find((choice) => choice.visibility === 'PUBLIC')!.enabled).toBe(true)
     expect(visibilityChoices(owner({ mayPublishPublic: true }), row(), true).find((choice) => choice.visibility === 'PUBLIC')!.enabled).toBe(true)
+    expect(visibilityChoices(gatePublic(owner({ globalRole: GlobalRole.PLATFORM_ADMIN }), true), row(), true).find((choice) => choice.visibility === 'PUBLIC')!.enabled).toBe(true)
   })
 
   it('asks for a published version before Unlisted or Public, and keeps Shared only while the note is Shared', () => {

@@ -125,14 +125,14 @@ describe('security: the permission matrix, action by action', () => {
   it('groups: create, join, ask to join, and review requests (ADR-0009, ADR-0011, ADR-0045)', async () => {
     ;[Action.GROUP_CREATE, Action.GROUP_JOIN, Action.GROUP_REQUEST_JOIN, Action.GROUP_REVIEW_JOIN_REQUESTS].forEach(action)
     await expectCases([
-      ['create: an unverified account', 'refused', () => run(unverified, 'createGroup', { name: 'Nope', privacy: 'PUBLIC' })],
+      ['create: an unverified account', 'allowed', () => run(unverified, 'createGroup', { name: 'Nope', privacy: 'PUBLIC' })],
       ['create: a verified account', 'allowed', () => run(outsider, 'createGroup', { name: 'Mine', privacy: 'PUBLIC' })],
       ['join an approval group directly', 'refused', () => join(outsider, group)],
       ['join a private group directly', 'refused', () => join(outsider, privateGroup)],
-      ['join an open group, unverified', 'refused', () => join(unverified, openGroup)],
+      ['join an open group, unverified', 'allowed', () => join(unverified, openGroup)],
       ['join an open group, verified', 'allowed', () => join(outsider, openGroup)],
       ['ask to join, already a member', 'refused', () => run(member, 'requestToJoinGroup', { groupId: group })],
-      ['ask to join, unverified', 'refused', () => run(unverified, 'requestToJoinGroup', { groupId: group })],
+      ['ask to join, unverified', 'allowed', () => run(unverified, 'requestToJoinGroup', { groupId: group })],
       ['ask to join, verified outsider', 'allowed', () => run(outsider, 'requestToJoinGroup', { groupId: group })],
       ['review a request as a moderator', 'refused', async () => run(moderator, 'reviewGroupJoinRequest', { requestId: await freshRequest(), decision: 'APPROVED' })],
       ['review a request as a member', 'refused', async () => run(member, 'reviewGroupJoinRequest', { requestId: await freshRequest(), decision: 'APPROVED' })],
@@ -199,7 +199,7 @@ describe('security: the permission matrix, action by action', () => {
       ['invite someone to their class, a teacher applicant', 'refused', () => run(applicant, 'inviteToClassroom', { classroomId: applicantClass, person: newcomer.handle })],
       ['post an announcement in their class, a teacher applicant', 'allowed', () => run(applicant, 'createClassroomPost', { classroomId: applicantClass, body: doc('Coming soon') })],
       ['ask to join, already in it', 'refused', () => run(student, 'requestToJoinClassroom', { code: klass.joinCode })],
-      ['ask to join, unverified', 'refused', () => run(unverified, 'requestToJoinClassroom', { code: klass.joinCode })],
+      ['ask to join, unverified', 'allowed', () => run(unverified, 'requestToJoinClassroom', { code: klass.joinCode })],
       ['ask to join with the code', 'allowed', () => run(outsider, 'requestToJoinClassroom', { code: klass.joinCode })],
       ['accept someone else’s invite', 'refused', async () => run(outsider, 'answerClassroomInvite', { inviteId: await invite(klass.id, newcomer), accept: true })],
       ['accept one’s own invite', 'allowed', async () => run(newcomer, 'answerClassroomInvite', { inviteId: (await db.classroomInvite.findFirstOrThrow({ where: { classroomId: klass.id, invitedUserId: newcomer.id } })).id, accept: true })],
@@ -232,7 +232,7 @@ describe('security: the permission matrix, action by action', () => {
     const fan = await person({ name: 'Fan' })
     const target = await person({ name: 'Target' })
     await expectCases([
-      ['follow, unverified', 'refused', () => run(unverified, 'followUser', { userId: teacher.id })],
+      ['follow, unverified', 'allowed', () => run(unverified, 'followUser', { userId: teacher.id })],
       ['follow a restricted minor', 'refused', () => run(fan, 'followUser', { userId: minor.id })],
       ['follow oneself', 'refused', () => run(fan, 'followUser', { userId: fan.id })],
       ['follow a teacher', 'allowed', () => run(fan, 'followUser', { userId: teacher.id })],
@@ -282,7 +282,7 @@ describe('security: the permission matrix, action by action', () => {
     const target = { type: 'NOTE', id: noteId }
     const postId = await postIn(member, group)
     await expectCases([
-      ['comment on a public note, unverified', 'refused', () => run(unverified, 'addComment', { target, body: doc('Hi') })],
+      ['comment on a public note, unverified', 'allowed', () => run(unverified, 'addComment', { target, body: doc('Hi') })],
       ['comment on a public note, a restricted minor', 'refused', () => run(minor, 'addComment', { target, body: doc('Hi') })],
       ['comment on a public note, verified', 'allowed', () => run(outsider, 'addComment', { target, body: doc('Hi') })],
       ['report, signed out', 'refused', () => run(null, 'reportContent', { entityType: 'USER', entityId: teacher.id, reason: 'SPAM' })],

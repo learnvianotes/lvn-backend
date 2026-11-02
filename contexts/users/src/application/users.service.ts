@@ -10,6 +10,11 @@ import { deletionDate } from './account-deletion.service'
 /** Age-blocked and admin-blocked accounts are not public and cannot be found by handle or email. */
 const PUBLIC_ACCOUNT = { notIn: [$Enums.AccountStatus.AGE_BLOCKED, $Enums.AccountStatus.BLOCKED] }
 
+/** Platform admins never need institution verification. Everyone else does until verifiedAt is set. */
+function accountNeedsVerification(globalRole: string, verifiedAt: Date | null): boolean {
+  return globalRole !== 'PLATFORM_ADMIN' && verifiedAt === null
+}
+
 @Injectable()
 export class UsersService implements People {
   constructor(
@@ -144,6 +149,7 @@ export class UsersService implements People {
       emailVerified: u.emailVerifiedAt !== null,
       registrationComplete: u.registrationCompletedAt !== null,
       verified: u.verifiedAt !== null,
+      viewerNeedsVerification: null,
       verificationMethod: null,
       globalRole: u.globalRole,
       createdAt: u.createdAt,
@@ -181,6 +187,7 @@ export class UsersService implements People {
       emailVerified: u.emailVerifiedAt !== null,
       registrationComplete: u.registrationCompletedAt !== null,
       verified: u.verifiedAt !== null,
+      viewerNeedsVerification: null,
       verificationMethod: null,
       globalRole: u.globalRole,
       createdAt: u.createdAt,
@@ -224,6 +231,7 @@ export class UsersService implements People {
       emailVerified: u.emailVerifiedAt !== null,
       registrationComplete: u.registrationCompletedAt !== null,
       verified: u.verifiedAt !== null,
+      viewerNeedsVerification: accountNeedsVerification(u.globalRole, u.verifiedAt),
       verificationMethod: u.verificationMethod,
       globalRole: u.globalRole,
       createdAt: u.createdAt,

@@ -1269,8 +1269,10 @@ export interface User {
   emailVerified: boolean
   /** False until the registration details are given (ADR-0017) */
   registrationComplete: boolean
-  /** Verified by institutional email, a teacher, or platform admins (ADR-0019) */
+  /** Verified by institutional email, a teacher, or platform admins (ADR-0019). The stored institution flag. A platform admin can be false here and still need no verification. */
   verified: boolean
+  /** Viewer only. False for a platform admin, and for an account that is already institution-verified. True when this signed-in person should still verify. Null on anyone else's User. Clients hide verify-your-account prompts when this is false; do not key those prompts off verified alone. */
+  viewerNeedsVerification: boolean | null
   verificationMethod: VerificationMethod | null
   globalRole: GlobalRole
   createdAt: Date
@@ -1340,7 +1342,7 @@ export type VerificationMethod = 'INSTITUTIONAL_EMAIL' | 'TEACHER' | 'DOCUMENTS'
 /** ACCOUNT: have the account verified (ADR-0019). TEACHER_ROLE: an application to teach (ADR-0073) */
 export type VerificationPurpose = 'ACCOUNT' | 'TEACHER_ROLE'
 
-/** Shown to the requester, the addressed teacher, a teacher at the same institution, a manager and platform admins. Documents are listed for those reviewers. */
+/** Shown to the requester, a verified teacher who was addressed or shares the institution, and platform admins. Documents are listed for those reviewers. Managers cannot review. */
 export interface VerificationRequest {
   id: string
   purpose: VerificationPurpose

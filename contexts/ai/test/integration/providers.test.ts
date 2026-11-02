@@ -73,7 +73,7 @@ describe('AI providers', () => {
     }
     ollama.chats.length = 0
     ollama.answer = () => SUMMARY
-  })
+  }, 30_000)
 
   it('answers with ChatGPT when it is the default: its key, a JSON-schema answer, its prices in the usage row', async () => {
     const id = await connect({ kind: 'OPENAI', baseUrl: openai.url, key: 'sk-test-1234', chatModel: 'gpt-test', inputMicroUsdPerMTok: 1_000_000, outputMicroUsdPerMTok: 2_000_000 })

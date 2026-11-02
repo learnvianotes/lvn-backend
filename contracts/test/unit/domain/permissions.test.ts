@@ -140,6 +140,7 @@ describe('note rows of §5', () => {
   it('restricted minors cannot make a note PUBLIC but can share it (§15.2)', () => {
     const minor = student('owner', { restrictedMinor: true })
     expect(can(minor, Action.NOTE_PUBLISH, { kind: 'note', note: note('PRIVATE'), targetVisibility: 'PUBLIC' })).toBe(false)
+    expect(can(minor, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: note('PRIVATE'), targetVisibility: 'PUBLIC' })).toBe(false)
     expect(can(minor, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: note('PRIVATE'), targetVisibility: 'SHARED' })).toBe(true)
   })
 
@@ -148,17 +149,21 @@ describe('note rows of §5', () => {
     const fork = (originVisibilityAtFork: Visibility, forkedAsOwnerOrEditor: boolean) =>
       note('PRIVATE', { fork: { originVisibilityAtFork, forkedAsOwnerOrEditor } })
     const toPublic = (n: NoteFacts) => can(owner, Action.NOTE_PUBLISH, { kind: 'note', note: n, targetVisibility: 'PUBLIC' })
+    const showPublic = (n: NoteFacts) => can(owner, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: n, targetVisibility: 'PUBLIC' })
 
     it('a fork of a PUBLIC note can be published publicly by anyone who forked it', () => {
       expect(toPublic(fork('PUBLIC', false))).toBe(true)
+      expect(showPublic(fork('PUBLIC', false))).toBe(true)
     })
 
     it("an Editor's fork of a SHARED note can be published publicly", () => {
       expect(toPublic(fork('SHARED', true))).toBe(true)
+      expect(showPublic(fork('SHARED', true))).toBe(true)
     })
 
     it("a viewer's or group member's fork of a SHARED note can never go public, only stay private or be shared", () => {
       expect(toPublic(fork('SHARED', false))).toBe(false)
+      expect(showPublic(fork('SHARED', false))).toBe(false)
       expect(can(owner, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: fork('SHARED', false), targetVisibility: 'SHARED' })).toBe(true)
     })
 
@@ -569,12 +574,15 @@ describe('verification without an institutional email (ADR-0019)', () => {
     expect(can(other, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher({ addressedToActor: true }))).toBe(false)
   })
 
-  it('a manager reviews every student request, including documents, and not teacher applications', () => {
+  it('a manager, an unverified teacher and a student cannot review', () => {
     const manager = student('m', { globalRole: GlobalRole.MANAGER })
-    expect(can(manager, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(true)
-    expect(can(manager, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher())).toBe(true)
-    expect(can(manager, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ purpose: 'TEACHER_ROLE' }))).toBe(false)
-    expect(can(student('m2', { globalRole: GlobalRole.MANAGER, institutionVerified: false }), Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(true)
+    expect(can(manager, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(false)
+    expect(can(manager, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher())).toBe(false)
+    expect(can(student('m2', { globalRole: GlobalRole.MANAGER, institutionVerified: false }), Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(false)
+    expect(can(student('m3', { globalRole: GlobalRole.MANAGER, institutionVerified: true }), Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ purpose: 'TEACHER_ROLE' }))).toBe(false)
+    expect(can(student('s', { institutionVerified: true }), Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(false)
+    expect(can(student('t2', { globalRole: GlobalRole.TEACHER, institutionVerified: false }), Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher({ addressedToActor: true }))).toBe(false)
+    expect(can(student('t2', { globalRole: GlobalRole.TEACHER, institutionVerified: false }), Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ sameInstitution: true }))).toBe(false)
   })
 
   it('platform admins review every request, documents and teacher applications included', () => {
@@ -585,6 +593,30 @@ describe('verification without an institutional email (ADR-0019)', () => {
     expect(can(student('a2', { globalRole: GlobalRole.PLATFORM_ADMIN, institutionVerified: false, unverifiedGates: new Set([Action.ACCOUNT_REVIEW_VERIFICATION]) }), Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(true)
     expect(can(anon, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(false)
     expect(can(admin, Action.NOTE_READ, byDocuments())).toBe(false)
+  })
+
+  it('an unverified platform admin passes every institution-verification gate', () => {
+    const admin = student('a2', {
+      globalRole: GlobalRole.PLATFORM_ADMIN,
+      institutionVerified: false,
+      unverifiedGates: new Set(Object.values(Action)),
+    })
+    const mine: Resource = { kind: 'note', note: note(Visibility.PRIVATE, { ownerId: 'a2' }), targetVisibility: Visibility.PUBLIC }
+    for (const action of [Action.NOTE_PUBLISH, Action.NOTE_SHARE, Action.NOTE_CHANGE_VISIBILITY, Action.CONTEST_ENTER, Action.PAYOUT_REQUEST, Action.AI_BULK, Action.RESOURCE_SUBMIT, Action.ACCOUNT_REVIEW_VERIFICATION, Action.NOTE_COMMENT]) {
+      expect(verificationBlocks(admin, action, action === Action.ACCOUNT_REVIEW_VERIFICATION ? byDocuments() : mine)).toBe(false)
+    }
+    expect(can(admin, Action.NOTE_PUBLISH, mine)).toBe(true)
+    expect(can(admin, Action.NOTE_SHARE, mine)).toBe(true)
+    expect(can(admin, Action.NOTE_CHANGE_VISIBILITY, mine)).toBe(true)
+    expect(can({ ...admin, mayPublishPublic: false }, Action.NOTE_CHANGE_VISIBILITY, mine)).toBe(true)
+    expect(can({ ...unverified, mayPublishPublic: false }, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: note(Visibility.PRIVATE, { ownerId: 'u' }), targetVisibility: Visibility.PUBLIC })).toBe(false)
+    expect(can(admin, Action.CONTEST_ENTER)).toBe(true)
+    expect(can(admin, Action.PAYOUT_REQUEST)).toBe(true)
+    expect(can(admin, Action.AI_BULK)).toBe(true)
+    expect(can(admin, Action.RESOURCE_SUBMIT)).toBe(true)
+    expect(can(admin, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(true)
+    expect(can(admin, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ purpose: 'TEACHER_ROLE' }))).toBe(true)
+    expect(can({ ...admin, suspended: true }, Action.NOTE_PUBLISH, mine)).toBe(false)
   })
 })
 
