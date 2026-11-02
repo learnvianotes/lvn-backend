@@ -158,21 +158,22 @@ enum AiModelKind {
 }
 
 """
-A select on /admin/ai. IMAGE, TTS, AUDIO, REALTIME and MODERATION stay empty: this app does not call those APIs.
-TRANSCRIBE is a recording sent through the chat API, not the audio-transcriptions API.
+A select on /admin/ai. IMAGE, TTS, AUDIO, REALTIME and MODERATION stay empty.
+TRANSCRIBE offers models that can hear. Whisper and *-transcribe go to POST /audio/transcriptions.
+gpt-audio, Gemini and Gemma take the recording on the chat call.
 """
 enum AiModelUse {
   "The connection's chat model, and every task route except embeddings and transcription"
   CHAT
   "The connection's embedding model, and the EMBED route. Embeddings are 768 numbers."
   EMBEDDING
-  "The TRANSCRIBE route: a chat model that can hear a recording"
+  "The TRANSCRIBE route: a model that can hear a recording"
   TRANSCRIBE
   "Image generation. This app does not call it, so the picker is empty."
   IMAGE
   "Speech. This app does not call it, so the picker is empty."
   TTS
-  "The audio transcriptions API. This app does not call it, so the picker is empty."
+  "Reserved. Whisper is offered on TRANSCRIBE, so this picker stays empty."
   AUDIO
   "Realtime. This app does not call it, so the picker is empty."
   REALTIME

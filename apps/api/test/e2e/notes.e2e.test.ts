@@ -360,9 +360,10 @@ describe('notes', () => {
       return note!.id
     }
 
-    it('needs a verified account, and a published version before going public', async () => {
+    it('lets an unverified owner set Shared, and still needs a published version before going public', async () => {
       const { note } = await create(unverified.token, { title: 'Mine' })
-      expect((await run('changeNoteVisibility', { noteId: note!.id, visibility: 'SHARED' }, unverified.token)).error).toMatchObject({ message: 'Verify your account to share notes.', extensions: { code: 'FORBIDDEN' } })
+      expect((await run('changeNoteVisibility', { noteId: note!.id, visibility: 'SHARED' }, unverified.token)).payload!.note!.visibility).toBe('SHARED')
+      expect((await run('changeNoteVisibility', { noteId: note!.id, visibility: 'PUBLIC' }, unverified.token)).error).toMatchObject({ message: 'Your account cannot make notes public.', extensions: { code: 'FORBIDDEN' } })
       const { note: draft } = await create(owner.token, { title: 'Not yet' })
       expect((await run('changeNoteVisibility', { noteId: draft!.id, visibility: 'PUBLIC' }, owner.token)).payload!.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'visibility'] })
 

@@ -8,19 +8,21 @@ import { type AiTaskType, ClassroomRole, DERIVATIVE_AI_TASKS, GlobalRole, GroupJ
  * Owner decisions where the spec's sections disagree (docs/adr/0005-permission-matrix-encoding.md):
  * - Owners may fork their own notes at any visibility, PRIVATE included; anyone else needs read access and
  *   forking enabled.
- * - A share EDITOR edits the draft while the note is SHARED or PUBLIC; only the owner publishes, so readers
- *   never see an editor's change until the owner releases it (§4.3).
+ * - A share EDITOR edits the draft while the note is not PRIVATE (SHARED, UNLISTED or PUBLIC); only the owner
+ *   publishes, so readers never see an editor's change until the owner releases it (§4.3).
  * - A verified account (college or organisation email confirmed, ADR-0017) is required only for the abuse-prone
  *   actions in NEEDS_VERIFIED_ACCOUNT, unless the actor carries a different list (`unverifiedGates`, the admin
  *   setting). Until then an account reads, keeps private notes, studies, comments, follows, and joins groups and
- *   classes. Publishing, sharing, contests, payouts, bulk AI and submitting resources stay gated by default.
- *   Changing a note toward SHARED or PUBLIC follows share and publish. Taking it back to PRIVATE stays allowed
- *   unless `note.changeVisibility` is itself on the list. Without an institutional email, a student asks a verified
- *   teacher to vouch for them, or sends proof of enrolment. A platform admin never needs institution verification:
- *   the role skips every verified-account gate, including review, even when `verifiedAt` is null. A teacher reviews
- *   only once their own account is institution-verified, and only students who addressed them or share their
- *   institution (ADR-0019). Managers, unverified teachers, students and everyone else cannot review. Teacher
- *   applications and role changes stay with platform admins.
+ *   classes. Publishing, sharing with a person, contests, payouts, bulk AI and submitting resources stay gated
+ *   by default. Changing visibility is not in that set: Private, Shared and Unlisted stay available, and Public
+ *   is `mayPublishPublic`, which the service sets from `public_notes_require_verification` unless a verification
+ *   gate already set the flag. A platform admin may set Public without institution verification. Listing
+ *   `note.changeVisibility` itself blocks every target, including Private. Without an institutional email, a
+ *   student asks a verified teacher to vouch for them, or sends proof of enrolment. A platform admin never needs
+ *   institution verification: the role skips every verified-account gate, including review, even when `verifiedAt`
+ *   is null. A teacher reviews only once their own account is institution-verified, and only students who addressed
+ *   them or share their institution (ADR-0019). Managers, unverified teachers, students and everyone else cannot
+ *   review. Teacher applications and role changes stay with platform admins.
  * - Restricted minors cannot make a note PUBLIC (§5, §15.2); the flag is applied before the matrix.
  *
  * A fork can be made PUBLIC only if its origin was PUBLIC when forked, or the forker was the origin's owner or
@@ -141,11 +143,21 @@ export interface Actor {
    */
   teacherApplicant?: boolean
   /**
+   * Whether this account may set a note or quiz to PUBLIC. Set from the admin setting
+   * `public_notes_require_verification` (default: only verified accounts). When omitted, `can()` allows Public
+   * only for a verified account. A verification gate may set this itself; that value wins over the setting.
+   */
+  mayPublishPublic?: boolean
+  /**
    * Action ids this deployment gates until the account is institution-verified. Omitted means
    * {@link NEEDS_VERIFIED_ACCOUNT}. An empty set gates nothing. Web and mobile copy `unverifiedGatedActions` here.
+   * `note.share` in this set does not block Private, Shared or Unlisted. Public follows `mayPublishPublic`.
    */
   unverifiedGates?: ReadonlySet<Action>
 }
+
+/** Admin AppSetting. When true (the default, including a missing row), an unverified account cannot set Public. */
+export const PUBLIC_NOTES_REQUIRE_VERIFICATION = 'public_notes_require_verification'
 
 /** What the backend knows about one note relative to the actor. */
 export interface NoteFacts {
@@ -280,6 +292,8 @@ export function noteRelations(actor: Actor | null, note: NoteFacts): Set<NoteRel
 export const NOTE_READERS: Record<Visibility, readonly NoteRelation[]> = {
   PRIVATE: ['OWNER'],
   SHARED: ['OWNER', 'EDITOR', 'VIEWER', 'GROUP_SHARE', 'CLASSROOM_SHARE', 'CONNECTION_SHARE'],
+  // Unlisted is the link: anyone who has it can read, and it is left out of public lists, search and profiles.
+  UNLISTED: ['OWNER', 'EDITOR', 'VIEWER', 'GROUP_SHARE', 'CLASSROOM_SHARE', 'CONNECTION_SHARE', 'ANY_USER', 'ANONYMOUS'],
   PUBLIC: ['OWNER', 'EDITOR', 'VIEWER', 'GROUP_SHARE', 'CLASSROOM_SHARE', 'CONNECTION_SHARE', 'ANY_USER', 'ANONYMOUS'],
 }
 
@@ -365,8 +379,9 @@ export function unverifiedGatesFromSetting(raw: string | null): ReadonlySet<Acti
  */
 export const BLOCKED_WHILE_SUSPENDED: ReadonlySet<Action> = new Set<Action>([
   Action.NOTE_PUBLISH,
-  Action.NOTE_CHANGE_VISIBILITY,
   Action.NOTE_SHARE,
+  // Visibility is not in the unverified set (Unlisted must work). A suspension still stops it reaching anyone.
+  Action.NOTE_CHANGE_VISIBILITY,
   Action.NOTE_COMMENT,
   Action.GROUP_CREATE,
   Action.GROUP_JOIN,
@@ -420,20 +435,15 @@ function gateSetOf(actor: Actor): ReadonlySet<Action> {
 }
 
 /**
- * Whether the institution-verification gate stops this action. SHARED follows `note.share`, PUBLIC follows
- * `note.publish`, and PRIVATE stays open unless `note.changeVisibility` is itself on the list.
+ * Whether the institution-verification gate stops this action. `note.share` and `note.publish` do not block a
+ * visibility change: Private, Shared and Unlisted stay open, and Public is `mayPublishPublic`. Listing
+ * `note.changeVisibility` itself blocks every target, including Private.
  */
 function gateApplies(actor: Actor, action: Action, resource: Resource): boolean {
   // The role is enough: a platform admin is never stopped for a missing institution verification.
   if (actor.globalRole === GlobalRole.PLATFORM_ADMIN || applicantMayDo(actor, action)) return false
   const gates = gateSetOf(actor)
-  if (action === Action.NOTE_CHANGE_VISIBILITY && resource.kind === 'note') {
-    if (gates.has(Action.NOTE_CHANGE_VISIBILITY)) return true
-    const target = resource.targetVisibility ?? resource.note.visibility
-    if (target === Visibility.PRIVATE) return false
-    if (target === Visibility.PUBLIC) return gates.has(Action.NOTE_PUBLISH)
-    return gates.has(Action.NOTE_SHARE)
-  }
+  if (action === Action.NOTE_CHANGE_VISIBILITY && resource.kind === 'note') return gates.has(Action.NOTE_CHANGE_VISIBILITY)
   return gates.has(action)
 }
 
@@ -456,12 +466,23 @@ export function can(actor: Actor | null, action: Action, resource: Resource = { 
         case Action.NOTE_EDIT_DRAFT:
           // A PRIVATE note is readable by its owner only, so share rows on it grant nothing until it is shared again.
           return isOwner || (actor !== null && note.visibility !== Visibility.PRIVATE && note.shareRole === NoteRole.EDITOR)
-        case Action.NOTE_PUBLISH:
-        case Action.NOTE_CHANGE_VISIBILITY: {
+        case Action.NOTE_PUBLISH: {
           if (!isOwner) return false
           const goesPublic = (resource.targetVisibility ?? note.visibility) === Visibility.PUBLIC
           if (!goesPublic) return true
           if (actor!.restrictedMinor) return false
+          return !note.fork || note.fork.originVisibilityAtFork === Visibility.PUBLIC || note.fork.forkedAsOwnerOrEditor
+        }
+        case Action.NOTE_CHANGE_VISIBILITY: {
+          if (!isOwner) return false
+          const target = resource.targetVisibility
+          // No target: the owner may open the control. Which values are on is visibilityChoices.
+          if (target === undefined) return true
+          if (target !== Visibility.PUBLIC) return true
+          if (actor!.restrictedMinor) return false
+          // Public follows the admin setting. Omitted means verified accounts only. The role skips that check.
+          const publicAllowed = actor!.globalRole === GlobalRole.PLATFORM_ADMIN || (actor!.mayPublishPublic ?? actor!.institutionVerified)
+          if (!publicAllowed) return false
           return !note.fork || note.fork.originVisibilityAtFork === Visibility.PUBLIC || note.fork.forkedAsOwnerOrEditor
         }
         case Action.NOTE_DELETE:

@@ -1,4 +1,4 @@
-import { classifyModel, classifyModels, MODEL_USES, rejectionFor } from '../../src/domain/model-capabilities'
+import { audioTransport, classifyModel, classifyModels, MODEL_USES, rejectionFor } from '../../src/domain/model-capabilities'
 
 /**
  * The models a Claude account and an OpenAI account list (the beta /admin/ai paste). Every id stays on `all`.
@@ -275,9 +275,10 @@ describe('model pickers', () => {
     expect(openai.pickers.map((p) => p.use)).toEqual([...MODEL_USES])
     expect(ids(openai.pickers.find((p) => p.use === 'CHAT')!.models)).toEqual([...OPENAI_CHAT].sort())
     expect(ids(openai.pickers.find((p) => p.use === 'EMBEDDING')!.models)).toEqual([...OPENAI_EMBED].sort())
-    expect(ids(openai.pickers.find((p) => p.use === 'TRANSCRIBE')!.models)).toEqual([...OPENAI_HEAR].sort())
+    expect(ids(openai.pickers.find((p) => p.use === 'TRANSCRIBE')!.models)).toEqual([...OPENAI_HEAR, ...OPENAI_TRANSCRIBE_API].sort())
     for (const use of ['IMAGE', 'TTS', 'AUDIO', 'REALTIME', 'MODERATION'] as const) expect(openai.pickers.find((p) => p.use === use)!.models).toEqual([])
-    for (const id of [...OPENAI_IMAGE, ...OPENAI_TRANSCRIBE_API, ...OPENAI_REALTIME, ...OPENAI_TTS, ...OPENAI_EMBED_UNUSABLE, ...OPENAI_MODERATION, ...OPENAI_OTHER]) {
+    for (const id of OPENAI_TRANSCRIBE_API) expect(openai.all.find((m) => m.id === id)!.supports).toEqual(['TRANSCRIBE'])
+    for (const id of [...OPENAI_IMAGE, ...OPENAI_REALTIME, ...OPENAI_TTS, ...OPENAI_EMBED_UNUSABLE, ...OPENAI_MODERATION, ...OPENAI_OTHER]) {
       expect(openai.all.find((m) => m.id === id)!.supports).toEqual([])
     }
   })
@@ -304,7 +305,16 @@ describe('model pickers', () => {
     expect(rejectionFor('claude-sonnet-5-5', 'ANTHROPIC', 'CHAT')).toBeNull()
     expect(rejectionFor('gpt-image-1', 'OPENAI', 'CHAT')).toMatch(/image model/)
     expect(rejectionFor('tts-1', 'OPENAI', 'CHAT')).toMatch(/text-to-speech/)
-    expect(rejectionFor('whisper-1', 'OPENAI', 'TRANSCRIBE')).toMatch(/cannot hear recordings/)
+    expect(rejectionFor('whisper-1', 'OPENAI', 'TRANSCRIBE')).toBeNull()
+    expect(rejectionFor('gpt-4o', 'OPENAI', 'TRANSCRIBE')).toMatch(/cannot hear/)
+    expect(audioTransport('whisper-1')).toBe('transcriptions')
+    expect(audioTransport('gpt-4o-mini-transcribe')).toBe('transcriptions')
+    expect(audioTransport('gpt-audio-mini')).toBe('chat')
+    expect(audioTransport('gemini-2.5-flash')).toBe('chat')
+    expect(audioTransport('gemma4')).toBe('chat')
+    expect(audioTransport('gpt-realtime-whisper')).toBe('chat')
+    expect(audioTransport('gpt-live-transcribe')).toBe('chat')
+    expect(classifyModel('gpt-live-transcribe', 'OPENAI').kind).toBe('REALTIME')
     expect(rejectionFor('text-embedding-ada-002', 'OPENAI', 'EMBEDDING')).toMatch(/768/)
     expect(rejectionFor('gpt-4o', 'OPENAI', 'EMBEDDING')).toMatch(/chat model/)
     expect(rejectionFor('sora-2', 'OPENAI', 'CHAT')).toMatch(/cannot be used for chats/)

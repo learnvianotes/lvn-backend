@@ -1,0 +1,55 @@
+# Voice notes. Live captions are the browser's SpeechRecognition. transcribeCaptionClip is the fallback and is not stored.
+# A full recording is uploaded (purpose VOICE_NOTE, or ATTACHMENT) and finished with completeUpload, which scans it, then transcribeAudio.
+
+type VoiceCapture {
+  "The browser API: SpeechRecognition (webkitSpeechRecognition where that is the name)"
+  api: String!
+  interimResults: Boolean!
+  continuous: Boolean!
+  "BCP-47 tags the apps may pass as the recognition language"
+  languages: [String!]!
+  "The mutation to call with a short clip when the browser cannot caption"
+  streamingFallback: String!
+}
+
+type Transcript {
+  text: String!
+  "The recording was longer than 30 minutes and the rest was not transcribed"
+  cut: Boolean!
+}
+
+type TranscriptPayload {
+  transcript: Transcript
+  userErrors: [UserError!]!
+}
+
+type NotesFromTranscript {
+  noteId: UUID!
+  title: String!
+  summary: String!
+}
+
+type NotesFromTranscriptPayload {
+  notes: NotesFromTranscript
+  userErrors: [UserError!]!
+}
+
+input TranscribeCaptionClipInput {
+  "Base64 audio, at most about 15 seconds and 2.5 MB"
+  audioBase64: String!
+  mimeType: String!
+}
+
+extend type Query {
+  "How to caption live. Works signed out: it describes the browser, it does not call a model."
+  voiceCapture: VoiceCapture!
+}
+
+extend type Mutation {
+  "A VOICE_NOTE or audio ATTACHMENT the viewer uploaded and finished with completeUpload."
+  transcribeAudio(fileId: UUID!): TranscriptPayload!
+  "A few seconds of audio for live captions. Not stored and not scanned."
+  transcribeCaptionClip(input: TranscribeCaptionClipInput!): TranscriptPayload!
+  "A private note from a transcript: a summary, then headings and text. At most 20,000 characters are read."
+  makeNotesFromTranscript(transcript: String!): NotesFromTranscriptPayload!
+}

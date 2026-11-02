@@ -44,6 +44,8 @@ export interface AiProviderAdapter {
   embed(model: string, inputs: string[], timeoutMs: number): Promise<EmbedResult>
   /** The models the account can use, when the provider lists them */
   models?(timeoutMs: number): Promise<string[]>
+  /** POST /audio/transcriptions. Absent when the provider has no such call (Claude, Ollama). */
+  transcribe?(request: { model: string; wav: Uint8Array; timeoutMs: number }): Promise<{ text: string; promptTokens: number }>
 }
 
 /**

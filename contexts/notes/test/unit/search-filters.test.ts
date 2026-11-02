@@ -9,7 +9,7 @@ describe('search filters', () => {
 
   it('reaches a signed-in viewer through ownership, the public, shares, groups and classes', () => {
     expect(visibleNotesFilter({ viewerId: 'v1', groupIds: ['g1', 'g2'], classroomIds: ['c1'], blockedIds: [] })).toBe(
-      '(ownerId:=`v1` || (visibility:=PUBLIC && moderation:=OK) || (visibility:=[SHARED,PUBLIC] && moderation:=[OK,PENDING_REVIEW] && (sharedUserIds:=`v1` || groupIds:=[`g1`,`g2`] || classroomIds:=[`c1`])))',
+      '(ownerId:=`v1` || (visibility:=PUBLIC && moderation:=OK) || (visibility:=[SHARED,UNLISTED,PUBLIC] && moderation:=[OK,PENDING_REVIEW] && (sharedUserIds:=`v1` || groupIds:=[`g1`,`g2`] || classroomIds:=[`c1`])))',
     )
   })
 

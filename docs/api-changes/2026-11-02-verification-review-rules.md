@@ -40,9 +40,10 @@ Not breaking: a client that does not ask for the field keeps working. A client t
   not review. Teacher applications stay with platform admins. Nobody reviews their own request (`FORBIDDEN`, "You
   cannot review your own request.").
 - `can()`: `PLATFORM_ADMIN` skips every institution-verification gate, including when `unverifiedGates` lists the
-  action and `institutionVerified` is false. Pass `globalRole` through; the exemption is the role. Suspension still
-  blocks. `MANAGER` is not exempt. `account.reviewVerification` stays a domain check, so removing it from the admin
-  list still does not let an unverified teacher review.
+  action and `institutionVerified` is false. The same role may set a note to Public when
+  `public_notes_require_verification` is on and `mayPublishPublic` is false. Pass `globalRole` through; the
+  exemption is the role. Suspension still blocks. `MANAGER` is not exempt. `account.reviewVerification` stays a
+  domain check, so removing it from the admin list still does not let an unverified teacher review.
 - `setGlobalRole` writes `globalRole` only. It does not set `verifiedAt` for `PLATFORM_ADMIN`, `MANAGER`, or
   `TEACHER`. Demotion does not clear `verifiedAt`.
 

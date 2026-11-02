@@ -20,6 +20,13 @@ type ForkCredit {
   title: String
 }
 
+"One visibility the owner may set. reason is set only when enabled is false."
+type VisibilityChoice {
+  visibility: Visibility!
+  enabled: Boolean!
+  reason: String
+}
+
 extend type Note {
   "Owner only: the people the note is shared with; null for anyone else"
   shares: [NoteShare!]
@@ -27,6 +34,10 @@ extend type Note {
   forkedFrom: ForkCredit
   "Owner only: every connection of the owner reads it, and new connections will too (teachers, ADR-0013)"
   sharedWithConnections: Boolean
+  "Owner only: Private, Unlisted and Public, plus Shared while the note is already Shared"
+  visibilityChoices: [VisibilityChoice!]
+  "Owner only, once the note is published and Unlisted or Public: /n/{slug}-{id}"
+  sharePath: String
 }
 
 input SetNoteSharedWithConnectionsInput {
@@ -62,7 +73,7 @@ extend type Query {
 }
 
 extend type Mutation {
-  "PRIVATE, SHARED or PUBLIC (owner, verified account); PUBLIC needs a published version"
+  "PRIVATE, SHARED, UNLISTED or PUBLIC (owner). Unlisted and Public need a published version. Public follows the admin setting public_notes_require_verification."
   changeNoteVisibility(input: ChangeNoteVisibilityInput!): NotePayload!
   "Share with one person, or change their role; a PRIVATE note becomes SHARED"
   shareNote(input: ShareNoteInput!): NotePayload!

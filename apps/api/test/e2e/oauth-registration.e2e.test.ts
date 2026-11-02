@@ -14,7 +14,7 @@ const REDIRECT = 'http://localhost:3000/oauth/callback'
 const VERIFIER = 'v'.repeat(43)
 
 const GOOGLE = `mutation ($t: String!) { signInWithGoogle(input: { idToken: $t }) {
-  session { accessToken user { id email emailVerified registrationComplete displayName globalRole signInMethods } } userErrors { field message code } } }`
+  session { accessToken user { id email emailVerified verified registrationComplete displayName globalRole signInMethods } } userErrors { field message code } } }`
 const EXCHANGE = `mutation ($input: OAuthExchangeInput!) { oauthExchange(input: $input) {
   session { accessToken user { id email displayName emailVerified registrationComplete } } userErrors { field message code } } }`
 const SIGN_UP = `mutation ($input: SignUpInput!) { signUp(input: $input) { emailLinkPending session { accessToken user { id } } userErrors { field message code } } }`
