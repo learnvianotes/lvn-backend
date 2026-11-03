@@ -12,7 +12,6 @@ import {
   isBelowMinimumAge,
   LIMITS,
   RESET_PASSWORD_TTL_MINUTES,
-  TERMS_VERSION,
   VERIFY_EMAIL_TTL_HOURS,
 } from '../domain/rules'
 import { clientNetwork } from '../domain/network'
@@ -29,6 +28,7 @@ import { AgeBlockService } from './age-block.service'
 import { PlatformSettingsStore } from './platform-settings.store'
 import { SupportContact } from './support-contact'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
+import { TermsVersionProvider } from './terms-version.provider'
 
 export interface SignUpInput {
   email: string
@@ -67,13 +67,16 @@ export class AuthService {
     private readonly access: AccessGate,
     private readonly ageBlock: AgeBlockService,
     private readonly support: SupportContact,
+    private readonly terms: TermsVersionProvider,
   ) {}
 
   async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string): Promise<SignUpResult> {
     const email = parseField(emailSchema, input.email, 'email')
     const displayName = parseField(displayNameSchema, input.displayName, 'displayName')
     const dateOfBirth = parseField(dateOfBirthSchema, input.dateOfBirth, 'dateOfBirth')
-    if (input.acceptedTermsVersion !== TERMS_VERSION) {
+    // ADR-0103: the version in effect now. The consent rows record this same value.
+    const termsVersion = this.terms.current()
+    if (input.acceptedTermsVersion !== termsVersion) {
       throw Errors.validation('Accept the current Terms and Privacy Policy to continue.', ['input', 'acceptedTermsVersion'])
     }
     await this.passwords.assertAcceptable(input.password)
@@ -83,7 +86,7 @@ export class AuthService {
     // Below the minimum the account is kept as AGE_BLOCKED (no session). An address that already has an account is not changed.
     if (isBelowMinimumAge(dateOfBirth, this.settings.minimumAge())) {
       const passwordHash = await this.passwords.hash(input.password)
-      await this.ageBlock.holdSignUp({ email, displayName, dateOfBirth, passwordHash, globalRole: role })
+      await this.ageBlock.holdSignUp({ email, displayName, dateOfBirth, passwordHash, globalRole: role, termsVersion })
       throw ageRestrictedError(await this.support.email(), ['input', 'dateOfBirth'])
     }
     const existing = await this.db.user.findUnique({
@@ -122,7 +125,7 @@ export class AuthService {
           },
         })
         await tx.consentRecord.createMany({
-          data: (['TERMS', 'PRIVACY', 'PUBLIC_CONTENT_LICENCE'] as const).map((kind) => ({ id: newId(), userId: id, kind, version: TERMS_VERSION })),
+          data: (['TERMS', 'PRIVACY', 'PUBLIC_CONTENT_LICENCE'] as const).map((kind) => ({ id: newId(), userId: id, kind, version: termsVersion })),
         })
       })
     } catch (e) {

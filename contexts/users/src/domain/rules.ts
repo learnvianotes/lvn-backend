@@ -1,7 +1,17 @@
 import { z } from 'zod'
 
-/** Current versions of the Terms, Privacy Policy and public-content licence (§15.2). Bump on a material change. */
-export const TERMS_VERSION = '2026-11-03'
+/**
+ * Built-in version of the Terms, Privacy Policy and public-content licence (§15.2), all three accepted together.
+ * ADR-0103: the version in effect is the admin setting `terms_version`, else the TERMS_VERSION environment variable,
+ * else this. Read it through TermsVersionProvider, never directly.
+ */
+export const DEFAULT_TERMS_VERSION = '2026-11-03'
+
+/**
+ * Built-in list of versions whose text lvn-web has published (`features/legal/documents.ts`). ADR-0103: an admin may
+ * only choose one of these. The admin setting `terms_published_versions`, else TERMS_PUBLISHED_VERSIONS, replaces it.
+ */
+export const DEFAULT_PUBLISHED_TERMS_VERSIONS: readonly string[] = ['2026-10-08', '2026-11-03']
 
 export const SESSION_TTL_DAYS = 30
 export const VERIFY_EMAIL_TTL_HOURS = 24

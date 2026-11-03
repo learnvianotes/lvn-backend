@@ -61,6 +61,7 @@ describe('resendVerification and verifyEmail', () => {
       { assertAllowed: async () => undefined, allows: async () => true } as never,
       {} as never,
       {} as never,
+      {} as never,
     )
     return { service, sent, hits, updates }
   }

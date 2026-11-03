@@ -9,6 +9,10 @@
 current `Query.termsVersion`. `acceptTerms(input: { version })` records the Terms, the Privacy Policy and the
 public-content licence at that version (VALIDATION if it is not the current one; accepting twice changes nothing).
 
+Since 2026-11-03 the version is managed from the admin page instead of a code constant: see
+[admin-managed terms version](2026-11-03-admin-terms-version.md) and ADR-0103. The paragraph below describes the
+earlier process.
+
 Bump `TERMS_VERSION` (contexts/users/src/domain/rules.ts) together with the web app's `features/legal/documents.ts`
 when the documents change materially; clients then ask everyone to accept again (web: a dialog on signed-in pages;
 mobile: with the notes screens, P2f). The live web tests check that both versions match.

@@ -31,6 +31,13 @@ const backendBase = z.object({
 })
 
 const flag = z.enum(['true', 'false']).transform((v) => v === 'true')
+const termsVersion = /^\d{4}-\d{2}-\d{2}$/
+const termsVersionList = /^\d{4}-\d{2}-\d{2}(\s*,\s*\d{4}-\d{2}-\d{2})*$/
+/** YYYY-MM-DD that is a real calendar date (no 30 February). */
+const isCalendarDate = (s: string) => {
+  const d = new Date(`${s}T00:00:00Z`)
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s
+}
 /** A PEM key in one .env line: real newlines, or `\n` escapes as most secret stores and .env files keep them. */
 const pem = (kind: 'PRIVATE' | 'PUBLIC') =>
   z.string().transform((v) => v.replace(/\\n/g, '\n').trim()).refine((v) => v.startsWith(`-----BEGIN ${kind} KEY-----`), `must be a PEM ${kind.toLowerCase()} key (PKCS#8 / SPKI)`)
@@ -107,6 +114,22 @@ const auth = z.object({
    * Otherwise that field is the earliest platform admin by createdAt.
    */
   SUPPORT_EMAIL: z.email().default('support@learnvianotes.in'),
+  /**
+   * ADR-0103: the Terms / Privacy version sign-up and acceptTerms require, YYYY-MM-DD, while no admin has saved the
+   * `terms_version` setting. Unset: the version built into the users context.
+   */
+  TERMS_VERSION: z.string().trim().regex(termsVersion, 'Use YYYY-MM-DD').refine(isCalendarDate, 'Use a real date').optional(),
+  /**
+   * ADR-0103: comma-separated YYYY-MM-DD versions whose text the web has published, while no admin has saved
+   * `terms_published_versions`. An admin can only choose one of these. Unset: the list built into the users context.
+   */
+  TERMS_PUBLISHED_VERSIONS: z
+    .string()
+    .trim()
+    .regex(termsVersionList, 'Use YYYY-MM-DD versions separated by commas')
+    .transform((s) => s.split(',').map((v) => v.trim()).join(','))
+    .refine((s) => s.split(',').every(isCalendarDate), 'Use real dates')
+    .optional(),
   /** ADR-0037: extra `REASON: phrase` lines for the rule-based moderation scorer; the built-in spam phrases apply without it. */
   MODERATION_WORDS_FILE: z.string().min(1).optional(),
   /** The web app's on-demand revalidation endpoint (`<web>/api/revalidate`): public note pages refresh when a note changes. Off without it. */
@@ -212,6 +235,13 @@ const providersConfigured = (
     need(!!c.LINKEDIN_API_URL, 'LINKEDIN_API_URL', 'required when LINKEDIN_CLIENT_ID is set')
   }
   if (c.GITHUB_CLIENT_ID || c.LINKEDIN_CLIENT_ID) need(c.OAUTH_REDIRECT_URIS.length > 0, 'OAUTH_REDIRECT_URIS', 'required when GitHub or LinkedIn sign-in is on')
+}
+
+/** ADR-0103: when both are set, the terms version must be one the web has published. */
+const termsConfigured = (c: { TERMS_VERSION?: string; TERMS_PUBLISHED_VERSIONS?: string }, ctx: z.RefinementCtx) => {
+  if (!c.TERMS_VERSION || !c.TERMS_PUBLISHED_VERSIONS) return
+  const published = c.TERMS_PUBLISHED_VERSIONS.split(',')
+  if (!published.includes(c.TERMS_VERSION)) ctx.addIssue({ code: 'custom', path: ['TERMS_VERSION'], message: 'must be one of TERMS_PUBLISHED_VERSIONS' })
 }
 
 /** ADR-0078: the GitHub App is all or nothing, and it needs GitHub's API and web origin. */
@@ -345,7 +375,7 @@ const apiShape = backendBase
   .extend(ai.shape)
   .extend(analytics.shape)
 
-export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(githubAppConfigured).superRefine(searchConfigured).superRefine(aiConfigured).superRefine(analyticsConfigured).superRefine(safeFetchConfigured).superRefine(scanConfigured)
+export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(termsConfigured).superRefine(githubAppConfigured).superRefine(searchConfigured).superRefine(aiConfigured).superRefine(analyticsConfigured).superRefine(safeFetchConfigured).superRefine(scanConfigured)
 export type ApiConfig = z.infer<typeof apiConfigSchema>
 
 /**
@@ -360,6 +390,7 @@ export const workerConfigSchema = apiShape
   })
   .superRefine(mailTransportConfigured)
   .superRefine(providersConfigured)
+  .superRefine(termsConfigured)
   .superRefine(githubAppConfigured)
   .superRefine(searchConfigured)
   .superRefine(aiConfigured)

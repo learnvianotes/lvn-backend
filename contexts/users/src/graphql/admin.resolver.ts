@@ -4,6 +4,7 @@ import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-gua
 import { withUserErrors } from '@lvn-backend/errors'
 import { AccountAdminService } from '../application/account-admin.service'
 import { AdminMetricsService } from '../application/admin-metrics.service'
+import { AdminTermsService } from '../application/admin-terms.service'
 import { AppSettingsService } from '../application/app-settings.service'
 import { PlanAdminService } from '../application/plan-admin.service'
 import type {
@@ -12,6 +13,7 @@ import type {
   AdminPlanPayload,
   AdminSetting,
   AdminSettingPayload,
+  AdminTermsStatus,
   AdminUserList,
   AdminUserPayload,
   MutationAdminDeleteUserArgs,
@@ -36,6 +38,7 @@ export class AdminDashboardResolver {
     private readonly settings: AppSettingsService,
     private readonly plans: PlanAdminService,
     private readonly accounts: AccountAdminService,
+    private readonly terms: AdminTermsService,
   ) {}
 
   @Query('adminMetrics')
@@ -46,6 +49,11 @@ export class AdminDashboardResolver {
   @Query('adminSettings')
   adminSettings(@CurrentViewer() viewer: Viewer): Promise<AdminSetting[]> {
     return this.settings.list(viewer.userId) as Promise<AdminSetting[]>
+  }
+
+  @Query('adminTermsStatus')
+  adminTermsStatus(@CurrentViewer() viewer: Viewer): Promise<AdminTermsStatus> {
+    return this.terms.status(viewer.userId) as Promise<AdminTermsStatus>
   }
 
   @Query('adminPlans')

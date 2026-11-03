@@ -3,12 +3,13 @@ import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { ageRestrictedError } from '../domain/account-status'
-import { dateOfBirthSchema, displayNameSchema, isBelowMinimumAge, TERMS_VERSION } from '../domain/rules'
+import { dateOfBirthSchema, displayNameSchema, isBelowMinimumAge } from '../domain/rules'
 import { AgeBlockService } from './age-block.service'
 import { PlatformSettingsStore } from './platform-settings.store'
 import { SupportContact } from './support-contact'
 import { InstitutionalEmailService } from './institutional-email.service'
 import { parseField } from './input'
+import { TermsVersionProvider } from './terms-version.provider'
 
 export interface RegistrationDetails {
   displayName: string
@@ -32,6 +33,7 @@ export class RegistrationService {
     @Inject(EVENT_BUS) private readonly events: EventBus,
     private readonly settings: PlatformSettingsStore,
     private readonly support: SupportContact,
+    private readonly terms: TermsVersionProvider,
   ) {}
 
   async complete(userId: string, input: RegistrationDetails): Promise<void> {
@@ -39,19 +41,21 @@ export class RegistrationService {
     if (user.registrationCompletedAt) throw Errors.conflict('Your registration is already complete.')
     const displayName = parseField(displayNameSchema, input.displayName, 'displayName')
     const dateOfBirth = parseField(dateOfBirthSchema, input.dateOfBirth, 'dateOfBirth')
-    if (input.acceptedTermsVersion !== TERMS_VERSION) {
+    // ADR-0103: the version in effect now. The consent rows record this same value.
+    const termsVersion = this.terms.current()
+    if (input.acceptedTermsVersion !== termsVersion) {
       throw Errors.validation('Accept the current Terms and Privacy Policy to continue.', ['input', 'acceptedTermsVersion'])
     }
     if (input.institutionalEmail) await this.institutional.check(input.institutionalEmail, ['input', 'institutionalEmail'])
     if (isBelowMinimumAge(dateOfBirth, this.settings.minimumAge())) {
-      await this.ageBlock.holdRegistration(userId, displayName, dateOfBirth)
+      await this.ageBlock.holdRegistration(userId, displayName, dateOfBirth, termsVersion)
       throw ageRestrictedError(await this.support.email(), ['input', 'dateOfBirth'])
     }
 
     await this.db.$transaction([
       this.db.user.update({ where: { id: userId }, data: { displayName, dateOfBirth, registrationCompletedAt: new Date() } }),
       this.db.consentRecord.createMany({
-        data: (['TERMS', 'PRIVACY', 'PUBLIC_CONTENT_LICENCE'] as const).map((kind) => ({ id: newId(), userId, kind, version: TERMS_VERSION })),
+        data: (['TERMS', 'PRIVACY', 'PUBLIC_CONTENT_LICENCE'] as const).map((kind) => ({ id: newId(), userId, kind, version: termsVersion })),
       }),
     ])
     // A name and a date of birth: people search may now find them, once past the consent age (ADR-0055).

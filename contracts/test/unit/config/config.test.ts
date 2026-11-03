@@ -81,6 +81,20 @@ describe('apiConfigSchema (Phase 1)', () => {
     expect(() => loadConfig(apiConfigSchema, { ...valid, DIGITAL_CONSENT_AGE: '10' })).toThrow(/DIGITAL_CONSENT_AGE/)
   })
 
+  it('leaves the terms version to the users context unless set, and keeps it among the published ones (ADR-0103)', () => {
+    const cfg = loadConfig(apiConfigSchema, valid)
+    expect(cfg.TERMS_VERSION).toBeUndefined()
+    expect(cfg.TERMS_PUBLISHED_VERSIONS).toBeUndefined()
+    expect(loadConfig(apiConfigSchema, { ...valid, TERMS_VERSION: '2026-10-08' }).TERMS_VERSION).toBe('2026-10-08')
+    expect(loadConfig(apiConfigSchema, { ...valid, TERMS_PUBLISHED_VERSIONS: '2026-10-08, 2026-11-03' }).TERMS_PUBLISHED_VERSIONS).toBe('2026-10-08,2026-11-03')
+    expect(() => loadConfig(apiConfigSchema, { ...valid, TERMS_VERSION: '3 Nov 2026' })).toThrow(/TERMS_VERSION/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, TERMS_PUBLISHED_VERSIONS: '2026-10-08;2026-11-03' })).toThrow(/TERMS_PUBLISHED_VERSIONS/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, TERMS_VERSION: '2026-02-30' })).toThrow(/TERMS_VERSION: Use a real date/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, TERMS_PUBLISHED_VERSIONS: '2026-10-08,2026-13-01' })).toThrow(/TERMS_PUBLISHED_VERSIONS: Use real dates/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, TERMS_VERSION: '2026-12-01', TERMS_PUBLISHED_VERSIONS: '2026-10-08,2026-11-03' })).toThrow(/TERMS_VERSION: must be one of TERMS_PUBLISHED_VERSIONS/)
+    expect(loadConfig(apiConfigSchema, { ...valid, TERMS_VERSION: '2026-12-01', TERMS_PUBLISHED_VERSIONS: '2026-11-03,2026-12-01' }).TERMS_VERSION).toBe('2026-12-01')
+  })
+
   it('needs endpoints and redirect URIs for a provider that is switched on', () => {
     const github = { GITHUB_CLIENT_ID: 'id', GITHUB_CLIENT_SECRET: 'secret' }
     expect(() => loadConfig(apiConfigSchema, { ...valid, ...github })).toThrow(/GITHUB_OAUTH_URL[\s\S]*GITHUB_API_URL[\s\S]*OAUTH_REDIRECT_URIS/)

@@ -1,5 +1,7 @@
 /** One admin-editable application setting (ADR-0101). Ports, URLs and secrets stay in the environment. */
 import { DEFAULT_UNVERIFIED_GATED_ACTIONS, parseUnverifiedGateSetting, PUBLIC_NOTES_REQUIRE_VERIFICATION } from '@lvn/contracts/domain'
+import { DEFAULT_PUBLISHED_TERMS_VERSIONS, DEFAULT_TERMS_VERSION } from './rules'
+import { isTermsVersion, parsePublishedTermsVersions, TERMS_PUBLISHED_VERSIONS_PATTERN, TERMS_PUBLISHED_VERSIONS_SETTING, TERMS_VERSION_PATTERN, TERMS_VERSION_SETTING } from './terms'
 
 export type SettingType = 'BOOLEAN' | 'INTEGER' | 'STRING'
 
@@ -270,6 +272,28 @@ export const SETTING_CATALOG: SettingDef[] = [
     environmentFallback: false,
     nullable: false,
   },
+  {
+    key: TERMS_VERSION_SETTING,
+    type: 'STRING',
+    category: 'legal',
+    description: `Version (YYYY-MM-DD) of the Terms, Privacy Policy and content licence that sign-up and accepting the terms require. It must be one of terms_published_versions. Changing it asks every signed-in person to accept again; sign-in is not blocked. Until an admin saves this, TERMS_VERSION applies (default ${DEFAULT_TERMS_VERSION}).`,
+    defaultValue: DEFAULT_TERMS_VERSION,
+    environmentFallback: true,
+    nullable: false,
+    maxLength: 10,
+    pattern: TERMS_VERSION_PATTERN,
+  },
+  {
+    key: TERMS_PUBLISHED_VERSIONS_SETTING,
+    type: 'STRING',
+    category: 'legal',
+    description: `Terms versions whose text the web has published, comma-separated YYYY-MM-DD. terms_version can only be one of these. Keep it in step with the web's published legal versions. It must include the version in effect. Until an admin saves this, TERMS_PUBLISHED_VERSIONS applies (default ${DEFAULT_PUBLISHED_TERMS_VERSIONS.join(',')}).`,
+    defaultValue: DEFAULT_PUBLISHED_TERMS_VERSIONS.join(','),
+    environmentFallback: true,
+    nullable: false,
+    maxLength: 1000,
+    pattern: TERMS_PUBLISHED_VERSIONS_PATTERN,
+  },
 ]
 
 const byKey = new Map(SETTING_CATALOG.map((d) => [d.key, d]))
@@ -316,6 +340,17 @@ export function parseSettingInput(def: SettingDef, raw: string): { ok: true; val
     const parsed = parseUnverifiedGateSetting(raw)
     if (!parsed.ok) return parsed
     return { ok: true, value: [...parsed.actions].join(',') }
+  }
+  if (def.key === TERMS_VERSION_SETTING) {
+    const value = raw.trim()
+    if (!isTermsVersion(value)) return { ok: false, message: 'Use a real date as YYYY-MM-DD, such as 2026-11-03.' }
+    return { ok: true, value }
+  }
+  if (def.key === TERMS_PUBLISHED_VERSIONS_SETTING) {
+    if (raw.length > (def.maxLength ?? Infinity)) return { ok: false, message: `Use at most ${def.maxLength} characters.` }
+    const parsed = parsePublishedTermsVersions(raw)
+    if (!parsed.ok) return parsed
+    return { ok: true, value: parsed.versions.join(',') }
   }
   if (def.maxLength !== undefined && raw.length > def.maxLength) return { ok: false, message: `Use at most ${def.maxLength} characters.` }
   if (def.pattern && !new RegExp(def.pattern).test(raw)) return { ok: false, message: 'That value does not match the expected pattern.' }

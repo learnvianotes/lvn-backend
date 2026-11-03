@@ -21,7 +21,7 @@ type AdminSettingConstraints {
 """
 One application setting. `value` is `true` or `false`, a decimal integer, text, or empty when an integer is cleared.
 `overridden` is false when no admin has saved a row: `value` is then the environment variable or the built-in default.
-Categories: auth, verification, uploads, ai, search, accounts.
+Categories: auth, verification, uploads, ai, search, accounts, notes, legal.
 """
 type AdminSetting {
   key: String!
@@ -217,6 +217,39 @@ input UpdateAdminPlanInput {
   entitlements: [AdminPlanEntitlementInput!]
 }
 
+"Where a value in effect comes from: a saved admin setting, the environment variable, or the built-in default."
+enum TermsVersionSource { SETTING ENV DEFAULT }
+
+"The latest save or reset of the terms_version setting."
+type AdminTermsChange {
+  "The admin who made it. Null when that account is gone."
+  actorId: UUID
+  "Null when that account is gone or deleted."
+  actorDisplayName: String
+  at: DateTime!
+  "The version in effect before the change."
+  previous: String
+}
+
+"""
+The terms version that signUp, completeRegistration and acceptTerms require (Query.termsVersion), and who has accepted
+it (ADR-0103). Counts are accounts that are not deleted, by their latest Terms acceptance, the same rule as
+User.termsAccepted. A count below 5 is null, so a small group is not shown. Change the version with
+updateAdminSetting(key: "terms_version"); it must be one of publishedVersions (setting terms_published_versions).
+"""
+type AdminTermsStatus {
+  current: String!
+  source: TermsVersionSource!
+  "Versions whose text the web has published, oldest first. Only these may be chosen."
+  publishedVersions: [String!]!
+  "Accounts whose latest acceptance is the current version. Null when fewer than 5."
+  acceptedCurrent: Int
+  "Accounts whose latest acceptance is another version; they are asked to accept again. Null when fewer than 5."
+  acceptedOlder: Int
+  "Null when no admin has saved or reset terms_version."
+  lastChange: AdminTermsChange
+}
+
 enum AccountStatus { ACTIVE AGE_BLOCKED BLOCKED SUSPENDED }
 
 "Which accounts adminUsers returns. BLOCKED_OR_SUSPENDED is both reversible holds."
@@ -276,6 +309,8 @@ extend type Query {
   adminMetrics(from: DateTime, to: DateTime): AdminMetrics!
   "Platform admins. Every application setting, with its type, description and validation."
   adminSettings: [AdminSetting!]!
+  "Platform admins. The terms version in effect, where it comes from, the published versions and acceptance counts."
+  adminTermsStatus: AdminTermsStatus!
   "Platform admins. Every plan, with its price, limits and how many accounts are on it."
   adminPlans: [AdminPlan!]!
   "Platform admins. Accounts in one standing, optionally matched on name, email or handle."

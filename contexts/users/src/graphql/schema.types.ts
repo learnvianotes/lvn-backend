@@ -203,7 +203,7 @@ export interface AdminSetAccountStandingInput {
 
 /** One application setting. `value` is `true` or `false`, a decimal integer, text, or empty when an integer is cleared.
  * `overridden` is false when no admin has saved a row: `value` is then the environment variable or the built-in default.
- * Categories: auth, verification, uploads, ai, search, accounts. */
+ * Categories: auth, verification, uploads, ai, search, accounts, notes, legal. */
 export interface AdminSetting {
   key: string
   type: AdminSettingType
@@ -241,6 +241,34 @@ export type AdminSettingType = 'BOOLEAN' | 'INTEGER' | 'STRING'
 export interface AdminStorageMetrics {
   bytes: string
   files: number
+}
+
+/** The latest save or reset of the terms_version setting. */
+export interface AdminTermsChange {
+  /** The admin who made it. Null when that account is gone. */
+  actorId: string | null
+  /** Null when that account is gone or deleted. */
+  actorDisplayName: string | null
+  at: Date
+  /** The version in effect before the change. */
+  previous: string | null
+}
+
+/** The terms version that signUp, completeRegistration and acceptTerms require (Query.termsVersion), and who has accepted
+ * it (ADR-0103). Counts are accounts that are not deleted, by their latest Terms acceptance, the same rule as
+ * User.termsAccepted. A count below 5 is null, so a small group is not shown. Change the version with
+ * updateAdminSetting(key: "terms_version"); it must be one of publishedVersions (setting terms_published_versions). */
+export interface AdminTermsStatus {
+  current: string
+  source: TermsVersionSource
+  /** Versions whose text the web has published, oldest first. Only these may be chosen. */
+  publishedVersions: Array<string>
+  /** Accounts whose latest acceptance is the current version. Null when fewer than 5. */
+  acceptedCurrent: number | null
+  /** Accounts whose latest acceptance is another version; they are asked to accept again. Null when fewer than 5. */
+  acceptedOlder: number | null
+  /** Null when no admin has saved or reset terms_version. */
+  lastChange: AdminTermsChange | null
 }
 
 export interface AdminUpdateUserInput {
@@ -1195,6 +1223,9 @@ export type TeacherSkillSource = 'MANUAL' | 'GITHUB' | 'WEBSITE' | 'ORCID' | 'OP
 
 /** Where the viewer stands as a teacher (ADR-0073) */
 export type TeacherStatus = 'NONE' | 'PENDING' | 'VERIFIED' | 'DECLINED'
+
+/** Where a value in effect comes from: a saved admin setting, the environment variable, or the built-in default. */
+export type TermsVersionSource = 'SETTING' | 'ENV' | 'DEFAULT'
 
 /** A topic of notes, resolved by notes */
 export interface Topic {

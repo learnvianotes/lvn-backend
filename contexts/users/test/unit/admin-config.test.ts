@@ -36,6 +36,8 @@ describe('admin setting catalog', () => {
       'account_minimum_age',
       'digital_consent_age',
       'public_notes_require_verification',
+      'terms_version',
+      'terms_published_versions',
     ])
   })
 

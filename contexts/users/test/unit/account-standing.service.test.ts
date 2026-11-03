@@ -5,7 +5,7 @@ import { AuthService } from '../../src/application/auth.service'
 import { RegistrationService } from '../../src/application/registration.service'
 import { SessionService } from '../../src/application/session.service'
 import { ageRestrictedError, refusalError } from '../../src/domain/account-status'
-import { TERMS_VERSION } from '../../src/domain/rules'
+import { DEFAULT_TERMS_VERSION } from '../../src/domain/rules'
 
 const SUPPORT = 'support@learnvianotes.in'
 const ADMIN_EMAIL = 'earliest-admin@learnvianotes.in'
@@ -53,6 +53,7 @@ describe('AuthService age gate', () => {
       { assertAllowed: async () => undefined, roleFor: async () => 'STUDENT' } as never,
       { holdSignUp: hold } as never,
       { email: async () => ADMIN_EMAIL } as never,
+      { current: () => DEFAULT_TERMS_VERSION } as never,
     )
     return { service, hold, start }
   }
@@ -62,7 +63,7 @@ describe('AuthService age gate', () => {
     password: 'correct horse battery staple',
     displayName: 'Young One',
     dateOfBirth: '2012-01-01',
-    acceptedTermsVersion: TERMS_VERSION,
+    acceptedTermsVersion: DEFAULT_TERMS_VERSION,
   }
 
   it('keeps an under-age sign-up and returns AGE_RESTRICTED', async () => {
@@ -70,7 +71,7 @@ describe('AuthService age gate', () => {
     const err = await rejection(() => service.signUp(input, { client: 'web' }))
     expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, supportEmail: ADMIN_EMAIL, field: ['input', 'dateOfBirth'] })
     expect(err.message).toContain(`Contact an admin at ${ADMIN_EMAIL}`)
-    expect(hold).toHaveBeenCalledWith(expect.objectContaining({ email: 'young@example.com', passwordHash: 'hashed-password', globalRole: 'STUDENT' }))
+    expect(hold).toHaveBeenCalledWith(expect.objectContaining({ email: 'young@example.com', passwordHash: 'hashed-password', globalRole: 'STUDENT', termsVersion: DEFAULT_TERMS_VERSION }))
     expect(start).not.toHaveBeenCalled()
   })
 
@@ -104,15 +105,16 @@ describe('RegistrationService age gate', () => {
       { publish: async () => undefined } as never,
       { minimumAge: () => 18 } as never,
       { email: async () => ADMIN_EMAIL } as never,
+      { current: () => DEFAULT_TERMS_VERSION } as never,
     )
     return { service, held }
   }
 
   it('holds the provider account instead of erasing it', async () => {
     const { service, held } = registration()
-    const err = await rejection(() => service.complete('google-1', { displayName: 'Young One', dateOfBirth: '2012-01-01', acceptedTermsVersion: TERMS_VERSION }))
+    const err = await rejection(() => service.complete('google-1', { displayName: 'Young One', dateOfBirth: '2012-01-01', acceptedTermsVersion: DEFAULT_TERMS_VERSION }))
     expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, supportEmail: ADMIN_EMAIL })
-    expect(held).toHaveBeenCalledWith('google-1', 'Young One', new Date('2012-01-01T00:00:00.000Z'))
+    expect(held).toHaveBeenCalledWith('google-1', 'Young One', new Date('2012-01-01T00:00:00.000Z'), DEFAULT_TERMS_VERSION)
   })
 
   it('does not hold the account when the terms are wrong', async () => {
