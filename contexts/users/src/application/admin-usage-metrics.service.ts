@@ -1,58 +1,68 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { CORE_ADMIN_STATS, NOTES_ADMIN_STATS, type CoreAdminStats, type NotesAdminStats, type SubjectActivity } from '@lvn-backend/facades'
+import { CORE_ADMIN_STATS, CORE_DAILY_METRICS, NOTES_ADMIN_STATS, NOTES_DAILY_METRICS, type CoreAdminStats, type NotesAdminStats, type SubjectActivity } from '@lvn-backend/facades'
 import { Errors } from '@lvn-backend/errors'
 import { Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { STUDY_PUBLISHER_ID } from '../domain/study-publisher'
 import {
-  activePerBucket,
-  activeSummary,
-  addActive,
+  addDays,
   ADMIN_METRICS_CACHE_MS,
+  ADMIN_METRICS_TIME_ZONE,
+  bucketStarts,
   dayIn,
   DB_FUNNEL_STEPS,
   funnelCounts,
   isDbFunnelStep,
   metricsWindow,
   midnightIn,
+  mondayOf,
   RETURN_AFTER_MS,
   rollUp,
   roundHours,
   trailingDays,
   withoutSmallGroups,
-  type ActiveDays,
   type MetricsInterval,
   type MetricsWindow,
 } from '../domain/usage-metrics'
+import { cohortStarts, medianHoursOf, MetricRows, perDay, RETENTION_DEFAULT_WEEKS, RETENTION_MAX_WEEKS, retentionCohorts, USERS_DAILY_METRICS, type DaySpan } from '../domain/daily-metrics'
 import { isUsageEventName, USAGE_EVENT_NAMES } from '../domain/usage-events'
 import type {
   AdminContentStats,
   AdminEngagement,
   AdminGrowth,
   AdminMetricsRange,
+  AdminRetention,
   AdminSubjectMetric,
   AdminTopSubjects,
   AdminVerificationMethod,
   AdminVerificationStats,
+  CohortInterval,
   SignUpMethod,
 } from '../graphql/schema.types'
+import { DailyMetricsService } from './daily-metrics.service'
 import { PolicyService } from './policy.service'
 
 const DAY_MS = 86_400_000
 const MAX_CACHED = 200
 const MAX_SUBJECTS = 50
+const U = USERS_DAILY_METRICS
+const N = NOTES_DAILY_METRICS
+const C = CORE_DAILY_METRICS
 
 type Window = MetricsWindow
 
 /** People counted by their activity: not deleted, not opted out of analytics. `u` is the User alias. */
 const COUNTABLE = Prisma.sql`u."deletedAt" IS NULL AND NOT u."analyticsOptOut"`
-/** Accounts that are people: not deleted, not the study publisher (ADR-0098). */
-const PEOPLE = Prisma.sql`u."deletedAt" IS NULL AND u.id <> ${STUDY_PUBLISHER_ID}::uuid`
 
 /**
  * Usage metrics for the admin dashboard (ADR-0105), from tables the product already keeps. Platform admins only.
  * Aggregates only, and a breakdown group with fewer than 5 distinct people is left out. Each API process keeps a result
  * for about 5 minutes; the key is the query, its days and its options, so refreshing the same view reuses it.
  * `notes` and `core` count their own tables through their facades.
+ *
+ * Past days come from the nightly rollup (ADR-0106) when it has them; today, and any day it lacks, are counted from
+ * the tables with the same code. What a day cannot hold stays live: distinct people over several days that include
+ * one not rolled up, distinct people per breakdown group over the window (the small-group rule needs the exact
+ * number), the verification queue now, uploads and top subjects.
  */
 @Injectable()
 export class AdminUsageMetricsService {
@@ -61,6 +71,7 @@ export class AdminUsageMetricsService {
   constructor(
     private readonly db: PrismaService,
     private readonly policy: PolicyService,
+    private readonly daily: DailyMetricsService,
     @Inject(NOTES_ADMIN_STATS) private readonly notes: NotesAdminStats,
     @Inject(CORE_ADMIN_STATS) private readonly core: CoreAdminStats,
   ) {}
@@ -100,6 +111,19 @@ export class AdminUsageMetricsService {
   }
 
   /**
+   * Weekly retention cohorts (ADR-0106): the people who signed up each IST week (Monday to Sunday), the last `weeks`
+   * weeks including this one, and the share of them active in each week since. Small cohorts are left out.
+   */
+  async retention(adminId: string, cohortInterval?: CohortInterval | null, weeks?: number | null): Promise<AdminRetention> {
+    await this.assertAdmin(adminId)
+    if (cohortInterval != null && cohortInterval !== 'WEEK') throw Errors.validation('Cohorts are weekly.', ['cohortInterval'])
+    if (weeks != null && (!Number.isInteger(weeks) || weeks < 1 || weeks > RETENTION_MAX_WEEKS)) throw Errors.validation(`weeks is 1 to ${RETENTION_MAX_WEEKS}.`, ['weeks'])
+    const n = weeks ?? RETENTION_DEFAULT_WEEKS
+    const today = dayIn(new Date())
+    return this.cached(`retention:${n}:${today}`, () => this.computeRetention(today, n))
+  }
+
+  /**
    * Ordered funnel over usage events and database steps (ADR-0105). Each step's time is its first occurrence since
    * `since`; returned_d7 is the first activity at least 7 days after sign-up and not before the previous step. Only
    * people who reached every earlier step are looked up for the next one.
@@ -130,39 +154,13 @@ export class AdminUsageMetricsService {
   }
 
   private async computeGrowth(w: Window, interval: MetricsInterval): Promise<AdminGrowth> {
-    const [perDay, methods] = await Promise.all([
-      this.db.$queryRaw<{ day: string; signUps: number; emailVerified: number; registrationsCompleted: number; verifications: number }[]>`
-        SELECT day, sum(s)::int AS "signUps", sum(e)::int AS "emailVerified", sum(r)::int AS "registrationsCompleted", sum(v)::int AS verifications
-        FROM (
-          SELECT to_char(u."createdAt" AT TIME ZONE ${w.timeZone}, 'YYYY-MM-DD') AS day, 1 AS s, 0 AS e, 0 AS r, 0 AS v
-          FROM "users"."User" u WHERE u."createdAt" >= ${w.from} AND u."createdAt" < ${w.to} AND ${PEOPLE}
-          UNION ALL
-          SELECT to_char(u."emailVerifiedAt" AT TIME ZONE ${w.timeZone}, 'YYYY-MM-DD'), 0, 1, 0, 0
-          FROM "users"."User" u WHERE u."emailVerifiedAt" >= ${w.from} AND u."emailVerifiedAt" < ${w.to} AND ${PEOPLE}
-          UNION ALL
-          SELECT to_char(u."registrationCompletedAt" AT TIME ZONE ${w.timeZone}, 'YYYY-MM-DD'), 0, 0, 1, 0
-          FROM "users"."User" u WHERE u."registrationCompletedAt" >= ${w.from} AND u."registrationCompletedAt" < ${w.to} AND ${PEOPLE}
-          UNION ALL
-          SELECT to_char(u."verifiedAt" AT TIME ZONE ${w.timeZone}, 'YYYY-MM-DD'), 0, 0, 0, 1
-          FROM "users"."User" u WHERE u."verifiedAt" >= ${w.from} AND u."verifiedAt" < ${w.to} AND ${PEOPLE}
-        ) x
-        GROUP BY day`,
-      // The provider linked in the sign-up transaction (ADR-0100); a provider linked later is not how they signed up.
-      this.db.$queryRaw<{ method: SignUpMethod; users: number }[]>`
-        SELECT coalesce(m.provider::text, 'EMAIL') AS method, count(*)::int AS users
-        FROM "users"."User" u
-        LEFT JOIN LATERAL (
-          SELECT o.provider FROM "users"."OAuthAccount" o
-          WHERE o."userId" = u.id AND o."createdAt" <= u."createdAt" + interval '1 minute'
-          ORDER BY o."createdAt", o.id LIMIT 1
-        ) m ON true
-        WHERE u."createdAt" >= ${w.from} AND u."createdAt" < ${w.to} AND ${PEOPLE}
-        GROUP BY 1`,
-    ])
+    const rows = await this.daily.counts(w, ['growth'], dayIn(new Date()))
     const keys = ['signUps', 'emailVerified', 'registrationsCompleted', 'verifications'] as const
-    const series = rollUp(w, interval, keys, perDay)
+    const series = rollUp(w, interval, keys, perDay(rows, { signUps: U.signUps, emailVerified: U.emailsVerified, registrationsCompleted: U.registrationsCompleted, verifications: U.verifications }))
     const totals = { signUps: 0, emailVerified: 0, registrationsCompleted: 0, verifications: 0 }
     for (const point of series) for (const key of keys) totals[key] += point[key]
+    // An account is created on one day, so the accounts per method in the window are the sum of its days.
+    const methods = [...new MetricRows(rows).byDimension(U.signUpMethod)].map(([method, users]) => ({ method: method as SignUpMethod, users }))
     const { shown, hidden } = withoutSmallGroups(methods)
     return {
       range: range(w),
@@ -176,41 +174,31 @@ export class AdminUsageMetricsService {
   }
 
   private async computeEngagement(w: Window, interval: MetricsInterval): Promise<AdminEngagement> {
-    // MAU needs the 30 days before the last day, which can start before the window.
+    const today = dayIn(new Date())
+    // Distinct people per bucket, then DAU, WAU, MAU and the 30 days of DAU behind stickiness (they can start before
+    // the window). Each is a span of days; the rollup answers the ones it can.
+    const starts = bucketStarts(w, interval)
+    const buckets: DaySpan[] = starts.map((start, i) => ({ fromDay: start, toDay: i + 1 < starts.length ? addDays(starts[i + 1]!, -1) : w.toDay }))
     const month = trailingDays(w, 30)
-    const spanFromDay = month.fromDay < w.fromDay ? month.fromDay : w.fromDay
-    const span = { from: midnightIn(spanFromDay, w.timeZone), to: w.to }
-    const [own, learners, activity, notes] = await Promise.all([
-      this.db.$queryRaw<{ day: string; userId: string }[]>`
-        SELECT DISTINCT a.day, a."userId"::text AS "userId"
-        FROM (
-          SELECT to_char(e."occurredAt" AT TIME ZONE ${w.timeZone}, 'YYYY-MM-DD') AS day, e."userId"
-          FROM "users"."usage_events" e WHERE e."occurredAt" >= ${span.from} AND e."occurredAt" < ${span.to}
-          UNION ALL
-          SELECT to_char(s."createdAt" AT TIME ZONE ${w.timeZone}, 'YYYY-MM-DD'), s."userId"
-          FROM "users"."Session" s WHERE s."createdAt" >= ${span.from} AND s."createdAt" < ${span.to}
-        ) a
-        JOIN "users"."User" u ON u.id = a."userId"
-        WHERE ${COUNTABLE}`,
-      this.core.learnerDays(spanFromDay, w.toDay),
-      this.core.activityPerDay(w),
-      this.notes.notesPerDay(w),
-    ])
-    const countable = await this.countable([...new Set(learners.flatMap((row) => row.userIds))])
-    const days: ActiveDays = new Map()
-    for (const row of own) addActive(days, row.day, row.userId)
-    for (const row of learners) for (const id of row.userIds) if (countable.has(id)) addActive(days, row.day, id)
-    const active = activePerBucket(w, interval, days)
+    const week = trailingDays(w, 7)
+    const monthDays: DaySpan[] = Array.from({ length: 30 }, (_, i) => ({ fromDay: addDays(month.fromDay, i), toDay: addDays(month.fromDay, i) }))
+    const spans = [...buckets, { fromDay: w.toDay, toDay: w.toDay }, week, month, ...monthDays]
+    const [rows, active] = await Promise.all([this.daily.counts(w, ['core', 'notes'], today), this.daily.activeCounts(spans, today)])
+    const [dau, wau, mau] = [active[buckets.length]!, active[buckets.length + 1]!, active[buckets.length + 2]!]
+    const daily = active.slice(buckets.length + 3).reduce((sum, n) => sum + n, 0)
     const keys = ['learningSeconds', 'doubtsAsked', 'doubtsAnswered', 'quizAttempts', 'notes'] as const
-    const series = rollUp(w, interval, keys, [...activity, ...notes])
+    const series = rollUp(w, interval, keys, perDay(rows, { learningSeconds: C.learningSeconds, doubtsAsked: C.doubtsAsked, doubtsAnswered: C.doubtsAnswered, quizAttempts: C.quizAttempts, notes: N.notesCreated }))
     return {
       range: range(w),
       interval,
       generatedAt: new Date(),
-      ...activeSummary(w, days),
-      series: series.map((point) => ({
+      dau,
+      wau,
+      mau,
+      stickiness: mau ? Math.round((daily / 30 / mau) * 1000) / 1000 : 0,
+      series: series.map((point, i) => ({
         date: point.date,
-        activeUsers: active.get(point.date) ?? 0,
+        activeUsers: active[i] ?? 0,
         learningMinutes: Math.round(point.learningSeconds / 60),
         notesCreated: point.notes,
         doubtsAsked: point.doubtsAsked,
@@ -221,22 +209,31 @@ export class AdminUsageMetricsService {
   }
 
   private async computeContent(w: Window): Promise<AdminContentStats> {
-    const [notes, core] = await Promise.all([this.notes.content(w), this.core.content(w)])
-    const purposes = withoutSmallGroups(notes.uploads.byPurpose)
+    const [rows, uploads] = await Promise.all([this.daily.counts(w, ['notes', 'core'], dayIn(new Date())), this.notes.uploads(w)])
+    const m = new MetricRows(rows)
+    const visibility = m.byDimension(N.notesCreated)
+    const scans = m.byDimension(N.uploadScans)
+    const purposes = withoutSmallGroups(uploads.byPurpose)
     return {
       range: range(w),
       generatedAt: new Date(),
-      notes: notes.notes,
+      notes: { created: m.total(N.notesCreated), public: visibility.get('PUBLIC') ?? 0, unlisted: visibility.get('UNLISTED') ?? 0, shared: visibility.get('SHARED') ?? 0, private: visibility.get('PRIVATE') ?? 0 },
       uploads: {
-        files: notes.uploads.files,
-        bytes: notes.uploads.bytes.toString(),
+        files: uploads.files,
+        bytes: uploads.bytes.toString(),
         byPurpose: purposes.shown.map((row) => ({ purpose: row.purpose, files: row.files, bytes: row.bytes.toString() })),
         hiddenSmallGroups: purposes.hidden,
       },
-      scans: notes.scans,
-      doubts: { ...core.doubts, medianHoursToFirstAnswer: roundHours(core.doubts.medianHoursToFirstAnswer) },
-      places: core.places,
-      sharing: notes.sharing,
+      scans: { clean: scans.get('clean') ?? 0, infected: scans.get('infected') ?? 0, failed: scans.get('failed') ?? 0, pending: scans.get('pending') ?? 0 },
+      doubts: {
+        asked: m.total(C.doubtsAsked),
+        answered: m.total(C.doubtsAnswered),
+        resolved: m.total(C.doubtsResolved),
+        answers: m.total(C.doubtAnswers),
+        medianHoursToFirstAnswer: roundHours(medianHoursOf(m.byDimension(C.firstAnswerMs))),
+      },
+      places: { groups: m.total(C.groups), classrooms: m.total(C.classrooms), groupPosts: m.total(C.groupPosts), classroomPosts: m.total(C.classroomPosts) },
+      sharing: { noteShares: m.total(N.noteShares), placeShares: m.total(N.placeShares), saves: m.total(N.saves) },
     }
   }
 
@@ -265,15 +262,11 @@ export class AdminUsageMetricsService {
   private async computeVerification(w: Window): Promise<AdminVerificationStats> {
     const decided = Prisma.sql`status IN ('APPROVED', 'REJECTED') AND "decidedAt" >= ${w.from} AND "decidedAt" < ${w.to}`
     const requested = Prisma.sql`"createdAt" >= ${w.from} AND "createdAt" < ${w.to}`
-    const [totals, queue, methods] = await Promise.all([
-      this.db.$queryRaw<{ requested: number; approved: number; rejected: number; medianHours: number | null }[]>`
-        SELECT (SELECT count(*) FROM "users"."VerificationRequest" WHERE ${requested})::int AS requested,
-               (SELECT count(*) FROM "users"."VerificationRequest" WHERE status = 'APPROVED' AND "decidedAt" >= ${w.from} AND "decidedAt" < ${w.to})::int AS approved,
-               (SELECT count(*) FROM "users"."VerificationRequest" WHERE status = 'REJECTED' AND "decidedAt" >= ${w.from} AND "decidedAt" < ${w.to})::int AS rejected,
-               (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM "decidedAt" - "createdAt") / 3600)
-                  FROM "users"."VerificationRequest" WHERE ${decided})::float8 AS "medianHours"`,
+    const [rows, queue, methods] = await Promise.all([
+      this.daily.counts(w, ['verification'], dayIn(new Date())),
       this.db.$queryRaw<{ pending: number; oldest: Date | null }[]>`
         SELECT count(*)::int AS pending, min("createdAt") AS oldest FROM "users"."VerificationRequest" WHERE status = 'PENDING'`,
+      // Distinct requesters per method over the whole window decide what is shown, so this stays live.
       this.db.$queryRaw<{ method: AdminVerificationMethod; requested: number; approved: number; rejected: number; users: number }[]>`
         SELECT CASE WHEN "collegeIdCard" THEN 'COLLEGE_ID' ELSE method::text END AS method,
                count(*) FILTER (WHERE ${requested})::int AS requested,
@@ -284,21 +277,29 @@ export class AdminUsageMetricsService {
         WHERE (${requested}) OR (${decided})
         GROUP BY 1`,
     ])
-    const t = totals[0] ?? { requested: 0, approved: 0, rejected: 0, medianHours: null }
+    const m = new MetricRows(rows)
     const q = queue[0] ?? { pending: 0, oldest: null }
     const { shown, hidden } = withoutSmallGroups(methods)
     return {
       range: range(w),
       generatedAt: new Date(),
-      requested: t.requested,
-      approved: t.approved,
-      rejected: t.rejected,
+      requested: m.total(U.verificationRequests),
+      approved: m.total(U.verificationApproved),
+      rejected: m.total(U.verificationRejected),
       pending: q.pending,
-      medianHoursToDecision: roundHours(t.medianHours == null ? null : Number(t.medianHours)),
+      medianHoursToDecision: roundHours(medianHoursOf(m.byDimension(U.decisionMs))),
       oldestPendingHours: q.oldest ? roundHours((Date.now() - q.oldest.getTime()) / 3_600_000) : null,
       byMethod: [...shown].sort((a, b) => b.requested - a.requested || a.method.localeCompare(b.method)).map(({ method, requested, approved, rejected }) => ({ method, requested, approved, rejected })),
       hiddenSmallGroups: hidden,
     }
+  }
+
+  private async computeRetention(today: string, weeks: number): Promise<AdminRetention> {
+    const starts = cohortStarts(today, weeks)
+    const current = mondayOf(today)
+    const rows = await this.daily.cohorts(starts, starts[0]!, today)
+    const { cohorts, hidden } = retentionCohorts(starts, current, new MetricRows(rows))
+    return { cohortInterval: 'WEEK', timeZone: ADMIN_METRICS_TIME_ZONE, firstWeek: starts[0]!, lastWeek: current, generatedAt: new Date(), cohorts, hiddenSmallGroups: hidden }
   }
 
   /** Each person's time for one funnel step since `since`, among `among` when given. */
@@ -367,14 +368,6 @@ export class AdminUsageMetricsService {
       if (!known || at.getTime() < known.getTime()) out.set(row.userId, at)
     }
     return out
-  }
-
-  /** The ids among these that may be counted by their activity. */
-  private async countable(ids: string[]): Promise<Set<string>> {
-    if (!ids.length) return new Set()
-    const rows = await this.db.$queryRaw<{ id: string }[]>`
-      SELECT u.id::text AS id FROM "users"."User" u WHERE u.id = ANY(${ids}::uuid[]) AND ${COUNTABLE}`
-    return new Set(rows.map((row) => row.id))
   }
 
   /** One computation per key for about 5 minutes; concurrent requests share it, and a failure is not kept. */

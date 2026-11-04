@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
-    "legacy:snapshot": "node --env-file-if-exists=../../.env --env-file-if-exists=../../.env.local dist/cli.js legacy:snapshot"
+    "legacy:snapshot": "node --env-file-if-exists=../../.env --env-file-if-exists=../../.env.local dist/cli.js legacy:snapshot",
+    "metrics:backfill": "node --env-file-if-exists=../../.env --env-file-if-exists=../../.env.local dist/cli.js metrics:backfill"
   },
   "dependencies": {
     "@lvn-backend/ai": "workspace:*",

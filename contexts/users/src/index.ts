@@ -6,6 +6,9 @@ export { UsersModule }
 export { STUDY_PUBLISHER_EMAIL, STUDY_PUBLISHER_ID, isStudyPublisher } from './domain/study-publisher'
 export { usersConfigFrom, type UsersConfig } from './users.config'
 export { UsersMaintenance } from './application/maintenance'
+/** ADR-0106: the daily metrics rollup the worker runs nightly and backfills. */
+export { DailyMetricsService, type RollupReport } from './application/daily-metrics.service'
+export { ROLLUP_DEFAULT_DAYS, ROLLUP_MAX_DAYS, DAILY_METRICS_RETENTION_DAYS } from './domain/daily-metrics'
 /** ADR-0023 one-off snapshot of the old site, run by apps/worker's `legacy:snapshot` command. */
 export { firestoreLegacySource, snapshotOldSite, type LegacyAccount, type LegacySink, type LegacySource, type SnapshotReport } from './application/legacy-snapshot.job'
 /** Implementations of the POLICY and ENTITLEMENTS facades, bound by the composition roots. */

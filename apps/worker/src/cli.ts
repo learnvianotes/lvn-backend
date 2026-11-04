@@ -4,11 +4,13 @@ import { loadWorkerConfig } from '@lvn-backend/config'
 import { LegacySnapshots } from '@lvn-backend/legacy'
 import { Queues } from '@lvn-backend/queue'
 import { Storage } from '@lvn-backend/storage'
-import { firestoreLegacySource, snapshotOldSite } from '@lvn-backend/users'
+import { firestoreLegacySource, snapshotOldSite, UsersMaintenance } from '@lvn-backend/users'
 import { WorkerModule } from './worker.module'
 
 const USAGE = `Usage: cli.js <command>
   legacy:snapshot              copy the old learnvianotes.in data into the restricted bucket (ADR-0023); re-runnable
+  metrics:backfill <from> <to> roll up the admin usage metrics of past IST days, YYYY-MM-DD inclusive (ADR-0106);
+                               re-runnable, e.g. metrics:backfill 2026-10-01 2026-11-12
   queues                       each queue's waiting, delayed, active and failed jobs
   queue:failed <queue>         the last 20 failed jobs with their reasons
   queue:retry <queue>          retry every failed job (each job is idempotent, §9.2)
@@ -23,6 +25,7 @@ const USAGE = `Usage: cli.js <command>
 async function main(command: string | undefined, args: string[]) {
   const config = loadWorkerConfig()
   if (command?.startsWith('queue')) return queueCommand(new Queues(config.REDIS_URL), command, args)
+  if (command === 'metrics:backfill') return backfillMetrics(config, args)
   if (command !== 'legacy:snapshot') throw new Error(USAGE)
   if (!config.LEGACY_FIREBASE_PROJECT_ID) throw new Error('Set LEGACY_FIREBASE_PROJECT_ID and GOOGLE_APPLICATION_CREDENTIALS (read-only service account).')
   const app = await NestFactory.createApplicationContext(WorkerModule.forRoot(config, { jobs: false }), { logger: ['log', 'warn', 'error'] })
@@ -30,6 +33,18 @@ async function main(command: string | undefined, args: string[]) {
     const sink = new LegacySnapshots(app.get(Storage), config.S3_RESTRICTED_BUCKET, config.APP_ENV)
     const report = await snapshotOldSite(await firestoreLegacySource(config.LEGACY_FIREBASE_PROJECT_ID), sink)
     console.log(JSON.stringify(report, null, 2))
+  } finally {
+    await app.close()
+  }
+}
+
+/** ADR-0106: in this process, a month at a time; days already rolled up are rewritten with the same rows. */
+async function backfillMetrics(config: ReturnType<typeof loadWorkerConfig>, [from, to]: string[]) {
+  if (!from || !to) throw new Error(USAGE)
+  const app = await NestFactory.createApplicationContext(WorkerModule.forRoot(config, { jobs: false }), { logger: ['warn', 'error'] })
+  try {
+    const report = await app.get(UsersMaintenance).backfillMetrics(from, to, (chunk) => console.log(`${chunk.fromDay}..${chunk.toDay}: ${chunk.days} days, ${chunk.weeks} weeks, ${chunk.rows} rows`))
+    console.log(JSON.stringify(report))
   } finally {
     await app.close()
   }

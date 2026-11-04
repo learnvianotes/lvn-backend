@@ -1,4 +1,4 @@
-import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common'
+import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common'
 import { COMMS_EMAIL_QUEUE, COMMS_PUSH_QUEUE, DevicesService, EmailNotificationsService, NotificationService, PushService } from '@lvn-backend/communication'
 import { ExamsService, FocusService, LEARNING_ANALYTICS_QUEUE, LearningEventsService, RecommendationsService, RhythmService, WorkspacesService, CORE_GITHUB_QUEUE, GitHubAppService, CORE_ENGAGEMENT_QUEUE, AchievementsService, DailyLineService } from '@lvn-backend/core'
 import { NotesMaintenance } from '@lvn-backend/notes'
@@ -9,6 +9,13 @@ export const USERS_MAINTENANCE_QUEUE = 'users.maintenance'
 export const NOTES_MAINTENANCE_QUEUE = 'notes.maintenance'
 export const COMMS_MAINTENANCE_QUEUE = 'comms.maintenance'
 export const CORE_MAINTENANCE_QUEUE = 'core.maintenance'
+
+/** ADR-0106: when the admin usage metrics are rolled up (UTC cron) and how many days before today each run covers. */
+export const METRICS_ROLLUP = Symbol('METRICS_ROLLUP')
+export interface MetricsRollupSchedule {
+  cron: string
+  days: number
+}
 
 /** Scheduled housekeeping (§9.1). Every schedule is UTC and idempotent, so restarts and several workers are safe. */
 @Injectable()
@@ -32,6 +39,7 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
     private readonly push: PushService,
     private readonly devices: DevicesService,
     private readonly emails: EmailNotificationsService,
+    @Inject(METRICS_ROLLUP) private readonly rollup: MetricsRollupSchedule,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -42,11 +50,19 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
         this.log.log(`purged documents of ${purged} decided verification requests`)
         return { purged }
       },
-      // Usage events are kept 180 days, error events 90.
+      // Usage events are kept 180 days, error events 90, daily metrics 730 (ADR-0106).
       'purge-analytics': async () => {
         const purged = await this.users.purgeAnalytics()
-        this.log.log(`purged ${purged.usage} usage events and ${purged.errors} error events`)
+        this.log.log(`purged ${purged.usage} usage events, ${purged.errors} error events and ${purged.metrics} daily metrics`)
         return purged
+      },
+      // ADR-0106: the admin usage metrics of the last few days before today (IST), recomputed and stored. Idempotent.
+      // `days` in the job data overrides METRICS_ROLLUP_DAYS for one run (queue:run).
+      'rollup-metrics': async (data) => {
+        const asked = (data as { days?: unknown } | undefined)?.days
+        const done = await this.users.rollUpMetrics(typeof asked === 'number' ? asked : this.rollup.days)
+        this.log.log(`rolled up admin metrics ${done.fromDay}..${done.toDay}: ${done.days} days, ${done.weeks} weeks, ${done.rows} rows`)
+        return done
       },
       // ADR-0088: accounts past their 14 days are deleted; recent deletions announced again for a week.
       'delete-accounts': async () => {
@@ -58,6 +74,7 @@ export class MaintenanceJobs implements OnApplicationBootstrap {
     await this.queues.repeat(USERS_MAINTENANCE_QUEUE, 'purge-verification-documents', '15 3 * * *')
     await this.queues.repeat(USERS_MAINTENANCE_QUEUE, 'purge-analytics', '25 3 * * *')
     await this.queues.repeat(USERS_MAINTENANCE_QUEUE, 'delete-accounts', '20 3 * * *')
+    await this.queues.repeat(USERS_MAINTENANCE_QUEUE, 'rollup-metrics', this.rollup.cron)
 
     this.queues.process(NOTES_MAINTENANCE_QUEUE, {
       // §4.3: public notes keep every published version, others their newest 50.

@@ -6,16 +6,18 @@ import type {
   AdminContentStats,
   AdminEngagement,
   AdminGrowth,
+  AdminRetention,
   AdminTopSubjects,
   AdminVerificationStats,
   QueryAdminContentStatsArgs,
   QueryAdminEngagementArgs,
   QueryAdminGrowthArgs,
+  QueryAdminRetentionArgs,
   QueryAdminTopSubjectsArgs,
   QueryAdminVerificationStatsArgs,
 } from './schema.types'
 
-/** Usage metrics for the platform-admin dashboard (ADR-0105). Aggregates only; small groups are left out. */
+/** Usage metrics for the platform-admin dashboard (ADR-0105, ADR-0106). Aggregates only; small groups are left out. */
 @Resolver()
 @UseGuards(SignedInGuard)
 export class AdminUsageMetricsResolver {
@@ -44,5 +46,10 @@ export class AdminUsageMetricsResolver {
   @Query('adminVerificationStats')
   adminVerificationStats(@Args() args: QueryAdminVerificationStatsArgs, @CurrentViewer() viewer: Viewer): Promise<AdminVerificationStats> {
     return this.metrics.verification(viewer.userId, args.from, args.to)
+  }
+
+  @Query('adminRetention')
+  adminRetention(@Args() args: QueryAdminRetentionArgs, @CurrentViewer() viewer: Viewer): Promise<AdminRetention> {
+    return this.metrics.retention(viewer.userId, args.cohortInterval, args.weeks)
   }
 }

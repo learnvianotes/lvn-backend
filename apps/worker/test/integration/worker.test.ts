@@ -49,12 +49,13 @@ describe('worker', () => {
     await infra?.stop()
   })
 
-  it('schedules the daily purge of decided verification documents and the deletion of accounts past their grace', async () => {
+  it('schedules the daily purge of decided verification documents, the deletion of accounts past their grace and the metrics rollup at 02:00 IST', async () => {
     const schedulers = await app.get(Queues).queue(USERS_MAINTENANCE_QUEUE).getJobSchedulers()
     expect(schedulers.map((s) => [s.key, s.pattern, s.tz]).sort()).toEqual([
       ['delete-accounts', '20 3 * * *', 'UTC'],
       ['purge-analytics', '25 3 * * *', 'UTC'],
       ['purge-verification-documents', '15 3 * * *', 'UTC'],
+      ['rollup-metrics', '30 20 * * *', 'UTC'],
     ])
   })
 
@@ -80,6 +81,30 @@ describe('worker', () => {
     }
     expect(await db.fileObject.findUniqueOrThrow({ where: { id: fileId } })).toMatchObject({ status: 'DELETED' })
     expect(await app.get(Storage).head('lvn-restricted', key)).toBeNull()
+  })
+
+  it('rolls up the admin metrics of the days before today when the job runs (ADR-0106)', async () => {
+    const db = app.get(PrismaService)
+    const ist = (at: Date) => new Date(at.getTime() + 330 * 60_000).toISOString().slice(0, 10)
+    const yesterday = ist(new Date(Date.now() - 86_400_000))
+    const userId = newId()
+    // Noon in India yesterday: an account created and a session started.
+    const noon = new Date(`${yesterday}T12:00:00+05:30`)
+    await db.user.create({ data: { id: userId, email: `r${userId.slice(-8)}@example.com`, handle: `r${userId.slice(-8)}`, displayName: 'R', createdAt: noon } })
+    await db.session.create({ data: { id: newId(), userId, familyId: newId(), refreshTokenHash: Buffer.alloc(32, 1), createdAt: noon, expiresAt: new Date(Date.now() + 86_400_000) } })
+
+    const job = await app.get(Queues).queue(USERS_MAINTENANCE_QUEUE).add('rollup-metrics', { days: 2 })
+    const deadline = Date.now() + 20_000
+    while (!(await job.isCompleted())) {
+      if (Date.now() > deadline || (await job.isFailed())) throw new Error(`job did not complete: ${job.failedReason ?? 'timeout'}`)
+      await new Promise((r) => setTimeout(r, 200))
+    }
+    const rows = await db.dailyMetric.findMany({ where: { day: new Date(`${yesterday}T00:00:00Z`) } })
+    const value = (metric: string, dimension = '') => rows.find((r) => r.metric === metric && r.dimension === dimension)?.value
+    expect(value('_rollup', 'day')).toBe(1n)
+    expect(value('sign_ups')).toBeGreaterThanOrEqual(1n)
+    expect(value('active_users')).toBeGreaterThanOrEqual(1n)
+    expect(await db.dailyMetric.count({ where: { day: { gte: new Date(`${ist(new Date())}T00:00:00Z`) } } })).toBe(0)
   })
 
   it('indexes a published note in both search indexes on its own, and schedules the nightly reindex (ADR-0055)', async () => {

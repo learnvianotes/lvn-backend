@@ -685,6 +685,21 @@ model UsageEvent {
   @@schema("users")
 }
 
+/// Daily counts behind the admin usage metrics (ADR-0106), written by the worker's nightly rollup: one row per IST
+/// day, metric and breakdown key. Counts only: no account id, no free text. Kept 730 days.
+model DailyMetric {
+  day        DateTime @db.Date
+  metric     String
+  /// A breakdown key, '' when there is none: a sign-up method, a visibility, a cohort's Monday, a duration in ms.
+  dimension  String   @default("")
+  value      BigInt
+  computedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([day, metric, dimension])
+  @@map("daily_metrics")
+  @@schema("users")
+}
+
 // ── notes ────────────────────────────────────────────────────────────────────────────────────────────────
 
 enum FileStatus {
