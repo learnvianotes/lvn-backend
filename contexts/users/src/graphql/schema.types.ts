@@ -307,6 +307,34 @@ export interface AdminPlanPayload {
   userErrors: Array<UserError>
 }
 
+/** Weekly retention, oldest cohort first, the last one this week. Past weeks come from the nightly rollup, this week is
+ * counted live. A cohort with fewer than 5 people (at any week counted) is left out and counted in hiddenSmallGroups; a
+ * week nobody signed up in is left out and not counted. Cached in each API process for about 5 minutes. */
+export interface AdminRetention {
+  cohortInterval: CohortInterval
+  timeZone: string
+  /** The first and the last (this) sign-up week asked for, Mondays, YYYY-MM-DD. */
+  firstWeek: string
+  lastWeek: string
+  generatedAt: Date
+  cohorts: Array<AdminRetentionCohort>
+  hiddenSmallGroups: number
+}
+
+/** The people who signed up in one week and the share of them active in each week since. Active as in AdminEngagement
+ * (a session started or refreshed, a usage event, or learning that day); accounts that opted out of analytics and
+ * deleted accounts are in no cohort. */
+export interface AdminRetentionCohort {
+  /** The sign-up week's Monday, YYYY-MM-DD (IST). */
+  start: string
+  /** People who signed up that week, as last counted. Always at least 5. */
+  size: number
+  /** returned[n] is the share (0 to 1, three decimals) of the cohort active in the n-th week after the sign-up week;
+   * returned[0] is the sign-up week itself and the last value is this week, still in progress. Each share is over the
+   * cohort as it was when that week was counted. */
+  returned: Array<number>
+}
+
 /** Scan results of those uploads. failed is a scanner error or a scan that used up its attempts. */
 export interface AdminScanCounts {
   clean: number
@@ -587,6 +615,9 @@ export interface ClientErrorInput {
 
 /** Where the client recorded the event. Backend failures are stored by the server and are not sent here. */
 export type ClientPlatform = 'WEB' | 'MOBILE'
+
+/** How retention cohorts are grouped by sign-up date. WEEK: IST weeks, Monday to Sunday. */
+export type CohortInterval = 'WEEK'
 
 /** After a provider sign-in (no signUp call): the same details, collected once */
 export interface CompleteRegistrationInput {
@@ -1129,6 +1160,11 @@ export interface QueryAdminTopSubjectsArgs {
 export interface QueryAdminVerificationStatsArgs {
   from?: Date | null
   to?: Date | null
+}
+
+export interface QueryAdminRetentionArgs {
+  cohortInterval?: CohortInterval | null
+  weeks?: number | null
 }
 
 export interface QueryAdminMetricsArgs {

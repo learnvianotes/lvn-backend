@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import type { AdminDayWindow, FilePurposeKind, NotesAdminStats as NotesAdminStatsPort, NotesContentStats, SubjectActivity } from '@lvn-backend/facades'
+import { NOTES_DAILY_METRICS, type AdminDailyCount, type AdminDayWindow, type FilePurposeKind, type NotesAdminStats as NotesAdminStatsPort, type NotesUploadStats, type SubjectActivity } from '@lvn-backend/facades'
 import { Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { STUDY_PUBLISHER_ID } from './study-content-sync'
 
@@ -14,7 +14,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
  */
 const PEOPLES_NOTES = Prisma.sql`n."ownerId" <> ${STUDY_PUBLISHER_ID}::uuid AND NOT EXISTS (SELECT 1 FROM "notes"."LegacyContentItem" l WHERE l."noteId" = n.id)`
 
-/** Note, subject and storage totals for the admin dashboard (ADR-0101, ADR-0105). Counts only. */
+/** Note, subject and storage totals for the admin dashboard (ADR-0101, ADR-0105, ADR-0106). Counts only. */
 @Injectable()
 export class NotesAdminStats implements NotesAdminStatsPort {
   constructor(private readonly db: PrismaService) {}
@@ -34,57 +34,57 @@ export class NotesAdminStats implements NotesAdminStatsPort {
     return { notes, publicNotes, subjects, topics, storageFiles, storageBytes: storage._sum.sizeBytes ?? 0n, pendingScans, failedScans }
   }
 
-  async notesPerDay(w: AdminDayWindow): Promise<{ day: string; notes: number }[]> {
-    return this.db.$queryRaw<{ day: string; notes: number }[]>`
-      SELECT to_char(n."createdAt" AT TIME ZONE ${w.timeZone}, 'YYYY-MM-DD') AS day, count(*)::int AS notes
-      FROM "notes"."Note" n
-      WHERE n."createdAt" >= ${w.from} AND n."createdAt" < ${w.to} AND n."deletedAt" IS NULL AND ${PEOPLES_NOTES}
-      GROUP BY 1`
+  async dailyCounts(w: AdminDayWindow): Promise<AdminDailyCount[]> {
+    const day = (column: Prisma.Sql) => Prisma.sql`to_char(${column} AT TIME ZONE ${w.timeZone}, 'YYYY-MM-DD')`
+    const [notes, scans, sharing] = await Promise.all([
+      this.db.$queryRaw<{ day: string; dimension: string; value: number }[]>`
+        SELECT ${day(Prisma.sql`n."createdAt"`)} AS day, n.visibility::text AS dimension, count(*)::int AS value
+        FROM "notes"."Note" n
+        WHERE n."createdAt" >= ${w.from} AND n."createdAt" < ${w.to} AND n."deletedAt" IS NULL AND ${PEOPLES_NOTES}
+        GROUP BY 1, 2`,
+      // The uploads of the window (people's, still stored, not exports) by scan result; ERROR and FAILED are both failed.
+      this.db.$queryRaw<{ day: string; dimension: string; value: number }[]>`
+        SELECT day, dimension, count(*)::int AS value FROM (
+          SELECT ${day(Prisma.sql`f."createdAt"`)} AS day,
+                 CASE f."scanResult"::text WHEN 'CLEAN' THEN 'clean' WHEN 'INFECTED' THEN 'infected' WHEN 'ERROR' THEN 'failed' WHEN 'FAILED' THEN 'failed' WHEN 'PENDING' THEN 'pending' END AS dimension
+          FROM "notes"."FileObject" f
+          WHERE f."createdAt" >= ${w.from} AND f."createdAt" < ${w.to} AND f."deletedAt" IS NULL
+            AND f.status::text IN (${Prisma.join([...STORED])}) AND f.purpose <> 'EXPORT'
+        ) x
+        WHERE dimension IS NOT NULL
+        GROUP BY 1, 2`,
+      // CONNECTIONS rows are one owner's "share with my connections" fanned out to each connection: not a share each.
+      this.db.$queryRaw<{ day: string; metric: string; value: number }[]>`
+        SELECT day, metric, count(*)::int AS value FROM (
+          SELECT ${day(Prisma.sql`"createdAt"`)} AS day, ${NOTES_DAILY_METRICS.noteShares}::text AS metric FROM "notes"."NoteShare" WHERE "createdAt" >= ${w.from} AND "createdAt" < ${w.to} AND source = 'DIRECT'
+          UNION ALL
+          SELECT ${day(Prisma.sql`"createdAt"`)}, ${NOTES_DAILY_METRICS.placeShares}::text FROM "notes"."GroupShare" WHERE "createdAt" >= ${w.from} AND "createdAt" < ${w.to}
+          UNION ALL
+          SELECT ${day(Prisma.sql`"createdAt"`)}, ${NOTES_DAILY_METRICS.placeShares}::text FROM "notes"."ClassroomShare" WHERE "createdAt" >= ${w.from} AND "createdAt" < ${w.to}
+          UNION ALL
+          SELECT ${day(Prisma.sql`"createdAt"`)}, ${NOTES_DAILY_METRICS.saves}::text FROM "notes"."NoteSave" WHERE "createdAt" >= ${w.from} AND "createdAt" < ${w.to}
+        ) x
+        GROUP BY 1, 2`,
+    ])
+    return [
+      ...notes.map((row) => ({ day: row.day, metric: NOTES_DAILY_METRICS.notesCreated, dimension: row.dimension, value: row.value })),
+      ...scans.map((row) => ({ day: row.day, metric: NOTES_DAILY_METRICS.uploadScans, dimension: row.dimension, value: row.value })),
+      ...sharing.map((row) => ({ day: row.day, metric: row.metric, dimension: '', value: row.value })),
+    ]
   }
 
-  async content(w: AdminDayWindow): Promise<NotesContentStats> {
-    const [notes, uploads, scans, sharing] = await Promise.all([
-      this.db.$queryRaw<{ created: number; public: number; unlisted: number; shared: number; private: number }[]>`
-        SELECT count(*)::int AS created,
-               count(*) FILTER (WHERE n.visibility = 'PUBLIC')::int AS public,
-               count(*) FILTER (WHERE n.visibility = 'UNLISTED')::int AS unlisted,
-               count(*) FILTER (WHERE n.visibility = 'SHARED')::int AS shared,
-               count(*) FILTER (WHERE n.visibility = 'PRIVATE')::int AS private
-        FROM "notes"."Note" n
-        WHERE n."createdAt" >= ${w.from} AND n."createdAt" < ${w.to} AND n."deletedAt" IS NULL AND ${PEOPLES_NOTES}`,
-      // Uploads people made that are still stored. Data exports are files the server wrote, not uploads.
-      this.db.$queryRaw<{ purpose: FilePurposeKind; files: number; bytes: string; users: number }[]>`
-        SELECT f.purpose::text AS purpose, count(*)::int AS files, coalesce(sum(f."sizeBytes"), 0)::text AS bytes, count(DISTINCT f."ownerId")::int AS users
-        FROM "notes"."FileObject" f
-        WHERE f."createdAt" >= ${w.from} AND f."createdAt" < ${w.to} AND f."deletedAt" IS NULL
-          AND f.status::text IN (${Prisma.join([...STORED])}) AND f.purpose <> 'EXPORT'
-        GROUP BY f.purpose`,
-      this.db.$queryRaw<{ clean: number; infected: number; failed: number; pending: number }[]>`
-        SELECT count(*) FILTER (WHERE f."scanResult" = 'CLEAN')::int AS clean,
-               count(*) FILTER (WHERE f."scanResult" = 'INFECTED')::int AS infected,
-               count(*) FILTER (WHERE f."scanResult" IN ('ERROR', 'FAILED'))::int AS failed,
-               count(*) FILTER (WHERE f."scanResult" = 'PENDING')::int AS pending
-        FROM "notes"."FileObject" f
-        WHERE f."createdAt" >= ${w.from} AND f."createdAt" < ${w.to} AND f."deletedAt" IS NULL
-          AND f.status::text IN (${Prisma.join([...STORED])}) AND f.purpose <> 'EXPORT'`,
-      // CONNECTIONS rows are one owner's "share with my connections" fanned out to each connection: not a share each.
-      this.db.$queryRaw<{ noteShares: number; groupShares: number; classroomShares: number; saves: number }[]>`
-        SELECT (SELECT count(*) FROM "notes"."NoteShare" WHERE "createdAt" >= ${w.from} AND "createdAt" < ${w.to} AND source = 'DIRECT')::int AS "noteShares",
-               (SELECT count(*) FROM "notes"."GroupShare" WHERE "createdAt" >= ${w.from} AND "createdAt" < ${w.to})::int AS "groupShares",
-               (SELECT count(*) FROM "notes"."ClassroomShare" WHERE "createdAt" >= ${w.from} AND "createdAt" < ${w.to})::int AS "classroomShares",
-               (SELECT count(*) FROM "notes"."NoteSave" WHERE "createdAt" >= ${w.from} AND "createdAt" < ${w.to})::int AS saves`,
-    ])
-    const byPurpose = uploads
+  async uploads(w: AdminDayWindow): Promise<NotesUploadStats> {
+    // Uploads people made that are still stored. Data exports are files the server wrote, not uploads.
+    const rows = await this.db.$queryRaw<{ purpose: FilePurposeKind; files: number; bytes: string; users: number }[]>`
+      SELECT f.purpose::text AS purpose, count(*)::int AS files, coalesce(sum(f."sizeBytes"), 0)::text AS bytes, count(DISTINCT f."ownerId")::int AS users
+      FROM "notes"."FileObject" f
+      WHERE f."createdAt" >= ${w.from} AND f."createdAt" < ${w.to} AND f."deletedAt" IS NULL
+        AND f.status::text IN (${Prisma.join([...STORED])}) AND f.purpose <> 'EXPORT'
+      GROUP BY f.purpose`
+    const byPurpose = rows
       .map((row) => ({ purpose: row.purpose, files: row.files, bytes: BigInt(row.bytes), users: row.users }))
       .sort((a, b) => b.files - a.files || a.purpose.localeCompare(b.purpose))
-    const n = notes[0] ?? { created: 0, public: 0, unlisted: 0, shared: 0, private: 0 }
-    const s = sharing[0] ?? { noteShares: 0, groupShares: 0, classroomShares: 0, saves: 0 }
-    return {
-      notes: { created: n.created, public: n.public, unlisted: n.unlisted, shared: n.shared, private: n.private },
-      uploads: { files: byPurpose.reduce((sum, row) => sum + row.files, 0), bytes: byPurpose.reduce((sum, row) => sum + row.bytes, 0n), byPurpose },
-      scans: scans[0] ?? { clean: 0, infected: 0, failed: 0, pending: 0 },
-      sharing: { noteShares: s.noteShares, placeShares: s.groupShares + s.classroomShares, saves: s.saves },
-    }
+    return { files: byPurpose.reduce((sum, row) => sum + row.files, 0), bytes: byPurpose.reduce((sum, row) => sum + row.bytes, 0n), byPurpose }
   }
 
   async subjectActivity(w: AdminDayWindow, by: 'NOTES' | 'SAVES'): Promise<SubjectActivity[]> {

@@ -165,7 +165,8 @@ export function activePerBucket(window: Pick<MetricsWindow, 'fromDay' | 'toDay'>
   return new Map([...people].map(([date, ids]) => [date, ids.size]))
 }
 
-function distinctIn(days: ActiveDays, fromDay: string, toDay: string): number {
+/** Distinct people active on any day from `fromDay` to `toDay`. */
+export function distinctIn(days: ActiveDays, fromDay: string, toDay: string): number {
   const ids = new Set<string>()
   for (const [day, set] of days) if (day >= fromDay && day <= toDay) for (const id of set) ids.add(id)
   return ids.size

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import type { AdminDayWindow, CoreAdminStats as CoreAdminStatsPort, CoreContentStats } from '@lvn-backend/facades'
+import { CORE_DAILY_METRICS, type AdminDailyCount, type AdminDayWindow, type CoreAdminStats as CoreAdminStatsPort } from '@lvn-backend/facades'
 import { Prisma, PrismaService } from '@lvn-backend/prisma-base'
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/
@@ -15,7 +15,7 @@ const FIRST_ANSWERS = Prisma.sql`
   WHERE d."deletedAt" IS NULL
   GROUP BY d.id, d."createdAt"`
 
-/** Moderation queue, place and learning totals for the admin dashboard (ADR-0101, ADR-0105). Counts only. */
+/** Moderation queue, place and learning totals for the admin dashboard (ADR-0101, ADR-0105, ADR-0106). Counts only. */
 @Injectable()
 export class CoreAdminStats implements CoreAdminStatsPort {
   constructor(private readonly db: PrismaService) {}
@@ -30,30 +30,60 @@ export class CoreAdminStats implements CoreAdminStatsPort {
     return { openReports, openAppeals, groups, classrooms }
   }
 
-  async activityPerDay(w: AdminDayWindow): Promise<{ day: string; learningSeconds: number; doubtsAsked: number; doubtsAnswered: number; quizAttempts: number }[]> {
+  async dailyCounts(w: AdminDayWindow): Promise<AdminDailyCount[]> {
     assertDays(w.fromDay, w.toDay)
     // LearningDay is already a day: the learner's own (ADR-0030, 04:00 in their zone). Imported legacy time is left out.
     const { from, to, fromDay, toDay, timeZone } = w
-    return this.db.$queryRaw<{ day: string; learningSeconds: number; doubtsAsked: number; doubtsAnswered: number; quizAttempts: number }[]>`
-      WITH first_answers AS (${FIRST_ANSWERS}),
-      rows AS (
-        SELECT to_char(day, 'YYYY-MM-DD') AS day, sum("learningSeconds")::bigint AS learning, 0::bigint AS asked, 0::bigint AS answered, 0::bigint AS attempts
+    const day = (column: Prisma.Sql) => Prisma.sql`to_char(${column} AT TIME ZONE ${timeZone}, 'YYYY-MM-DD')`
+    const m = CORE_DAILY_METRICS
+    const [counts, firstAnswers] = await Promise.all([
+      this.db.$queryRaw<{ day: string; metric: string; value: number }[]>`
+        WITH first_answers AS (${FIRST_ANSWERS})
+        SELECT to_char(day, 'YYYY-MM-DD') AS day, ${m.learningSeconds}::text AS metric, sum("learningSeconds")::int AS value
         FROM "core"."LearningDay" WHERE day >= ${fromDay}::date AND day <= ${toDay}::date GROUP BY 1
         UNION ALL
-        SELECT to_char("createdAt" AT TIME ZONE ${timeZone}, 'YYYY-MM-DD'), 0, count(*), 0, 0
+        SELECT ${day(Prisma.sql`"createdAt"`)}, ${m.doubtsAsked}::text, count(*)::int
         FROM "core"."Doubt" WHERE "createdAt" >= ${from} AND "createdAt" < ${to} AND "deletedAt" IS NULL GROUP BY 1
         UNION ALL
-        SELECT to_char("answeredAt" AT TIME ZONE ${timeZone}, 'YYYY-MM-DD'), 0, 0, count(*), 0
+        SELECT ${day(Prisma.sql`"answeredAt"`)}, ${m.doubtsAnswered}::text, count(*)::int
         FROM first_answers WHERE "answeredAt" >= ${from} AND "answeredAt" < ${to} GROUP BY 1
         UNION ALL
-        SELECT to_char("submittedAt" AT TIME ZONE ${timeZone}, 'YYYY-MM-DD'), 0, 0, 0, count(*)
-        FROM "core"."QuizAttempt" WHERE "submittedAt" >= ${from} AND "submittedAt" < ${to} GROUP BY 1
+        SELECT ${day(Prisma.sql`"resolvedAt"`)}, ${m.doubtsResolved}::text, count(*)::int
+        FROM "core"."Doubt" WHERE "resolvedAt" >= ${from} AND "resolvedAt" < ${to} AND "deletedAt" IS NULL GROUP BY 1
         UNION ALL
-        SELECT to_char("submittedAt" AT TIME ZONE ${timeZone}, 'YYYY-MM-DD'), 0, 0, 0, count(*)
-        FROM "core"."SharedQuizAttempt" WHERE "submittedAt" >= ${from} AND "submittedAt" < ${to} GROUP BY 1
-      )
-      SELECT day, sum(learning)::int AS "learningSeconds", sum(asked)::int AS "doubtsAsked", sum(answered)::int AS "doubtsAnswered", sum(attempts)::int AS "quizAttempts"
-      FROM rows GROUP BY day`
+        SELECT ${day(Prisma.sql`a."createdAt"`)}, ${m.doubtAnswers}::text, count(*)::int
+        FROM "core"."DoubtAnswer" a JOIN "core"."Doubt" d ON d.id = a."doubtId"
+        WHERE a."createdAt" >= ${from} AND a."createdAt" < ${to} AND a."deletedAt" IS NULL AND d."deletedAt" IS NULL GROUP BY 1
+        UNION ALL
+        SELECT day, ${m.quizAttempts}::text, count(*)::int FROM (
+          SELECT ${day(Prisma.sql`"submittedAt"`)} AS day FROM "core"."QuizAttempt" WHERE "submittedAt" >= ${from} AND "submittedAt" < ${to}
+          UNION ALL
+          SELECT ${day(Prisma.sql`"submittedAt"`)} FROM "core"."SharedQuizAttempt" WHERE "submittedAt" >= ${from} AND "submittedAt" < ${to}
+        ) q GROUP BY 1
+        UNION ALL
+        SELECT ${day(Prisma.sql`"createdAt"`)}, ${m.groups}::text, count(*)::int
+        FROM "core"."Group" WHERE "createdAt" >= ${from} AND "createdAt" < ${to} AND "deletedAt" IS NULL GROUP BY 1
+        UNION ALL
+        SELECT ${day(Prisma.sql`"createdAt"`)}, ${m.classrooms}::text, count(*)::int
+        FROM "core"."Classroom" WHERE "createdAt" >= ${from} AND "createdAt" < ${to} AND "deletedAt" IS NULL GROUP BY 1
+        UNION ALL
+        SELECT ${day(Prisma.sql`"createdAt"`)}, ${m.groupPosts}::text, count(*)::int
+        FROM "core"."GroupPost" WHERE "createdAt" >= ${from} AND "createdAt" < ${to} AND "deletedAt" IS NULL GROUP BY 1
+        UNION ALL
+        SELECT ${day(Prisma.sql`"createdAt"`)}, ${m.classroomPosts}::text, count(*)::int
+        FROM "core"."ClassroomPost" WHERE "createdAt" >= ${from} AND "createdAt" < ${to} AND "deletedAt" IS NULL GROUP BY 1`,
+      // How long each doubt answered in the window waited, to the millisecond (timestamps keep milliseconds): the
+      // median over any set of days comes out exactly as one over the rows themselves.
+      this.db.$queryRaw<{ day: string; ms: string; doubts: number }[]>`
+        WITH first_answers AS (${FIRST_ANSWERS})
+        SELECT ${day(Prisma.sql`"answeredAt"`)} AS day, round(extract(epoch FROM "answeredAt" - "askedAt") * 1000)::bigint::text AS ms, count(*)::int AS doubts
+        FROM first_answers WHERE "answeredAt" >= ${from} AND "answeredAt" < ${to}
+        GROUP BY 1, 2`,
+    ])
+    return [
+      ...counts.filter((row) => row.value > 0).map((row) => ({ day: row.day, metric: row.metric, dimension: '', value: row.value })),
+      ...firstAnswers.map((row) => ({ day: row.day, metric: m.firstAnswerMs, dimension: row.ms, value: row.doubts })),
+    ]
   }
 
   async learnerDays(fromDay: string, toDay: string): Promise<{ day: string; userIds: string[] }[]> {
@@ -64,30 +94,6 @@ export class CoreAdminStats implements CoreAdminStatsPort {
       FROM "core"."LearningDay"
       WHERE day >= ${fromDay}::date AND day <= ${toDay}::date AND events > 0
       GROUP BY day`
-  }
-
-  async content(w: AdminDayWindow): Promise<CoreContentStats> {
-    const [doubts, places] = await Promise.all([
-      this.db.$queryRaw<{ asked: number; answered: number; resolved: number; answers: number; medianHours: number | null }[]>`
-        WITH first_answers AS (${FIRST_ANSWERS})
-        SELECT (SELECT count(*) FROM "core"."Doubt" WHERE "createdAt" >= ${w.from} AND "createdAt" < ${w.to} AND "deletedAt" IS NULL)::int AS asked,
-               (SELECT count(*) FROM first_answers WHERE "answeredAt" >= ${w.from} AND "answeredAt" < ${w.to})::int AS answered,
-               (SELECT count(*) FROM "core"."Doubt" WHERE "resolvedAt" >= ${w.from} AND "resolvedAt" < ${w.to} AND "deletedAt" IS NULL)::int AS resolved,
-               (SELECT count(*) FROM "core"."DoubtAnswer" a JOIN "core"."Doubt" d ON d.id = a."doubtId"
-                 WHERE a."createdAt" >= ${w.from} AND a."createdAt" < ${w.to} AND a."deletedAt" IS NULL AND d."deletedAt" IS NULL)::int AS answers,
-               (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM "answeredAt" - "askedAt") / 3600)
-                 FROM first_answers WHERE "answeredAt" >= ${w.from} AND "answeredAt" < ${w.to})::float8 AS "medianHours"`,
-      this.db.$queryRaw<{ groups: number; classrooms: number; groupPosts: number; classroomPosts: number }[]>`
-        SELECT (SELECT count(*) FROM "core"."Group" WHERE "createdAt" >= ${w.from} AND "createdAt" < ${w.to} AND "deletedAt" IS NULL)::int AS groups,
-               (SELECT count(*) FROM "core"."Classroom" WHERE "createdAt" >= ${w.from} AND "createdAt" < ${w.to} AND "deletedAt" IS NULL)::int AS classrooms,
-               (SELECT count(*) FROM "core"."GroupPost" WHERE "createdAt" >= ${w.from} AND "createdAt" < ${w.to} AND "deletedAt" IS NULL)::int AS "groupPosts",
-               (SELECT count(*) FROM "core"."ClassroomPost" WHERE "createdAt" >= ${w.from} AND "createdAt" < ${w.to} AND "deletedAt" IS NULL)::int AS "classroomPosts"`,
-    ])
-    const d = doubts[0] ?? { asked: 0, answered: 0, resolved: 0, answers: 0, medianHours: null }
-    return {
-      doubts: { asked: d.asked, answered: d.answered, resolved: d.resolved, answers: d.answers, medianHoursToFirstAnswer: d.medianHours == null ? null : Number(d.medianHours) },
-      places: places[0] ?? { groups: 0, classrooms: 0, groupPosts: 0, classroomPosts: 0 },
-    }
   }
 
   async learningTopicKeys(fromDay: string, toDay: string): Promise<string[]> {

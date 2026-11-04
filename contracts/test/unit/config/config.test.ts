@@ -156,6 +156,14 @@ describe('workerConfigSchema', () => {
     expect(cfg.LEGACY_FIREBASE_PROJECT_ID).toBe('learnvianotes-old')
     expect(() => loadConfig(workerConfigSchema, { ...valid, S3_BUCKET: undefined })).toThrow(/S3_BUCKET/)
   })
+
+  it('rolls the admin metrics up at 02:00 IST over the last 3 days unless told otherwise (ADR-0106)', () => {
+    expect(loadConfig(workerConfigSchema, valid)).toMatchObject({ METRICS_ROLLUP_CRON: '30 20 * * *', METRICS_ROLLUP_DAYS: 3 })
+    expect(loadConfig(workerConfigSchema, { ...valid, METRICS_ROLLUP_CRON: ' 0 21 * * * ', METRICS_ROLLUP_DAYS: '7' })).toMatchObject({ METRICS_ROLLUP_CRON: '0 21 * * *', METRICS_ROLLUP_DAYS: 7 })
+    expect(() => loadConfig(workerConfigSchema, { ...valid, METRICS_ROLLUP_CRON: 'daily' })).toThrow(/METRICS_ROLLUP_CRON/)
+    expect(() => loadConfig(workerConfigSchema, { ...valid, METRICS_ROLLUP_DAYS: '0' })).toThrow(/METRICS_ROLLUP_DAYS/)
+    expect(() => loadConfig(workerConfigSchema, { ...valid, METRICS_ROLLUP_DAYS: '32' })).toThrow(/METRICS_ROLLUP_DAYS/)
+  })
 })
 
 describe('mobileConfigSchema', () => {

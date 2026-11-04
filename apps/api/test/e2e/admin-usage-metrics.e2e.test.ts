@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
-import { STUDY_PUBLISHER_ID } from '@lvn-backend/users'
+import { STUDY_PUBLISHER_ID, UsersMaintenance } from '@lvn-backend/users'
 import { createTestApp, type TestApp } from '../support/app'
 import { seedUser, tokenFor } from '../support/seed'
 
@@ -330,6 +330,64 @@ describe('admin usage metrics', () => {
       for (const token of [studentToken, teacherToken]) expect((await t.gql(query, variables, token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     }
     expect((await t.gql(FUNNEL, { steps: ['signed_up'] }, studentToken)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+  })
+
+  it('gives the same numbers from the daily rollup as from the tables, and reads past days from it (ADR-0106)', async () => {
+    const queries: [string, string, object][] = [
+      ['adminGrowth', GROWTH, window],
+      ['adminGrowth', GROWTH, { ...window, interval: 'WEEK' }],
+      ['adminEngagement', ENGAGEMENT, window],
+      ['adminEngagement', ENGAGEMENT, { ...window, interval: 'WEEK' }],
+      ['adminContentStats', CONTENT, window],
+      ['adminVerificationStats', VERIFICATION, window],
+    ]
+    // When it was computed, and the queue's age now, move between two reads; nothing else may.
+    const settled = (value: unknown) => JSON.parse(JSON.stringify(value, (key, v) => (key === 'generatedAt' || key === 'oldestPendingHours' ? undefined : v)))
+    const read = (app: TestApp) =>
+      Promise.all(
+        queries.map(async ([name, query, variables]) => {
+          const res = await app.gql<Record<string, unknown>>(query, variables, adminToken)
+          expect(res.errors).toBeUndefined()
+          return settled(res.data![name])
+        }),
+      )
+    // Fresh API processes on the same database, so no result is cached from before.
+    const live = await createTestApp({}, { resetDatabase: false })
+    const rolled = await createTestApp({}, { resetDatabase: false })
+    try {
+      expect(await db.dailyMetric.count()).toBe(0)
+      const fromTables = await read(live)
+
+      const yesterday = shift(today, -1)
+      const report = await t.app.get(UsersMaintenance).backfillMetrics(shift(today, -45), yesterday)
+      expect(report).toMatchObject({ fromDay: shift(today, -45), toDay: yesterday, days: 45 })
+      expect(await db.dailyMetric.count({ where: { metric: '_rollup', dimension: 'day' } })).toBe(45)
+      expect(await db.dailyMetric.count({ where: { day: { gte: dateOnly(today) } } })).toBe(0)
+      // Counts only: no account id or email in any row.
+      for (const row of await db.dailyMetric.findMany()) {
+        expect(row.dimension).not.toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-/)
+        expect(row.dimension).not.toContain('@')
+      }
+
+      expect(await read(rolled)).toEqual(fromTables)
+
+      // Past days are read from the rollup: a stored count changed by hand shows.
+      const d1 = { day: dateOnly(D1), metric: 'sign_ups', dimension: '' }
+      await db.dailyMetric.update({ where: { day_metric_dimension: d1 }, data: { value: 107n } })
+      const fromD1 = { from: at(D1, '00:00').toISOString(), to: window.to }
+      const tampered = (await rolled.gql<{ adminGrowth: Growth }>(GROWTH, fromD1, adminToken)).data!.adminGrowth
+      expect(tampered.series[0]).toMatchObject({ date: D1, signUps: 107 })
+      // A day without its marker is counted from the tables again.
+      await db.dailyMetric.delete({ where: { day_metric_dimension: { day: dateOnly(D1), metric: '_rollup', dimension: 'day' } } })
+      const again = (await rolled.gql<{ adminGrowth: Growth }>(GROWTH, { ...fromD1, to: at(D2, '12:00').toISOString() }, adminToken)).data!.adminGrowth
+      expect(again.series).toEqual([
+        { date: D1, signUps: 7, emailVerified: 0, registrationsCompleted: 0, verifications: 0 },
+        { date: D2, signUps: 6, emailVerified: 9, registrationsCompleted: 2, verifications: 1 },
+      ])
+    } finally {
+      await live.close()
+      await rolled.close()
+    }
   })
 })
 

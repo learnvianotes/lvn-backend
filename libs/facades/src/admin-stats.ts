@@ -1,6 +1,6 @@
 import type { FilePurposeKind } from './files'
 
-/** Counts for the platform-admin dashboard (ADR-0101, ADR-0105). No personal data: totals only. */
+/** Counts for the platform-admin dashboard (ADR-0101, ADR-0105, ADR-0106). No personal data: totals only. */
 
 /**
  * Whole calendar days in one time zone (ADR-0105). `from` is midnight at the start of `fromDay` and `to` midnight after
@@ -16,15 +16,37 @@ export interface AdminDayWindow {
 
 export const NOTES_ADMIN_STATS = Symbol('NOTES_ADMIN_STATS')
 
-export interface NotesContentStats {
-  /** Notes created in the window that are not deleted, by their visibility now. Synced study pages are left out. */
-  notes: { created: number; public: number; unlisted: number; shared: number; private: number }
-  /** Files people uploaded in the window (the upload arrived). Server-made exports are left out. */
-  uploads: { files: number; bytes: bigint; byPurpose: { purpose: FilePurposeKind; files: number; bytes: bigint; users: number }[] }
-  /** Scan results of the files uploaded in the window. `failed` is ERROR or FAILED. */
-  scans: { clean: number; infected: number; failed: number; pending: number }
-  /** Direct shares with a person, shares to a group or class, and saves, made in the window. */
-  sharing: { noteShares: number; placeShares: number; saves: number }
+/**
+ * One count for one day (ADR-0106). `metric` names what is counted and `dimension` is a breakdown key ('' when there
+ * is none). Zero counts are left out. The users context keeps these in users.daily_metrics: counts only, never an
+ * account id or free text.
+ */
+export interface AdminDailyCount {
+  day: string
+  metric: string
+  dimension: string
+  value: number
+}
+
+/** The per-day counts NotesAdminStats.dailyCounts returns (ADR-0106). Days are days of the window's time zone. */
+export const NOTES_DAILY_METRICS = {
+  /** Notes created that day and not deleted, by visibility now (PUBLIC, UNLISTED, SHARED, PRIVATE). Study pages are left out. */
+  notesCreated: 'notes_created',
+  /** Scan results (clean, infected, failed, pending) of files people uploaded that day that are still stored; not exports. */
+  uploadScans: 'upload_scans',
+  /** Direct shares with one person (not the CONNECTIONS fan-out rows). */
+  noteShares: 'note_shares',
+  /** Shares to a group or class. */
+  placeShares: 'place_shares',
+  saves: 'saves',
+} as const
+
+/** Files people uploaded in a window that are still stored (the upload arrived). Server-made exports are left out. */
+export interface NotesUploadStats {
+  files: number
+  bytes: bigint
+  /** `users` is distinct uploaders over the whole window: the small-group rule needs it, so it is never summed from days. */
+  byPurpose: { purpose: FilePurposeKind; files: number; bytes: bigint; users: number }[]
 }
 
 export interface SubjectActivity {
@@ -50,10 +72,10 @@ export interface NotesAdminStats {
     /** Remote scans that used up their attempts. */
     failedScans: number
   }>
-  /** Notes created each day of the window (not deleted, not the synced study pages). Days with none are left out. */
-  notesPerDay(window: AdminDayWindow): Promise<{ day: string; notes: number }[]>
-  /** What was created in the window. */
-  content(window: AdminDayWindow): Promise<NotesContentStats>
+  /** NOTES_DAILY_METRICS for each day of the window. */
+  dailyCounts(window: AdminDayWindow): Promise<AdminDailyCount[]>
+  /** Uploads in the window, by purpose with distinct uploaders. */
+  uploads(window: AdminDayWindow): Promise<NotesUploadStats>
   /** Per subject: notes created in the window (NOTES) or saves made in it (SAVES). A note counts once per subject. */
   subjectActivity(window: AdminDayWindow, by: 'NOTES' | 'SAVES'): Promise<SubjectActivity[]>
   /** The subject of each learning topic key (`topic:<id>`, `core:<subject>/<topic>`). Unknown keys are left out. */
@@ -82,26 +104,34 @@ export interface AiAdminStats {
 
 export const CORE_ADMIN_STATS = Symbol('CORE_ADMIN_STATS')
 
-export interface CoreContentStats {
-  /**
-   * Doubts asked in the window; doubts whose first answer (by someone other than the asker) came in it; doubts resolved
-   * in it; answers posted in it; and the median hours from asking to that first answer, for those answered in it.
-   */
-  doubts: { asked: number; answered: number; resolved: number; answers: number; medianHoursToFirstAnswer: number | null }
-  /** Groups, classes and their posts created in the window and not deleted. */
-  places: { groups: number; classrooms: number; groupPosts: number; classroomPosts: number }
-}
+/** The per-day counts CoreAdminStats.dailyCounts returns (ADR-0106). */
+export const CORE_DAILY_METRICS = {
+  /** LearningDay.learningSeconds (focus, reviews, quizzes) on the learner's own day; imported old-site time left out. */
+  learningSeconds: 'learning_seconds',
+  /** Doubts asked that day and not deleted. */
+  doubtsAsked: 'doubts_asked',
+  /** Doubts whose first answer from someone other than the asker came that day (doubt and answer not deleted). */
+  doubtsAnswered: 'doubts_answered',
+  /** The same doubts by milliseconds from asking to that first answer: `dimension` is the duration, `value` the doubts. */
+  firstAnswerMs: 'doubt_first_answer_ms',
+  doubtsResolved: 'doubts_resolved',
+  /** Answers posted that day (answer and doubt not deleted). */
+  doubtAnswers: 'doubt_answers',
+  /** Class-quiz and shared-quiz attempts submitted. */
+  quizAttempts: 'quiz_attempts',
+  /** Groups, classes and their posts created that day and not deleted. */
+  groups: 'groups_created',
+  classrooms: 'classrooms_created',
+  groupPosts: 'group_posts',
+  classroomPosts: 'classroom_posts',
+} as const
 
 export interface CoreAdminStats {
   counts(): Promise<{ openReports: number; openAppeals: number; groups: number; classrooms: number }>
-  /**
-   * Per day of the window: learning seconds (LearningDay, by the learner's own day), doubts asked, doubts first
-   * answered, and quiz attempts (class and shared quizzes). Days with nothing are left out.
-   */
-  activityPerDay(window: AdminDayWindow): Promise<{ day: string; learningSeconds: number; doubtsAsked: number; doubtsAnswered: number; quizAttempts: number }[]>
+  /** CORE_DAILY_METRICS for each day of the window. Learning is counted on the stored day, fromDay to toDay. */
+  dailyCounts(window: AdminDayWindow): Promise<AdminDailyCount[]>
   /** Who recorded learning activity on each day from `fromDay` to `toDay` (inclusive), by the learner's own day. */
   learnerDays(fromDay: string, toDay: string): Promise<{ day: string; userIds: string[] }[]>
-  content(window: AdminDayWindow): Promise<CoreContentStats>
   /** The topic keys people spent time on from `fromDay` to `toDay`. */
   learningTopicKeys(fromDay: string, toDay: string): Promise<string[]>
   /** Seconds and distinct people per group of topic keys from `fromDay` to `toDay`. A key belongs to one group. */

@@ -1,6 +1,7 @@
 # Usage metrics for the platform-admin dashboard (ADR-0105), computed from tables the product already keeps. No new
 # tracking. Aggregates only: no account, note or document is identified, and a breakdown group with fewer than 5
 # distinct people is left out (k-anonymity threshold 5). Days are calendar days in Asia/Kolkata (IST).
+# Past days are read from the nightly rollup (ADR-0106) when it has them; today and any day it lacks are counted live.
 
 "How a series is grouped. WEEK starts on Monday (ISO); the first week starts on the window's first day and can be shorter."
 enum MetricsInterval { DAY WEEK }
@@ -233,6 +234,43 @@ type AdminVerificationStats {
   hiddenSmallGroups: Int!
 }
 
+"How retention cohorts are grouped by sign-up date. WEEK: IST weeks, Monday to Sunday."
+enum CohortInterval { WEEK }
+
+"""
+The people who signed up in one week and the share of them active in each week since. Active as in AdminEngagement
+(a session started or refreshed, a usage event, or learning that day); accounts that opted out of analytics and
+deleted accounts are in no cohort.
+"""
+type AdminRetentionCohort {
+  "The sign-up week's Monday, YYYY-MM-DD (IST)."
+  start: String!
+  "People who signed up that week, as last counted. Always at least 5."
+  size: Int!
+  """
+  returned[n] is the share (0 to 1, three decimals) of the cohort active in the n-th week after the sign-up week;
+  returned[0] is the sign-up week itself and the last value is this week, still in progress. Each share is over the
+  cohort as it was when that week was counted.
+  """
+  returned: [Float!]!
+}
+
+"""
+Weekly retention, oldest cohort first, the last one this week. Past weeks come from the nightly rollup, this week is
+counted live. A cohort with fewer than 5 people (at any week counted) is left out and counted in hiddenSmallGroups; a
+week nobody signed up in is left out and not counted. Cached in each API process for about 5 minutes.
+"""
+type AdminRetention {
+  cohortInterval: CohortInterval!
+  timeZone: String!
+  "The first and the last (this) sign-up week asked for, Mondays, YYYY-MM-DD."
+  firstWeek: String!
+  lastWeek: String!
+  generatedAt: DateTime!
+  cohorts: [AdminRetentionCohort!]!
+  hiddenSmallGroups: Int!
+}
+
 extend type Query {
   "Platform admins. Sign-ups and verifications per DAY (when omitted) or WEEK. Omit from and to for the last 30 days. At most 366 days."
   adminGrowth(from: DateTime, to: DateTime, interval: MetricsInterval): AdminGrowth!
@@ -244,4 +282,6 @@ extend type Query {
   adminTopSubjects(from: DateTime, to: DateTime, by: AdminSubjectMetric!, first: Int): AdminTopSubjects!
   "Platform admins. Verification requests and decisions in the window and the queue now. At most 366 days."
   adminVerificationStats(from: DateTime, to: DateTime): AdminVerificationStats!
+  "Platform admins. Retention by sign-up week: the last `weeks` weeks (1 to 52, 12 when omitted), this week included."
+  adminRetention(cohortInterval: CohortInterval = WEEK, weeks: Int): AdminRetention!
 }

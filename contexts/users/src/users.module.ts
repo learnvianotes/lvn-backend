@@ -5,6 +5,7 @@ import { AccessGate } from './application/access-gate'
 import { AdminService } from './application/admin.service'
 import { AdminMetricsService } from './application/admin-metrics.service'
 import { AdminUsageMetricsService } from './application/admin-usage-metrics.service'
+import { DailyMetricsService } from './application/daily-metrics.service'
 import { AppSettingsService } from './application/app-settings.service'
 import { PlanAdminService } from './application/plan-admin.service'
 import { PublicPlansService } from './application/public-plans.service'
@@ -99,6 +100,7 @@ export class UsersModule {
         AppSettingsService,
         AdminMetricsService,
         AdminUsageMetricsService,
+        DailyMetricsService,
         PlanAdminService,
         PublicPlansService,
         AdminService,

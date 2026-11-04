@@ -5,6 +5,7 @@
 - Deciders: Backend; owner
 - Spec sections: §6.1 and §6.5 (contexts talk through facades), §6.3 (short caches), §14 (first-party analytics, DPDP)
 - Amends: ADR-0101 (the admin dashboard gains usage metrics; `adminFunnel` gains database steps)
+- Amended by: ADR-0106 (past days are read from the `users.daily_metrics` rollup; `adminRetention` cohorts)
 
 ## Context
 
@@ -84,7 +85,9 @@ queries. Results for today can be up to 5 minutes old in a process.
 Every call scans raw rows in the window. `Session` has no index on `createdAt`, and active people, MAU and
 `returned_d7` move account ids between contexts in memory; this is fine at today's size and is what the step-5
 `daily_metrics` rollup replaces (past days from rollups, today live), together with retention cohorts. Revisit then,
-or sooner if `adminEngagement` takes over a second on the production box.
+or sooner if `adminEngagement` takes over a second on the production box. ADR-0106 (2026-11-04) adds that rollup:
+growth, engagement, content and verification read past days from it and count today live; the definitions above are
+unchanged.
 
 Hiding a small group does not stop subtraction: a total minus the shown groups can reveal the hidden ones' sum.
 Admins can already see individual accounts in the admin tools, so the threshold keeps the dashboard from singling

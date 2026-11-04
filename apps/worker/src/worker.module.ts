@@ -6,7 +6,7 @@ import { QueueModule } from '@lvn-backend/queue'
 import { RedisModule } from '@lvn-backend/redis'
 import { StorageModule } from '@lvn-backend/storage'
 import { contextModules, facades } from './contexts'
-import { MaintenanceJobs } from './maintenance.jobs'
+import { MaintenanceJobs, METRICS_ROLLUP } from './maintenance.jobs'
 import { SearchJobs } from './search.jobs'
 import { AiJobs } from './ai.jobs'
 import { DataJobs } from './data.jobs'
@@ -35,7 +35,10 @@ export class WorkerModule {
         facades(),
         ...contextModules(config),
       ],
-      providers: options.jobs === false ? [] : [MaintenanceJobs, SearchJobs, AiJobs, DataJobs, PdfJobs, MediaJobs, VerificationJobs],
+      providers:
+        options.jobs === false
+          ? []
+          : [{ provide: METRICS_ROLLUP, useValue: { cron: config.METRICS_ROLLUP_CRON, days: config.METRICS_ROLLUP_DAYS } }, MaintenanceJobs, SearchJobs, AiJobs, DataJobs, PdfJobs, MediaJobs, VerificationJobs],
     }
   }
 }

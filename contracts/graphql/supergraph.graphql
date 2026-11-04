@@ -685,6 +685,49 @@ type AdminPlanPayload
 }
 
 """
+Weekly retention, oldest cohort first, the last one this week. Past weeks come from the nightly rollup, this week is
+counted live. A cohort with fewer than 5 people (at any week counted) is left out and counted in hiddenSmallGroups; a
+week nobody signed up in is left out and not counted. Cached in each API process for about 5 minutes.
+"""
+type AdminRetention
+  @join__type(graph: USERS)
+{
+  cohortInterval: CohortInterval!
+  timeZone: String!
+
+  """
+  The first and the last (this) sign-up week asked for, Mondays, YYYY-MM-DD.
+  """
+  firstWeek: String!
+  lastWeek: String!
+  generatedAt: DateTime!
+  cohorts: [AdminRetentionCohort!]!
+  hiddenSmallGroups: Int!
+}
+
+"""
+The people who signed up in one week and the share of them active in each week since. Active as in AdminEngagement
+(a session started or refreshed, a usage event, or learning that day); accounts that opted out of analytics and
+deleted accounts are in no cohort.
+"""
+type AdminRetentionCohort
+  @join__type(graph: USERS)
+{
+  """The sign-up week's Monday, YYYY-MM-DD (IST)."""
+  start: String!
+
+  """People who signed up that week, as last counted. Always at least 5."""
+  size: Int!
+
+  """
+  returned[n] is the share (0 to 1, three decimals) of the cohort active in the n-th week after the sign-up week;
+  returned[0] is the sign-up week itself and the last value is this week, still in progress. Each share is over the
+  cohort as it was when that week was counted.
+  """
+  returned: [Float!]!
+}
+
+"""
 Scan results of those uploads. failed is a scanner error or a scan that used up its attempts.
 """
 type AdminScanCounts
@@ -2274,6 +2317,15 @@ enum ClientPlatform
 {
   WEB @join__enumValue(graph: USERS)
   MOBILE @join__enumValue(graph: USERS)
+}
+
+"""
+How retention cohorts are grouped by sign-up date. WEEK: IST weeks, Monday to Sunday.
+"""
+enum CohortInterval
+  @join__type(graph: USERS)
+{
+  WEEK @join__enumValue(graph: USERS)
 }
 
 type Comment
@@ -6149,6 +6201,11 @@ type Query
   Platform admins. Verification requests and decisions in the window and the queue now. At most 366 days.
   """
   adminVerificationStats(from: DateTime, to: DateTime): AdminVerificationStats! @join__field(graph: USERS)
+
+  """
+  Platform admins. Retention by sign-up week: the last `weeks` weeks (1 to 52, 12 when omitted), this week included.
+  """
+  adminRetention(cohortInterval: CohortInterval = WEEK, weeks: Int): AdminRetention! @join__field(graph: USERS)
 
   """Platform admins. Counts for the dashboard."""
   adminMetrics(from: DateTime, to: DateTime): AdminMetrics! @join__field(graph: USERS)

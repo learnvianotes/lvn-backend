@@ -33,6 +33,10 @@ Each with `node apps/worker/dist/cli.js` in the worker's container:
   `queue:resume <queue>`.
 - **Run a scheduled job now** (housekeeping after an outage, or to check one): `queue:run <queue> <job>`, e.g.
   `queue:run users.maintenance delete-accounts`.
+- **The admin metrics rollup missed nights** (ADR-0106; the worker was down longer than `METRICS_ROLLUP_DAYS`):
+  `metrics:backfill <from> <to>` with past IST days, e.g. `metrics:backfill 2026-10-20 2026-11-12`. It runs in the
+  CLI's own process, not on the queue, a month at a time, and rewrites days already rolled up with the same rows.
+  Until then the dashboard counts the missing days from the tables, so nothing is wrong, only slower.
 - **Drop a poisoned job** (it fails every time and blocks nothing else, but fills the failed set): note its id and
   reason from `queue:failed` in the incident log, then remove it with BullMQ's `getJob(id)` and `remove()`.
 - **Empty a queue** only when its jobs are recomputed anyway: `notes.search` (reindex instead), `core.engagement`

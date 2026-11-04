@@ -87,6 +87,8 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `TRUST_PROXY_HOPS` | api | no | `0` | Proxies in front of the API whose `X-Forwarded-For` is trusted for the client address used by rate limits: `0` locally, `1` behind the ALB, `2` behind CloudFront + ALB. Higher than the real number lets clients choose their address |
 | `WORKER_HEALTH_PORT` | worker | no | `4001` | `/health/live` for the ECS health check |
 | `LEGACY_FIREBASE_PROJECT_ID` | worker | no | — | Old Firebase project read once by `pnpm --filter @lvn-backend/worker legacy:snapshot` (ADR-0023); credentials from `GOOGLE_APPLICATION_CREDENTIALS` (a read-only service account in Secrets Manager) |
+| `METRICS_ROLLUP_CRON` | worker | no | `30 20 * * *` | ADR-0106: when the nightly rollup of the admin usage metrics runs, a five-field cron pattern in UTC (the default is 02:00 IST). Job `users.maintenance` / `rollup-metrics` |
+| `METRICS_ROLLUP_DAYS` | worker | no | `3` | ADR-0106: how many days before today (IST) each rollup recomputes, 1 to 31; today is never rolled up. Usage events can arrive up to 7 days late, so `7` also catches the latest of those. Older days: `pnpm --filter @lvn-backend/worker metrics:backfill <from> <to>` |
 | `S3_ENDPOINT` | api, worker | no | — | S3-compatible endpoint: `http://localhost:59000` for RustFS locally (ADR-0032); Cloudflare R2's `https://<account>.r2.cloudflarestorage.com` on Lightsail (ADR-0096) |
 | `S3_REGION` | api, worker | yes | — | `us-east-1` locally; `auto` for R2 (ADR-0096) |
 | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | api, worker | no (secret) | — | Local credentials; on AWS the task role is used instead |
