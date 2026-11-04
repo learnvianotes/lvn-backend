@@ -125,6 +125,8 @@ export class AccountDeletionService {
           passwordHash: null,
           emailVerifiedAt: null,
           dateOfBirth: null,
+          declaredAge: null,
+          ageDeclaredAt: null,
           verifiedAt: null,
           verificationMethod: null,
           globalRole: 'STUDENT',

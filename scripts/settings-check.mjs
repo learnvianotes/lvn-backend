@@ -58,7 +58,7 @@ ok(!!introspection.errors?.length && !introspection.data?.__schema, 'the API ref
 const { termsVersion } = await gql('{ termsVersion }')
 const stamp = Date.now()
 const up = await gql('mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken } userErrors { message } } }', {
-  input: { email: `settings-${stamp}@example.com`, password: `settings passphrase ${stamp}`, displayName: 'Settings Check', dateOfBirth: '2000-01-01', acceptedTermsVersion: termsVersion },
+  input: { email: `settings-${stamp}@example.com`, password: `settings passphrase ${stamp}`, displayName: 'Settings Check', age: 26, acceptedTermsVersion: termsVersion },
 })
 const token = up.signUp.session.accessToken
 // Storage.
@@ -83,7 +83,7 @@ if (opt('--vm')) {
 
 // A fresh account, whose minute nothing else has spent.
 const rate = (await gql('mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken } userErrors { message } } }', {
-  input: { email: `settings-rate-${stamp}@example.com`, password: `settings passphrase ${stamp}`, displayName: 'Settings Rate', dateOfBirth: '2000-01-01', acceptedTermsVersion: termsVersion },
+  input: { email: `settings-rate-${stamp}@example.com`, password: `settings passphrase ${stamp}`, displayName: 'Settings Rate', age: 26, acceptedTermsVersion: termsVersion },
 })).signUp.session.accessToken
 let accepted = 0
 for (let sent = 0; sent < 600; sent += 50) {

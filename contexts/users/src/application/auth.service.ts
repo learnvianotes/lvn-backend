@@ -6,7 +6,6 @@ import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { ageRestrictedError } from '../domain/account-status'
 import {
-  dateOfBirthSchema,
   displayNameSchema,
   emailSchema,
   isBelowMinimumAge,
@@ -17,6 +16,7 @@ import {
 import { clientNetwork } from '../domain/network'
 import { isStudyPublisher } from '../domain/study-publisher'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { readDeclaredAge } from './age'
 import { freeHandle } from './handles'
 import { parseField } from './input'
 import { InstitutionalEmailService } from './institutional-email.service'
@@ -34,7 +34,10 @@ export interface SignUpInput {
   email: string
   password: string
   displayName: string
-  dateOfBirth: string
+  /** Whole years, 1–120 (ADR-0104). */
+  age?: number | null
+  /** Deprecated (ADR-0104): apps from before it send this instead of `age`. Ignored when `age` is sent. */
+  dateOfBirth?: string | null
   institutionalEmail?: string | null
   acceptedTermsVersion: string
 }
@@ -73,7 +76,8 @@ export class AuthService {
   async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string): Promise<SignUpResult> {
     const email = parseField(emailSchema, input.email, 'email')
     const displayName = parseField(displayNameSchema, input.displayName, 'displayName')
-    const dateOfBirth = parseField(dateOfBirthSchema, input.dateOfBirth, 'dateOfBirth')
+    // ADR-0104: the age typed in whole years, or the age today from an older app's date of birth. No date is stored.
+    const declared = readDeclaredAge(input)
     // ADR-0103: the version in effect now. The consent rows record this same value.
     const termsVersion = this.terms.current()
     if (input.acceptedTermsVersion !== termsVersion) {
@@ -84,10 +88,10 @@ export class AuthService {
     await this.access.assertAllowed(email)
     const role = (await this.access.roleFor(email)) ?? 'STUDENT'
     // Below the minimum the account is kept as AGE_BLOCKED (no session). An address that already has an account is not changed.
-    if (isBelowMinimumAge(dateOfBirth, this.settings.minimumAge())) {
+    if (isBelowMinimumAge(declared.value.declaredAge, this.settings.minimumAge())) {
       const passwordHash = await this.passwords.hash(input.password)
-      await this.ageBlock.holdSignUp({ email, displayName, dateOfBirth, passwordHash, globalRole: role, termsVersion })
-      throw ageRestrictedError(await this.support.email(), ['input', 'dateOfBirth'])
+      await this.ageBlock.holdSignUp({ email, displayName, age: declared.value, passwordHash, globalRole: role, termsVersion })
+      throw ageRestrictedError(await this.support.email(), ['input', declared.field])
     }
     const existing = await this.db.user.findUnique({
       where: { email },
@@ -119,7 +123,7 @@ export class AuthService {
             handle: await freeHandle(tx, displayName),
             displayName,
             passwordHash,
-            dateOfBirth,
+            ...declared.value,
             registrationCompletedAt: new Date(),
             globalRole: role,
           },

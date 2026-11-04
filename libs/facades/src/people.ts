@@ -2,7 +2,7 @@ import type { GlobalRole } from '@lvn/contracts/domain'
 
 /**
  * People, as other contexts need them: finding the person a note is shared with, by handle or email. Answered by the
- * `users` context; nothing private (no email, no date of birth) comes back.
+ * `users` context; nothing private (no email, no date of birth or age) comes back.
  */
 export const PEOPLE = Symbol('PEOPLE')
 
@@ -15,7 +15,7 @@ export interface Person {
 
 /**
  * What people search indexes of an account (ADR-0055). `adultFrom` is the day the account passes the digital-consent
- * age (§15.2): search decides with it who may be found, while the date of birth itself stays in `users`.
+ * age (§15.2): search decides with it who may be found, while the date of birth or declared age (ADR-0104) stays in `users`.
  */
 export interface SearchProfile extends Person {
   headline: string | null
@@ -51,7 +51,7 @@ export interface People {
   followingIds(userId: string): Promise<string[]>
   /** `restricterId` restricts `restrictedId` (ADR-0016): their comments wait for approval and cause no notification. */
   restricts(restricterId: string, restrictedId: string): Promise<boolean>
-  /** People search's documents for these accounts (ADR-0055); deleted accounts and ones without a date of birth are left out. */
+  /** People search's documents for these accounts (ADR-0055); deleted accounts and ones with no known age are left out. */
   searchProfiles(ids: string[]): Promise<SearchProfile[]>
   /** Account ids after `after`, in id order, `take` at a time: for re-indexing everyone (ADR-0055). */
   personIdsAfter(after: string | null, take: number): Promise<string[]>

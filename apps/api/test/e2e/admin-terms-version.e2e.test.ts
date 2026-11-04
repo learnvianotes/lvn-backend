@@ -29,7 +29,7 @@ type SettingPayload = { setting: { key: string; value: string; overridden: boole
 
 const PASSWORD = 'correct horse battery staple'
 let seq = 0
-const signUpInput = (acceptedTermsVersion: string) => ({ email: `terms${Date.now()}${seq++}@example.com`, password: PASSWORD, displayName: 'Asha Rao', dateOfBirth: '2004-05-01', acceptedTermsVersion })
+const signUpInput = (acceptedTermsVersion: string) => ({ email: `terms${Date.now()}${seq++}@example.com`, password: PASSWORD, displayName: 'Asha Rao', age: 22, acceptedTermsVersion })
 
 describe('terms version managed by an admin', () => {
   let t: TestApp

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { Prisma } from '@lvn-backend/prisma-base'
 import { AppError, ErrorCode } from '@lvn-backend/errors'
 import { AccountAdminService, emailHash, type ManagedUser } from '../../src/application/account-admin.service'
-import { AGE_BLOCK_REASON } from '../../src/domain/rules'
+import { AGE_BLOCK_REASON, ageOn } from '../../src/domain/rules'
 import { STUDY_PUBLISHER_EMAIL, STUDY_PUBLISHER_ID } from '../../src/domain/study-publisher'
 
 const ADMIN = 'admin-1'
@@ -14,6 +14,8 @@ type Row = {
   displayName: string
   handle: string
   dateOfBirth: Date | null
+  declaredAge: number | null
+  ageDeclaredAt: Date | null
   accountStatus: 'ACTIVE' | 'AGE_BLOCKED' | 'BLOCKED' | 'SUSPENDED'
   statusReason: string | null
   globalRole: string
@@ -30,6 +32,8 @@ function row(over: Partial<Row> = {}): Row {
     displayName: 'Asha Rao',
     handle: 'asharao',
     dateOfBirth: new Date('2012-01-01T00:00:00Z'),
+    declaredAge: null,
+    ageDeclaredAt: null,
     accountStatus: 'AGE_BLOCKED',
     statusReason: AGE_BLOCK_REASON,
     globalRole: 'STUDENT',
@@ -101,7 +105,7 @@ describe('AccountAdminService', () => {
     const h = harness()
     const listed = await h.service.list(ADMIN, 'AGE_BLOCKED', '  Asha ', 500)
     expect(listed.total).toBe(1)
-    expect(listed.users[0]).toMatchObject({ id: USER, dateOfBirth: '2012-01-01', accountStatus: 'AGE_BLOCKED' })
+    expect(listed.users[0]).toMatchObject({ id: USER, dateOfBirth: '2012-01-01', age: ageOn(new Date('2012-01-01T00:00:00Z')), accountStatus: 'AGE_BLOCKED' })
     expect(h.queries[0]).toMatchObject({
       take: 100,
       where: {
@@ -238,10 +242,84 @@ describe('AccountAdminService', () => {
   })
 })
 
+describe('declared ages (ADR-0104)', () => {
+  /** An account registered with an age, not a date of birth. */
+  const declared = (age: number, over: Partial<Row> = {}) => row({ dateOfBirth: null, declaredAge: age, ageDeclaredAt: new Date(), ...over })
+
+  it('keeps an account age-blocked while the corrected age is still too young', async () => {
+    const h = harness(declared(15))
+    const user = await h.service.update(ADMIN, { userId: USER, age: 16, reason: 'Parent asked for a correction' })
+    expect(user).toMatchObject({ accountStatus: 'AGE_BLOCKED', statusReason: AGE_BLOCK_REASON, age: 16, dateOfBirth: null })
+    expect(h.current()).toMatchObject({ declaredAge: 16, dateOfBirth: null })
+    expect(h.audits[0]).toMatchObject({ action: 'account.admin.updated', metadata: { fields: ['age'], ageUnblocked: false } })
+  })
+
+  it('clears AGE_BLOCKED when the corrected age passes, and records when it was given', async () => {
+    const h = harness(declared(15, { ageDeclaredAt: new Date('2026-01-01T00:00:00Z') }))
+    const before = Date.now()
+    const user = await h.service.update(ADMIN, { userId: USER, age: 19, reason: 'Document shows an adult' })
+    expect(user).toMatchObject({ accountStatus: 'ACTIVE', statusReason: null, age: 19 })
+    expect(h.current().declaredAge).toBe(19)
+    expect(h.current().ageDeclaredAt!.getTime()).toBeGreaterThanOrEqual(before)
+    expect(h.audits[0]!.metadata).toMatchObject({ fields: ['age'], ageUnblocked: true })
+    expect(JSON.stringify(h.audits)).not.toContain('19')
+  })
+
+  it('age-blocks an active account whose corrected age is too young and ends its sessions', async () => {
+    const h = harness(declared(30, { accountStatus: 'ACTIVE', statusReason: null }))
+    const user = await h.service.update(ADMIN, { userId: USER, age: 14, reason: 'Typed the wrong age' })
+    expect(user).toMatchObject({ accountStatus: 'AGE_BLOCKED', age: 14 })
+    expect(h.revoked).toEqual([USER])
+  })
+
+  it.each([0, 121, 17.5])('refuses the age %p before changing anything', async (age) => {
+    const h = harness(declared(15))
+    expect(await rejection(() => h.service.update(ADMIN, { userId: USER, age, reason: 'Fix' }))).toMatchObject({ code: ErrorCode.VALIDATION, field: ['input', 'age'] })
+    expect(h.current()).toMatchObject({ declaredAge: 15, accountStatus: 'AGE_BLOCKED' })
+    expect(h.audits).toEqual([])
+  })
+
+  it('refuses an age for an account whose date of birth decides it, and an age with a date of birth', async () => {
+    const h = harness()
+    expect(await rejection(() => h.service.update(ADMIN, { userId: USER, age: 30, reason: 'Fix' }))).toMatchObject({ code: ErrorCode.VALIDATION, field: ['input', 'age'] })
+    expect(h.current()).toMatchObject({ dateOfBirth: new Date('2012-01-01T00:00:00Z'), declaredAge: null, accountStatus: 'AGE_BLOCKED' })
+    const both = harness(declared(15))
+    expect(await rejection(() => both.service.update(ADMIN, { userId: USER, age: 30, dateOfBirth: '1996-01-01', reason: 'Fix' }))).toMatchObject({ code: ErrorCode.VALIDATION, field: ['input', 'age'] })
+    expect(both.audits).toEqual([])
+  })
+
+  it('lets a date of birth correct a declared age', async () => {
+    const h = harness(declared(15))
+    const user = await h.service.update(ADMIN, { userId: USER, dateOfBirth: '2000-05-01', reason: 'Document shows 2000' })
+    expect(user).toMatchObject({ accountStatus: 'ACTIVE', dateOfBirth: '2000-05-01', age: ageOn(new Date('2000-05-01T00:00:00Z')) })
+  })
+
+  it('points a refused activation at the age', async () => {
+    const h = harness(declared(15))
+    const err = await rejection(() => h.service.setStanding(ADMIN, { userId: USER, status: 'ACTIVE', reason: 'Let them in' }))
+    expect(err).toMatchObject({ code: ErrorCode.VALIDATION, field: ['input', 'age'] })
+    expect(err.message).not.toMatch(/18/)
+    const stillYoung = harness(declared(15, { accountStatus: 'ACTIVE', statusReason: null }))
+    expect(await rejection(() => stillYoung.service.setStanding(ADMIN, { userId: USER, status: 'ACTIVE', reason: 'Already active' }))).toMatchObject({ field: ['input', 'age'] })
+  })
+})
+
 describe('managed user shape', () => {
   it('omits a missing date of birth', async () => {
     const h = harness(row({ dateOfBirth: null, accountStatus: 'ACTIVE', statusReason: null }))
     const listed: { users: ManagedUser[] } = await h.service.list(ADMIN, 'ACTIVE', null, 10)
     expect(listed.users[0]!.dateOfBirth).toBeNull()
+    expect(listed.users[0]!.age).toBeNull()
+  })
+
+  it('shows a declared age counted forward by whole years, and no date of birth', async () => {
+    const twoYearsAgo = new Date()
+    twoYearsAgo.setUTCFullYear(twoYearsAgo.getUTCFullYear() - 2)
+    twoYearsAgo.setUTCDate(twoYearsAgo.getUTCDate() - 1)
+    const h = harness(row({ dateOfBirth: null, declaredAge: 17, ageDeclaredAt: twoYearsAgo, accountStatus: 'ACTIVE', statusReason: null }))
+    const listed: { users: ManagedUser[] } = await h.service.list(ADMIN, 'ACTIVE', null, 10)
+    expect(listed.users[0]).toMatchObject({ dateOfBirth: null, age: 19 })
+    expect(listed.users[0]).not.toHaveProperty('declaredAge')
+    expect(listed.users[0]).not.toHaveProperty('ageDeclaredAt')
   })
 })

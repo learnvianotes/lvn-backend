@@ -36,12 +36,13 @@ function harness(opts: { duplicate?: boolean } = {}) {
   return { service, users, consents, audits, revoked }
 }
 
-const dob = new Date('2012-04-01T00:00:00Z')
+/** ADR-0104: what sign-up and registration pass on, an age in whole years and when it was given. */
+const age = { declaredAge: 14, ageDeclaredAt: new Date('2026-11-04T10:00:00Z') }
 
 describe('AgeBlockService', () => {
   it('creates an age-blocked account with consents and no session', async () => {
     const h = harness()
-    await h.service.holdSignUp({ email: 'young@example.com', displayName: 'Young One', dateOfBirth: dob, passwordHash: 'hash', globalRole: 'STUDENT', termsVersion: '2026-11-03' })
+    await h.service.holdSignUp({ email: 'young@example.com', displayName: 'Young One', age, passwordHash: 'hash', globalRole: 'STUDENT', termsVersion: '2026-11-03' })
     expect(h.users).toHaveLength(1)
     expect(h.users[0]).toMatchObject({
       email: 'young@example.com',
@@ -51,7 +52,10 @@ describe('AgeBlockService', () => {
       analyticsOptOut: true,
       passwordHash: 'hash',
       globalRole: 'STUDENT',
+      declaredAge: 14,
+      ageDeclaredAt: age.ageDeclaredAt,
     })
+    expect(h.users[0]).not.toHaveProperty('dateOfBirth')
     expect(h.users[0]!.registrationCompletedAt).toBeInstanceOf(Date)
     expect(h.consents).toHaveLength(3)
     expect(h.consents).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'TERMS', version: '2026-11-03' })]))
@@ -62,7 +66,7 @@ describe('AgeBlockService', () => {
   it('does not rewrite an account that already has the address', async () => {
     const h = harness()
     h.users.push({ id: 'adult', email: 'meera@example.com', deletedAt: null, displayName: 'Meera Iyer', passwordHash: null })
-    await h.service.holdSignUp({ email: 'meera@example.com', displayName: 'Other', dateOfBirth: dob, passwordHash: 'hash', globalRole: 'STUDENT', termsVersion: '2026-11-03' })
+    await h.service.holdSignUp({ email: 'meera@example.com', displayName: 'Other', age, passwordHash: 'hash', globalRole: 'STUDENT', termsVersion: '2026-11-03' })
     expect(h.users).toHaveLength(1)
     expect(h.users[0]).toMatchObject({ displayName: 'Meera Iyer', passwordHash: null })
     expect(h.audits).toEqual([])
@@ -71,16 +75,17 @@ describe('AgeBlockService', () => {
 
   it('treats a unique-email race as already held', async () => {
     const h = harness({ duplicate: true })
-    await expect(h.service.holdSignUp({ email: 'race@example.com', displayName: 'Race', dateOfBirth: dob, passwordHash: 'hash', globalRole: 'STUDENT', termsVersion: '2026-11-03' })).resolves.toBeUndefined()
+    await expect(h.service.holdSignUp({ email: 'race@example.com', displayName: 'Race', age, passwordHash: 'hash', globalRole: 'STUDENT', termsVersion: '2026-11-03' })).resolves.toBeUndefined()
     expect(h.users).toEqual([])
     expect(h.audits).toEqual([])
   })
 
-  it('holds a provider account, stores the date of birth, and ends its session', async () => {
+  it('holds a provider account, stores the declared age, and ends its session', async () => {
     const h = harness()
     h.users.push({ id: 'google-1', email: 'young@gmail.com', displayName: 'Google', deletedAt: null })
-    await h.service.holdRegistration('google-1', 'Young One', dob, '2026-11-03')
-    expect(h.users[0]).toMatchObject({ displayName: 'Young One', dateOfBirth: dob, accountStatus: 'AGE_BLOCKED', statusReason: AGE_BLOCK_REASON, analyticsOptOut: true })
+    await h.service.holdRegistration('google-1', 'Young One', age, '2026-11-03')
+    expect(h.users[0]).toMatchObject({ displayName: 'Young One', declaredAge: 14, ageDeclaredAt: age.ageDeclaredAt, accountStatus: 'AGE_BLOCKED', statusReason: AGE_BLOCK_REASON, analyticsOptOut: true })
+    expect(h.users[0]).not.toHaveProperty('dateOfBirth')
     expect(h.users[0]!.registrationCompletedAt).toBeInstanceOf(Date)
     expect(h.users[0]!.deletedAt).toBeNull()
     expect(h.revoked).toEqual(['google-1'])

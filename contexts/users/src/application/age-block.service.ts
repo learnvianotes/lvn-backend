@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { AGE_BLOCK_REASON } from '../domain/rules'
+import type { DeclaredAge } from './age'
 import { AuditService } from './audit.service'
 import { freeHandle } from './handles'
 import { SessionService } from './session.service'
 
 /**
  * An under-age sign-up is kept, not discarded (the age gate is recoverable). The row is AGE_BLOCKED: no session is
- * started, and public reads leave it out. An existing account is never rewritten by someone else's date of birth.
+ * started, and public reads leave it out. An existing account is never rewritten by someone else's age.
  */
 @Injectable()
 export class AgeBlockService {
@@ -21,7 +22,7 @@ export class AgeBlockService {
    * Email sign-up. Creates the account when the address is new. Does not sign anyone in. `termsVersion` is the version
    * the caller already checked against TermsVersionProvider (ADR-0103); the consent rows record it.
    */
-  async holdSignUp(input: { email: string; displayName: string; dateOfBirth: Date; passwordHash: string; globalRole: 'STUDENT' | 'TEACHER' | 'MANAGER' | 'PLATFORM_ADMIN'; termsVersion: string }): Promise<void> {
+  async holdSignUp(input: { email: string; displayName: string; age: DeclaredAge; passwordHash: string; globalRole: 'STUDENT' | 'TEACHER' | 'MANAGER' | 'PLATFORM_ADMIN'; termsVersion: string }): Promise<void> {
     const existing = await this.db.user.findUnique({ where: { email: input.email }, select: { id: true, deletedAt: true } })
     if (existing && !existing.deletedAt) return
     const id = newId()
@@ -34,7 +35,8 @@ export class AgeBlockService {
             handle: await freeHandle(tx, input.displayName),
             displayName: input.displayName,
             passwordHash: input.passwordHash,
-            dateOfBirth: input.dateOfBirth,
+            declaredAge: input.age.declaredAge,
+            ageDeclaredAt: input.age.ageDeclaredAt,
             registrationCompletedAt: new Date(),
             globalRole: input.globalRole,
             accountStatus: 'AGE_BLOCKED',
@@ -55,16 +57,17 @@ export class AgeBlockService {
 
   /**
    * Provider registration. The account already exists and may hold a session from the sign-in that created it.
-   * That session ends. The row stays, with the date of birth, so an admin can correct it. `termsVersion` is the
-   * version the caller already checked (ADR-0103).
+   * That session ends. The row stays, with the declared age (ADR-0104), so an admin can correct it. `termsVersion` is
+   * the version the caller already checked (ADR-0103).
    */
-  async holdRegistration(userId: string, displayName: string, dateOfBirth: Date, termsVersion: string): Promise<void> {
+  async holdRegistration(userId: string, displayName: string, age: DeclaredAge, termsVersion: string): Promise<void> {
     await this.db.$transaction([
       this.db.user.update({
         where: { id: userId },
         data: {
           displayName,
-          dateOfBirth,
+          declaredAge: age.declaredAge,
+          ageDeclaredAt: age.ageDeclaredAt,
           registrationCompletedAt: new Date(),
           accountStatus: 'AGE_BLOCKED',
           statusReason: AGE_BLOCK_REASON,

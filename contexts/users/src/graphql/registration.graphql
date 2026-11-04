@@ -82,7 +82,13 @@ input OAuthExchangeInput {
 "After a provider sign-in (no signUp call): the same details, collected once"
 input CompleteRegistrationInput {
   displayName: String!
-  dateOfBirth: String!
+  """
+  Whole years, 1 to 120 (ADR-0104). Required, unless an app from before ADR-0104 sends dateOfBirth instead. When both
+  are sent, age is used and dateOfBirth is ignored.
+  """
+  age: Int
+  "YYYY-MM-DD, from apps released before ADR-0104. The age it gives today is stored, not the date."
+  dateOfBirth: String @deprecated(reason: "Send age, in whole years. Ignored when age is sent.")
   institutionalEmail: String
   acceptedTermsVersion: String!
 }
