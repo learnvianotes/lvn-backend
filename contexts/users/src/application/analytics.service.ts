@@ -124,37 +124,6 @@ export class AnalyticsService {
     return rows.map((row) => ({ occurredAt: row.occurredAt, name: row.name, props: row.props, platform: row.platform === 'MOBILE' ? 'MOBILE' : 'WEB', appVersion: row.appVersion }))
   }
 
-  async funnel(adminId: string, steps: string[], since?: Date | null): Promise<{ name: string; users: number }[]> {
-    await this.assertAdmin(adminId)
-    if (steps.length < 1 || steps.length > 5) throw Errors.validation('A funnel has 1 to 5 steps.', ['steps'])
-    if (new Set(steps).size !== steps.length) throw Errors.validation('Use each event once.', ['steps'])
-    if (steps.some((step) => !isUsageEventName(step))) throw Errors.validation(`Events must be one of: page_view, note_open, note_upload, search, download, sign_in.`, ['steps'])
-    const from = since ?? new Date(Date.now() - 30 * DAY_MS)
-    const grouped = await this.db.usageEvent.groupBy({
-      by: ['userId', 'name'],
-      where: { name: { in: steps }, occurredAt: { gte: from } },
-      _min: { occurredAt: true },
-    })
-    const byUser = new Map<string, Map<string, Date>>()
-    for (const row of grouped) {
-      if (!row._min.occurredAt) continue
-      const times = byUser.get(row.userId) ?? new Map<string, Date>()
-      times.set(row.name, row._min.occurredAt)
-      byUser.set(row.userId, times)
-    }
-    const counts = steps.map(() => 0)
-    for (const times of byUser.values()) {
-      let prev: Date | null = null
-      for (let i = 0; i < steps.length; i++) {
-        const at = times.get(steps[i]!)
-        if (!at || (prev && at.getTime() < prev.getTime())) break
-        counts[i]! += 1
-        prev = at
-      }
-    }
-    return steps.map((name, i) => ({ name, users: counts[i]! }))
-  }
-
   async purge(now = new Date()): Promise<{ errors: number; usage: number }> {
     const [errors, usage] = await Promise.all([
       this.db.errorEvent.deleteMany({ where: { occurredAt: { lt: new Date(now.getTime() - ERROR_RETENTION_DAYS * DAY_MS) } } }),

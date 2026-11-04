@@ -90,7 +90,14 @@ extend type Query {
   adminUsage(from: DateTime, to: DateTime): AdminUsageSummary!
   "Platform admins. One account's usage, newest first."
   adminUserActivity(userId: UUID!, first: Int): [UserActivityEvent!]!
-  "Platform admins. Ordered steps. A person counts at a step when each earlier step happened first."
+  """
+  Platform admins. 1 to 5 ordered steps, each a usage event name (page_view, note_open, note_upload, search, download,
+  sign_in) or a step read from the database (ADR-0105): signed_up (account created), email_verified (login email
+  verified), first_note (the account's first note), returned_d7 (active again 7 or more days after signing up, and
+  after the previous step: a sign-in or session refresh, a usage event, or learning). A person counts at a step when
+  each earlier step happened first; each step's time is its first occurrence since `since` (default: 30 days ago).
+  Database steps leave out deleted accounts and accounts that opted out of analytics.
+  """
   adminFunnel(steps: [String!]!, since: DateTime): [FunnelStep!]!
   "Platform admins. Resolves account ids for the errors dashboard. Unknown and deleted accounts are omitted."
   usersByIds(ids: [UUID!]!): [AdminUserLookup!]!

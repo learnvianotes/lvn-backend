@@ -3,6 +3,7 @@ import { Args, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/g
 import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { withUserErrors } from '@lvn-backend/errors'
 import { AdminService } from '../application/admin.service'
+import { AdminUsageMetricsService } from '../application/admin-usage-metrics.service'
 import { AnalyticsService, type IngestInput } from '../application/analytics.service'
 import type { OkPayload } from './schema.types'
 
@@ -13,6 +14,7 @@ export class AnalyticsResolver {
   constructor(
     private readonly analytics: AnalyticsService,
     private readonly admin: AdminService,
+    private readonly usageMetrics: AdminUsageMetricsService,
   ) {}
 
   @Query('adminErrors')
@@ -32,7 +34,7 @@ export class AnalyticsResolver {
 
   @Query('adminFunnel')
   adminFunnel(@Args('steps') steps: string[], @Args('since') since: Date | null, @CurrentViewer() viewer: Viewer) {
-    return this.analytics.funnel(viewer.userId, steps, since)
+    return this.usageMetrics.funnel(viewer.userId, steps, since)
   }
 
   @Query('usersByIds')

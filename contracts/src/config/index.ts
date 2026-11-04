@@ -387,6 +387,17 @@ export const workerConfigSchema = apiShape
     WORKER_HEALTH_PORT: port.default(4001),
     /** The old Firebase project read by `legacy:snapshot` (ADR-0023); credentials via GOOGLE_APPLICATION_CREDENTIALS. */
     LEGACY_FIREBASE_PROJECT_ID: z.string().min(1).optional(),
+    /**
+     * ADR-0106: when the admin usage metrics are rolled up, a five-field cron pattern in UTC like every schedule. The
+     * default, 20:30 UTC, is 02:00 in India.
+     */
+    METRICS_ROLLUP_CRON: z
+      .string()
+      .trim()
+      .regex(/^\S+(\s+\S+){4}$/, 'must be a five-field cron pattern (UTC)')
+      .default('30 20 * * *'),
+    /** ADR-0106: how many days before today each rollup recomputes (late events and learning days are picked up). */
+    METRICS_ROLLUP_DAYS: z.coerce.number().int().min(1).max(31).default(3),
   })
   .superRefine(mailTransportConfigured)
   .superRefine(providersConfigured)
