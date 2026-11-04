@@ -28,7 +28,7 @@ const RESEND = `mutation { resendInstitutionalEmailCode { ok userErrors { code m
 
 let seq = 0
 const unique = (prefix: string) => `${prefix}${Date.now().toString(36)}${seq++}`
-const terms = '2026-10-08'
+const terms = '2026-11-03'
 
 type Payload<K extends string> = Record<K, { emailLinkPending?: boolean; session: { accessToken: string; user: Record<string, unknown> } | null; userErrors: { field: string[] | null; message: string; code: string }[] }>
 type Ok<K extends string> = Record<K, { ok: boolean; userErrors: { field: string[] | null; message: string; code: string }[] }>

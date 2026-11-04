@@ -30,7 +30,7 @@ describe('security: abuse', () => {
   const account = async (label: string) => {
     const email = `${label}-${newId().slice(-8)}@example.com`
     const password = `${label} long passphrase`
-    const res = await from('198.51.100.1', SIGN_UP, { input: { email, password, displayName: label, dateOfBirth: '2003-03-03', acceptedTermsVersion: '2026-10-08' } }, { 'x-lvn-client': 'mobile' })
+    const res = await from('198.51.100.1', SIGN_UP, { input: { email, password, displayName: label, dateOfBirth: '2003-03-03', acceptedTermsVersion: '2026-11-03' } }, { 'x-lvn-client': 'mobile' })
     return { email, password, refreshToken: res.body.data.signUp.session.refreshToken as string }
   }
 

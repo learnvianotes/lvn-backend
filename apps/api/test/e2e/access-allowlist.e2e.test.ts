@@ -12,7 +12,7 @@ import { seedUser, tokenFor } from '../support/seed'
 const CLIENT = { id: 'lvn-test-client', secret: 'lvn-test-secret' }
 const REDIRECT = 'http://localhost:3000/oauth/callback'
 const VERIFIER = 'v'.repeat(43)
-const TERMS = '2026-10-08'
+const TERMS = '2026-11-03'
 const INVITE = 'LearnViaNotes beta is invite-only. Ask an admin to add your email.'
 
 const POLICY = '{ accessPolicy { inviteOnly } }'

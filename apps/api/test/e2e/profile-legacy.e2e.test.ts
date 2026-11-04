@@ -150,7 +150,7 @@ describe('profile, limits and old-site data', () => {
       try {
         const res = await fresh.gql<{ signUp: { session: { accessToken: string } } }>(
           'mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken } } }',
-          { input: { email, password: 'a long enough passphrase', displayName: 'Old Learner', dateOfBirth: '2003-01-01', acceptedTermsVersion: '2026-10-08' } },
+          { input: { email, password: 'a long enough passphrase', displayName: 'Old Learner', dateOfBirth: '2003-01-01', acceptedTermsVersion: '2026-11-03' } },
         )
         const token = res.data!.signUp.session.accessToken
         expect((await fresh.gql<{ viewer: { legacyImport: { status: string } } }>(LEGACY, {}, token)).data!.viewer.legacyImport.status).toBe('NOT_FOUND')

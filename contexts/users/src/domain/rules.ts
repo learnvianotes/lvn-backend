@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /** Current versions of the Terms, Privacy Policy and public-content licence (§15.2). Bump on a material change. */
-export const TERMS_VERSION = '2026-10-08'
+export const TERMS_VERSION = '2026-11-03'
 
 export const SESSION_TTL_DAYS = 30
 export const VERIFY_EMAIL_TTL_HOURS = 24

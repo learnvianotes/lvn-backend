@@ -27,7 +27,7 @@ const signUpInput = (over: Record<string, unknown> = {}) => ({
   password: 'correct horse battery staple',
   displayName: 'Asha Rao',
   dateOfBirth: '2004-05-01',
-  acceptedTermsVersion: '2026-10-08',
+  acceptedTermsVersion: '2026-11-03',
   ...over,
 })
 
@@ -156,7 +156,7 @@ describe('auth', () => {
     })
 
     it('exposes the terms version new accounts must accept', async () => {
-      expect((await t.gql('{ termsVersion }')).data).toEqual({ termsVersion: '2026-10-08' })
+      expect((await t.gql('{ termsVersion }')).data).toEqual({ termsVersion: '2026-11-03' })
     })
   })
 

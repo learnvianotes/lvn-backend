@@ -56,7 +56,7 @@ describe('age-restricted accounts', () => {
 
   it('keeps an under-age sign-up private and tells the client who to contact', async () => {
     const res = await t.gql<{ signUp: { session: { user: { id: string; handle: string } } | null; userErrors: Err[] } }>(SIGN_UP, {
-      input: { email, password, displayName: 'Young One', dateOfBirth: yearsAgo(16), acceptedTermsVersion: '2026-10-08' },
+      input: { email, password, displayName: 'Young One', dateOfBirth: yearsAgo(16), acceptedTermsVersion: '2026-11-03' },
     })
     expect(res.data!.signUp.session).toBeNull()
     expect(res.data!.signUp.userErrors).toEqual([{
