@@ -42,16 +42,11 @@ const SEED_INSERT = SEED_SQL.slice(SEED_SQL.indexOf('INSERT INTO'))
 
 let seq = 0
 const emailOf = (prefix: string) => `${prefix}${Date.now().toString(36)}${seq++}@example.com`
-const yearsAgo = (years: number) => {
-  const d = new Date()
-  d.setUTCFullYear(d.getUTCFullYear() - years)
-  return d.toISOString().slice(0, 10)
-}
 const signUpInput = (email: string, over: Record<string, unknown> = {}) => ({
   email,
   password: 'correct horse battery staple',
   displayName: 'Asha Rao',
-  dateOfBirth: '2004-05-01',
+  age: 22,
   acceptedTermsVersion: TERMS,
   ...over,
 })
@@ -158,7 +153,7 @@ describe('beta access allowlist', () => {
     // Adults-only still wins over the invite list.
     const child = emailOf('child')
     await allow(child, 'STUDENT')
-    const young = await t.gql<{ signUp: { session: null; userErrors: Err[] } }>(SIGN_UP, { input: signUpInput(child, { dateOfBirth: yearsAgo(17) }) })
+    const young = await t.gql<{ signUp: { session: null; userErrors: Err[] } }>(SIGN_UP, { input: signUpInput(child, { age: 17 }) })
     expect(young.data!.signUp.userErrors[0]!.code).toBe('AGE_RESTRICTED')
     expect(young.data!.signUp.session).toBeNull()
     expect(await db.user.findFirst({ where: { email: child } })).toMatchObject({ accountStatus: 'AGE_BLOCKED' })

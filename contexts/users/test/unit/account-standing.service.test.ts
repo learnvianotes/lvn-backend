@@ -5,7 +5,7 @@ import { AuthService } from '../../src/application/auth.service'
 import { RegistrationService } from '../../src/application/registration.service'
 import { SessionService } from '../../src/application/session.service'
 import { ageRestrictedError, refusalError } from '../../src/domain/account-status'
-import { DEFAULT_TERMS_VERSION } from '../../src/domain/rules'
+import { ageOn, DEFAULT_TERMS_VERSION } from '../../src/domain/rules'
 
 const SUPPORT = 'support@learnvianotes.in'
 const ADMIN_EMAIL = 'earliest-admin@learnvianotes.in'
@@ -62,17 +62,55 @@ describe('AuthService age gate', () => {
     email: 'young@example.com',
     password: 'correct horse battery staple',
     displayName: 'Young One',
-    dateOfBirth: '2012-01-01',
+    age: 14,
     acceptedTermsVersion: DEFAULT_TERMS_VERSION,
   }
 
   it('keeps an under-age sign-up and returns AGE_RESTRICTED', async () => {
     const { service, hold, start } = auth()
     const err = await rejection(() => service.signUp(input, { client: 'web' }))
-    expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, supportEmail: ADMIN_EMAIL, field: ['input', 'dateOfBirth'] })
+    expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, supportEmail: ADMIN_EMAIL, field: ['input', 'age'] })
     expect(err.message).toContain(`Contact an admin at ${ADMIN_EMAIL}`)
     expect(hold).toHaveBeenCalledWith(expect.objectContaining({ email: 'young@example.com', passwordHash: 'hashed-password', globalRole: 'STUDENT', termsVersion: DEFAULT_TERMS_VERSION }))
+    expect(hold.mock.calls[0]![0]).toMatchObject({ age: { declaredAge: 14, ageDeclaredAt: expect.any(Date) } })
+    expect(hold.mock.calls[0]![0]).not.toHaveProperty('dateOfBirth')
     expect(start).not.toHaveBeenCalled()
+  })
+
+  it('still takes the date of birth older apps send, and keeps only the age it gives (ADR-0104)', async () => {
+    const { service, hold } = auth()
+    const { age: _age, ...legacy } = input
+    const err = await rejection(() => service.signUp({ ...legacy, dateOfBirth: '2012-01-01' }, { client: 'mobile' }))
+    expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, field: ['input', 'dateOfBirth'] })
+    expect(hold.mock.calls[0]![0]).toMatchObject({ age: { declaredAge: ageOn(new Date('2012-01-01T00:00:00Z')) } })
+    expect(JSON.stringify(hold.mock.calls[0]![0])).not.toContain('2012-01-01')
+  })
+
+  it('uses the age when both are sent, and ignores the date of birth', async () => {
+    const young = auth()
+    const refused = await rejection(() => young.service.signUp({ ...input, dateOfBirth: '1990-01-01' }, { client: 'web' }))
+    expect(refused).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, field: ['input', 'age'] })
+    const adult = auth()
+    // An adult age with a child's date of birth passes the gate; this address already has an account.
+    const passed = await rejection(() => adult.service.signUp({ ...input, age: 30, dateOfBirth: '2015-01-01' }, { client: 'web' }))
+    expect(passed.code).toBe(ErrorCode.CONFLICT)
+    expect(adult.hold).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [{ age: 0 }, ['input', 'age'], /from 1 to 120/],
+    [{ age: 121 }, ['input', 'age'], /from 1 to 120/],
+    [{ age: 17.5 }, ['input', 'age'], /whole number/],
+    [{ age: null }, ['input', 'age'], /Enter your age/],
+    [{ age: undefined, dateOfBirth: '2004-02-30' }, ['input', 'dateOfBirth'], /real date/],
+    [{ age: undefined, dateOfBirth: '2999-01-01' }, ['input', 'dateOfBirth'], /future/],
+    [{ age: undefined, dateOfBirth: new Date().toISOString().slice(0, 10) }, ['input', 'dateOfBirth'], /real date of birth/],
+  ])('refuses %p as VALIDATION before holding anything', async (over, field, message) => {
+    const { service, hold } = auth()
+    const err = await rejection(() => service.signUp({ ...input, ...over } as never, { client: 'web' }))
+    expect(err).toMatchObject({ code: ErrorCode.VALIDATION, field })
+    expect(err.message).toMatch(message)
+    expect(hold).not.toHaveBeenCalled()
   })
 
   it('does not hold an account when the terms are not accepted', async () => {
@@ -112,14 +150,28 @@ describe('RegistrationService age gate', () => {
 
   it('holds the provider account instead of erasing it', async () => {
     const { service, held } = registration()
+    const err = await rejection(() => service.complete('google-1', { displayName: 'Young One', age: 14, acceptedTermsVersion: DEFAULT_TERMS_VERSION }))
+    expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, supportEmail: ADMIN_EMAIL, field: ['input', 'age'] })
+    expect(held).toHaveBeenCalledWith('google-1', 'Young One', { declaredAge: 14, ageDeclaredAt: expect.any(Date) }, DEFAULT_TERMS_VERSION)
+  })
+
+  it('holds the date of birth an older app sends as the age it gives, not the date (ADR-0104)', async () => {
+    const { service, held } = registration()
     const err = await rejection(() => service.complete('google-1', { displayName: 'Young One', dateOfBirth: '2012-01-01', acceptedTermsVersion: DEFAULT_TERMS_VERSION }))
-    expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, supportEmail: ADMIN_EMAIL })
-    expect(held).toHaveBeenCalledWith('google-1', 'Young One', new Date('2012-01-01T00:00:00.000Z'), DEFAULT_TERMS_VERSION)
+    expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, supportEmail: ADMIN_EMAIL, field: ['input', 'dateOfBirth'] })
+    expect(held).toHaveBeenCalledWith('google-1', 'Young One', { declaredAge: ageOn(new Date('2012-01-01T00:00:00Z')), ageDeclaredAt: expect.any(Date) }, DEFAULT_TERMS_VERSION)
+  })
+
+  it('refuses a missing or impossible age before holding anything', async () => {
+    const { service, held } = registration()
+    expect(await rejection(() => service.complete('google-1', { displayName: 'Young One', acceptedTermsVersion: DEFAULT_TERMS_VERSION }))).toMatchObject({ code: ErrorCode.VALIDATION, field: ['input', 'age'] })
+    expect(await rejection(() => service.complete('google-1', { displayName: 'Young One', age: 200, acceptedTermsVersion: DEFAULT_TERMS_VERSION }))).toMatchObject({ code: ErrorCode.VALIDATION, field: ['input', 'age'] })
+    expect(held).not.toHaveBeenCalled()
   })
 
   it('does not hold the account when the terms are wrong', async () => {
     const { service, held } = registration()
-    const err = await rejection(() => service.complete('google-1', { displayName: 'Young One', dateOfBirth: '2012-01-01', acceptedTermsVersion: 'nope' }))
+    const err = await rejection(() => service.complete('google-1', { displayName: 'Young One', age: 14, acceptedTermsVersion: 'nope' }))
     expect(err).toMatchObject({ code: ErrorCode.VALIDATION, field: ['input', 'acceptedTermsVersion'] })
     expect(held).not.toHaveBeenCalled()
   })

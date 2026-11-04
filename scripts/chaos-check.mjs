@@ -82,7 +82,7 @@ const stamp = Date.now()
 const { termsVersion } = await must('{ termsVersion }')
 const signUp = async (who) => {
   const up = await must('mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken user { id } } userErrors { message } } }', {
-    input: { email: `chaos-${who}-${stamp}@example.com`, password: `chaos passphrase ${stamp}`, displayName: `Chaos ${who}`, dateOfBirth: '2000-01-01', acceptedTermsVersion: termsVersion },
+    input: { email: `chaos-${who}-${stamp}@example.com`, password: `chaos passphrase ${stamp}`, displayName: `Chaos ${who}`, age: 26, acceptedTermsVersion: termsVersion },
   })
   return up.signUp.session.accessToken
 }

@@ -104,7 +104,7 @@ await check('sign-in options and the terms version', async () => {
 
 await check('signs up with email, as the app (refresh token in the body)', async () => {
   const p = payload(
-    await gql(`mutation ($input: SignUpInput!) { signUp(input: $input) { ${SESSION} } }`, { input: { email, password, displayName: 'Smoke Test', dateOfBirth: '2000-01-01', acceptedTermsVersion: terms } }, { mobile: true }),
+    await gql(`mutation ($input: SignUpInput!) { signUp(input: $input) { ${SESSION} } }`, { input: { email, password, displayName: 'Smoke Test', age: 26, acceptedTermsVersion: terms } }, { mobile: true }),
     'signUp',
   )
   assert(p.session?.refreshToken, 'no refresh token for the app')

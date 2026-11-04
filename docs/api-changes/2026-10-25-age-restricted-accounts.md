@@ -1,5 +1,8 @@
 # Recoverable age-blocked accounts
 
+> Sign-up and `completeRegistration` now take `age` (whole years); `dateOfBirth` is deprecated, and admins get `age`.
+> See `2026-11-04-age-instead-of-date-of-birth.md`.
+
 - Date: 2026-10-25
 - Package: `@lvn/contracts`
 - Spec: ADR-0091, amended (accounts are kept)

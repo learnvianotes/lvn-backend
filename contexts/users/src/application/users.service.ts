@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common'
 import type { People, Person, SearchProfile } from '@lvn-backend/facades'
 import { $Enums, PrismaService } from '@lvn-backend/prisma-base'
-import { isRestrictedMinor } from '../domain/rules'
+import { dayReachingAge, isRestrictedMinor } from '../domain/rules'
+import { AGE_FIELDS, atLeastAge } from './age'
 import type { SignInMethod, User } from '../graphql/schema.types'
 import { InstitutionalEmailService } from './institutional-email.service'
 import { PlatformSettingsStore } from './platform-settings.store'
@@ -36,21 +37,22 @@ export class UsersService implements People {
 
   /**
    * People facade, for search (P2e): handles starting with, or names containing, the query. Only people known to be
-   * past the digital-consent age are listed — younger people are never discoverable by strangers (§15.2).
+   * past the digital-consent age are listed — younger people are never discoverable by strangers (§15.2). The age is
+   * ADR-0104's: the date of birth, else the declared age counted forward.
    */
   async search(query: string, limit: number, viewerId?: string | null): Promise<Person[]> {
     const q = query.trim().replace(/^@/, '')
     if (q.length < 2) return []
-    const adultsBornBy = new Date()
-    adultsBornBy.setUTCFullYear(adultsBornBy.getUTCFullYear() - this.settings.consentAge())
     const hidden = viewerId ? await this.blockedIds(viewerId) : []
     const rows = await this.db.user.findMany({
       where: {
         deletedAt: null,
         accountStatus: PUBLIC_ACCOUNT,
-        dateOfBirth: { lte: adultsBornBy },
         ...(hidden.length ? { id: { notIn: hidden } } : {}),
-        OR: [{ handle: { startsWith: q, mode: 'insensitive' } }, { displayName: { contains: q, mode: 'insensitive' } }],
+        AND: [
+          { OR: atLeastAge(this.settings.consentAge()) },
+          { OR: [{ handle: { startsWith: q, mode: 'insensitive' } }, { displayName: { contains: q, mode: 'insensitive' } }] },
+        ],
       },
       select: { id: true, handle: true, displayName: true, globalRole: true },
       orderBy: [{ displayName: 'asc' }],
@@ -91,9 +93,9 @@ export class UsersService implements People {
 
   /** People facade (ADR-0050): where communication writes to a person. */
   async contactOf(userId: string): Promise<{ email: string; displayName: string; restrictedMinor: boolean } | null> {
-    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null, accountStatus: PUBLIC_ACCOUNT }, select: { email: true, displayName: true, dateOfBirth: true, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } } })
+    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null, accountStatus: PUBLIC_ACCOUNT }, select: { email: true, displayName: true, ...AGE_FIELDS, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } } })
     if (!u) return null
-    return { email: u.email, displayName: u.displayName, restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.settings.consentAge(), u.consents.length > 0) }
+    return { email: u.email, displayName: u.displayName, restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), u.consents.length > 0) }
   }
 
   /** People facade (ADR-0069): when the account was made; null for deleted accounts. */
@@ -116,17 +118,26 @@ export class UsersService implements People {
     return (await this.db.restriction.count({ where: { restricterId, restrictedId } })) > 0
   }
 
-  /** People facade (ADR-0055): what people search indexes; `adultFrom` instead of the date of birth. */
+  /**
+   * People facade (ADR-0055): what people search indexes; `adultFrom` instead of the date of birth or declared age
+   * (ADR-0104). Accounts with no known age are left out.
+   */
   async searchProfiles(ids: string[]): Promise<SearchProfile[]> {
     if (!ids.length) return []
+    const consentAge = this.settings.consentAge()
     const rows = await this.db.user.findMany({
-      where: { id: { in: ids }, deletedAt: null, accountStatus: PUBLIC_ACCOUNT, dateOfBirth: { not: null } },
-      select: { id: true, handle: true, displayName: true, globalRole: true, dateOfBirth: true, teacherProfile: { select: { headline: true, bio: true } } },
+      where: {
+        id: { in: ids },
+        deletedAt: null,
+        accountStatus: PUBLIC_ACCOUNT,
+        OR: [{ dateOfBirth: { not: null } }, { declaredAge: { not: null }, ageDeclaredAt: { not: null } }],
+      },
+      select: { id: true, handle: true, displayName: true, globalRole: true, ...AGE_FIELDS, teacherProfile: { select: { headline: true, bio: true } } },
     })
-    return rows.map((u) => {
-      const adultFrom = new Date(u.dateOfBirth!)
-      adultFrom.setUTCFullYear(adultFrom.getUTCFullYear() + this.settings.consentAge())
-      return { id: u.id, handle: u.handle, displayName: u.displayName, globalRole: u.globalRole, headline: u.teacherProfile?.headline ?? null, bio: u.teacherProfile?.bio ?? null, adultFrom }
+    return rows.flatMap((u) => {
+      const adultFrom = dayReachingAge(u, consentAge)
+      if (!adultFrom) return []
+      return [{ id: u.id, handle: u.handle, displayName: u.displayName, globalRole: u.globalRole, headline: u.teacherProfile?.headline ?? null, bio: u.teacherProfile?.bio ?? null, adultFrom }]
     })
   }
 
@@ -238,7 +249,7 @@ export class UsersService implements People {
       institutionalEmail: institutional.email,
       institutionalEmailStatus: institutional.status,
       institution: institutional.institution,
-      restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.settings.consentAge(), u.consents.length > 0),
+      restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), u.consents.length > 0),
       deletionScheduledFor: deletionDate(u.deletionRequestedAt),
       analyticsOptOut: u.analyticsOptOut,
     }

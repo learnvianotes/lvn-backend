@@ -4,7 +4,8 @@ import { Errors } from '@lvn-backend/errors'
 import { Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import type { AccountStatus } from '../domain/account-status'
 import { isStudyPublisher } from '../domain/study-publisher'
-import { AGE_BLOCK_REASON, dateOfBirthSchema, displayNameSchema, emailSchema, isBelowMinimumAge } from '../domain/rules'
+import { AGE_BLOCK_REASON, ageOf, ageSchema, dateOfBirthSchema, displayNameSchema, emailSchema, isBelowMinimumAge, type AgeFacts } from '../domain/rules'
+import { AGE_FIELDS } from './age'
 import { AccountDeletionService } from './account-deletion.service'
 import { AuditService } from './audit.service'
 import { parseField } from './input'
@@ -20,7 +21,10 @@ export interface ManagedUser {
   email: string
   displayName: string
   handle: string
+  /** YYYY-MM-DD, only when the account has one (registered before ADR-0104, or set by an admin). */
   dateOfBirth: string | null
+  /** ADR-0104: whole years now, from the date of birth or the declared age; null when neither is known. */
+  age: number | null
   accountStatus: AccountStatus
   statusReason: string | null
   globalRole: string
@@ -34,7 +38,7 @@ const SELECT = {
   email: true,
   displayName: true,
   handle: true,
-  dateOfBirth: true,
+  ...AGE_FIELDS,
   accountStatus: true,
   statusReason: true,
   globalRole: true,
@@ -47,13 +51,12 @@ type Row = {
   email: string
   displayName: string
   handle: string
-  dateOfBirth: Date | null
   accountStatus: AccountStatus
   statusReason: string | null
   globalRole: string
   createdAt: Date
   deletedAt: Date | null
-}
+} & AgeFacts
 
 /**
  * Platform-admin account operations: list by standing, correct a profile and re-run the age gate, block or suspend,
@@ -83,7 +86,7 @@ export class AccountAdminService {
 
   async update(
     actorId: string,
-    input: { userId: string; displayName?: string | null; email?: string | null; dateOfBirth?: string | null; reason: string },
+    input: { userId: string; displayName?: string | null; email?: string | null; age?: number | null; dateOfBirth?: string | null; reason: string },
   ): Promise<ManagedUser> {
     await this.requireAdmin(actorId)
     const reason = this.reason(input.reason, 'reason')
@@ -98,18 +101,32 @@ export class AccountAdminService {
       data.email = parseField(emailSchema, input.email, 'email')
       fields.push('email')
     }
-    const minimum = this.settings.minimumAge()
-    const nextDob = input.dateOfBirth != null ? parseField(dateOfBirthSchema, input.dateOfBirth, 'dateOfBirth') : user.dateOfBirth
-    const passes = nextDob !== null && !isBelowMinimumAge(nextDob, minimum)
+    // ADR-0104: a stored date of birth decides the age, so an age is only taken for an account without one, and
+    // never together with a date of birth. The age is as of now.
+    if (input.age != null && input.dateOfBirth != null) throw Errors.validation('Correct either the age or the date of birth, not both.', ['input', 'age'])
+    let next: AgeFacts = user
     if (input.dateOfBirth != null) {
-      data.dateOfBirth = nextDob
+      const dateOfBirth = parseField(dateOfBirthSchema, input.dateOfBirth, 'dateOfBirth')
+      data.dateOfBirth = dateOfBirth
+      next = { ...next, dateOfBirth }
       fields.push('dateOfBirth')
+    } else if (input.age != null) {
+      const declaredAge = parseField(ageSchema, input.age, 'age')
+      if (user.dateOfBirth) throw Errors.validation('This account has a date of birth. Correct the date of birth instead.', ['input', 'age'])
+      const ageDeclaredAt = new Date()
+      data.declaredAge = declaredAge
+      data.ageDeclaredAt = ageDeclaredAt
+      next = { ...next, declaredAge, ageDeclaredAt }
+      fields.push('age')
     }
-    if (!fields.length) throw Errors.validation('Choose a name, an email, or a date of birth to change.', ['input'])
-    // A new date of birth that would let an under-age account pass is refused until the reason note is present.
+    const ageChanged = input.dateOfBirth != null || input.age != null
+    const age = ageOf(next)
+    const passes = age !== null && !isBelowMinimumAge(age, this.settings.minimumAge())
+    if (!fields.length) throw Errors.validation('Choose a name, an email, an age or a date of birth to change.', ['input'])
+    // A new age that would let an under-age account pass is refused until the reason note is present.
     // `reason` was already required above; an empty note never reaches this point.
     let unblocked = false
-    if (input.dateOfBirth != null && !passes) {
+    if (ageChanged && !passes) {
       data.accountStatus = 'AGE_BLOCKED'
       data.statusReason = AGE_BLOCK_REASON
     } else if (user.accountStatus === 'AGE_BLOCKED' && passes) {
@@ -141,11 +158,15 @@ export class AccountAdminService {
     if (input.userId === actorId) throw Errors.validation('You cannot change your own standing.', ['input', 'userId'])
     const reason = this.reason(input.reason, 'reason')
     const user = await this.live(input.userId)
-    if (input.status === 'AGE_BLOCKED') throw Errors.validation('The age gate sets this status. Correct the date of birth, with a reason.', ['input', 'status'])
+    if (input.status === 'AGE_BLOCKED') throw Errors.validation('The age gate sets this status. Correct the age, with a reason.', ['input', 'status'])
     if (input.status === 'ACTIVE') {
-      const minimum = this.settings.minimumAge()
-      const stillUnder = user.accountStatus === 'AGE_BLOCKED' || (user.dateOfBirth !== null && isBelowMinimumAge(user.dateOfBirth, minimum))
-      if (stillUnder) throw Errors.validation('This date of birth is still below the minimum age. Correct it, with a reason, before the account can pass.', ['input', 'dateOfBirth'])
+      const age = ageOf(user)
+      const stillUnder = user.accountStatus === 'AGE_BLOCKED' || (age !== null && isBelowMinimumAge(age, this.settings.minimumAge()))
+      if (stillUnder) {
+        // Point at the input that would correct it: the date of birth when the account has one (ADR-0104).
+        if (user.dateOfBirth) throw Errors.validation('This date of birth is still below the minimum age. Correct it, with a reason, before the account can pass.', ['input', 'dateOfBirth'])
+        throw Errors.validation('This age is still below the minimum age. Correct it, with a reason, before the account can pass.', ['input', 'age'])
+      }
       await this.db.user.update({ where: { id: user.id }, data: { accountStatus: 'ACTIVE', statusReason: null, suspendedUntil: null, suspensionReason: null } })
       await this.audit.record({ actorId, action: 'account.admin.unblocked', targetType: 'USER', targetId: user.id, metadata: { reason } })
       return this.toManaged(await this.live(user.id))
@@ -222,6 +243,7 @@ export class AccountAdminService {
       displayName: row.displayName,
       handle: row.handle,
       dateOfBirth: row.dateOfBirth ? row.dateOfBirth.toISOString().slice(0, 10) : null,
+      age: ageOf(row),
       accountStatus: row.accountStatus,
       statusReason: row.statusReason,
       globalRole: row.globalRole,

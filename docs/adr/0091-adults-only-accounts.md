@@ -1,6 +1,7 @@
 # ADR-0091: Accounts for adults only, by configuration (College/Interview launch)
 
-- Status: Accepted (owner decision, 2026-10-20: the College/Interview track launches for 18+; the School track later)
+- Status: Accepted (owner decision, 2026-10-20: the College/Interview track launches for 18+; the School track later);
+  amended by ADR-0104 (the check reads an age in whole years; new accounts store that age, not a date of birth)
 - Date: 2026-10-21
 - Deciders: Backend, Web, Mobile agents; owner
 - Spec sections: §15.2 (Age), §6.2 (error vocabulary), §7 (registration); amends ADR-0017's age rule while it is on

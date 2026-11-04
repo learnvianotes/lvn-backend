@@ -159,7 +159,7 @@ describe('admin dashboard', () => {
     expect(older.data!.updateAdminSetting.userErrors).toEqual([])
     const signUp = await t.gql<{ signUp: { session: { accessToken: string } | null; userErrors: Err[] } }>(
       `mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken } userErrors { code field } } }`,
-      { input: { email: `young-${newId().slice(0, 8)}@example.com`, password: 'a long passphrase for asha', displayName: 'Asha Rao', dateOfBirth: '2006-06-01', acceptedTermsVersion: '2026-11-03' } },
+      { input: { email: `young-${newId().slice(0, 8)}@example.com`, password: 'a long passphrase for asha', displayName: 'Asha Rao', age: 20, acceptedTermsVersion: '2026-11-03' } },
     )
     expect(signUp.data!.signUp.userErrors[0]!.code).toBe('AGE_RESTRICTED')
     expect(signUp.data!.signUp.session).toBeNull()

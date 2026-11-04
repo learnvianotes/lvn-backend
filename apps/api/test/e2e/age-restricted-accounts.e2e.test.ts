@@ -16,15 +16,15 @@ const SIGN_IN = `mutation ($input: SignInInput!) {
 const REFRESH = `mutation ($input: RefreshSessionInput!) { refreshSession(input: $input) { session { accessToken } userErrors { code } } }`
 const BY_HANDLE = `query ($h: String!) { userByHandle(handle: $h) { id } }`
 const LIST = `query ($status: AdminUserStatusFilter!, $search: String) {
-  adminUsers(status: $status, search: $search, first: 20) { total users { id email displayName dateOfBirth accountStatus statusReason } } }`
+  adminUsers(status: $status, search: $search, first: 20) { total users { id email displayName dateOfBirth age accountStatus statusReason } } }`
 const UPDATE = `mutation ($input: AdminUpdateUserInput!) {
-  adminUpdateUser(input: $input) { user { id email displayName dateOfBirth accountStatus statusReason } userErrors { code field message } } }`
+  adminUpdateUser(input: $input) { user { id email displayName dateOfBirth age accountStatus statusReason } userErrors { code field message } } }`
 const STANDING = `mutation ($input: AdminSetAccountStandingInput!) {
   adminSetAccountStanding(input: $input) { user { accountStatus statusReason } userErrors { code field message } } }`
 const DELETE = `mutation ($input: AdminDeleteUserInput!) { adminDeleteUser(input: $input) { ok userErrors { code field message } } }`
 
 type Err = { code: string; field: string[] | null; message: string; supportEmail?: string | null }
-type Managed = { id: string; email: string; displayName: string; dateOfBirth: string | null; accountStatus: string; statusReason: string | null }
+type Managed = { id: string; email: string; displayName: string; dateOfBirth: string | null; age: number | null; accountStatus: string; statusReason: string | null }
 
 const yearsAgo = (years: number) => {
   const d = new Date()
@@ -56,12 +56,12 @@ describe('age-restricted accounts', () => {
 
   it('keeps an under-age sign-up private and tells the client who to contact', async () => {
     const res = await t.gql<{ signUp: { session: { user: { id: string; handle: string } } | null; userErrors: Err[] } }>(SIGN_UP, {
-      input: { email, password, displayName: 'Young One', dateOfBirth: yearsAgo(16), acceptedTermsVersion: '2026-11-03' },
+      input: { email, password, displayName: 'Young One', age: 16, acceptedTermsVersion: '2026-11-03' },
     })
     expect(res.data!.signUp.session).toBeNull()
     expect(res.data!.signUp.userErrors).toEqual([{
       code: 'AGE_RESTRICTED',
-      field: ['input', 'dateOfBirth'],
+      field: ['input', 'age'],
       message: expect.stringContaining(`Contact an admin at ${admin.email}`),
       supportEmail: admin.email,
     }])
@@ -69,6 +69,7 @@ describe('age-restricted accounts', () => {
     userId = user.id
     handle = user.handle
     expect(user).toMatchObject({ accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.', analyticsOptOut: true, deletedAt: null })
+    expect(user).toMatchObject({ declaredAge: 16, dateOfBirth: null })
     expect(await db.session.count({ where: { userId } })).toBe(0)
     expect((await t.gql<{ userByHandle: { id: string } | null }>(BY_HANDLE, { h: handle })).data!.userByHandle).toBeNull()
     const signIn = await t.gql<{ signIn: { session: null; userErrors: Err[] } }>(SIGN_IN, { input: { email, password } })
@@ -76,33 +77,60 @@ describe('age-restricted accounts', () => {
     expect(signIn.data!.signIn.userErrors[0]).toMatchObject({ code: 'AGE_RESTRICTED', supportEmail: admin.email })
   })
 
-  it('lets only a platform admin list and correct the date of birth', async () => {
+  it('lets only a platform admin list and correct the age', async () => {
     expect((await t.gql(LIST, { status: 'AGE_BLOCKED', search: email }, studentToken)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     const listed = await t.gql<{ adminUsers: { total: number; users: Managed[] } }>(LIST, { status: 'AGE_BLOCKED', search: 'Young' }, admin.token)
     expect(listed.data!.adminUsers.users.map((u) => u.id)).toContain(userId)
-    expect(listed.data!.adminUsers.users.find((u) => u.id === userId)).toMatchObject({ accountStatus: 'AGE_BLOCKED', email })
+    // ADR-0104: the age the person gave; there is no date of birth to show.
+    expect(listed.data!.adminUsers.users.find((u) => u.id === userId)).toMatchObject({ accountStatus: 'AGE_BLOCKED', email, age: 16, dateOfBirth: null })
 
-    const blank = await t.gql<{ adminUpdateUser: { user: null; userErrors: Err[] } }>(UPDATE, { input: { userId, dateOfBirth: yearsAgo(30), reason: '   ' } }, admin.token)
+    const blank = await t.gql<{ adminUpdateUser: { user: null; userErrors: Err[] } }>(UPDATE, { input: { userId, age: 30, reason: '   ' } }, admin.token)
     expect(blank.data!.adminUpdateUser.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'reason'] })
     expect(await db.user.findUnique({ where: { id: userId }, select: { accountStatus: true } })).toMatchObject({ accountStatus: 'AGE_BLOCKED' })
 
-    const stillYoung = await t.gql<{ adminUpdateUser: { user: Managed; userErrors: Err[] } }>(UPDATE, { input: { userId, dateOfBirth: yearsAgo(15), reason: 'Still at school' } }, admin.token)
+    for (const age of [0, 121]) {
+      const out = await t.gql<{ adminUpdateUser: { user: null; userErrors: Err[] } }>(UPDATE, { input: { userId, age, reason: 'Typo' } }, admin.token)
+      expect(out.data!.adminUpdateUser.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'age'] })
+    }
+    const both = await t.gql<{ adminUpdateUser: { user: null; userErrors: Err[] } }>(UPDATE, { input: { userId, age: 30, dateOfBirth: yearsAgo(30), reason: 'Both' } }, admin.token)
+    expect(both.data!.adminUpdateUser.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'age'] })
+
+    const stillYoung = await t.gql<{ adminUpdateUser: { user: Managed; userErrors: Err[] } }>(UPDATE, { input: { userId, age: 15, reason: 'Still at school' } }, admin.token)
     expect(stillYoung.data!.adminUpdateUser.userErrors).toEqual([])
-    expect(stillYoung.data!.adminUpdateUser.user).toMatchObject({ accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.' })
+    expect(stillYoung.data!.adminUpdateUser.user).toMatchObject({ accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.', age: 15 })
 
     const forced = await t.gql<{ adminSetAccountStanding: { user: null; userErrors: Err[] } }>(STANDING, { input: { userId, status: 'ACTIVE', reason: 'Let them in anyway' } }, admin.token)
-    expect(forced.data!.adminSetAccountStanding.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'dateOfBirth'] })
+    expect(forced.data!.adminSetAccountStanding.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'age'] })
     const handSet = await t.gql<{ adminSetAccountStanding: { userErrors: Err[] } }>(STANDING, { input: { userId, status: 'AGE_BLOCKED', reason: 'By hand' } }, admin.token)
     expect(handSet.data!.adminSetAccountStanding.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'status'] })
 
     const passed = await t.gql<{ adminUpdateUser: { user: Managed; userErrors: Err[] } }>(UPDATE, {
-      input: { userId, dateOfBirth: yearsAgo(20), displayName: 'Older Now', reason: 'Document shows an adult date of birth' },
+      input: { userId, age: 20, displayName: 'Older Now', reason: 'Document shows an adult' },
     }, admin.token)
     expect(passed.data!.adminUpdateUser.userErrors).toEqual([])
-    expect(passed.data!.adminUpdateUser.user).toMatchObject({ accountStatus: 'ACTIVE', statusReason: null, displayName: 'Older Now', dateOfBirth: yearsAgo(20) })
+    expect(passed.data!.adminUpdateUser.user).toMatchObject({ accountStatus: 'ACTIVE', statusReason: null, displayName: 'Older Now', age: 20, dateOfBirth: null })
+    expect(await db.user.findUniqueOrThrow({ where: { id: userId } })).toMatchObject({ declaredAge: 20, dateOfBirth: null })
     expect((await t.gql<{ userByHandle: { id: string } | null }>(BY_HANDLE, { h: handle })).data!.userByHandle).toEqual({ id: userId })
     const audit = await db.auditLog.findFirst({ where: { action: 'account.admin.updated', targetId: userId, actorId: admin.id }, orderBy: { createdAt: 'desc' } })
-    expect(audit!.metadata).toMatchObject({ reason: 'Document shows an adult date of birth', ageUnblocked: true })
+    expect(audit!.metadata).toMatchObject({ reason: 'Document shows an adult', fields: ['displayName', 'age'], ageUnblocked: true })
+  })
+
+  it('corrects an account registered with a date of birth through its date of birth, which it keeps', async () => {
+    const legacy = await seedUser(t.app, { displayName: 'Legacy Young' })
+    await db.user.update({ where: { id: legacy.id }, data: { dateOfBirth: new Date(`${yearsAgo(15)}T00:00:00Z`), accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.' } })
+    const listed = await t.gql<{ adminUsers: { users: Managed[] } }>(LIST, { status: 'AGE_BLOCKED', search: legacy.email }, admin.token)
+    expect(listed.data!.adminUsers.users).toEqual([expect.objectContaining({ id: legacy.id, dateOfBirth: yearsAgo(15), age: 15 })])
+
+    // The date of birth decides the age, so an age cannot be set beside it, and nothing is changed.
+    const byAge = await t.gql<{ adminUpdateUser: { user: null; userErrors: Err[] } }>(UPDATE, { input: { userId: legacy.id, age: 30, reason: 'Says 30' } }, admin.token)
+    expect(byAge.data!.adminUpdateUser.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'age'] })
+    const forced = await t.gql<{ adminSetAccountStanding: { userErrors: Err[] } }>(STANDING, { input: { userId: legacy.id, status: 'ACTIVE', reason: 'Let them in' } }, admin.token)
+    expect(forced.data!.adminSetAccountStanding.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'dateOfBirth'] })
+    expect(await db.user.findUniqueOrThrow({ where: { id: legacy.id } })).toMatchObject({ dateOfBirth: new Date(`${yearsAgo(15)}T00:00:00Z`), declaredAge: null, accountStatus: 'AGE_BLOCKED' })
+
+    const passed = await t.gql<{ adminUpdateUser: { user: Managed; userErrors: Err[] } }>(UPDATE, { input: { userId: legacy.id, dateOfBirth: yearsAgo(20), reason: 'Document shows an adult date of birth' } }, admin.token)
+    expect(passed.data!.adminUpdateUser.userErrors).toEqual([])
+    expect(passed.data!.adminUpdateUser.user).toMatchObject({ accountStatus: 'ACTIVE', dateOfBirth: yearsAgo(20), age: 20 })
   })
 
   it('blocks and suspends with sessions revoked, then restores', async () => {
@@ -145,7 +173,7 @@ describe('age-restricted accounts', () => {
     const gone = await t.gql<{ adminDeleteUser: { ok: boolean; userErrors: Err[] } }>(DELETE, { input: { userId, reason: 'Asked to be removed', confirm: 'DELETE' } }, admin.token)
     expect(gone.data!.adminDeleteUser).toEqual({ ok: true, userErrors: [] })
     const user = await db.user.findUniqueOrThrow({ where: { id: userId } })
-    expect(user).toMatchObject({ displayName: 'Deleted user', dateOfBirth: null, accountStatus: 'ACTIVE', deletedAt: expect.any(Date) })
+    expect(user).toMatchObject({ displayName: 'Deleted user', dateOfBirth: null, declaredAge: null, ageDeclaredAt: null, accountStatus: 'ACTIVE', deletedAt: expect.any(Date) })
     expect(user.email).toMatch(/@deleted\.learnvianotes\.invalid$/)
     expect(await db.session.count({ where: { userId } })).toBe(0)
     expect(await db.fileObject.findUnique({ where: { id: fileId }, select: { status: true } })).toMatchObject({ status: 'DELETED' })

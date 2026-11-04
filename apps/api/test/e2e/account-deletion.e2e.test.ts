@@ -39,7 +39,7 @@ describe('account deletion', () => {
     deletion = t.app.get(AccountDeletionService)
     const terms = (await gql<{ termsVersion: string }>('{ termsVersion }', {})).termsVersion
     const email = `asha-${newId().slice(-8)}@example.com`
-    const signUp = await gql<{ signUp: { session: { accessToken: string; user: { id: string } } } }>(`mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken user { id } } ${ERRORS} } }`, { input: { email, password: PASSWORD, displayName: 'Asha Rao', dateOfBirth: '2003-08-15', acceptedTermsVersion: terms } })
+    const signUp = await gql<{ signUp: { session: { accessToken: string; user: { id: string } } } }>(`mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken user { id } } ${ERRORS} } }`, { input: { email, password: PASSWORD, displayName: 'Asha Rao', age: 23, acceptedTermsVersion: terms } })
     const signIn = await gql<{ signIn: { session: { accessToken: string } } }>(`mutation ($input: SignInInput!) { signIn(input: $input) { session { accessToken } ${ERRORS} } }`, { input: { email, password: PASSWORD } })
     // Two devices: the phone asks; the laptop is signed out.
     asha = { id: signUp.signUp.session.user.id, token: signIn.signIn.session.accessToken, other: signUp.signUp.session.accessToken }
@@ -89,7 +89,7 @@ describe('account deletion', () => {
     expect(await deletion.deleteDue(new Date(Date.now() + 15 * DAY))).toEqual({ deleted: 1, announced: 0 })
     await bus.drain()
     const user = await db.user.findUniqueOrThrow({ where: { id: asha.id } })
-    expect(user).toMatchObject({ displayName: 'Deleted user', passwordHash: null, dateOfBirth: null, verifiedAt: null })
+    expect(user).toMatchObject({ displayName: 'Deleted user', passwordHash: null, dateOfBirth: null, declaredAge: null, ageDeclaredAt: null, verifiedAt: null })
     expect(user.email).toMatch(/\.invalid$/)
     expect(user.deletedAt).not.toBeNull()
     expect(await db.session.count({ where: { userId: asha.id } })).toBe(0)

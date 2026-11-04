@@ -77,7 +77,7 @@ export class OAuthService {
   /**
    * The account behind a provider identity: the one already linked; else the account with the same email when the
    * provider has verified that email, linked now and marked email-verified, without changing its password, role,
-   * name, date of birth or sessions; else a new account. A provider that has not verified the email is refused.
+   * name, age or sessions; else a new account. A provider that has not verified the email is refused.
    * Two first sign-ins for one email lose to the unique email and (provider, subject) constraints, then retry.
    */
   private async signInWith(identity: ProviderIdentity, device: DeviceInfo, correlationId?: string): Promise<IssuedSession> {

@@ -164,8 +164,13 @@ model User {
   /// Argon2id; null for accounts that only sign in with a provider
   passwordHash            String?
   emailVerifiedAt         DateTime?           @db.Timestamptz(3)
-  /// Required to finish registration (ADR-0017); never shown to anyone, only the derived age band is used
+  /// Accounts registered before ADR-0104, or set by a platform admin; never shown to anyone, only the derived age band is used.
+  /// Registration now asks for an age instead (declaredAge). When present it decides the age.
   dateOfBirth             DateTime?           @db.Date
+  /// ADR-0104: the whole-number age (1–120) given at registration, or by an admin. Used when there is no dateOfBirth.
+  declaredAge             Int?
+  /// When declaredAge was given. The age now is declaredAge plus the whole years since, never more than the real age.
+  ageDeclaredAt           DateTime?           @db.Timestamptz(3)
   registrationCompletedAt DateTime?           @db.Timestamptz(3)
   /// Verified by institutional email, a teacher or platform admins (ADR-0019)
   verifiedAt              DateTime?           @db.Timestamptz(3)
