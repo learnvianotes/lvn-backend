@@ -7,7 +7,7 @@ import { AuthService } from '../application/auth.service'
 import { withInviteError } from './access.resolver'
 import { SessionService } from '../application/session.service'
 import { UsersService } from '../application/users.service'
-import { TERMS_VERSION } from '../domain/rules'
+import { TermsVersionProvider } from '../application/terms-version.provider'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { deliverSession, deviceOf, REFRESH_COOKIE, refreshCookieOptions, type RefreshCookieOptions } from './session-delivery'
 import type {
@@ -32,13 +32,15 @@ export class AuthResolver {
     private readonly users: UsersService,
     private readonly settings: AppSettingsService,
     @Inject(USERS_CONFIG) config: UsersConfig,
+    private readonly terms: TermsVersionProvider,
   ) {
     this.cookie = refreshCookieOptions(config.jwtIssuer)
   }
 
+  /** ADR-0103: the admin setting, else TERMS_VERSION, else the built-in default. */
   @Query('termsVersion')
   termsVersion(): string {
-    return TERMS_VERSION
+    return this.terms.current()
   }
 
   @Query('unverifiedGatedActions')

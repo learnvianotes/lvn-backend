@@ -35,7 +35,9 @@ erDiagram
     text handle UK
     text passwordHash "Argon2id, nullable for OAuth-only"
     timestamptz emailVerifiedAt
-    date dateOfBirth "required (ADR-0017)"
+    date dateOfBirth "accounts before ADR-0104, or set by an admin"
+    int declaredAge "whole years given at registration (ADR-0104)"
+    timestamptz ageDeclaredAt "when declaredAge was given"
     timestamptz institutionVerifiedAt
     enum globalRole "STUDENT | TEACHER | PLATFORM_ADMIN"
     timestamptz deletionRequestedAt

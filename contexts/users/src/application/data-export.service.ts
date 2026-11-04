@@ -182,7 +182,7 @@ export class DataExportService {
 <li><code>notes/&lt;kind&gt;/&lt;note&gt;/index.md</code> — each note as Markdown, with its details at the top. Other note apps open these.</li>
 <li><code>notes/&lt;kind&gt;/&lt;note&gt;/note.json</code> — every card exactly as stored, with every published version. Import this archive into LearnViaNotes to bring the notes back.</li>
 <li><code>notes/&lt;kind&gt;/&lt;note&gt;/media/</code> — pictures, video, audio and files from the notes.</li>
-<li><code>data/</code> — everything else we hold about you, as JSON: your account with your date of birth and when you registered (<code>data/users/account.json</code>), the Terms and Privacy Policy versions you accepted (<code>data/users/consents.json</code>), your sign-ins, study progress, reports, the activity log, and every learning activity event (<code>data/learning/events.json</code>).</li>
+<li><code>data/</code> — everything else we hold about you, as JSON: your account with the age you gave (or your date of birth, if you gave one) and when you registered (<code>data/users/account.json</code>), the Terms and Privacy Policy versions you accepted (<code>data/users/consents.json</code>), your sign-ins, study progress, reports, the activity log, and every learning activity event (<code>data/learning/events.json</code>).</li>
 <li><code>manifest.json</code> — every file with its size and SHA-256 checksum.</li>
 </ul>
 ${omitted.length ? `<h2>Not included</h2><ul>${omitted.map((o) => `<li>${html(o)}</li>`).join('')}</ul>` : ''}

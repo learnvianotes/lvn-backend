@@ -118,13 +118,17 @@ export interface AdminErrorGroup {
   sampleMessage: string
 }
 
-/** An account as a platform admin sees it, including a date of birth (YYYY-MM-DD) and the standing reason. */
+/** An account as a platform admin sees it, including its age (ADR-0104) and the standing reason. */
 export interface AdminManagedUser {
   id: string
   email: string
   displayName: string
   handle: string
+  /** YYYY-MM-DD. Only accounts that have one: registered before ADR-0104, or set by an admin. Null otherwise. */
   dateOfBirth: string | null
+  /** Whole years now (ADR-0104): from dateOfBirth when there is one, else the age given at registration plus the whole
+   * years since, which is never more than the real age. Null before registration is finished. */
+  age: number | null
   accountStatus: AccountStatus
   statusReason: string | null
   globalRole: GlobalRole
@@ -194,7 +198,7 @@ export interface AdminScanMetrics {
 
 export interface AdminSetAccountStandingInput {
   userId: string
-  /** ACTIVE lifts a block or suspension. BLOCKED is indefinite. SUSPENDED needs until. AGE_BLOCKED is refused: correct the date of birth. */
+  /** ACTIVE lifts a block or suspension. BLOCKED is indefinite. SUSPENDED needs until. AGE_BLOCKED is refused: correct the age or date of birth. */
   status: AccountStatus
   reason: string
   /** Required when status is SUSPENDED. A time in the future. */
@@ -203,7 +207,7 @@ export interface AdminSetAccountStandingInput {
 
 /** One application setting. `value` is `true` or `false`, a decimal integer, text, or empty when an integer is cleared.
  * `overridden` is false when no admin has saved a row: `value` is then the environment variable or the built-in default.
- * Categories: auth, verification, uploads, ai, search, accounts. */
+ * Categories: auth, verification, uploads, ai, search, accounts, notes, legal. */
 export interface AdminSetting {
   key: string
   type: AdminSettingType
@@ -243,13 +247,44 @@ export interface AdminStorageMetrics {
   files: number
 }
 
+/** The latest save or reset of the terms_version setting. */
+export interface AdminTermsChange {
+  /** The admin who made it. Null when that account is gone. */
+  actorId: string | null
+  /** Null when that account is gone or deleted. */
+  actorDisplayName: string | null
+  at: Date
+  /** The version in effect before the change. */
+  previous: string | null
+}
+
+/** The terms version that signUp, completeRegistration and acceptTerms require (Query.termsVersion), and who has accepted
+ * it (ADR-0103). Counts are accounts that are not deleted, by their latest Terms acceptance, the same rule as
+ * User.termsAccepted. A count below 5 is null, so a small group is not shown. Change the version with
+ * updateAdminSetting(key: "terms_version"); it must be one of publishedVersions (setting terms_published_versions). */
+export interface AdminTermsStatus {
+  current: string
+  source: TermsVersionSource
+  /** Versions whose text the web has published, oldest first. Only these may be chosen. */
+  publishedVersions: Array<string>
+  /** Accounts whose latest acceptance is the current version. Null when fewer than 5. */
+  acceptedCurrent: number | null
+  /** Accounts whose latest acceptance is another version; they are asked to accept again. Null when fewer than 5. */
+  acceptedOlder: number | null
+  /** Null when no admin has saved or reset terms_version. */
+  lastChange: AdminTermsChange | null
+}
+
 export interface AdminUpdateUserInput {
   userId: string
   displayName?: string | null
   email?: string | null
-  /** YYYY-MM-DD. The age gate runs again. A date that clears an age block needs reason. */
+  /** Whole years, 1 to 120, as of now (ADR-0104). The age gate runs again. Refused (VALIDATION) on an account that has
+   * a date of birth, which decides the age (correct dateOfBirth instead), and together with dateOfBirth. */
+  age?: number | null
+  /** YYYY-MM-DD. The age gate runs again; a date of birth decides the age over a declared one. Not together with age. */
   dateOfBirth?: string | null
-  /** Why this change is being made. Required, including when a new date of birth lets an under-age account pass. */
+  /** Why this change is being made. Required, including when a new age or date of birth lets an under-age account pass. */
   reason: string
 }
 
@@ -350,7 +385,11 @@ export type ClientPlatform = 'WEB' | 'MOBILE'
 /** After a provider sign-in (no signUp call): the same details, collected once */
 export interface CompleteRegistrationInput {
   displayName: string
-  dateOfBirth: string
+  /** Whole years, 1 to 120 (ADR-0104). Required, unless an app from before ADR-0104 sends dateOfBirth instead. When both
+   * are sent, age is used and dateOfBirth is ignored. */
+  age?: number | null
+  /** YYYY-MM-DD, from apps released before ADR-0104. The age it gives today is stored, not the date. */
+  dateOfBirth?: string | null
   institutionalEmail?: string | null
   acceptedTermsVersion: string
 }
@@ -1062,13 +1101,17 @@ export interface SignInWithGoogleInput {
   idToken: string
 }
 
-/** Registration (ADR-0017, ADR-0019): date of birth is required (YYYY-MM-DD). A college or organisation email is
+/** Registration (ADR-0017, ADR-0019, ADR-0104): the age in whole years is required. A college or organisation email is
  * optional; it receives a 6-digit code. `acceptedTermsVersion` must be Query.termsVersion. */
 export interface SignUpInput {
   email: string
   password: string
   displayName: string
-  dateOfBirth: string
+  /** Whole years, 1 to 120 (ADR-0104). Required, unless an app from before ADR-0104 sends dateOfBirth instead. When both
+   * are sent, age is used and dateOfBirth is ignored. */
+  age?: number | null
+  /** YYYY-MM-DD, from apps released before ADR-0104. The age it gives today is stored, not the date. */
+  dateOfBirth?: string | null
   institutionalEmail?: string | null
   acceptedTermsVersion: string
 }
@@ -1195,6 +1238,9 @@ export type TeacherSkillSource = 'MANUAL' | 'GITHUB' | 'WEBSITE' | 'ORCID' | 'OP
 
 /** Where the viewer stands as a teacher (ADR-0073) */
 export type TeacherStatus = 'NONE' | 'PENDING' | 'VERIFIED' | 'DECLINED'
+
+/** Where a value in effect comes from: a saved admin setting, the environment variable, or the built-in default. */
+export type TermsVersionSource = 'SETTING' | 'ENV' | 'DEFAULT'
 
 /** A topic of notes, resolved by notes */
 export interface Topic {

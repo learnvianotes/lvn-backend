@@ -7,6 +7,7 @@ import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { AuditService } from './audit.service'
 import { PlatformSettingsStore } from './platform-settings.store'
 import { PolicyService } from './policy.service'
+import { TermsVersionProvider } from './terms-version.provider'
 
 export { GOOGLE_SIGN_IN_SETTING, STUDENT_ID_VERIFICATION_SETTING } from '../domain/setting-catalog'
 
@@ -33,6 +34,7 @@ export class AppSettingsService {
     private readonly policy: PolicyService,
     private readonly audit: AuditService,
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
+    private readonly terms: TermsVersionProvider,
   ) {}
 
   /** Public. False until an admin turns it on, including when the row has never been written. */
@@ -99,11 +101,15 @@ export class AppSettingsService {
     await this.assertAdmin(adminId)
     const def = settingDef(key)
     if (!def) throw Errors.validation('That setting is not one an admin can change.', ['key'])
+    // ADR-0103: the version in effect after the reset must still be a published one.
+    await this.terms.assertChangeAllowed(key, null, ['key'])
+    const previous = (await this.one(key)).value
     const removed = await this.store.remove(key)
+    const after = await this.one(key)
     if (removed) {
-      await this.audit.record({ actorId: adminId, action: 'settings.reset', targetType: 'AppSetting', metadata: { key } })
+      await this.audit.record({ actorId: adminId, action: 'settings.reset', targetType: 'AppSetting', metadata: { key, previous, value: after.value } })
     }
-    return this.one(key)
+    return after
   }
 
   private async write(adminId: string, key: string, raw: string, action: string): Promise<void> {
@@ -112,6 +118,10 @@ export class AppSettingsService {
     if (!def) throw Errors.validation('That setting is not one an admin can change.', ['input', 'key'])
     const parsed = parseSettingInput(def, raw)
     if (!parsed.ok) throw Errors.validation(parsed.message, ['input', 'value'])
+    // ADR-0103: terms_version must be a published version, and the published list must keep the version in effect.
+    await this.terms.assertChangeAllowed(key, typeof parsed.value === 'string' ? parsed.value : null, ['input', 'value'])
+    // The value in effect before this save: the saved row, the environment or the built-in default.
+    const previous = (await this.one(key)).value
     await this.store.put(key, parsed.value, adminId)
     // targetId is a uuid column. The setting key is not one, so it lives in the metadata.
     // `enabled` stays on boolean rows so the older switch mutations keep the audit shape they already wrote.
@@ -119,7 +129,7 @@ export class AppSettingsService {
       actorId: adminId,
       action,
       targetType: 'AppSetting',
-      metadata: { key, value: serializeSetting(parsed.value), ...(typeof parsed.value === 'boolean' ? { enabled: parsed.value } : {}) },
+      metadata: { key, value: serializeSetting(parsed.value), previous, ...(typeof parsed.value === 'boolean' ? { enabled: parsed.value } : {}) },
     })
   }
 
@@ -138,7 +148,11 @@ export class AppSettingsService {
 
   private unset(def: SettingDef): boolean | number | string | null {
     const fallbacks = this.config.settingFallbacks
-    if (def.environmentFallback && def.key in fallbacks) return fallbacks[def.key as keyof typeof fallbacks]
+    if (def.environmentFallback && def.key in fallbacks) {
+      // Undefined is a variable that is not set (TERMS_VERSION): the built-in default applies.
+      const value = fallbacks[def.key as keyof typeof fallbacks]
+      if (value !== undefined) return value
+    }
     return def.defaultValue
   }
 

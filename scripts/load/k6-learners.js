@@ -56,7 +56,7 @@ export function setup() {
     const email = `load-${run}-${i}@example.com`
     const password = `load test passphrase ${run} ${i}`
     const res = gql(null, 'SignUp', 'mutation SignUp($input: SignUpInput!) { signUp(input: $input) { session { accessToken } userErrors { message } } }', {
-      input: { email, password, displayName: `Load Learner ${i}`, dateOfBirth: '2002-04-11', acceptedTermsVersion: terms },
+      input: { email, password, displayName: `Load Learner ${i}`, age: 24, acceptedTermsVersion: terms },
     })
     const token = res.json('data.signUp.session.accessToken')
     if (!token) continue

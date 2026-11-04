@@ -6,18 +6,17 @@ import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { ageRestrictedError } from '../domain/account-status'
 import {
-  dateOfBirthSchema,
   displayNameSchema,
   emailSchema,
   isBelowMinimumAge,
   LIMITS,
   RESET_PASSWORD_TTL_MINUTES,
-  TERMS_VERSION,
   VERIFY_EMAIL_TTL_HOURS,
 } from '../domain/rules'
 import { clientNetwork } from '../domain/network'
 import { isStudyPublisher } from '../domain/study-publisher'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { readDeclaredAge } from './age'
 import { freeHandle } from './handles'
 import { parseField } from './input'
 import { InstitutionalEmailService } from './institutional-email.service'
@@ -29,12 +28,16 @@ import { AgeBlockService } from './age-block.service'
 import { PlatformSettingsStore } from './platform-settings.store'
 import { SupportContact } from './support-contact'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
+import { TermsVersionProvider } from './terms-version.provider'
 
 export interface SignUpInput {
   email: string
   password: string
   displayName: string
-  dateOfBirth: string
+  /** Whole years, 1–120 (ADR-0104). */
+  age?: number | null
+  /** Deprecated (ADR-0104): apps from before it send this instead of `age`. Ignored when `age` is sent. */
+  dateOfBirth?: string | null
   institutionalEmail?: string | null
   acceptedTermsVersion: string
 }
@@ -67,13 +70,17 @@ export class AuthService {
     private readonly access: AccessGate,
     private readonly ageBlock: AgeBlockService,
     private readonly support: SupportContact,
+    private readonly terms: TermsVersionProvider,
   ) {}
 
   async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string): Promise<SignUpResult> {
     const email = parseField(emailSchema, input.email, 'email')
     const displayName = parseField(displayNameSchema, input.displayName, 'displayName')
-    const dateOfBirth = parseField(dateOfBirthSchema, input.dateOfBirth, 'dateOfBirth')
-    if (input.acceptedTermsVersion !== TERMS_VERSION) {
+    // ADR-0104: the age typed in whole years, or the age today from an older app's date of birth. No date is stored.
+    const declared = readDeclaredAge(input)
+    // ADR-0103: the version in effect now. The consent rows record this same value.
+    const termsVersion = this.terms.current()
+    if (input.acceptedTermsVersion !== termsVersion) {
       throw Errors.validation('Accept the current Terms and Privacy Policy to continue.', ['input', 'acceptedTermsVersion'])
     }
     await this.passwords.assertAcceptable(input.password)
@@ -81,10 +88,10 @@ export class AuthService {
     await this.access.assertAllowed(email)
     const role = (await this.access.roleFor(email)) ?? 'STUDENT'
     // Below the minimum the account is kept as AGE_BLOCKED (no session). An address that already has an account is not changed.
-    if (isBelowMinimumAge(dateOfBirth, this.settings.minimumAge())) {
+    if (isBelowMinimumAge(declared.value.declaredAge, this.settings.minimumAge())) {
       const passwordHash = await this.passwords.hash(input.password)
-      await this.ageBlock.holdSignUp({ email, displayName, dateOfBirth, passwordHash, globalRole: role })
-      throw ageRestrictedError(await this.support.email(), ['input', 'dateOfBirth'])
+      await this.ageBlock.holdSignUp({ email, displayName, age: declared.value, passwordHash, globalRole: role, termsVersion })
+      throw ageRestrictedError(await this.support.email(), ['input', declared.field])
     }
     const existing = await this.db.user.findUnique({
       where: { email },
@@ -116,13 +123,13 @@ export class AuthService {
             handle: await freeHandle(tx, displayName),
             displayName,
             passwordHash,
-            dateOfBirth,
+            ...declared.value,
             registrationCompletedAt: new Date(),
             globalRole: role,
           },
         })
         await tx.consentRecord.createMany({
-          data: (['TERMS', 'PRIVACY', 'PUBLIC_CONTENT_LICENCE'] as const).map((kind) => ({ id: newId(), userId: id, kind, version: TERMS_VERSION })),
+          data: (['TERMS', 'PRIVACY', 'PUBLIC_CONTENT_LICENCE'] as const).map((kind) => ({ id: newId(), userId: id, kind, version: termsVersion })),
         })
       })
     } catch (e) {

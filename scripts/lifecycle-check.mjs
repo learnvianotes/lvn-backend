@@ -83,7 +83,7 @@ const { termsVersion } = await gql('{ termsVersion }')
 const signUp = async (who) => {
   const email = `lifecycle-${who}-${stamp}@example.com`
   const up = await gql('mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken user { id } } userErrors { message } } }', {
-    input: { email, password: `lifecycle passphrase ${stamp}`, displayName: `Lifecycle ${who.toUpperCase()}`, dateOfBirth: '2000-01-01', acceptedTermsVersion: termsVersion },
+    input: { email, password: `lifecycle passphrase ${stamp}`, displayName: `Lifecycle ${who.toUpperCase()}`, age: 26, acceptedTermsVersion: termsVersion },
   })
   return { email, token: up.signUp.session.accessToken, id: up.signUp.session.user.id, handle: null }
 }

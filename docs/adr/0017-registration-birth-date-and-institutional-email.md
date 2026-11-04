@@ -1,6 +1,7 @@
 # ADR-0017: Registration needs a birth date and a college or organisation email
 
-- Status: Accepted (owner decision, 2026-10-08); amended by ADR-0019 (the institutional email is optional; teacher or admin verification)
+- Status: Accepted (owner decision, 2026-10-08); amended by ADR-0019 (the institutional email is optional; teacher or admin verification);
+  amended by ADR-0104 (registration asks for an age in whole years instead of a date of birth)
 - Date: 2026-10-08
 - Spec sections: §5, §7, §7.1, §15.2, §18
 - Amends: §7.1 verification bullet; ADR-0005 decision 3 (what "verified" means)

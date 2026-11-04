@@ -3,6 +3,7 @@ import { unverifiedGatesFromSetting, type Actor, type GlobalRole } from '@lvn/co
 import type { Policy } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { isRestrictedMinor } from '../domain/rules'
+import { AGE_FIELDS } from './age'
 import { UNVERIFIED_GATED_ACTIONS_SETTING } from '../domain/setting-catalog'
 import { PlatformSettingsStore } from './platform-settings.store'
 
@@ -25,7 +26,7 @@ export class PolicyService implements Policy {
         id: true,
         globalRole: true,
         verifiedAt: true,
-        dateOfBirth: true,
+        ...AGE_FIELDS,
         suspendedUntil: true,
         accountStatus: true,
         consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 },
@@ -41,7 +42,7 @@ export class PolicyService implements Policy {
       // verifiedAt does not block an admin. Clients read viewer.viewerNeedsVerification for prompts.
       institutionVerified: u.verifiedAt !== null,
       // The age threshold is configuration, cached briefly (ADR-0101). The account itself is read every time.
-      restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.settings.consentAge(), u.consents.length > 0),
+      restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), u.consents.length > 0),
       // A dated suspension ends when its time is up, even before the row is rewritten to ACTIVE.
       suspended: u.accountStatus === 'SUSPENDED'
         ? u.suspendedUntil === null || u.suspendedUntil.getTime() > Date.now()

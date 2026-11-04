@@ -2,9 +2,9 @@
  * The account that owns the seeded study notes (ADR-0098).
  *
  * It is not a person. The address is on the reserved `.invalid` domain (RFC 2606), so it cannot receive mail.
- * `passwordHash`, `emailVerifiedAt`, `dateOfBirth`, `verifiedAt` and `verificationMethod` are left null: nothing
- * here is a credential, and the columns are nullable, so a birth date and a document-verification flag are not
- * required to store the row. Sign-in is refused in `AuthService`, `OAuthService` and `SessionService` — a password,
+ * `passwordHash`, `emailVerifiedAt`, `dateOfBirth`, `declaredAge`, `verifiedAt` and `verificationMethod` are left
+ * null: nothing here is a credential, and the columns are nullable, so an age and a document-verification flag are
+ * not required to store the row. Sign-in is refused in `AuthService`, `OAuthService` and `SessionService` — a password,
  * a reset link, an email-link sign-up or a provider link cannot attach, even if those columns are filled in later.
  *
  * The same id and email are created by `contexts/notes` study-content sync. Keep the two copies identical.

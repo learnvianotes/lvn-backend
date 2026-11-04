@@ -45,6 +45,9 @@ export interface UsersConfig {
     search_timeout_ms: number
     account_minimum_age: number
     digital_consent_age: number
+    /** ADR-0103. Undefined when the variable is unset: the built-in default applies, and is reported as DEFAULT. */
+    terms_version: string | undefined
+    terms_published_versions: string | undefined
   }
 }
 
@@ -90,6 +93,8 @@ export function usersConfigFrom(c: ApiConfig): UsersConfig {
       search_timeout_ms: c.SEARCH_TIMEOUT_MS,
       account_minimum_age: c.ACCOUNT_MINIMUM_AGE,
       digital_consent_age: c.DIGITAL_CONSENT_AGE,
+      terms_version: c.TERMS_VERSION,
+      terms_published_versions: c.TERMS_PUBLISHED_VERSIONS,
     },
   }
 }

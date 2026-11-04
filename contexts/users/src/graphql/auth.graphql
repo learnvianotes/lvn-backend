@@ -49,14 +49,20 @@ type AuthPayload {
 }
 
 """
-Registration (ADR-0017, ADR-0019): date of birth is required (YYYY-MM-DD). A college or organisation email is
+Registration (ADR-0017, ADR-0019, ADR-0104): the age in whole years is required. A college or organisation email is
 optional; it receives a 6-digit code. `acceptedTermsVersion` must be Query.termsVersion.
 """
 input SignUpInput {
   email: String!
   password: String!
   displayName: String!
-  dateOfBirth: String!
+  """
+  Whole years, 1 to 120 (ADR-0104). Required, unless an app from before ADR-0104 sends dateOfBirth instead. When both
+  are sent, age is used and dateOfBirth is ignored.
+  """
+  age: Int
+  "YYYY-MM-DD, from apps released before ADR-0104. The age it gives today is stored, not the date."
+  dateOfBirth: String @deprecated(reason: "Send age, in whole years. Ignored when age is sent.")
   institutionalEmail: String
   acceptedTermsVersion: String!
 }
@@ -85,7 +91,7 @@ input ResetPasswordInput {
 }
 
 extend type Query {
-  "Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2)"
+  "Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2). A platform admin can change it (ADR-0103), so read it here instead of hard-coding it."
   termsVersion: String!
   "Action ids an institution-unverified account cannot do. Empty means none. Pass these into can() on web and mobile."
   unverifiedGatedActions: [String!]!

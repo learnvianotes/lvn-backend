@@ -82,13 +82,13 @@ type AuthPayload { session: Session, userErrors: [UserError!]! }
 type OkPayload { ok: Boolean!, userErrors: [UserError!]! }
 
 """
-Registration (ADR-0017, ADR-0019): date of birth is required. A college or organisation email is optional; it
+Registration (ADR-0017, ADR-0019, ADR-0104): the age in whole years is required. A college or organisation email is optional; it
 receives a 6-digit code. Without one, the user asks a verified teacher or sends documents to platform admins. Until
 verified, the account can use the app for itself but not reach other people.
 """
-input SignUpInput { email: String!, password: String!, displayName: String!, dateOfBirth: String!, institutionalEmail: String, acceptedTermsVersion: String! }
+input SignUpInput { email: String!, password: String!, displayName: String!, age: Int, dateOfBirth: String @deprecated(reason: "Send age, in whole years. Ignored when age is sent."), institutionalEmail: String, acceptedTermsVersion: String! }
 "After Google sign-in (no signUp call): the same details, collected once"
-input CompleteRegistrationInput { displayName: String!, dateOfBirth: String!, institutionalEmail: String, acceptedTermsVersion: String! }
+input CompleteRegistrationInput { displayName: String!, age: Int, dateOfBirth: String @deprecated(reason: "Send age, in whole years. Ignored when age is sent."), institutionalEmail: String, acceptedTermsVersion: String! }
 enum VerificationMethod { INSTITUTIONAL_EMAIL TEACHER DOCUMENTS }
 enum VerificationRequestStatus { PENDING APPROVED REJECTED WITHDRAWN }
 "Shown to the requester, the addressed teacher, and platform admins only. Documents are never exposed here."

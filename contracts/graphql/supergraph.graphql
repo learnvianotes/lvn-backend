@@ -412,7 +412,7 @@ type AdminErrorGroup
 }
 
 """
-An account as a platform admin sees it, including a date of birth (YYYY-MM-DD) and the standing reason.
+An account as a platform admin sees it, including its age (ADR-0104) and the standing reason.
 """
 type AdminManagedUser
   @join__type(graph: USERS)
@@ -421,7 +421,17 @@ type AdminManagedUser
   email: String!
   displayName: String!
   handle: String!
+
+  """
+  YYYY-MM-DD. Only accounts that have one: registered before ADR-0104, or set by an admin. Null otherwise.
+  """
   dateOfBirth: String
+
+  """
+  Whole years now (ADR-0104): from dateOfBirth when there is one, else the age given at registration plus the whole
+  years since, which is never more than the real age. Null before registration is finished.
+  """
+  age: Int
   accountStatus: AccountStatus!
   statusReason: String
   globalRole: GlobalRole!
@@ -518,7 +528,7 @@ input AdminSetAccountStandingInput
   userId: UUID!
 
   """
-  ACTIVE lifts a block or suspension. BLOCKED is indefinite. SUSPENDED needs until. AGE_BLOCKED is refused: correct the date of birth.
+  ACTIVE lifts a block or suspension. BLOCKED is indefinite. SUSPENDED needs until. AGE_BLOCKED is refused: correct the age or date of birth.
   """
   status: AccountStatus!
   reason: String!
@@ -530,7 +540,7 @@ input AdminSetAccountStandingInput
 """
 One application setting. `value` is `true` or `false`, a decimal integer, text, or empty when an integer is cleared.
 `overridden` is false when no admin has saved a row: `value` is then the environment variable or the built-in default.
-Categories: auth, verification, uploads, ai, search, accounts.
+Categories: auth, verification, uploads, ai, search, accounts, notes, legal.
 """
 type AdminSetting
   @join__type(graph: USERS)
@@ -600,6 +610,52 @@ type AdminStorageMetrics
   files: Int!
 }
 
+"""The latest save or reset of the terms_version setting."""
+type AdminTermsChange
+  @join__type(graph: USERS)
+{
+  """The admin who made it. Null when that account is gone."""
+  actorId: UUID
+
+  """Null when that account is gone or deleted."""
+  actorDisplayName: String
+  at: DateTime!
+
+  """The version in effect before the change."""
+  previous: String
+}
+
+"""
+The terms version that signUp, completeRegistration and acceptTerms require (Query.termsVersion), and who has accepted
+it (ADR-0103). Counts are accounts that are not deleted, by their latest Terms acceptance, the same rule as
+User.termsAccepted. A count below 5 is null, so a small group is not shown. Change the version with
+updateAdminSetting(key: "terms_version"); it must be one of publishedVersions (setting terms_published_versions).
+"""
+type AdminTermsStatus
+  @join__type(graph: USERS)
+{
+  current: String!
+  source: TermsVersionSource!
+
+  """
+  Versions whose text the web has published, oldest first. Only these may be chosen.
+  """
+  publishedVersions: [String!]!
+
+  """
+  Accounts whose latest acceptance is the current version. Null when fewer than 5.
+  """
+  acceptedCurrent: Int
+
+  """
+  Accounts whose latest acceptance is another version; they are asked to accept again. Null when fewer than 5.
+  """
+  acceptedOlder: Int
+
+  """Null when no admin has saved or reset terms_version."""
+  lastChange: AdminTermsChange
+}
+
 input AdminUpdateUserInput
   @join__type(graph: USERS)
 {
@@ -608,12 +664,18 @@ input AdminUpdateUserInput
   email: String
 
   """
-  YYYY-MM-DD. The age gate runs again. A date that clears an age block needs reason.
+  Whole years, 1 to 120, as of now (ADR-0104). The age gate runs again. Refused (VALIDATION) on an account that has
+  a date of birth, which decides the age (correct dateOfBirth instead), and together with dateOfBirth.
+  """
+  age: Int
+
+  """
+  YYYY-MM-DD. The age gate runs again; a date of birth decides the age over a declared one. Not together with age.
   """
   dateOfBirth: String
 
   """
-  Why this change is being made. Required, including when a new date of birth lets an under-age account pass.
+  Why this change is being made. Required, including when a new age or date of birth lets an under-age account pass.
   """
   reason: String!
 }
@@ -2021,7 +2083,17 @@ input CompleteRegistrationInput
   @join__type(graph: USERS)
 {
   displayName: String!
-  dateOfBirth: String!
+
+  """
+  Whole years, 1 to 120 (ADR-0104). Required, unless an app from before ADR-0104 sends dateOfBirth instead. When both
+  are sent, age is used and dateOfBirth is ignored.
+  """
+  age: Int
+
+  """
+  YYYY-MM-DD, from apps released before ADR-0104. The age it gives today is stored, not the date.
+  """
+  dateOfBirth: String @deprecated(reason: "Send age, in whole years. Ignored when age is sent.")
   institutionalEmail: String
   acceptedTermsVersion: String!
 }
@@ -4263,7 +4335,7 @@ type Mutation
   deleteAdminPlan(id: UUID!): OkPayload! @join__field(graph: USERS)
 
   """
-  Platform admins. Edits name, email or date of birth and re-runs the age gate. A passing date of birth clears AGE_BLOCKED. Audited.
+  Platform admins. Edits name, email, age or date of birth and re-runs the age gate. A passing age clears AGE_BLOCKED. Audited.
   """
   adminUpdateUser(input: AdminUpdateUserInput!): AdminUserPayload! @join__field(graph: USERS)
 
@@ -5728,6 +5800,11 @@ type Query
   adminSettings: [AdminSetting!]! @join__field(graph: USERS)
 
   """
+  Platform admins. The terms version in effect, where it comes from, the published versions and acceptance counts.
+  """
+  adminTermsStatus: AdminTermsStatus! @join__field(graph: USERS)
+
+  """
   Platform admins. Every plan, with its price, limits and how many accounts are on it.
   """
   adminPlans: [AdminPlan!]! @join__field(graph: USERS)
@@ -5761,7 +5838,7 @@ type Query
   usersByIds(ids: [UUID!]!): [AdminUserLookup!]! @join__field(graph: USERS)
 
   """
-  Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2)
+  Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2). A platform admin can change it (ADR-0103), so read it here instead of hard-coding it.
   """
   termsVersion: String! @join__field(graph: USERS)
 
@@ -7246,7 +7323,7 @@ input SignInWithGoogleInput
 }
 
 """
-Registration (ADR-0017, ADR-0019): date of birth is required (YYYY-MM-DD). A college or organisation email is
+Registration (ADR-0017, ADR-0019, ADR-0104): the age in whole years is required. A college or organisation email is
 optional; it receives a 6-digit code. `acceptedTermsVersion` must be Query.termsVersion.
 """
 input SignUpInput
@@ -7255,7 +7332,17 @@ input SignUpInput
   email: String!
   password: String!
   displayName: String!
-  dateOfBirth: String!
+
+  """
+  Whole years, 1 to 120 (ADR-0104). Required, unless an app from before ADR-0104 sends dateOfBirth instead. When both
+  are sent, age is used and dateOfBirth is ignored.
+  """
+  age: Int
+
+  """
+  YYYY-MM-DD, from apps released before ADR-0104. The age it gives today is stored, not the date.
+  """
+  dateOfBirth: String @deprecated(reason: "Send age, in whole years. Ignored when age is sent.")
   institutionalEmail: String
   acceptedTermsVersion: String!
 }
@@ -7710,6 +7797,17 @@ enum TeacherStatus
 
   """The latest application was declined; may apply again"""
   DECLINED @join__enumValue(graph: USERS)
+}
+
+"""
+Where a value in effect comes from: a saved admin setting, the environment variable, or the built-in default.
+"""
+enum TermsVersionSource
+  @join__type(graph: USERS)
+{
+  SETTING @join__enumValue(graph: USERS)
+  ENV @join__enumValue(graph: USERS)
+  DEFAULT @join__enumValue(graph: USERS)
 }
 
 """A topic of the notes subgraph"""

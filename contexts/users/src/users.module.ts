@@ -8,6 +8,8 @@ import { AppSettingsService } from './application/app-settings.service'
 import { PlanAdminService } from './application/plan-admin.service'
 import { PublicPlansService } from './application/public-plans.service'
 import { PlatformSettingsStore } from './application/platform-settings.store'
+import { TermsVersionProvider } from './application/terms-version.provider'
+import { AdminTermsService } from './application/admin-terms.service'
 import { AuditService } from './application/audit.service'
 import { AuthService } from './application/auth.service'
 import { EntitlementService } from './application/entitlement.service'
@@ -88,6 +90,8 @@ export class UsersModule {
         BackendErrorSink,
         VerificationService,
         PlatformSettingsStore,
+        TermsVersionProvider,
+        AdminTermsService,
         AccessGate,
         AccessAllowlistService,
         AppSettingsService,

@@ -26,12 +26,12 @@ const signUpInput = (over: Record<string, unknown> = {}) => ({
   email: newEmail(),
   password: 'correct horse battery staple',
   displayName: 'Asha Rao',
-  dateOfBirth: '2004-05-01',
+  age: 22,
   acceptedTermsVersion: '2026-11-03',
   ...over,
 })
 
-/** The date `years` ago today (UTC), as the sign-up forms send it. */
+/** The date `years` ago today (UTC), as sign-up forms from before ADR-0104 send it. */
 const yearsAgo = (years: number) => {
   const d = new Date()
   d.setUTCFullYear(d.getUTCFullYear() - years)
@@ -66,6 +66,10 @@ describe('auth', () => {
       expect(res.data!.signUp.userErrors).toEqual([])
       expect(session.user).toMatchObject({ email: input.email, emailVerified: false, registrationComplete: true, verified: false, handle: 'asharao' })
       expect(session.refreshToken).toBeNull() // web: the refresh token is in the cookie
+      // ADR-0104: the typed age and when it was given are kept; no date of birth.
+      const row = await t.app.get(PrismaService).user.findUniqueOrThrow({ where: { id: session.user.id } })
+      expect(row).toMatchObject({ declaredAge: 22, dateOfBirth: null })
+      expect(Date.now() - row.ageDeclaredAt!.getTime()).toBeLessThan(60_000)
 
       expect((await t.gql(VIEWER, {}, session.accessToken)).data).toEqual({ viewer: { id: session.user.id, emailVerified: false } })
 
@@ -111,8 +115,15 @@ describe('auth', () => {
 
     it.each([
       [{ password: 'short' }, ['input', 'password'], /at least 10/],
-      [{ dateOfBirth: '2004-02-30' }, ['input', 'dateOfBirth'], /real date/],
-      [{ dateOfBirth: '2999-01-01' }, ['input', 'dateOfBirth'], /future/],
+      [{ age: 0 }, ['input', 'age'], /from 1 to 120/],
+      [{ age: 121 }, ['input', 'age'], /from 1 to 120/],
+      [{ age: -5 }, ['input', 'age'], /from 1 to 120/],
+      [{ age: undefined }, ['input', 'age'], /Enter your age/],
+      [{ age: null, dateOfBirth: null }, ['input', 'age'], /Enter your age/],
+      // The deprecated dateOfBirth of apps from before ADR-0104 is still checked as before.
+      [{ age: undefined, dateOfBirth: '2004-02-30' }, ['input', 'dateOfBirth'], /real date/],
+      [{ age: undefined, dateOfBirth: '2999-01-01' }, ['input', 'dateOfBirth'], /future/],
+      [{ age: undefined, dateOfBirth: yearsAgo(0) }, ['input', 'dateOfBirth'], /real date of birth/],
       [{ email: 'not-an-email' }, ['input', 'email'], /valid email/],
       [{ displayName: '   ' }, ['input', 'displayName'], /name/],
       [{ acceptedTermsVersion: '2020-01-01' }, ['input', 'acceptedTermsVersion'], /Terms/],
@@ -122,8 +133,21 @@ describe('auth', () => {
       expect(res.data!.signUp.userErrors).toEqual([{ code: 'VALIDATION', field, message: expect.stringMatching(message) }])
     })
 
-    it('keeps a date of birth below the minimum age as AGE_BLOCKED and returns AGE_RESTRICTED', async () => {
-      const input = signUpInput({ dateOfBirth: yearsAgo(17) })
+    it.each([17.5, '18', true])('refuses the age %p as VALIDATION before anything is stored', async (age) => {
+      // GraphQL's Int takes whole numbers only; the API reports the bad variable as VALIDATION.
+      const input = signUpInput({ age })
+      const res = await t.gql<SignUpResult>(SIGN_UP, { input })
+      expect(res.data).toBeUndefined()
+      expect(res.errors?.[0]?.extensions.code).toBe('VALIDATION')
+      expect(res.errors?.[0]?.message).toMatch(/input\.age/)
+      expect(await t.app.get(PrismaService).user.count({ where: { email: input.email as string } })).toBe(0)
+    })
+
+    it.each([
+      ['an age', { age: 17 }, 'age'],
+      ['the date of birth an older app sends', { age: undefined, dateOfBirth: yearsAgo(17) }, 'dateOfBirth'],
+    ])('keeps %s below the minimum age as AGE_BLOCKED and returns AGE_RESTRICTED', async (_what, over, field) => {
+      const input = signUpInput(over)
       const res = await t.gql<{ signUp: { session: { accessToken: string } | null; userErrors: { field: string[] | null; message: string; code: string; supportEmail: string | null }[] } }>(
         `mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken } userErrors { field message code supportEmail } } }`,
         { input },
@@ -131,21 +155,39 @@ describe('auth', () => {
       expect(res.data!.signUp.session).toBeNull()
       expect(res.data!.signUp.userErrors).toEqual([{
         code: 'AGE_RESTRICTED',
-        field: ['input', 'dateOfBirth'],
+        field: ['input', field],
         message: expect.stringMatching(/Contact an admin at support@learnvianotes\.in/),
         supportEmail: 'support@learnvianotes.in',
       }])
-      const user = await t.app.get(PrismaService).user.findUnique({ where: { email: input.email } })
+      const user = await t.app.get(PrismaService).user.findUnique({ where: { email: input.email as string } })
       expect(user).toMatchObject({ accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.', analyticsOptOut: true })
+      // Only the age is kept, whichever input it came from (ADR-0104).
+      expect(user).toMatchObject({ declaredAge: 17, dateOfBirth: null })
       expect(user!.deletedAt).toBeNull()
       expect(user!.registrationCompletedAt).not.toBeNull()
       expect(await t.app.get(PrismaService).session.count({ where: { userId: user!.id } })).toBe(0)
     })
 
-    it('lets someone in on their eighteenth birthday', async () => {
-      const res = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput({ dateOfBirth: yearsAgo(18) }) })
+    it('lets someone in who is eighteen', async () => {
+      const res = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput({ age: 18 }) })
       expect(res.data!.signUp.userErrors).toEqual([])
       expect(res.data!.signUp.session).not.toBeNull()
+    })
+
+    it('lets someone in on their eighteenth birthday from an older app, and stores the age, not the date', async () => {
+      const res = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput({ age: undefined, dateOfBirth: yearsAgo(18) }) })
+      expect(res.data!.signUp.userErrors).toEqual([])
+      const row = await t.app.get(PrismaService).user.findUniqueOrThrow({ where: { id: res.data!.signUp.session!.user.id } })
+      expect(row).toMatchObject({ declaredAge: 18, dateOfBirth: null })
+    })
+
+    it('uses the age when an app sends both, and ignores the date of birth', async () => {
+      const res = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput({ age: 30, dateOfBirth: yearsAgo(10) }) })
+      expect(res.data!.signUp.userErrors).toEqual([])
+      const row = await t.app.get(PrismaService).user.findUniqueOrThrow({ where: { id: res.data!.signUp.session!.user.id } })
+      expect(row).toMatchObject({ declaredAge: 30, dateOfBirth: null })
+      const young = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput({ age: 16, dateOfBirth: yearsAgo(40) }) })
+      expect(young.data!.signUp.userErrors[0]).toMatchObject({ code: 'AGE_RESTRICTED', field: ['input', 'age'] })
     })
 
     it('refuses an email that already has an account, in any letter case', async () => {
