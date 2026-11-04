@@ -24,7 +24,7 @@ import { parseStudyPage, type StudyPage } from '../domain/study-page'
  */
 
 /** Keep identical to contexts/users/src/domain/study-publisher.ts. */
-const STUDY_PUBLISHER_ID = '019a118c-f480-7000-8000-000000000001'
+export const STUDY_PUBLISHER_ID = '019a118c-f480-7000-8000-000000000001'
 const STUDY_PUBLISHER_EMAIL = 'publisher@learnvianotes.invalid'
 const STUDY_PUBLISHER_HANDLE = 'learnvianotes'
 const FREE_PLAN_ID = '01920000-0000-7000-8000-000000000001'

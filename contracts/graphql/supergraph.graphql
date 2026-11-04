@@ -351,6 +351,22 @@ type AdminContentMetrics
   classrooms: Int!
 }
 
+"""
+What was created in the window. Cached in each API process for about 5 minutes.
+"""
+type AdminContentStats
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  generatedAt: DateTime!
+  notes: AdminNoteCreationCounts!
+  uploads: AdminUploadStats!
+  scans: AdminScanCounts!
+  doubts: AdminDoubtStats!
+  places: AdminPlaceCounts!
+  sharing: AdminSharingCounts!
+}
+
 """A contest as its writers see it"""
 type AdminContest
   @join__type(graph: CORE)
@@ -397,6 +413,74 @@ input AdminDeleteUserInput
   confirm: String!
 }
 
+"""Doubts in group workspaces. Deleted doubts and answers are left out."""
+type AdminDoubtStats
+  @join__type(graph: USERS)
+{
+  asked: Int!
+
+  """
+  Doubts whose first answer from someone other than the asker came in the window.
+  """
+  answered: Int!
+  resolved: Int!
+
+  """Answers posted."""
+  answers: Int!
+
+  """
+  Median hours from asking to that first answer, for the doubts answered in the window, one decimal. Null when none.
+  """
+  medianHoursToFirstAnswer: Float
+}
+
+"""
+Activity. A person is active on a day when they signed in or refreshed a session, sent a usage event, or recorded
+learning (by their own learning day) that day. Accounts that opted out of analytics and deleted accounts are never
+counted as active. dau is the last day of the range; wau and mau its last 7 and 30 days (they can reach before
+`range.from`). stickiness is the average daily active people over those 30 days divided by mau (0 to 1; 0 when mau
+is 0). Cached in each API process for about 5 minutes.
+"""
+type AdminEngagement
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  interval: MetricsInterval!
+  generatedAt: DateTime!
+  dau: Int!
+  wau: Int!
+  mau: Int!
+  stickiness: Float!
+  series: [AdminEngagementPoint!]!
+}
+
+type AdminEngagementPoint
+  @join__type(graph: USERS)
+{
+  """The bucket's first day, YYYY-MM-DD."""
+  date: String!
+
+  """Distinct active people in the bucket (see AdminEngagement)."""
+  activeUsers: Int!
+
+  """
+  Learning minutes (focus, reviews, quizzes), by each learner's own day; imported old-site time is left out.
+  """
+  learningMinutes: Int!
+
+  """Notes created and not deleted. Synced study pages are left out."""
+  notesCreated: Int!
+  doubtsAsked: Int!
+
+  """
+  Doubts whose first answer from someone other than the asker came in the bucket.
+  """
+  doubtsAnswered: Int!
+
+  """Class-quiz and shared-quiz attempts submitted."""
+  quizAttempts: Int!
+}
+
 """One error code in the window, with who it affected."""
 type AdminErrorGroup
   @join__type(graph: USERS)
@@ -409,6 +493,53 @@ type AdminErrorGroup
   """At most 100 distinct account ids."""
   userIds: [UUID!]!
   sampleMessage: String!
+}
+
+"""
+Sign-ups and verifications. Cached in each API process for about 5 minutes. Methods with fewer than 5 accounts are
+left out of signUpMethods and counted in hiddenSmallGroups.
+"""
+type AdminGrowth
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  interval: MetricsInterval!
+  generatedAt: DateTime!
+  totals: AdminGrowthTotals!
+  series: [AdminGrowthPoint!]!
+  signUpMethods: [AdminSignUpMethodCount!]!
+  hiddenSmallGroups: Int!
+}
+
+"""
+One bucket. Accounts deleted since, and the study publisher, are left out.
+"""
+type AdminGrowthPoint
+  @join__type(graph: USERS)
+{
+  """The bucket's first day, YYYY-MM-DD."""
+  date: String!
+
+  """Accounts created."""
+  signUps: Int!
+
+  """Login emails verified (a provider sign-up verifies it at once)."""
+  emailVerified: Int!
+
+  """Registrations finished (age and terms)."""
+  registrationsCompleted: Int!
+
+  """Accounts that became verified students or teachers."""
+  verifications: Int!
+}
+
+type AdminGrowthTotals
+  @join__type(graph: USERS)
+{
+  signUps: Int!
+  emailVerified: Int!
+  registrationsCompleted: Int!
+  verifications: Int!
 }
 
 """
@@ -456,11 +587,52 @@ type AdminMetrics
   scans: AdminScanMetrics!
 }
 
+"""
+The days a result covers: whole calendar days in `timeZone` (Asia/Kolkata). `from` is midnight at the start of
+`firstDay`, `to` midnight after `lastDay` (exclusive). A last day after today is today.
+"""
+type AdminMetricsRange
+  @join__type(graph: USERS)
+{
+  from: DateTime!
+  to: DateTime!
+
+  """YYYY-MM-DD."""
+  firstDay: String!
+
+  """YYYY-MM-DD, inclusive."""
+  lastDay: String!
+  timeZone: String!
+}
+
 type AdminModerationMetrics
   @join__type(graph: USERS)
 {
   openReports: Int!
   openAppeals: Int!
+}
+
+"""
+Notes created in the window and not deleted, by their visibility now. Synced study pages are left out.
+"""
+type AdminNoteCreationCounts
+  @join__type(graph: USERS)
+{
+  created: Int!
+  public: Int!
+  unlisted: Int!
+  shared: Int!
+  private: Int!
+}
+
+"""Created in the window and not deleted."""
+type AdminPlaceCounts
+  @join__type(graph: USERS)
+{
+  groups: Int!
+  classrooms: Int!
+  groupPosts: Int!
+  classroomPosts: Int!
 }
 
 """
@@ -510,6 +682,18 @@ type AdminPlanPayload
 {
   plan: AdminPlan
   userErrors: [UserError!]!
+}
+
+"""
+Scan results of those uploads. failed is a scanner error or a scan that used up its attempts.
+"""
+type AdminScanCounts
+  @join__type(graph: USERS)
+{
+  clean: Int!
+  infected: Int!
+  failed: Int!
+  pending: Int!
 }
 
 type AdminScanMetrics
@@ -601,6 +785,27 @@ enum AdminSettingType
 }
 
 """
+noteShares are notes shared with one person; placeShares with a group or class.
+"""
+type AdminSharingCounts
+  @join__type(graph: USERS)
+{
+  noteShares: Int!
+  placeShares: Int!
+  saves: Int!
+}
+
+"""
+Accounts created in the window by how they signed up. A provider counts when it was linked within a minute of sign-up.
+"""
+type AdminSignUpMethodCount
+  @join__type(graph: USERS)
+{
+  method: SignUpMethod!
+  users: Int!
+}
+
+"""
 Bytes are a decimal string. Files are those stored: uploaded, processing, ready or quarantined.
 """
 type AdminStorageMetrics
@@ -608,6 +813,37 @@ type AdminStorageMetrics
 {
   bytes: String!
   files: Int!
+}
+
+type AdminSubjectCount
+  @join__type(graph: USERS)
+{
+  subjectId: UUID!
+  title: String!
+
+  """Notes, minutes or saves, as AdminTopSubjects.by says."""
+  value: Int!
+
+  """
+  Distinct people behind value: note owners, learners or savers. Always at least 5.
+  """
+  users: Int!
+}
+
+"""Which measure ranks subjects in adminTopSubjects."""
+enum AdminSubjectMetric
+  @join__type(graph: USERS)
+{
+  """Notes created in the window with a topic in the subject."""
+  NOTES @join__enumValue(graph: USERS)
+
+  """
+  Minutes people spent with the subject's topics open (studying and reading).
+  """
+  LEARNING_TIME @join__enumValue(graph: USERS)
+
+  """Saves of notes with a topic in the subject."""
+  SAVES @join__enumValue(graph: USERS)
 }
 
 """The latest save or reset of the terms_version setting."""
@@ -656,6 +892,20 @@ type AdminTermsStatus
   lastChange: AdminTermsChange
 }
 
+"""
+Subjects ranked by `by`, at most `first`. A subject with fewer than 5 distinct people behind it is never listed and is
+counted in hiddenSmallGroups. Cached in each API process for about 5 minutes.
+"""
+type AdminTopSubjects
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  by: AdminSubjectMetric!
+  generatedAt: DateTime!
+  subjects: [AdminSubjectCount!]!
+  hiddenSmallGroups: Int!
+}
+
 input AdminUpdateUserInput
   @join__type(graph: USERS)
 {
@@ -678,6 +928,31 @@ input AdminUpdateUserInput
   Why this change is being made. Required, including when a new age or date of birth lets an under-age account pass.
   """
   reason: String!
+}
+
+"""Bytes are a decimal string."""
+type AdminUploadPurposeCount
+  @join__type(graph: USERS)
+{
+  """
+  A FilePurpose value: ATTACHMENT, COVER, VOICE_NOTE, AVATAR, IMPORT, VERIFICATION_DOCUMENT, GROUP_PICTURE, COLLEGE_ID or PAGE_IMAGE.
+  """
+  purpose: String!
+  files: Int!
+  bytes: String!
+}
+
+"""
+Files people uploaded in the window that are still stored. Server-made data exports are left out. A purpose with fewer
+than 5 distinct uploaders is left out of byPurpose (still in files and bytes) and counted in hiddenSmallGroups.
+"""
+type AdminUploadStats
+  @join__type(graph: USERS)
+{
+  files: Int!
+  bytes: String!
+  byPurpose: [AdminUploadPurposeCount!]!
+  hiddenSmallGroups: Int!
 }
 
 """
@@ -744,6 +1019,27 @@ enum AdminUserStatusFilter
   ACTIVE @join__enumValue(graph: USERS)
 }
 
+"""
+A verification route: the request's method, with a college ID card (ADR-0099) apart from other documents.
+"""
+enum AdminVerificationMethod
+  @join__type(graph: USERS)
+{
+  INSTITUTIONAL_EMAIL @join__enumValue(graph: USERS)
+  TEACHER @join__enumValue(graph: USERS)
+  DOCUMENTS @join__enumValue(graph: USERS)
+  COLLEGE_ID @join__enumValue(graph: USERS)
+}
+
+type AdminVerificationMethodCount
+  @join__type(graph: USERS)
+{
+  method: AdminVerificationMethod!
+  requested: Int!
+  approved: Int!
+  rejected: Int!
+}
+
 type AdminVerificationMetrics
   @join__type(graph: USERS)
 {
@@ -757,6 +1053,34 @@ type AdminVerificationMetrics
 
   """Domains waiting for a decision (ACADEMIC_QUEUED or NEEDS_REVIEW)."""
   domainReviews: Int!
+}
+
+"""
+Verification requests of every purpose. requested counts requests made in the window; approved and rejected count
+decisions made in it. pending and oldestPendingHours describe the queue now, whatever the window. A method with fewer
+than 5 distinct requesters is left out of byMethod and counted in hiddenSmallGroups. Cached for about 5 minutes.
+"""
+type AdminVerificationStats
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  generatedAt: DateTime!
+  requested: Int!
+  approved: Int!
+  rejected: Int!
+  pending: Int!
+
+  """
+  Median hours from request to decision, for decisions in the window, one decimal. Null when none.
+  """
+  medianHoursToDecision: Float
+
+  """
+  Hours the oldest pending request has waited, one decimal. Null when nothing is pending.
+  """
+  oldestPendingHours: Float
+  byMethod: [AdminVerificationMethodCount!]!
+  hiddenSmallGroups: Int!
 }
 
 """
@@ -3700,6 +4024,16 @@ type MentorInviteItem
   expiresAt: DateTime!
 }
 
+"""
+How a series is grouped. WEEK starts on Monday (ISO); the first week starts on the window's first day and can be shorter.
+"""
+enum MetricsInterval
+  @join__type(graph: USERS)
+{
+  DAY @join__enumValue(graph: USERS)
+  WEEK @join__enumValue(graph: USERS)
+}
+
 input ModerateContentInput
   @join__type(graph: CORE)
 {
@@ -5791,6 +6125,31 @@ type Query
   """
   adminAccessAllowlist(search: String): [AccessAllowlistEntry!]! @join__field(graph: USERS)
 
+  """
+  Platform admins. Sign-ups and verifications per DAY (when omitted) or WEEK. Omit from and to for the last 30 days. At most 366 days.
+  """
+  adminGrowth(from: DateTime, to: DateTime, interval: MetricsInterval): AdminGrowth! @join__field(graph: USERS)
+
+  """
+  Platform admins. DAU, WAU, MAU, stickiness and activity per DAY (when omitted) or WEEK. At most 366 days.
+  """
+  adminEngagement(from: DateTime, to: DateTime, interval: MetricsInterval): AdminEngagement! @join__field(graph: USERS)
+
+  """
+  Platform admins. Notes, uploads, scans, doubts, places and sharing created in the window. At most 366 days.
+  """
+  adminContentStats(from: DateTime, to: DateTime): AdminContentStats! @join__field(graph: USERS)
+
+  """
+  Platform admins. Top subjects by notes, learning time or saves. first is 1 to 50, 10 when omitted. At most 366 days.
+  """
+  adminTopSubjects(from: DateTime, to: DateTime, by: AdminSubjectMetric!, first: Int): AdminTopSubjects! @join__field(graph: USERS)
+
+  """
+  Platform admins. Verification requests and decisions in the window and the queue now. At most 366 days.
+  """
+  adminVerificationStats(from: DateTime, to: DateTime): AdminVerificationStats! @join__field(graph: USERS)
+
   """Platform admins. Counts for the dashboard."""
   adminMetrics(from: DateTime, to: DateTime): AdminMetrics! @join__field(graph: USERS)
 
@@ -5828,7 +6187,12 @@ type Query
   adminUserActivity(userId: UUID!, first: Int): [UserActivityEvent!]! @join__field(graph: USERS)
 
   """
-  Platform admins. Ordered steps. A person counts at a step when each earlier step happened first.
+  Platform admins. 1 to 5 ordered steps, each a usage event name (page_view, note_open, note_upload, search, download,
+  sign_in) or a step read from the database (ADR-0105): signed_up (account created), email_verified (login email
+  verified), first_note (the account's first note), returned_d7 (active again 7 or more days after signing up, and
+  after the previous step: a sign-in or session refresh, a usage event, or learning). A person counts at a step when
+  each earlier step happened first; each step's time is its first occurrence since `since` (default: 30 days ago).
+  Database steps leave out deleted accounts and accounts that opted out of analytics.
   """
   adminFunnel(steps: [String!]!, since: DateTime): [FunnelStep!]! @join__field(graph: USERS)
 
@@ -7345,6 +7709,18 @@ input SignUpInput
   dateOfBirth: String @deprecated(reason: "Send age, in whole years. Ignored when age is sent.")
   institutionalEmail: String
   acceptedTermsVersion: String!
+}
+
+"""
+How an account was created: a password or an email link (EMAIL), or a sign-in provider.
+"""
+enum SignUpMethod
+  @join__type(graph: USERS)
+{
+  EMAIL @join__enumValue(graph: USERS)
+  GOOGLE @join__enumValue(graph: USERS)
+  GITHUB @join__enumValue(graph: USERS)
+  LINKEDIN @join__enumValue(graph: USERS)
 }
 
 """Skills import for the viewer (ADR-0077)"""

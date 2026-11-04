@@ -4,6 +4,7 @@ import { AccessAllowlistService } from './application/access-allowlist.service'
 import { AccessGate } from './application/access-gate'
 import { AdminService } from './application/admin.service'
 import { AdminMetricsService } from './application/admin-metrics.service'
+import { AdminUsageMetricsService } from './application/admin-usage-metrics.service'
 import { AppSettingsService } from './application/app-settings.service'
 import { PlanAdminService } from './application/plan-admin.service'
 import { PublicPlansService } from './application/public-plans.service'
@@ -52,6 +53,7 @@ import { AccountResolver } from './graphql/account.resolver'
 import { AccessAllowlistResolver } from './graphql/access.resolver'
 import { AnalyticsOptOutResolver, AnalyticsResolver } from './graphql/analytics.resolver'
 import { AdminDashboardResolver } from './graphql/admin.resolver'
+import { AdminUsageMetricsResolver } from './graphql/admin-usage-metrics.resolver'
 import { PlansResolver } from './graphql/plans.resolver'
 
 /**
@@ -96,6 +98,7 @@ export class UsersModule {
         AccessAllowlistService,
         AppSettingsService,
         AdminMetricsService,
+        AdminUsageMetricsService,
         PlanAdminService,
         PublicPlansService,
         AdminService,
@@ -110,6 +113,7 @@ export class UsersModule {
         AccountResolver,
         AccessAllowlistResolver,
         AdminDashboardResolver,
+        AdminUsageMetricsResolver,
         PlansResolver,
         LegacyService,
         SocialService,

@@ -100,11 +100,67 @@ export interface AdminContentMetrics {
   classrooms: number
 }
 
+/** What was created in the window. Cached in each API process for about 5 minutes. */
+export interface AdminContentStats {
+  range: AdminMetricsRange
+  generatedAt: Date
+  notes: AdminNoteCreationCounts
+  uploads: AdminUploadStats
+  scans: AdminScanCounts
+  doubts: AdminDoubtStats
+  places: AdminPlaceCounts
+  sharing: AdminSharingCounts
+}
+
 export interface AdminDeleteUserInput {
   userId: string
   reason: string
   /** The exact word DELETE. */
   confirm: string
+}
+
+/** Doubts in group workspaces. Deleted doubts and answers are left out. */
+export interface AdminDoubtStats {
+  asked: number
+  /** Doubts whose first answer from someone other than the asker came in the window. */
+  answered: number
+  resolved: number
+  /** Answers posted. */
+  answers: number
+  /** Median hours from asking to that first answer, for the doubts answered in the window, one decimal. Null when none. */
+  medianHoursToFirstAnswer: number | null
+}
+
+/** Activity. A person is active on a day when they signed in or refreshed a session, sent a usage event, or recorded
+ * learning (by their own learning day) that day. Accounts that opted out of analytics and deleted accounts are never
+ * counted as active. dau is the last day of the range; wau and mau its last 7 and 30 days (they can reach before
+ * `range.from`). stickiness is the average daily active people over those 30 days divided by mau (0 to 1; 0 when mau
+ * is 0). Cached in each API process for about 5 minutes. */
+export interface AdminEngagement {
+  range: AdminMetricsRange
+  interval: MetricsInterval
+  generatedAt: Date
+  dau: number
+  wau: number
+  mau: number
+  stickiness: number
+  series: Array<AdminEngagementPoint>
+}
+
+export interface AdminEngagementPoint {
+  /** The bucket's first day, YYYY-MM-DD. */
+  date: string
+  /** Distinct active people in the bucket (see AdminEngagement). */
+  activeUsers: number
+  /** Learning minutes (focus, reviews, quizzes), by each learner's own day; imported old-site time is left out. */
+  learningMinutes: number
+  /** Notes created and not deleted. Synced study pages are left out. */
+  notesCreated: number
+  doubtsAsked: number
+  /** Doubts whose first answer from someone other than the asker came in the bucket. */
+  doubtsAnswered: number
+  /** Class-quiz and shared-quiz attempts submitted. */
+  quizAttempts: number
 }
 
 /** One error code in the window, with who it affected. */
@@ -116,6 +172,39 @@ export interface AdminErrorGroup {
   /** At most 100 distinct account ids. */
   userIds: Array<string>
   sampleMessage: string
+}
+
+/** Sign-ups and verifications. Cached in each API process for about 5 minutes. Methods with fewer than 5 accounts are
+ * left out of signUpMethods and counted in hiddenSmallGroups. */
+export interface AdminGrowth {
+  range: AdminMetricsRange
+  interval: MetricsInterval
+  generatedAt: Date
+  totals: AdminGrowthTotals
+  series: Array<AdminGrowthPoint>
+  signUpMethods: Array<AdminSignUpMethodCount>
+  hiddenSmallGroups: number
+}
+
+/** One bucket. Accounts deleted since, and the study publisher, are left out. */
+export interface AdminGrowthPoint {
+  /** The bucket's first day, YYYY-MM-DD. */
+  date: string
+  /** Accounts created. */
+  signUps: number
+  /** Login emails verified (a provider sign-up verifies it at once). */
+  emailVerified: number
+  /** Registrations finished (age and terms). */
+  registrationsCompleted: number
+  /** Accounts that became verified students or teachers. */
+  verifications: number
+}
+
+export interface AdminGrowthTotals {
+  signUps: number
+  emailVerified: number
+  registrationsCompleted: number
+  verifications: number
 }
 
 /** An account as a platform admin sees it, including its age (ADR-0104) and the standing reason. */
@@ -149,9 +238,38 @@ export interface AdminMetrics {
   scans: AdminScanMetrics
 }
 
+/** The days a result covers: whole calendar days in `timeZone` (Asia/Kolkata). `from` is midnight at the start of
+ * `firstDay`, `to` midnight after `lastDay` (exclusive). A last day after today is today. */
+export interface AdminMetricsRange {
+  from: Date
+  to: Date
+  /** YYYY-MM-DD. */
+  firstDay: string
+  /** YYYY-MM-DD, inclusive. */
+  lastDay: string
+  timeZone: string
+}
+
 export interface AdminModerationMetrics {
   openReports: number
   openAppeals: number
+}
+
+/** Notes created in the window and not deleted, by their visibility now. Synced study pages are left out. */
+export interface AdminNoteCreationCounts {
+  created: number
+  public: number
+  unlisted: number
+  shared: number
+  private: number
+}
+
+/** Created in the window and not deleted. */
+export interface AdminPlaceCounts {
+  groups: number
+  classrooms: number
+  groupPosts: number
+  classroomPosts: number
 }
 
 /** A plan's price and limits. `priceMinor` is minor currency units (paise, cents): 49900 INR MONTH is ₹499 a month.
@@ -187,6 +305,14 @@ export interface AdminPlanEntitlementInput {
 export interface AdminPlanPayload {
   plan: AdminPlan | null
   userErrors: Array<UserError>
+}
+
+/** Scan results of those uploads. failed is a scanner error or a scan that used up its attempts. */
+export interface AdminScanCounts {
+  clean: number
+  infected: number
+  failed: number
+  pending: number
 }
 
 export interface AdminScanMetrics {
@@ -241,11 +367,36 @@ export interface AdminSettingPayload {
 
 export type AdminSettingType = 'BOOLEAN' | 'INTEGER' | 'STRING'
 
+/** noteShares are notes shared with one person; placeShares with a group or class. */
+export interface AdminSharingCounts {
+  noteShares: number
+  placeShares: number
+  saves: number
+}
+
+/** Accounts created in the window by how they signed up. A provider counts when it was linked within a minute of sign-up. */
+export interface AdminSignUpMethodCount {
+  method: SignUpMethod
+  users: number
+}
+
 /** Bytes are a decimal string. Files are those stored: uploaded, processing, ready or quarantined. */
 export interface AdminStorageMetrics {
   bytes: string
   files: number
 }
+
+export interface AdminSubjectCount {
+  subjectId: string
+  title: string
+  /** Notes, minutes or saves, as AdminTopSubjects.by says. */
+  value: number
+  /** Distinct people behind value: note owners, learners or savers. Always at least 5. */
+  users: number
+}
+
+/** Which measure ranks subjects in adminTopSubjects. */
+export type AdminSubjectMetric = 'NOTES' | 'LEARNING_TIME' | 'SAVES'
 
 /** The latest save or reset of the terms_version setting. */
 export interface AdminTermsChange {
@@ -275,6 +426,16 @@ export interface AdminTermsStatus {
   lastChange: AdminTermsChange | null
 }
 
+/** Subjects ranked by `by`, at most `first`. A subject with fewer than 5 distinct people behind it is never listed and is
+ * counted in hiddenSmallGroups. Cached in each API process for about 5 minutes. */
+export interface AdminTopSubjects {
+  range: AdminMetricsRange
+  by: AdminSubjectMetric
+  generatedAt: Date
+  subjects: Array<AdminSubjectCount>
+  hiddenSmallGroups: number
+}
+
 export interface AdminUpdateUserInput {
   userId: string
   displayName?: string | null
@@ -286,6 +447,23 @@ export interface AdminUpdateUserInput {
   dateOfBirth?: string | null
   /** Why this change is being made. Required, including when a new age or date of birth lets an under-age account pass. */
   reason: string
+}
+
+/** Bytes are a decimal string. */
+export interface AdminUploadPurposeCount {
+  /** A FilePurpose value: ATTACHMENT, COVER, VOICE_NOTE, AVATAR, IMPORT, VERIFICATION_DOCUMENT, GROUP_PICTURE, COLLEGE_ID or PAGE_IMAGE. */
+  purpose: string
+  files: number
+  bytes: string
+}
+
+/** Files people uploaded in the window that are still stored. Server-made data exports are left out. A purpose with fewer
+ * than 5 distinct uploaders is left out of byPurpose (still in files and bytes) and counted in hiddenSmallGroups. */
+export interface AdminUploadStats {
+  files: number
+  bytes: string
+  byPurpose: Array<AdminUploadPurposeCount>
+  hiddenSmallGroups: number
 }
 
 /** DAU, WAU and MAU are distinct accounts in the last 1, 7 and 30 days before `to`. */
@@ -328,6 +506,16 @@ export interface AdminUserPayload {
 /** Which accounts adminUsers returns. BLOCKED_OR_SUSPENDED is both reversible holds. */
 export type AdminUserStatusFilter = 'AGE_BLOCKED' | 'BLOCKED_OR_SUSPENDED' | 'ACTIVE'
 
+/** A verification route: the request's method, with a college ID card (ADR-0099) apart from other documents. */
+export type AdminVerificationMethod = 'INSTITUTIONAL_EMAIL' | 'TEACHER' | 'DOCUMENTS' | 'COLLEGE_ID'
+
+export interface AdminVerificationMethodCount {
+  method: AdminVerificationMethod
+  requested: number
+  approved: number
+  rejected: number
+}
+
 export interface AdminVerificationMetrics {
   /** Pending college-ID reviews. */
   studentIdQueue: number
@@ -335,6 +523,24 @@ export interface AdminVerificationMetrics {
   pendingRequests: number
   /** Domains waiting for a decision (ACADEMIC_QUEUED or NEEDS_REVIEW). */
   domainReviews: number
+}
+
+/** Verification requests of every purpose. requested counts requests made in the window; approved and rejected count
+ * decisions made in it. pending and oldestPendingHours describe the queue now, whatever the window. A method with fewer
+ * than 5 distinct requesters is left out of byMethod and counted in hiddenSmallGroups. Cached for about 5 minutes. */
+export interface AdminVerificationStats {
+  range: AdminMetricsRange
+  generatedAt: Date
+  requested: number
+  approved: number
+  rejected: number
+  pending: number
+  /** Median hours from request to decision, for decisions in the window, one decimal. Null when none. */
+  medianHoursToDecision: number | null
+  /** Hours the oldest pending request has waited, one decimal. Null when nothing is pending. */
+  oldestPendingHours: number | null
+  byMethod: Array<AdminVerificationMethodCount>
+  hiddenSmallGroups: number
 }
 
 /** An application to teach (ADR-0073). fileIds: 0–3 proof files uploaded with createUploadIntent(purpose:
@@ -561,6 +767,9 @@ export interface Limit {
 }
 
 export type LimitKey = 'STORAGE_BYTES' | 'AI_TOKENS_DAILY' | 'PDF_PAGES_MONTHLY' | 'GROUPS_OWNED' | 'GROUP_MEMBERS' | 'CLASSROOMS_OWNED' | 'CLASSROOM_MEMBERS' | 'PROJECT_WORKSPACES' | 'EXPORTS_DAILY' | 'IMPORTS_DAILY' | 'ORG_SEATS' | 'NOTES_OWNED' | 'AI_REQUESTS_DAILY'
+
+/** How a series is grouped. WEEK starts on Monday (ISO); the first week starts on the window's first day and can be shorter. */
+export type MetricsInterval = 'DAY' | 'WEEK'
 
 export interface MutationSignUpArgs {
   input: SignUpInput
@@ -893,6 +1102,35 @@ export interface QueryAdminAccessAllowlistArgs {
   search?: string | null
 }
 
+export interface QueryAdminGrowthArgs {
+  from?: Date | null
+  to?: Date | null
+  interval?: MetricsInterval | null
+}
+
+export interface QueryAdminEngagementArgs {
+  from?: Date | null
+  to?: Date | null
+  interval?: MetricsInterval | null
+}
+
+export interface QueryAdminContentStatsArgs {
+  from?: Date | null
+  to?: Date | null
+}
+
+export interface QueryAdminTopSubjectsArgs {
+  from?: Date | null
+  to?: Date | null
+  by: AdminSubjectMetric
+  first?: number | null
+}
+
+export interface QueryAdminVerificationStatsArgs {
+  from?: Date | null
+  to?: Date | null
+}
+
 export interface QueryAdminMetricsArgs {
   from?: Date | null
   to?: Date | null
@@ -1115,6 +1353,9 @@ export interface SignUpInput {
   institutionalEmail?: string | null
   acceptedTermsVersion: string
 }
+
+/** How an account was created: a password or an email link (EMAIL), or a sign-in provider. */
+export type SignUpMethod = 'EMAIL' | 'GOOGLE' | 'GITHUB' | 'LINKEDIN'
 
 /** Skills import for the viewer (ADR-0077) */
 export interface SkillsImport {
