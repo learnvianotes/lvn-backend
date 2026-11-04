@@ -25,12 +25,20 @@ import {
 } from '../domain/usage-metrics'
 import { cohortStarts, medianHoursOf, MetricRows, perDay, RETENTION_DEFAULT_WEEKS, RETENTION_MAX_WEEKS, retentionCohorts, USERS_DAILY_METRICS, type DaySpan } from '../domain/daily-metrics'
 import { isUsageEventName, USAGE_EVENT_NAMES } from '../domain/usage-events'
+import { summarizeFeatureUsage, summarizeSearchQuality, summarizeVersionAdoption, windowUsersOf, type WindowUsers } from '../domain/usage-event-metrics'
 import type {
   AdminContentStats,
   AdminEngagement,
+  AdminFeatureUsage,
   AdminGrowth,
   AdminMetricsRange,
   AdminRetention,
+  AdminSearchQuality,
+  AdminVersionAdoption,
+  ClientPlatform,
+  QuizStartKind,
+  UsageFeature,
+  UsageSearchScope,
   AdminSubjectMetric,
   AdminTopSubjects,
   AdminVerificationMethod,
@@ -121,6 +129,33 @@ export class AdminUsageMetricsService {
     const n = weeks ?? RETENTION_DEFAULT_WEEKS
     const today = dayIn(new Date())
     return this.cached(`retention:${n}:${today}`, () => this.computeRetention(today, n))
+  }
+
+  /**
+   * Feature use and quiz starts from the ADR-0107 usage events: per feature and quiz kind, distinct people and events.
+   * Groups under the k-anonymity threshold are left out and counted.
+   */
+  async featureUsage(adminId: string, from?: Date | string | null, to?: Date | string | null): Promise<AdminFeatureUsage> {
+    await this.assertAdmin(adminId)
+    const window = metricsWindow(from, to)
+    const usage = await this.usageEvents(window)
+    return { range: range(window), generatedAt: usage.generatedAt, ...summarizeFeatureUsage<UsageFeature, QuizStartKind>(usage.rows, usage.users) }
+  }
+
+  /** Searches and zero-result searches in all and per scope (ADR-0107). Small scopes are left out and counted. */
+  async searchQuality(adminId: string, from?: Date | string | null, to?: Date | string | null): Promise<AdminSearchQuality> {
+    await this.assertAdmin(adminId)
+    const window = metricsWindow(from, to)
+    const usage = await this.usageEvents(window)
+    return { range: range(window), generatedAt: usage.generatedAt, ...summarizeSearchQuality<UsageSearchScope>(usage.rows, usage.users) }
+  }
+
+  /** Distinct people per platform and app version (ADR-0107). Small platforms and versions are left out and counted. */
+  async versionAdoption(adminId: string, from?: Date | string | null, to?: Date | string | null): Promise<AdminVersionAdoption> {
+    await this.assertAdmin(adminId)
+    const window = metricsWindow(from, to)
+    const usage = await this.usageEvents(window)
+    return { range: range(window), generatedAt: usage.generatedAt, ...summarizeVersionAdoption<ClientPlatform>(usage.rows, usage.users) }
   }
 
   /**
@@ -300,6 +335,18 @@ export class AdminUsageMetricsService {
     const rows = await this.daily.cohorts(starts, starts[0]!, today)
     const { cohorts, hidden } = retentionCohorts(starts, current, new MetricRows(rows))
     return { cohortInterval: 'WEEK', timeZone: ADMIN_METRICS_TIME_ZONE, firstWeek: starts[0]!, lastWeek: current, generatedAt: new Date(), cohorts, hiddenSmallGroups: hidden }
+  }
+
+  /**
+   * What the three ADR-0107 queries read, shared by them for a window: per-day event counts (the rollup for past days,
+   * live for the rest) and distinct people per group over the whole window, counted live (the small-group rule needs
+   * the exact number, which days cannot be added up to).
+   */
+  private usageEvents(w: Window): Promise<{ rows: MetricRows; users: WindowUsers; generatedAt: Date }> {
+    return this.cached(`usage-events:${w.fromDay}:${w.toDay}`, async () => {
+      const [rows, groups] = await Promise.all([this.daily.counts(w, ['usage'], dayIn(new Date())), this.daily.usageGroups(w, false)])
+      return { rows: new MetricRows(rows), users: windowUsersOf(groups), generatedAt: new Date() }
+    })
   }
 
   /** Each person's time for one funnel step since `since`, among `among` when given. */

@@ -5,19 +5,25 @@ import { AdminUsageMetricsService } from '../application/admin-usage-metrics.ser
 import type {
   AdminContentStats,
   AdminEngagement,
+  AdminFeatureUsage,
   AdminGrowth,
   AdminRetention,
+  AdminSearchQuality,
   AdminTopSubjects,
   AdminVerificationStats,
+  AdminVersionAdoption,
   QueryAdminContentStatsArgs,
   QueryAdminEngagementArgs,
+  QueryAdminFeatureUsageArgs,
   QueryAdminGrowthArgs,
   QueryAdminRetentionArgs,
+  QueryAdminSearchQualityArgs,
   QueryAdminTopSubjectsArgs,
   QueryAdminVerificationStatsArgs,
+  QueryAdminVersionAdoptionArgs,
 } from './schema.types'
 
-/** Usage metrics for the platform-admin dashboard (ADR-0105, ADR-0106). Aggregates only; small groups are left out. */
+/** Usage metrics for the platform-admin dashboard (ADR-0105, ADR-0106, ADR-0107). Aggregates only; small groups are left out. */
 @Resolver()
 @UseGuards(SignedInGuard)
 export class AdminUsageMetricsResolver {
@@ -51,5 +57,20 @@ export class AdminUsageMetricsResolver {
   @Query('adminRetention')
   adminRetention(@Args() args: QueryAdminRetentionArgs, @CurrentViewer() viewer: Viewer): Promise<AdminRetention> {
     return this.metrics.retention(viewer.userId, args.cohortInterval, args.weeks)
+  }
+
+  @Query('adminFeatureUsage')
+  adminFeatureUsage(@Args() args: QueryAdminFeatureUsageArgs, @CurrentViewer() viewer: Viewer): Promise<AdminFeatureUsage> {
+    return this.metrics.featureUsage(viewer.userId, args.from, args.to)
+  }
+
+  @Query('adminSearchQuality')
+  adminSearchQuality(@Args() args: QueryAdminSearchQualityArgs, @CurrentViewer() viewer: Viewer): Promise<AdminSearchQuality> {
+    return this.metrics.searchQuality(viewer.userId, args.from, args.to)
+  }
+
+  @Query('adminVersionAdoption')
+  adminVersionAdoption(@Args() args: QueryAdminVersionAdoptionArgs, @CurrentViewer() viewer: Viewer): Promise<AdminVersionAdoption> {
+    return this.metrics.versionAdoption(viewer.userId, args.from, args.to)
   }
 }

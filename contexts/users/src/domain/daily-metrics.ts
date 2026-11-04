@@ -49,6 +49,11 @@ export const COHORT_METRICS = { active: 'cohort_active', size: 'cohort_size' } a
 export const ROLLUP_MARKER = '_rollup'
 export const DAY_MARKER = 'day'
 export const WEEK_MARKER = 'week'
+/**
+ * A second day marker for the usage-event counts (ADR-0107), which came after the first rollups: a day rolled up
+ * before them has `day` but not this, and its usage counts are computed live until the day is rolled up again.
+ */
+export const USAGE_MARKER = 'day:usage'
 
 /** The nightly job recomputes this many days before today unless METRICS_ROLLUP_DAYS says otherwise. */
 export const ROLLUP_DEFAULT_DAYS = 3
@@ -119,6 +124,19 @@ export class MetricRows {
   /** Every day's value of a metric, summed per dimension. */
   byDimension(metric: string): Map<string, number> {
     return new Map(this.dimensions.get(metric) ?? [])
+  }
+
+  /** Per dimension, the largest value a metric had on any one day. */
+  maxPerDay(metric: string): Map<string, number> {
+    const out = new Map<string, number>()
+    const prefix = `${metric}|`
+    for (const [key, value] of this.values) {
+      if (!key.startsWith(prefix)) continue
+      // The key is metric|day|dimension; a day has no `|`, a dimension may.
+      const dimension = key.slice(key.indexOf('|', prefix.length) + 1)
+      if (value > (out.get(dimension) ?? 0)) out.set(dimension, value)
+    }
+    return out
   }
 
   /** Every day's value of a metric, all dimensions together. */

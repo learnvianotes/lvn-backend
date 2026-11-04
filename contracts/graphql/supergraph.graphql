@@ -337,6 +337,26 @@ type AdminAiTaskUsage
   costMicroUsd: String!
 }
 
+type AdminAppVersionCount
+  @join__type(graph: USERS)
+{
+  """
+  Null: no version was sent, or it was not one (MAJOR.MINOR[.PATCH], at most 32 characters).
+  """
+  appVersion: String
+
+  """
+  Distinct people who sent an event from this version. Always at least 5.
+  """
+  users: Int!
+  events: Int!
+
+  """
+  users / the platform's users, 0 to 1. Someone on two versions counts in both, so shares can add up past 1.
+  """
+  share: Float!
+}
+
 """
 Notes, the catalogue, and places. Deleted notes, groups and classes are left out.
 """
@@ -493,6 +513,38 @@ type AdminErrorGroup
   """At most 100 distinct account ids."""
   userIds: [UUID!]!
   sampleMessage: String!
+}
+
+type AdminFeatureCount
+  @join__type(graph: USERS)
+{
+  feature: UsageFeature!
+
+  """Distinct people who used it in the window. Always at least 5."""
+  users: Int!
+
+  """feature_use events."""
+  events: Int!
+}
+
+"""
+First-party feature_use and quiz_start events (ADR-0107), most people first. Accounts that opted out of analytics and
+deleted accounts are left out. A feature or quiz kind with fewer than 5 distinct people is left out and counted in
+hiddenSmallGroups; events and starts include it. People are counted from the events, kept 180 days: for a window
+reaching further back, users is at least the busiest stored day's count, a lower bound. Past days' events come from the
+nightly rollup (ADR-0106). Cached in each API process for about 5 minutes.
+"""
+type AdminFeatureUsage
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  generatedAt: DateTime!
+
+  """feature_use events in the window."""
+  events: Int!
+  features: [AdminFeatureCount!]!
+  hiddenSmallGroups: Int!
+  quizStarts: AdminQuizStarts!
 }
 
 """
@@ -684,6 +736,42 @@ type AdminPlanPayload
   userErrors: [UserError!]!
 }
 
+type AdminPlatformAdoption
+  @join__type(graph: USERS)
+{
+  platform: ClientPlatform!
+
+  """
+  Distinct people who sent a usage event from the platform. Always at least 5.
+  """
+  users: Int!
+
+  """Usage events from the platform, hidden versions included."""
+  events: Int!
+
+  """Newest version first."""
+  versions: [AdminAppVersionCount!]!
+}
+
+type AdminQuizStartCount
+  @join__type(graph: USERS)
+{
+  kind: QuizStartKind!
+
+  """Distinct people who started one in the window. Always at least 5."""
+  users: Int!
+  starts: Int!
+}
+
+"""quiz_start events. starts counts every kind, hidden ones included."""
+type AdminQuizStarts
+  @join__type(graph: USERS)
+{
+  starts: Int!
+  byKind: [AdminQuizStartCount!]!
+  hiddenSmallGroups: Int!
+}
+
 """
 Weekly retention, oldest cohort first, the last one this week. Past weeks come from the nightly rollup, this week is
 counted live. A cohort with fewer than 5 people (at any week counted) is left out and counted in hiddenSmallGroups; a
@@ -747,6 +835,45 @@ type AdminScanMetrics
 
   """Scans that used up their attempts. They are not served."""
   failed: Int!
+}
+
+"""
+Search quality from first-party events (ADR-0107): search events, and search_no_results events a client sends besides
+the search when it found nothing. Neither holds the words searched. A scope with fewer than 5 distinct people is left out
+of byScope and counted in hiddenSmallGroups; the totals include it. Same people, retention and caching rules as
+AdminFeatureUsage.
+"""
+type AdminSearchQuality
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  generatedAt: DateTime!
+  searches: Int!
+  zeroResults: Int!
+
+  """
+  zeroResults / searches, 0 to 1, three decimals. Null when there were no searches.
+  """
+  zeroResultRate: Float
+  byScope: [AdminSearchScopeQuality!]!
+  hiddenSmallGroups: Int!
+}
+
+type AdminSearchScopeQuality
+  @join__type(graph: USERS)
+{
+  """Null: the client sent no scope (clients from before ADR-0107)."""
+  scope: UsageSearchScope
+
+  """Distinct people who searched in the scope. Always at least 5."""
+  users: Int!
+  searches: Int!
+  zeroResults: Int!
+
+  """
+  zeroResults / searches, 0 to 1, three decimals. Null when there were no searches.
+  """
+  zeroResultRate: Float
 }
 
 input AdminSetAccountStandingInput
@@ -1123,6 +1250,20 @@ type AdminVerificationStats
   """
   oldestPendingHours: Float
   byMethod: [AdminVerificationMethodCount!]!
+  hiddenSmallGroups: Int!
+}
+
+"""
+Which app versions people use, from the platform and appVersion of every first-party usage event (ADR-0107). A
+platform or version with fewer than 5 distinct people is left out and counted in hiddenSmallGroups (a hidden platform's
+versions too). Same people, retention and caching rules as AdminFeatureUsage.
+"""
+type AdminVersionAdoption
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  generatedAt: DateTime!
+  platforms: [AdminPlatformAdoption!]!
   hiddenSmallGroups: Int!
 }
 
@@ -4736,7 +4877,7 @@ type Mutation
   adminDeleteUser(input: AdminDeleteUserInput!): OkPayload! @join__field(graph: USERS)
 
   """
-  Signed in. At most 40 events, 30 batches a minute. Unknown event names are refused.
+  Signed in. At most 40 events, 30 batches a minute. Unknown event names, and props that break UsageEventInput.props' rules, are refused.
   """
   ingestAnalytics(input: IngestAnalyticsInput!): OkPayload! @join__field(graph: USERS)
 
@@ -6207,6 +6348,21 @@ type Query
   """
   adminRetention(cohortInterval: CohortInterval = WEEK, weeks: Int): AdminRetention! @join__field(graph: USERS)
 
+  """
+  Platform admins. Feature use and quiz starts from first-party events (ADR-0107). Omit from and to for the last 30 days. At most 366 days.
+  """
+  adminFeatureUsage(from: DateTime, to: DateTime): AdminFeatureUsage! @join__field(graph: USERS)
+
+  """
+  Platform admins. Searches and zero-result searches by scope (ADR-0107). At most 366 days.
+  """
+  adminSearchQuality(from: DateTime, to: DateTime): AdminSearchQuality! @join__field(graph: USERS)
+
+  """
+  Platform admins. Distinct people per platform and app version (ADR-0107). At most 366 days.
+  """
+  adminVersionAdoption(from: DateTime, to: DateTime): AdminVersionAdoption! @join__field(graph: USERS)
+
   """Platform admins. Counts for the dashboard."""
   adminMetrics(from: DateTime, to: DateTime): AdminMetrics! @join__field(graph: USERS)
 
@@ -6245,7 +6401,7 @@ type Query
 
   """
   Platform admins. 1 to 5 ordered steps, each a usage event name (page_view, note_open, note_upload, search, download,
-  sign_in) or a step read from the database (ADR-0105): signed_up (account created), email_verified (login email
+  sign_in, feature_use, search_no_results, quiz_start) or a step read from the database (ADR-0105): signed_up (account created), email_verified (login email
   verified), first_note (the account's first note), returned_d7 (active again 7 or more days after signing up, and
   after the previous step: a sign-in or session refresh, a usage event, or learning). A person counts at a step when
   each earlier step happened first; each step's time is its first occurrence since `since` (default: 30 days ago).
@@ -6402,6 +6558,25 @@ type QuizAttemptPayload
   """The quiz again, now with its answers for the viewer"""
   quiz: ClassQuiz
   userErrors: [UserError!]!
+}
+
+"""
+What kind of quiz a quiz_start event started: the @lvn/contracts QuizStartKind id in upper case.
+"""
+enum QuizStartKind
+  @join__type(graph: USERS)
+{
+  """A classroom quiz."""
+  CLASS @join__enumValue(graph: USERS)
+
+  """A shared or public quiz."""
+  SHARED @join__enumValue(graph: USERS)
+
+  """The quiz cards of a note."""
+  NOTE @join__enumValue(graph: USERS)
+
+  """Practice questions: AI-made, or a topic's quiz."""
+  PRACTICE @join__enumValue(graph: USERS)
 }
 
 enum QuizVisibility
@@ -8606,20 +8781,84 @@ type UsageCount
   count: Int!
 }
 
+"""
+One usage event. The names and the props each may carry are in @lvn/contracts (USAGE_EVENT_NAMES, sanitizeUsageProps;
+ADR-0107).
+"""
 input UsageEventInput
   @join__type(graph: USERS)
 {
-  """One of: page_view, note_open, note_upload, search, download, sign_in."""
+  """
+  One of: page_view, note_open, note_upload, search, download, sign_in, feature_use, search_no_results, quiz_start.
+  """
   name: String!
+
+  """
+  Letters, digits, _ and -, at most 64; anything else is replaced by the server's session.
+  """
   sessionId: String
   occurredAt: DateTime
 
   """
-  A small object. A string `feature` is counted in top features. At most 1024 characters.
+  A small object: at most 1024 characters as JSON and 16 keys, or the batch is refused.
+  feature_use: { feature } (a UsageFeature id, lower case, e.g. "pdf_viewer"; required).
+  search_no_results: { scope, wordCount } (a UsageSearchScope id, e.g. "notes", and a whole number; both required).
+  quiz_start: { kind } (a QuizStartKind id, e.g. "shared"; required).
+  search: { scope, wordCount } (both optional; `words` is read as wordCount).
+  A missing or unknown required value refuses the batch; every other key is dropped. The other events keep short
+  tokens (letters, digits, _ . : -, at most 40, not an id), numbers and booleans under keys that do not name personal
+  data or text; everything else is dropped. A string `feature` is counted in adminUsage's top features.
   """
   props: JSON
   platform: ClientPlatform!
+
+  """
+  MAJOR.MINOR[.PATCH[.BUILD]] with an optional -prerelease and +build, at most 32 characters; anything else is not stored.
+  """
   appVersion: String
+}
+
+"""
+A product area a feature_use event names: the @lvn/contracts UsageFeature id in upper case (NOTES_EDITOR is
+notes_editor).
+"""
+enum UsageFeature
+  @join__type(graph: USERS)
+{
+  NOTES_EDITOR @join__enumValue(graph: USERS)
+  PAGE_EDITOR @join__enumValue(graph: USERS)
+  PDF_VIEWER @join__enumValue(graph: USERS)
+  VOICE_NOTE @join__enumValue(graph: USERS)
+  QUICK_CAPTURE @join__enumValue(graph: USERS)
+  READ_ALOUD @join__enumValue(graph: USERS)
+  CLASS_QUIZ @join__enumValue(graph: USERS)
+  SHARED_QUIZ @join__enumValue(graph: USERS)
+  FLASHCARDS_REVIEW @join__enumValue(graph: USERS)
+  EXAM_PLAN @join__enumValue(graph: USERS)
+  FOCUS @join__enumValue(graph: USERS)
+  GROUPS @join__enumValue(graph: USERS)
+  CLASSROOM @join__enumValue(graph: USERS)
+  DOUBTS @join__enumValue(graph: USERS)
+  AI_ASSIST @join__enumValue(graph: USERS)
+  RESOURCES @join__enumValue(graph: USERS)
+  SEARCH @join__enumValue(graph: USERS)
+  PROFILE @join__enumValue(graph: USERS)
+  SETTINGS @join__enumValue(graph: USERS)
+}
+
+"""
+Where a search was made: the @lvn/contracts UsageSearchScope id in upper case. ALL is a search across every scope.
+"""
+enum UsageSearchScope
+  @join__type(graph: USERS)
+{
+  ALL @join__enumValue(graph: USERS)
+  NOTES @join__enumValue(graph: USERS)
+  PEOPLE @join__enumValue(graph: USERS)
+  GROUPS @join__enumValue(graph: USERS)
+  CLASSROOMS @join__enumValue(graph: USERS)
+  RESOURCES @join__enumValue(graph: USERS)
+  TOPICS @join__enumValue(graph: USERS)
 }
 
 """A person, owned by the users subgraph"""
