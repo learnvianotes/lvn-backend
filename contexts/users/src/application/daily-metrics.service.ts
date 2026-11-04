@@ -2,6 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { CORE_ADMIN_STATS, CORE_DAILY_METRICS, NOTES_ADMIN_STATS, NOTES_DAILY_METRICS, type AdminDayWindow, type CoreAdminStats, type NotesAdminStats } from '@lvn-backend/facades'
 import { Errors } from '@lvn-backend/errors'
 import { Prisma, PrismaService } from '@lvn-backend/prisma-base'
+import { QUIZ_START_KINDS, USAGE_FEATURES, USAGE_SEARCH_SCOPES, UsageEventName } from '@lvn/contracts/domain'
+import { APP_VERSION_PATTERN } from '@lvn/contracts/validation'
 import {
   activeRows,
   BACKFILL_CHUNK_DAYS,
@@ -19,6 +21,7 @@ import {
   ROLLUP_DEFAULT_DAYS,
   ROLLUP_MARKER,
   ROLLUP_MAX_DAYS,
+  USAGE_MARKER,
   USERS_DAILY_METRICS,
   WEEK_MARKER,
   weeksEndingIn,
@@ -26,10 +29,14 @@ import {
   type MetricRow,
 } from '../domain/daily-metrics'
 import { STUDY_PUBLISHER_ID } from '../domain/study-publisher'
+import { USAGE_DAILY_METRICS, usageRows, type UsageGroup } from '../domain/usage-event-metrics'
 import { addActive, addDays, ADMIN_METRICS_TIME_ZONE, dayIn, daysBetween, midnightIn, type ActiveDays } from '../domain/usage-metrics'
 
-/** Where a daily count comes from. Each is computed by its own queries; active people and cohorts are apart. */
-export type CountSource = 'growth' | 'verification' | 'notes' | 'core'
+/**
+ * Where a daily count comes from. Each is computed by its own queries; active people and cohorts are apart. `usage` is
+ * the ADR-0107 usage events: feature use, quiz starts, searches and app versions.
+ */
+export type CountSource = 'growth' | 'verification' | 'notes' | 'core' | 'usage'
 
 const U = USERS_DAILY_METRICS
 const SOURCE_METRICS: Record<CountSource, readonly string[]> = {
@@ -37,8 +44,9 @@ const SOURCE_METRICS: Record<CountSource, readonly string[]> = {
   verification: [U.verificationRequests, U.verificationApproved, U.verificationRejected, U.decisionMs],
   notes: Object.values(NOTES_DAILY_METRICS),
   core: Object.values(CORE_DAILY_METRICS),
+  usage: Object.values(USAGE_DAILY_METRICS),
 }
-const ALL_SOURCES: readonly CountSource[] = ['growth', 'verification', 'notes', 'core']
+const ALL_SOURCES: readonly CountSource[] = ['growth', 'verification', 'notes', 'core', 'usage']
 const ACTIVE_METRICS = [U.activeUsers, U.activeUsers7d, U.activeUsers30d]
 const COHORT_KINDS = [COHORT_METRICS.active, COHORT_METRICS.size]
 
@@ -80,7 +88,7 @@ export class DailyMetricsService {
 
   /** Per-day counts for the days of a span: stored for the days rolled up, computed now for the rest. */
   async counts(span: DaySpan, sources: readonly CountSource[], today: string = dayIn(new Date())): Promise<MetricRow[]> {
-    const stored = await this.stored(span, sources.flatMap((source) => SOURCE_METRICS[source]), today)
+    const stored = await this.stored(span, sources.flatMap((source) => SOURCE_METRICS[source]), today, sources.includes('usage'))
     const missing = contiguous(daysOf(span).filter((day) => !stored.days.has(day)))
     const live = await Promise.all(missing.map((piece) => this.liveCounts(piece, sources)))
     return [...stored.rows.filter((row) => row.metric !== ROLLUP_MARKER && stored.days.has(row.day)), ...live.flat()]
@@ -122,9 +130,9 @@ export class DailyMetricsService {
 
   /**
    * Stored rows of these metrics in a span, and which days and weeks are complete. Only days before today count as
-   * rolled up, and only weeks that ended before today.
+   * rolled up, and only weeks that ended before today. With `usage`, a day also needs its USAGE_MARKER.
    */
-  private async stored(span: DaySpan, metrics: readonly string[], today: string): Promise<{ rows: MetricRow[]; days: Set<string>; weeks: Set<string> }> {
+  private async stored(span: DaySpan, metrics: readonly string[], today: string, usage = false): Promise<{ rows: MetricRow[]; days: Set<string>; weeks: Set<string> }> {
     const found = await this.db.$queryRaw<{ day: string; metric: string; dimension: string; value: bigint }[]>`
       SELECT to_char(day, 'YYYY-MM-DD') AS day, metric, dimension, value
       FROM "users"."daily_metrics"
@@ -132,11 +140,14 @@ export class DailyMetricsService {
     const rows = found.map((row) => ({ day: row.day, metric: row.metric, dimension: row.dimension, value: Number(row.value) }))
     const days = new Set<string>()
     const weeks = new Set<string>()
+    const usageDays = new Set<string>()
     for (const row of rows) {
       if (row.metric !== ROLLUP_MARKER) continue
       if (row.dimension === DAY_MARKER && row.day < today) days.add(row.day)
+      if (row.dimension === USAGE_MARKER) usageDays.add(row.day)
       if (row.dimension === WEEK_MARKER && addDays(row.day, 6) < today) weeks.add(row.day)
     }
+    if (usage) for (const day of days) if (!usageDays.has(day)) days.delete(day)
     return { rows, days, weeks }
   }
 
@@ -150,6 +161,7 @@ export class DailyMetricsService {
         if (source === 'growth') return this.growthCounts(w)
         if (source === 'verification') return this.verificationCounts(w)
         if (source === 'notes') return this.notes.dailyCounts(w)
+        if (source === 'usage') return this.usageGroups(w, true).then(usageRows)
         return this.core.dailyCounts(w)
       }),
     )
@@ -292,6 +304,42 @@ export class DailyMetricsService {
     ]
   }
 
+  /**
+   * Usage events (ADR-0107) grouped by breakdown: feature, quiz kind, search scope (with and without results), app
+   * version per platform, and platform. Per IST day, or over the whole window (`day` '') when `perDay` is false. Events
+   * of opted-out and deleted accounts are left out. Only known ids count: a scope that is not one is ''
+   * (none sent), and an app version that does not match APP_VERSION_PATTERN (from before it was checked) is ''.
+   */
+  async usageGroups(w: AdminDayWindow, perDay: boolean): Promise<UsageGroup[]> {
+    const day = perDay ? Prisma.sql`to_char(e."occurredAt" AT TIME ZONE ${w.timeZone}, 'YYYY-MM-DD')` : Prisma.sql`''`
+    const scope = Prisma.sql`CASE WHEN props->>'scope' = ANY(${[...USAGE_SEARCH_SCOPES]}::text[]) THEN props->>'scope' ELSE '' END`
+    const rows = await this.db.$queryRaw<{ day: string; kind: UsageGroup['kind']; dimension: string; events: number; users: number }[]>`
+      WITH ev AS (
+        SELECT ${day} AS day, e."userId", e.name, e.props, e.platform::text AS platform,
+               CASE WHEN e."appVersion" ~ ${APP_VERSION_PATTERN.source} THEN e."appVersion" ELSE '' END AS version
+        FROM "users"."usage_events" e
+        JOIN "users"."User" u ON u.id = e."userId"
+        WHERE e."occurredAt" >= ${w.from} AND e."occurredAt" < ${w.to} AND ${COUNTABLE}
+      ), g AS (
+        SELECT day, "userId", 'feature' AS kind, props->>'feature' AS dimension FROM ev
+        WHERE name = ${UsageEventName.FEATURE_USE} AND props->>'feature' = ANY(${[...USAGE_FEATURES]}::text[])
+        UNION ALL
+        SELECT day, "userId", 'quiz', props->>'kind' FROM ev
+        WHERE name = ${UsageEventName.QUIZ_START} AND props->>'kind' = ANY(${[...QUIZ_START_KINDS]}::text[])
+        UNION ALL
+        SELECT day, "userId", CASE WHEN name = ${UsageEventName.SEARCH} THEN 'search' ELSE 'no_results' END, ${scope} FROM ev
+        WHERE name IN (${UsageEventName.SEARCH}, ${UsageEventName.SEARCH_NO_RESULTS})
+        UNION ALL
+        SELECT day, "userId", 'version', platform || '|' || version FROM ev
+        UNION ALL
+        SELECT day, "userId", 'platform', platform FROM ev
+      )
+      SELECT day, kind, dimension, count(*)::int AS events, count(DISTINCT "userId")::int AS users FROM g GROUP BY 1, 2, 3
+      UNION ALL
+      SELECT day, 'search_any', dimension, count(*)::int, count(DISTINCT "userId")::int FROM g WHERE kind IN ('search', 'no_results') GROUP BY 1, 3`
+    return rows.map((row) => ({ day: row.day, kind: row.kind, dimension: row.dimension, events: Number(row.events), users: Number(row.users) }))
+  }
+
   /** The ids among these that may be counted by their activity. */
   private async countable(ids: string[]): Promise<Set<string>> {
     if (!ids.length) return new Set()
@@ -321,7 +369,7 @@ export class DailyMetricsService {
       ...counts.filter((row) => row.value !== 0),
       ...active,
       ...cohorts,
-      ...days.map((day) => ({ day, metric: ROLLUP_MARKER, dimension: DAY_MARKER, value: 1 })),
+      ...days.flatMap((day) => [DAY_MARKER, USAGE_MARKER].map((dimension) => ({ day, metric: ROLLUP_MARKER, dimension, value: 1 }))),
       ...weeks.map((day) => ({ day, metric: ROLLUP_MARKER, dimension: WEEK_MARKER, value: 1 })),
     ]
     await this.write(days, weeks, rows)

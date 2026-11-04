@@ -90,6 +90,16 @@ export interface AdminAiTaskUsage {
   costMicroUsd: string
 }
 
+export interface AdminAppVersionCount {
+  /** Null: no version was sent, or it was not one (MAJOR.MINOR[.PATCH], at most 32 characters). */
+  appVersion: string | null
+  /** Distinct people who sent an event from this version. Always at least 5. */
+  users: number
+  events: number
+  /** users / the platform's users, 0 to 1. Someone on two versions counts in both, so shares can add up past 1. */
+  share: number
+}
+
 /** Notes, the catalogue, and places. Deleted notes, groups and classes are left out. */
 export interface AdminContentMetrics {
   notes: number
@@ -172,6 +182,29 @@ export interface AdminErrorGroup {
   /** At most 100 distinct account ids. */
   userIds: Array<string>
   sampleMessage: string
+}
+
+export interface AdminFeatureCount {
+  feature: UsageFeature
+  /** Distinct people who used it in the window. Always at least 5. */
+  users: number
+  /** feature_use events. */
+  events: number
+}
+
+/** First-party feature_use and quiz_start events (ADR-0107), most people first. Accounts that opted out of analytics and
+ * deleted accounts are left out. A feature or quiz kind with fewer than 5 distinct people is left out and counted in
+ * hiddenSmallGroups; events and starts include it. People are counted from the events, kept 180 days: for a window
+ * reaching further back, users is at least the busiest stored day's count, a lower bound. Past days' events come from the
+ * nightly rollup (ADR-0106). Cached in each API process for about 5 minutes. */
+export interface AdminFeatureUsage {
+  range: AdminMetricsRange
+  generatedAt: Date
+  /** feature_use events in the window. */
+  events: number
+  features: Array<AdminFeatureCount>
+  hiddenSmallGroups: number
+  quizStarts: AdminQuizStarts
 }
 
 /** Sign-ups and verifications. Cached in each API process for about 5 minutes. Methods with fewer than 5 accounts are
@@ -307,6 +340,30 @@ export interface AdminPlanPayload {
   userErrors: Array<UserError>
 }
 
+export interface AdminPlatformAdoption {
+  platform: ClientPlatform
+  /** Distinct people who sent a usage event from the platform. Always at least 5. */
+  users: number
+  /** Usage events from the platform, hidden versions included. */
+  events: number
+  /** Newest version first. */
+  versions: Array<AdminAppVersionCount>
+}
+
+export interface AdminQuizStartCount {
+  kind: QuizStartKind
+  /** Distinct people who started one in the window. Always at least 5. */
+  users: number
+  starts: number
+}
+
+/** quiz_start events. starts counts every kind, hidden ones included. */
+export interface AdminQuizStarts {
+  starts: number
+  byKind: Array<AdminQuizStartCount>
+  hiddenSmallGroups: number
+}
+
 /** Weekly retention, oldest cohort first, the last one this week. Past weeks come from the nightly rollup, this week is
  * counted live. A cohort with fewer than 5 people (at any week counted) is left out and counted in hiddenSmallGroups; a
  * week nobody signed up in is left out and not counted. Cached in each API process for about 5 minutes. */
@@ -348,6 +405,32 @@ export interface AdminScanMetrics {
   pending: number
   /** Scans that used up their attempts. They are not served. */
   failed: number
+}
+
+/** Search quality from first-party events (ADR-0107): search events, and search_no_results events a client sends besides
+ * the search when it found nothing. Neither holds the words searched. A scope with fewer than 5 distinct people is left out
+ * of byScope and counted in hiddenSmallGroups; the totals include it. Same people, retention and caching rules as
+ * AdminFeatureUsage. */
+export interface AdminSearchQuality {
+  range: AdminMetricsRange
+  generatedAt: Date
+  searches: number
+  zeroResults: number
+  /** zeroResults / searches, 0 to 1, three decimals. Null when there were no searches. */
+  zeroResultRate: number | null
+  byScope: Array<AdminSearchScopeQuality>
+  hiddenSmallGroups: number
+}
+
+export interface AdminSearchScopeQuality {
+  /** Null: the client sent no scope (clients from before ADR-0107). */
+  scope: UsageSearchScope | null
+  /** Distinct people who searched in the scope. Always at least 5. */
+  users: number
+  searches: number
+  zeroResults: number
+  /** zeroResults / searches, 0 to 1, three decimals. Null when there were no searches. */
+  zeroResultRate: number | null
 }
 
 export interface AdminSetAccountStandingInput {
@@ -568,6 +651,16 @@ export interface AdminVerificationStats {
   /** Hours the oldest pending request has waited, one decimal. Null when nothing is pending. */
   oldestPendingHours: number | null
   byMethod: Array<AdminVerificationMethodCount>
+  hiddenSmallGroups: number
+}
+
+/** Which app versions people use, from the platform and appVersion of every first-party usage event (ADR-0107). A
+ * platform or version with fewer than 5 distinct people is left out and counted in hiddenSmallGroups (a hidden platform's
+ * versions too). Same people, retention and caching rules as AdminFeatureUsage. */
+export interface AdminVersionAdoption {
+  range: AdminMetricsRange
+  generatedAt: Date
+  platforms: Array<AdminPlatformAdoption>
   hiddenSmallGroups: number
 }
 
@@ -1167,6 +1260,21 @@ export interface QueryAdminRetentionArgs {
   weeks?: number | null
 }
 
+export interface QueryAdminFeatureUsageArgs {
+  from?: Date | null
+  to?: Date | null
+}
+
+export interface QueryAdminSearchQualityArgs {
+  from?: Date | null
+  to?: Date | null
+}
+
+export interface QueryAdminVersionAdoptionArgs {
+  from?: Date | null
+  to?: Date | null
+}
+
 export interface QueryAdminMetricsArgs {
   from?: Date | null
   to?: Date | null
@@ -1246,6 +1354,9 @@ export interface QueryInstitutionDomainsArgs {
   status?: DomainReviewStatus | null
   first?: number | null
 }
+
+/** What kind of quiz a quiz_start event started: the @lvn/contracts QuizStartKind id in upper case. */
+export type QuizStartKind = 'CLASS' | 'SHARED' | 'NOTE' | 'PRACTICE'
 
 export interface RefreshSessionInput {
   /** Mobile only; web sends the cookie */
@@ -1571,16 +1682,34 @@ export interface UsageCount {
   count: number
 }
 
+/** One usage event. The names and the props each may carry are in @lvn/contracts (USAGE_EVENT_NAMES, sanitizeUsageProps;
+ * ADR-0107). */
 export interface UsageEventInput {
-  /** One of: page_view, note_open, note_upload, search, download, sign_in. */
+  /** One of: page_view, note_open, note_upload, search, download, sign_in, feature_use, search_no_results, quiz_start. */
   name: string
+  /** Letters, digits, _ and -, at most 64; anything else is replaced by the server's session. */
   sessionId?: string | null
   occurredAt?: Date | null
-  /** A small object. A string `feature` is counted in top features. At most 1024 characters. */
+  /** A small object: at most 1024 characters as JSON and 16 keys, or the batch is refused.
+   * feature_use: { feature } (a UsageFeature id, lower case, e.g. "pdf_viewer"; required).
+   * search_no_results: { scope, wordCount } (a UsageSearchScope id, e.g. "notes", and a whole number; both required).
+   * quiz_start: { kind } (a QuizStartKind id, e.g. "shared"; required).
+   * search: { scope, wordCount } (both optional; `words` is read as wordCount).
+   * A missing or unknown required value refuses the batch; every other key is dropped. The other events keep short
+   * tokens (letters, digits, _ . : -, at most 40, not an id), numbers and booleans under keys that do not name personal
+   * data or text; everything else is dropped. A string `feature` is counted in adminUsage's top features. */
   props?: unknown | null
   platform: ClientPlatform
+  /** MAJOR.MINOR[.PATCH[.BUILD]] with an optional -prerelease and +build, at most 32 characters; anything else is not stored. */
   appVersion?: string | null
 }
+
+/** A product area a feature_use event names: the @lvn/contracts UsageFeature id in upper case (NOTES_EDITOR is
+ * notes_editor). */
+export type UsageFeature = 'NOTES_EDITOR' | 'PAGE_EDITOR' | 'PDF_VIEWER' | 'VOICE_NOTE' | 'QUICK_CAPTURE' | 'READ_ALOUD' | 'CLASS_QUIZ' | 'SHARED_QUIZ' | 'FLASHCARDS_REVIEW' | 'EXAM_PLAN' | 'FOCUS' | 'GROUPS' | 'CLASSROOM' | 'DOUBTS' | 'AI_ASSIST' | 'RESOURCES' | 'SEARCH' | 'PROFILE' | 'SETTINGS'
+
+/** Where a search was made: the @lvn/contracts UsageSearchScope id in upper case. ALL is a search across every scope. */
+export type UsageSearchScope = 'ALL' | 'NOTES' | 'PEOPLE' | 'GROUPS' | 'CLASSROOMS' | 'RESOURCES' | 'TOPICS'
 
 /** A person on LVN (§4.1). Fields marked viewer-only are null for anyone else. */
 export interface User {

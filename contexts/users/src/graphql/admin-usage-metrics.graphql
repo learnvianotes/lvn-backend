@@ -2,6 +2,7 @@
 # tracking. Aggregates only: no account, note or document is identified, and a breakdown group with fewer than 5
 # distinct people is left out (k-anonymity threshold 5). Days are calendar days in Asia/Kolkata (IST).
 # Past days are read from the nightly rollup (ADR-0106) when it has them; today and any day it lacks are counted live.
+# adminFeatureUsage, adminSearchQuality and adminVersionAdoption read the first-party usage events of ADR-0107.
 
 "How a series is grouped. WEEK starts on Monday (ISO); the first week starts on the window's first day and can be shorter."
 enum MetricsInterval { DAY WEEK }
@@ -271,6 +272,146 @@ type AdminRetention {
   hiddenSmallGroups: Int!
 }
 
+"""
+A product area a feature_use event names: the @lvn/contracts UsageFeature id in upper case (NOTES_EDITOR is
+notes_editor).
+"""
+enum UsageFeature {
+  NOTES_EDITOR
+  PAGE_EDITOR
+  PDF_VIEWER
+  VOICE_NOTE
+  QUICK_CAPTURE
+  READ_ALOUD
+  CLASS_QUIZ
+  SHARED_QUIZ
+  FLASHCARDS_REVIEW
+  EXAM_PLAN
+  FOCUS
+  GROUPS
+  CLASSROOM
+  DOUBTS
+  AI_ASSIST
+  RESOURCES
+  SEARCH
+  PROFILE
+  SETTINGS
+}
+
+"Where a search was made: the @lvn/contracts UsageSearchScope id in upper case. ALL is a search across every scope."
+enum UsageSearchScope { ALL NOTES PEOPLE GROUPS CLASSROOMS RESOURCES TOPICS }
+
+"What kind of quiz a quiz_start event started: the @lvn/contracts QuizStartKind id in upper case."
+enum QuizStartKind {
+  "A classroom quiz."
+  CLASS
+  "A shared or public quiz."
+  SHARED
+  "The quiz cards of a note."
+  NOTE
+  "Practice questions: AI-made, or a topic's quiz."
+  PRACTICE
+}
+
+type AdminFeatureCount {
+  feature: UsageFeature!
+  "Distinct people who used it in the window. Always at least 5."
+  users: Int!
+  "feature_use events."
+  events: Int!
+}
+
+type AdminQuizStartCount {
+  kind: QuizStartKind!
+  "Distinct people who started one in the window. Always at least 5."
+  users: Int!
+  starts: Int!
+}
+
+"quiz_start events. starts counts every kind, hidden ones included."
+type AdminQuizStarts {
+  starts: Int!
+  byKind: [AdminQuizStartCount!]!
+  hiddenSmallGroups: Int!
+}
+
+"""
+First-party feature_use and quiz_start events (ADR-0107), most people first. Accounts that opted out of analytics and
+deleted accounts are left out. A feature or quiz kind with fewer than 5 distinct people is left out and counted in
+hiddenSmallGroups; events and starts include it. People are counted from the events, kept 180 days: for a window
+reaching further back, users is at least the busiest stored day's count, a lower bound. Past days' events come from the
+nightly rollup (ADR-0106). Cached in each API process for about 5 minutes.
+"""
+type AdminFeatureUsage {
+  range: AdminMetricsRange!
+  generatedAt: DateTime!
+  "feature_use events in the window."
+  events: Int!
+  features: [AdminFeatureCount!]!
+  hiddenSmallGroups: Int!
+  quizStarts: AdminQuizStarts!
+}
+
+type AdminSearchScopeQuality {
+  "Null: the client sent no scope (clients from before ADR-0107)."
+  scope: UsageSearchScope
+  "Distinct people who searched in the scope. Always at least 5."
+  users: Int!
+  searches: Int!
+  zeroResults: Int!
+  "zeroResults / searches, 0 to 1, three decimals. Null when there were no searches."
+  zeroResultRate: Float
+}
+
+"""
+Search quality from first-party events (ADR-0107): search events, and search_no_results events a client sends besides
+the search when it found nothing. Neither holds the words searched. A scope with fewer than 5 distinct people is left out
+of byScope and counted in hiddenSmallGroups; the totals include it. Same people, retention and caching rules as
+AdminFeatureUsage.
+"""
+type AdminSearchQuality {
+  range: AdminMetricsRange!
+  generatedAt: DateTime!
+  searches: Int!
+  zeroResults: Int!
+  "zeroResults / searches, 0 to 1, three decimals. Null when there were no searches."
+  zeroResultRate: Float
+  byScope: [AdminSearchScopeQuality!]!
+  hiddenSmallGroups: Int!
+}
+
+type AdminAppVersionCount {
+  "Null: no version was sent, or it was not one (MAJOR.MINOR[.PATCH], at most 32 characters)."
+  appVersion: String
+  "Distinct people who sent an event from this version. Always at least 5."
+  users: Int!
+  events: Int!
+  "users / the platform's users, 0 to 1. Someone on two versions counts in both, so shares can add up past 1."
+  share: Float!
+}
+
+type AdminPlatformAdoption {
+  platform: ClientPlatform!
+  "Distinct people who sent a usage event from the platform. Always at least 5."
+  users: Int!
+  "Usage events from the platform, hidden versions included."
+  events: Int!
+  "Newest version first."
+  versions: [AdminAppVersionCount!]!
+}
+
+"""
+Which app versions people use, from the platform and appVersion of every first-party usage event (ADR-0107). A
+platform or version with fewer than 5 distinct people is left out and counted in hiddenSmallGroups (a hidden platform's
+versions too). Same people, retention and caching rules as AdminFeatureUsage.
+"""
+type AdminVersionAdoption {
+  range: AdminMetricsRange!
+  generatedAt: DateTime!
+  platforms: [AdminPlatformAdoption!]!
+  hiddenSmallGroups: Int!
+}
+
 extend type Query {
   "Platform admins. Sign-ups and verifications per DAY (when omitted) or WEEK. Omit from and to for the last 30 days. At most 366 days."
   adminGrowth(from: DateTime, to: DateTime, interval: MetricsInterval): AdminGrowth!
@@ -284,4 +425,10 @@ extend type Query {
   adminVerificationStats(from: DateTime, to: DateTime): AdminVerificationStats!
   "Platform admins. Retention by sign-up week: the last `weeks` weeks (1 to 52, 12 when omitted), this week included."
   adminRetention(cohortInterval: CohortInterval = WEEK, weeks: Int): AdminRetention!
+  "Platform admins. Feature use and quiz starts from first-party events (ADR-0107). Omit from and to for the last 30 days. At most 366 days."
+  adminFeatureUsage(from: DateTime, to: DateTime): AdminFeatureUsage!
+  "Platform admins. Searches and zero-result searches by scope (ADR-0107). At most 366 days."
+  adminSearchQuality(from: DateTime, to: DateTime): AdminSearchQuality!
+  "Platform admins. Distinct people per platform and app version (ADR-0107). At most 366 days."
+  adminVersionAdoption(from: DateTime, to: DateTime): AdminVersionAdoption!
 }

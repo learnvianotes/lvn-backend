@@ -4,7 +4,8 @@ import { Errors } from '@lvn-backend/errors'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { scrubText } from '../domain/scrub-text'
-import { ERROR_RETENTION_DAYS, isUsageEventName, MAX_ANALYTICS_BATCH, MAX_ANALYTICS_PROPS_CHARS, USAGE_RETENTION_DAYS } from '../domain/usage-events'
+import { isUsageSessionId, normalizeAppVersion, sanitizeUsageProps } from '@lvn/contracts/validation'
+import { ERROR_RETENTION_DAYS, isUsageEventName, MAX_ANALYTICS_BATCH, USAGE_RETENTION_DAYS } from '../domain/usage-events'
 import { PolicyService } from './policy.service'
 
 const DAY_MS = 24 * 3600 * 1000
@@ -44,7 +45,7 @@ export class AnalyticsService {
     const limit = await this.limiter.hit(`analytics:${userId}`, { max: 30, windowSeconds: 60 })
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many analytics batches. Try again in a minute.')
     const optedOut = await this.optOut(userId)
-    const usage = optedOut ? [] : events.map((event) => this.usageRow(userId, sessionId, event))
+    const usage = optedOut ? [] : events.map((event, i) => this.usageRow(userId, sessionId, event, i))
     const reported = errors.map((event) => this.errorRow(optedOut ? null : userId, event))
     if (usage.length) await this.db.usageEvent.createMany({ data: usage })
     if (reported.length) await this.db.errorEvent.createMany({ data: reported })
@@ -132,18 +133,25 @@ export class AnalyticsService {
     return { errors: errors.count, usage: usage.count }
   }
 
-  private usageRow(userId: string, sessionId: string, event: NonNullable<IngestInput['events']>[number]): Prisma.UsageEventCreateManyInput {
-    if (!isUsageEventName(event.name)) throw Errors.validation(`Unknown event "${event.name}".`, ['input', 'events'])
+  /**
+   * One event as stored (ADR-0107): an allow-listed name, props run through the contracts' rules (unknown keys and free
+   * text dropped, a missing or unknown required value refused), and an app version or session id kept only when it is
+   * one. No IP address or user agent is ever read or stored.
+   */
+  private usageRow(userId: string, sessionId: string, event: NonNullable<IngestInput['events']>[number], index: number): Prisma.UsageEventCreateManyInput {
+    if (!isUsageEventName(event.name)) throw Errors.validation(`Unknown event "${clip(event.name, 40)}".`, ['input', 'events'])
     const platform = clientPlatform(event.platform)
+    const props = sanitizeUsageProps(event.name, event.props)
+    if (!props.ok) throw Errors.validation(`Event ${index + 1} (${event.name}): ${props.message}`, ['input', 'events', String(index), ...props.path.split('.')])
     return {
       id: newId(),
       occurredAt: when(event.occurredAt),
       userId,
-      sessionId: clip(event.sessionId, 64) ?? clip(sessionId, 64),
+      sessionId: isUsageSessionId(event.sessionId) ? event.sessionId : clip(sessionId, 64),
       name: event.name,
-      props: propsOf(event.props),
+      props: props.props ?? undefined,
       platform,
-      appVersion: clip(event.appVersion, 32),
+      appVersion: normalizeAppVersion(event.appVersion),
     }
   }
 
@@ -234,12 +242,4 @@ function when(value: Date | string | null | undefined): Date {
   if (date.getTime() > now + 5 * 60 * 1000) return new Date(now)
   if (date.getTime() < now - 7 * DAY_MS) return new Date(now)
   return date
-}
-
-function propsOf(value: unknown): Prisma.InputJsonValue | undefined {
-  if (value == null) return undefined
-  if (typeof value !== 'object' || Array.isArray(value)) throw Errors.validation('props is an object.', ['input', 'events'])
-  const json = JSON.stringify(value)
-  if (json.length > MAX_ANALYTICS_PROPS_CHARS) throw Errors.validation(`props is at most ${MAX_ANALYTICS_PROPS_CHARS} characters.`, ['input', 'events'])
-  return value as Prisma.InputJsonValue
 }
