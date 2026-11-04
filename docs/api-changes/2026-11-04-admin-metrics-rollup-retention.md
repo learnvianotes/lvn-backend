@@ -59,7 +59,7 @@ query { adminRetention(weeks: 8) { firstWeek lastWeek cohorts { start size retur
 
 ## Migration
 
-- Database: `20261113090000_daily_metrics` creates `users.daily_metrics` (additive; nothing else changes).
+- Database: `20261113100000_daily_metrics` creates `users.daily_metrics` (additive; nothing else changes).
 - Worker: new scheduled job `users.maintenance` / `rollup-metrics`; new optional variables `METRICS_ROLLUP_CRON`
   (default `30 20 * * *` UTC = 02:00 IST) and `METRICS_ROLLUP_DAYS` (default 3). After deploying, backfill history
   once: `node apps/worker/dist/cli.js metrics:backfill <from> <yesterday>`. Without it, nothing is wrong; older days

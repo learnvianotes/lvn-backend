@@ -27,7 +27,7 @@ events, no SDK and nothing on the web; ADR-0092 is untouched.
 timestamptz)`, primary key `(day, metric, dimension)`. `day` is an IST day (ADR-0105's `ADMIN_METRICS_TIME_ZONE`);
 learning is stored on the learner's own day, as ADR-0105 counts it. `dimension` is a breakdown key: a sign-up method,
 a visibility, a scan result, a cohort's Monday, or a duration in milliseconds. One additive migration
-(`20261113090000_daily_metrics`): a new table, no change to an existing one, so it is safe on the live database.
+(`20261113100000_daily_metrics`): a new table, no change to an existing one, so it is safe on the live database.
 
 **Rows.** Counts only, zeros left out, never an account id or free text. The users context owns the table and
 assembles it; `notes` and `core` return their own per-day counts through `NOTES_ADMIN_STATS.dailyCounts` and
