@@ -133,9 +133,13 @@ describe('provider linking', () => {
       $transaction: async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx),
     }
     const started: string[] = []
+    const revoked: string[] = []
     const service = new OAuthService(
       db as never,
-      { start: async (userId: string) => (started.push(userId), { userId }) } as never,
+      {
+        start: async (userId: string) => (started.push(userId), { userId }),
+        revokeAll: async (userId: string) => void revoked.push(userId),
+      } as never,
       { match: async () => undefined } as never,
       { publish: async () => undefined } as never,
       { googleSignInEnabled: async () => true } as never,
@@ -143,26 +147,28 @@ describe('provider linking', () => {
       { firebaseProjectId: 'proj', github: null, linkedin: null, oauthRedirectUris: [] } as never,
       { verify: async () => identity } as never,
     )
-    return { service, created, updates, started }
+    return { service, created, updates, started, revoked }
   }
 
-  it('links a provider-verified email onto the existing account and sets emailVerifiedAt', async () => {
-    const { service, created, updates, started } = oauth({
+  it('links a provider-verified email onto an unconfirmed account, drops its password, and signs it out', async () => {
+    const { service, created, updates, started, revoked } = oauth({
       existing: { id: 'u', email: 'person@example.com', deletedAt: null, emailVerifiedAt: null },
     })
     await expect(service.signInWithGoogle('token', { client: 'web', userAgent: 'test' })).resolves.toMatchObject({ userId: 'u' })
     expect(created).toEqual([expect.objectContaining({ userId: 'u', provider: 'GOOGLE', providerSubject: 'gid' })])
-    expect(updates).toEqual([{ emailVerifiedAt: expect.any(Date) }])
+    expect(updates).toEqual([{ emailVerifiedAt: expect.any(Date), passwordHash: null }])
+    expect(revoked).toEqual(['u'])
     expect(started).toEqual(['u'])
   })
 
   it('retries when the unique constraint loses a race, and still does not create a second user', async () => {
-    const { service, created, started } = oauth({
+    const { service, created, started, revoked } = oauth({
       existing: { id: 'u', email: 'person@example.com', deletedAt: null, emailVerifiedAt: new Date() },
       failFirst: true,
     })
     await expect(service.signInWithGoogle('token', { client: 'web', userAgent: 'test' })).resolves.toMatchObject({ userId: 'u' })
     expect(created).toEqual([expect.objectContaining({ userId: 'u', provider: 'GOOGLE', providerSubject: 'gid' })])
+    expect(revoked).toEqual([])
     expect(started).toEqual(['u'])
   })
 })

@@ -174,7 +174,7 @@ describe('provider sign-in and registration', () => {
       expect(seen.data!.userByHandle!.signInMethods).toBeNull()
     })
 
-    it('links Google to an account whose email is not verified, marks the login email verified, and does not create another user', async () => {
+    it('links Google to an unconfirmed address, drops the password that reserved it, and signs that session out', async () => {
       const email = `${unique('victim')}@example.com`
       const password = 'attacker chosen password'
       const attacker = await t.gql<Payload<'signUp'>>(SIGN_UP, {
@@ -192,9 +192,11 @@ describe('provider sign-in and registration', () => {
       const user = await db.user.findUniqueOrThrow({ where: { id: userId } })
       expect(user.emailVerifiedAt).not.toBeNull()
       expect(user.verifiedAt).toBeNull()
-      expect(user.passwordHash).not.toBeNull()
-      expect((await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password } })).data!.signIn.session!.user.id).toBe(userId)
-      expect((await t.gql<{ viewer: { id: string; emailVerified: boolean; verified: boolean } }>(`{ viewer { id emailVerified verified } }`, {}, attackerToken)).data!.viewer).toEqual({ id: userId, emailVerified: true, verified: false })
+      expect(user.passwordHash).toBeNull()
+      expect((await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password } })).data!.signIn.session).toBeNull()
+      expect((await t.gql<{ viewer: { id: string } | null }>('{ viewer { id } }', {}, attackerToken)).data!.viewer).toBeNull()
+      const googleToken = g.data!.signInWithGoogle.session!.accessToken
+      expect((await t.gql<{ viewer: { id: string; signInMethods: string[] } }>('{ viewer { id signInMethods } }', {}, googleToken)).data!.viewer).toEqual({ id: userId, signInMethods: ['GOOGLE'] })
     })
 
     it('refuses a Google token whose email is not verified, and stores nothing', async () => {

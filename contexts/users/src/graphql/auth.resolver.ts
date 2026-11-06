@@ -56,7 +56,7 @@ export class AuthResolver {
   @Mutation('signUp')
   signUp(@Args() { input }: MutationSignUpArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
     return withInviteError<AuthPayload>(async () => {
-      const result = await this.auth.signUp(input, deviceOf(ctx), ctx.requestId)
+      const result = await this.auth.signUp(input, deviceOf(ctx), ctx.requestId, ctx.req.ip)
       if (result.status === 'emailLinkPending') return { session: null, emailLinkPending: true }
       return { session: await deliverSession(ctx, this.cookie, this.users, result.session), emailLinkPending: false }
     }, { session: null, emailLinkPending: false })
@@ -112,9 +112,9 @@ export class AuthResolver {
   }
 
   @Mutation('requestPasswordReset')
-  requestPasswordReset(@Args() { input }: MutationRequestPasswordResetArgs): Promise<OkPayload> {
+  requestPasswordReset(@Args() { input }: MutationRequestPasswordResetArgs, @Context() ctx: RequestContext): Promise<OkPayload> {
     return withUserErrors<OkPayload>(async () => {
-      await this.auth.requestPasswordReset(input.email)
+      await this.auth.requestPasswordReset(input.email, ctx.req.ip)
       return { ok: true }
     }, { ok: false })
   }

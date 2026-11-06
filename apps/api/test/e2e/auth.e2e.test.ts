@@ -113,6 +113,15 @@ describe('auth', () => {
       expect(res.headers['set-cookie']).toBeUndefined()
     })
 
+    it('keeps the refresh token in the cookie when a browser sends the mobile header', async () => {
+      // Sec-Fetch-* is set by the browser and script cannot remove it, so the header is not a way to read lvn_rt.
+      const res = await http().post('/graphql').set('x-lvn-client', 'mobile').set('sec-fetch-site', 'same-origin').set('sec-fetch-mode', 'cors').send({ query: SIGN_UP, variables: { input: signUpInput() } })
+      expect(res.body.data.signUp.session.refreshToken).toBeNull()
+      const cookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []).find((c) => c.startsWith('lvn_rt='))
+      expect(cookie).toMatch(/HttpOnly/)
+      expect(cookie).toMatch(/SameSite=Lax/)
+    })
+
     it.each([
       [{ password: 'short' }, ['input', 'password'], /at least 10/],
       [{ age: 0 }, ['input', 'age'], /from 1 to 120/],
