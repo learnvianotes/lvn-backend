@@ -65,7 +65,13 @@ const storage = z.object({
  * Transactional email (§2): SMTP (Mailpit locally), Amazon SES on AWS (signed with the task role — no key), or Resend.
  */
 const mail = z.object({
-  MAIL_FROM: z.string().min(3),
+  /**
+   * Sender of every transactional email. The default is the address Resend has verified for learnvianotes.in.
+   * A deploy may still set it (Lightsail writes `LVN_MAIL_FROM`).
+   */
+  MAIL_FROM: z.string().min(3).default('LearnViaNotes <no-reply@learnvianotes.in>'),
+  /** Where replies to transactional mail go. The default is the public support inbox. */
+  MAIL_REPLY_TO: z.email().default('support@learnvianotes.in'),
   MAIL_TRANSPORT: z.enum(['smtp', 'resend', 'ses']),
   SMTP_URL: z.url().optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
@@ -84,8 +90,20 @@ const auth = z.object({
   /** RS256 key pair for access tokens (§7.1). Development: `pnpm keys:dev` writes a pair to .env.local. */
   JWT_PRIVATE_KEY: pem('PRIVATE'),
   JWT_PUBLIC_KEY: pem('PUBLIC'),
-  /** The API's public origin, used as the token issuer. */
+  /**
+   * The API's public origin, used as the `iss` claim of new access tokens. Changing it rejects tokens that still
+   * carry the previous issuer until they expire (15 minutes). `JWT_EXTRA_ISSUERS` accepts those during a cutover.
+   * Refresh tokens are opaque and are not affected.
+   */
   JWT_ISSUER: z.url(),
+  /**
+   * Additional issuers accepted when verifying access tokens, comma-separated. Not used when signing.
+   * Set the previous public origin here for the 15 minutes after `JWT_ISSUER` changes, then remove it.
+   */
+  JWT_EXTRA_ISSUERS: z
+    .string()
+    .default('')
+    .transform((s) => s.split(',').map((o) => o.trim()).filter(Boolean)),
   /** lvn-web origin, for links in emails (verify, reset) and OAuth redirects. */
   WEB_URL: z.url(),
   /** Secret for HMAC-hashing short codes (institutional email codes), so a database leak does not reveal them. */
@@ -110,8 +128,8 @@ const auth = z.object({
    */
   ACCOUNT_MINIMUM_AGE: z.coerce.number().int().min(0).max(21).default(18),
   /**
-   * Fallback for userErrors.supportEmail when no non-deleted PLATFORM_ADMIN exists.
-   * Otherwise that field is the earliest platform admin by createdAt.
+   * The address shown on AGE_RESTRICTED and on a blocked sign-in (`userErrors.supportEmail`).
+   * Always this value: a platform admin's own inbox is not shown to people.
    */
   SUPPORT_EMAIL: z.email().default('support@learnvianotes.in'),
   /**
@@ -415,7 +433,7 @@ const publicId = z.string().min(1).optional()
 /** Public (browser-visible) web variables. Server-only web secrets get their own schema when the web needs one. */
 export const webConfigSchema = z.object({
   NEXT_PUBLIC_APP_ENV: AppEnv.default('development'),
-  /** Canonical web origin, e.g. https://www.learnvianotes.in in production. */
+  /** Canonical web origin, e.g. https://app.learnvianotes.in in production. */
   NEXT_PUBLIC_SITE_URL: z.url(),
   /** The API's GraphQL gateway. */
   NEXT_PUBLIC_API_URL: z.url(),

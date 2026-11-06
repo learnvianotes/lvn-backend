@@ -53,9 +53,13 @@ Left out:
 **TLS:**
 
 - Caddy's automatic HTTPS: Let's Encrypt certificates for every host in `LVN_SITE_HOSTS`, renewed by Caddy.
-- Hosts other than the canonical one (`LVN_PUBLIC_URL`) redirect to it, e.g. `learnvianotes.in` → `www.learnvianotes.in`.
-- `/graphql` (with its WebSocket), `/health/*` and `/webhooks/*` go to the API; the rest to the web. One origin, as
-  CloudFront gave the sandbox (ADR-0035) and the local entrance gives today.
+- *[Amended 2026-11-06.]* Production is two hosts. `LVN_API_HOST` (`api.learnvianotes.in`) serves `/graphql` (and its
+  WebSocket), `/health/*` and `/webhooks/*` and answers 404 for anything else. `LVN_APP_HOST` (`app.learnvianotes.in`)
+  serves only the web. `www.learnvianotes.in` and `learnvianotes.in` redirect to `https://app.learnvianotes.in`. While
+  `LVN_API_HOST` and `LVN_APP_HOST` are the same name (beta, until it splits), the entrance stays the path split below.
+- `/graphql` (with its WebSocket), `/health/*` and `/webhooks/*` go to the API; the rest to the web, on a single host.
+  The local entrance (`infra/terraform/envs/local/Caddyfile.tftpl`) is still that one origin: the VM has no app and api
+  names of its own.
 
 **Files on R2:**
 

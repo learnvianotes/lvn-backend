@@ -5,10 +5,11 @@ describe('SesTransport', () => {
   it('sends one simple UTF-8 email with HTML and text through the SES API', async () => {
     const sent: SendEmailCommand[] = []
     const transport = new SesTransport('ap-south-1', { send: async (command: SendEmailCommand) => void sent.push(command) } as never)
-    await transport.send({ from: 'LearnViaNotes <no-reply@example.com>', to: 'asha@college.edu', subject: 'Your code — 123456', html: '<p>Code</p>', text: 'Code' })
+    await transport.send({ from: 'LearnViaNotes <no-reply@learnvianotes.in>', replyTo: 'support@learnvianotes.in', to: 'asha@college.edu', subject: 'Your code — 123456', html: '<p>Code</p>', text: 'Code' })
     expect(sent).toHaveLength(1)
     expect(sent[0]!.input).toEqual({
-      FromEmailAddress: 'LearnViaNotes <no-reply@example.com>',
+      FromEmailAddress: 'LearnViaNotes <no-reply@learnvianotes.in>',
+      ReplyToAddresses: ['support@learnvianotes.in'],
       Destination: { ToAddresses: ['asha@college.edu'] },
       Content: {
         Simple: {

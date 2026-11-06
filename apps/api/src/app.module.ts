@@ -24,7 +24,7 @@ export { TOKEN_AUDIENCE }
 @Module({})
 export class AppModule {
   static forRoot(config: ApiConfig): DynamicModule {
-    const verifier = new AccessTokenVerifier(config.JWT_PUBLIC_KEY, config.JWT_ISSUER, TOKEN_AUDIENCE)
+    const verifier = new AccessTokenVerifier(config.JWT_PUBLIC_KEY, [config.JWT_ISSUER, ...config.JWT_EXTRA_ISSUERS], TOKEN_AUDIENCE)
     return {
       module: AppModule,
       imports: [

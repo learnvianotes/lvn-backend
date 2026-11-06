@@ -6,6 +6,7 @@ describe('email templates', () => {
     const verify = await render(TEMPLATES.verifyEmail.element({ displayName: 'Asha', link: 'http://localhost:3000/verify?token=abc' }))
     expect(verify).toContain('href="http://localhost:3000/verify?token=abc"')
     expect(verify).toContain('Hi <!-- -->Asha')
+    expect(verify).toContain('mailto:support@learnvianotes.in')
     const reset = await render(TEMPLATES.resetPassword.element({ displayName: 'Asha', link: 'http://x/reset?token=t', expiresInMinutes: 60 }), { plainText: true })
     expect(reset).toContain('expires in 60 minutes')
   })

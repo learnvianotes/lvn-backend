@@ -36,7 +36,7 @@ export class CommunicationModule {
       module: CommunicationModule,
       providers: [
         { provide: COMMUNICATION_CONFIG, useValue: config },
-        { provide: MailService, useValue: new MailService(transport, config.mailFrom) },
+        { provide: MailService, useValue: new MailService(transport, config.mailFrom, config.mailReplyTo) },
         LiveHub,
         LiveNotifier,
         NotificationService,

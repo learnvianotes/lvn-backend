@@ -62,8 +62,8 @@ describe('age-restricted accounts', () => {
     expect(res.data!.signUp.userErrors).toEqual([{
       code: 'AGE_RESTRICTED',
       field: ['input', 'age'],
-      message: expect.stringContaining(`Contact an admin at ${admin.email}`),
-      supportEmail: admin.email,
+      message: expect.stringContaining('Contact an admin at support@learnvianotes.in'),
+      supportEmail: 'support@learnvianotes.in',
     }])
     const user = await db.user.findUniqueOrThrow({ where: { email } })
     userId = user.id
@@ -74,7 +74,7 @@ describe('age-restricted accounts', () => {
     expect((await t.gql<{ userByHandle: { id: string } | null }>(BY_HANDLE, { h: handle })).data!.userByHandle).toBeNull()
     const signIn = await t.gql<{ signIn: { session: null; userErrors: Err[] } }>(SIGN_IN, { input: { email, password } })
     expect(signIn.data!.signIn.session).toBeNull()
-    expect(signIn.data!.signIn.userErrors[0]).toMatchObject({ code: 'AGE_RESTRICTED', supportEmail: admin.email })
+    expect(signIn.data!.signIn.userErrors[0]).toMatchObject({ code: 'AGE_RESTRICTED', supportEmail: 'support@learnvianotes.in' })
   })
 
   it('lets only a platform admin list and correct the age', async () => {
@@ -140,7 +140,7 @@ describe('age-restricted accounts', () => {
     const blocked = await t.gql<{ adminSetAccountStanding: { user: { accountStatus: string }; userErrors: Err[] } }>(STANDING, { input: { userId, status: 'BLOCKED', reason: 'Spam reports' } }, admin.token)
     expect(blocked.data!.adminSetAccountStanding).toEqual({ user: { accountStatus: 'BLOCKED', statusReason: 'Spam reports' }, userErrors: [] })
     const again = await t.gql<{ signIn: { session: null; userErrors: Err[] } }>(SIGN_IN, { input: { email, password } })
-    expect(again.data!.signIn.userErrors[0]).toMatchObject({ code: 'VALIDATION', supportEmail: admin.email })
+    expect(again.data!.signIn.userErrors[0]).toMatchObject({ code: 'VALIDATION', supportEmail: 'support@learnvianotes.in' })
     const refresh = await request(t.app.getHttpServer()).post('/graphql').set('x-lvn-client', 'mobile').send({ query: REFRESH, variables: { input: { refreshToken } } })
     expect(refresh.body.errors[0].extensions.code).toBe('UNAUTHENTICATED')
     expect((await t.gql<{ userByHandle: { id: string } | null }>(BY_HANDLE, { h: handle })).data!.userByHandle).toBeNull()

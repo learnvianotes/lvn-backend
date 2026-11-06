@@ -134,8 +134,8 @@ services:
       <<: *node-check
       test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3000/robots.txt').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
 
-  # The one entrance (Caddyfile): certificates from Let's Encrypt for LVN_SITE_HOSTS, /graphql and /health to the API,
-  # everything else to the web.
+  # The entrance (Caddyfile): certificates for LVN_SITE_HOSTS. The API host serves /graphql, /health and
+  # /webhooks; the app host serves the web; other names redirect to the app host. See the Caddyfile.
   caddy:
     image: caddy:2.11.7-alpine
     restart: unless-stopped
@@ -144,7 +144,9 @@ services:
     ports: ['80:80', '443:443', '443:443/udp']
     environment:
       LVN_SITE_HOSTS: ${LVN_SITE_HOSTS:?set by lvn-backend's deploy}
-      LVN_CANONICAL_HOST: ${LVN_CANONICAL_HOST:?set by lvn-backend's deploy}
+      LVN_API_HOST: ${LVN_API_HOST:?set LVN_API_HOST (api.learnvianotes.in in production)}
+      LVN_APP_HOST: ${LVN_APP_HOST:?set LVN_APP_HOST (app.learnvianotes.in in production)}
+      LVN_ENTRANCE: ${LVN_ENTRANCE:-split_entrance}
       LVN_ACME_EMAIL: ${LVN_ACME_EMAIL:?set by lvn-backend's deploy}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

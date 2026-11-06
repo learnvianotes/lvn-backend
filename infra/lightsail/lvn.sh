@@ -49,9 +49,18 @@ health_of() {
   docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$id"
 }
 
+# The API host answers /health/ready. On a single-host stack LVN_API_HOST is that host; an older stack.env only has
+# LVN_CANONICAL_HOST, which was the same host.
+api_host() {
+  local host
+  host=$(value LVN_API_HOST)
+  [ -n "$host" ] || host=$(value LVN_CANONICAL_HOST)
+  printf '%s' "$host"
+}
+
 site_ready() {
   local host
-  host=$(value LVN_CANONICAL_HOST)
+  host=$(api_host)
   [ -n "$host" ] || return 1
   # Through Caddy on this VM, with the real certificate. A local test of the stack sets LVN_READY_PORT (where Caddy's
   # 443 is published) and LVN_READY_INSECURE=1 (Caddy's own CA for localhost).
@@ -71,7 +80,7 @@ ready() {
       [ "$h" = healthy ] || [ "$h" = running ] || bad+=("$s:$h")
     done
     if [ ${#bad[@]} -eq 0 ] && site_ready; then
-      echo "ready: every service healthy, https://$(value LVN_CANONICAL_HOST)/health/ready answers"
+      echo "ready: every service healthy, https://$(api_host)/health/ready answers"
       return 0
     fi
     if [ $SECONDS -ge $deadline ]; then

@@ -2558,7 +2558,7 @@ export interface UserError {
   code: ErrorCode
   /** Seconds until a RATE_LIMITED caller may retry. Null for every other code. */
   retryAfter: number | null
-  /** One address on AGE_RESTRICTED and on a blocked sign-in: the earliest non-deleted platform admin (GlobalRole PLATFORM_ADMIN) by createdAt, or SUPPORT_EMAIL when none exists. */
+  /** One address on AGE_RESTRICTED and on a blocked sign-in: SUPPORT_EMAIL (support@learnvianotes.in unless the environment sets another). */
   supportEmail: string | null
 }
 
