@@ -157,8 +157,11 @@ export function isBelowMinimumAge(age: number, minimumAge: number): boolean {
   return minimumAge > 0 && age < minimumAge
 }
 
-/** What a refused person reads (web and phone show it, and remember the refusal on the device for a day). */
-export const UNDER_MINIMUM_AGE_MESSAGE = 'Sorry, you can’t create an account. LearnViaNotes accounts are only for adults; you can still read the public notes without one.'
+/**
+ * What a refused person reads (web and phone show it, and remember the refusal on the device for a day).
+ * It does not name the cut-off (ADR-0091). Accounts from 8 up are allowed; this is only for an age below the floor.
+ */
+export const UNDER_MINIMUM_AGE_MESSAGE = 'Sorry, you can’t create an account. You can still read the public notes without one.'
 
 /** Stored on an AGE_BLOCKED account. It does not name the cut-off. */
 export const AGE_BLOCK_REASON = 'Below the minimum age for an account.'

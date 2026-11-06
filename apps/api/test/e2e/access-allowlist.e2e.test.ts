@@ -150,10 +150,10 @@ describe('beta access allowlist', () => {
     expect(ok.data!.signIn.userErrors).toEqual([])
     expect(ok.data!.signIn.session!.user.id).toBe(created.data!.signUp.session!.user.id)
 
-    // Adults-only still wins over the invite list.
+    // The account floor still wins over the invite list.
     const child = emailOf('child')
     await allow(child, 'STUDENT')
-    const young = await t.gql<{ signUp: { session: null; userErrors: Err[] } }>(SIGN_UP, { input: signUpInput(child, { age: 17 }) })
+    const young = await t.gql<{ signUp: { session: null; userErrors: Err[] } }>(SIGN_UP, { input: signUpInput(child, { age: 7 }) })
     expect(young.data!.signUp.userErrors[0]!.code).toBe('AGE_RESTRICTED')
     expect(young.data!.signUp.session).toBeNull()
     expect(await db.user.findFirst({ where: { email: child } })).toMatchObject({ accountStatus: 'AGE_BLOCKED' })

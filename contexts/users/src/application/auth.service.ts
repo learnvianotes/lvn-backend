@@ -127,6 +127,8 @@ export class AuthService {
             ...declared.value,
             registrationCompletedAt: new Date(),
             globalRole: role,
+            // Under the consent age the account is a restricted minor (ADR-0108): no usage analytics.
+            analyticsOptOut: declared.value.declaredAge < this.settings.consentAge(),
           },
         })
         await tx.consentRecord.createMany({

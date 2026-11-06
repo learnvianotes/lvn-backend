@@ -153,8 +153,8 @@ describe('auth', () => {
     })
 
     it.each([
-      ['an age', { age: 17 }, 'age'],
-      ['the date of birth an older app sends', { age: undefined, dateOfBirth: yearsAgo(17) }, 'dateOfBirth'],
+      ['an age', { age: 7 }, 'age'],
+      ['the date of birth an older app sends', { age: undefined, dateOfBirth: yearsAgo(7) }, 'dateOfBirth'],
     ])('keeps %s below the minimum age as AGE_BLOCKED and returns AGE_RESTRICTED', async (_what, over, field) => {
       const input = signUpInput(over)
       const res = await t.gql<{ signUp: { session: { accessToken: string } | null; userErrors: { field: string[] | null; message: string; code: string; supportEmail: string | null }[] } }>(
@@ -171,7 +171,7 @@ describe('auth', () => {
       const user = await t.app.get(PrismaService).user.findUnique({ where: { email: input.email as string } })
       expect(user).toMatchObject({ accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.', analyticsOptOut: true })
       // Only the age is kept, whichever input it came from (ADR-0104).
-      expect(user).toMatchObject({ declaredAge: 17, dateOfBirth: null })
+      expect(user).toMatchObject({ declaredAge: 7, dateOfBirth: null })
       expect(user!.deletedAt).toBeNull()
       expect(user!.registrationCompletedAt).not.toBeNull()
       expect(await t.app.get(PrismaService).session.count({ where: { userId: user!.id } })).toBe(0)
@@ -181,6 +181,35 @@ describe('auth', () => {
       const res = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput({ age: 18 }) })
       expect(res.data!.signUp.userErrors).toEqual([])
       expect(res.data!.signUp.session).not.toBeNull()
+    })
+
+    it.each([8, 17])('lets a %s-year-old sign up as a restricted minor, with no guardian consent, and sign in again', async (age) => {
+      const input = signUpInput({ age, displayName: `Age ${age}` })
+      const res = await t.gql<SignUpResult>(SIGN_UP, { input })
+      expect(res.data!.signUp.userErrors).toEqual([])
+      const session = res.data!.signUp.session!
+      const db = t.app.get(PrismaService)
+      const user = await db.user.findUniqueOrThrow({ where: { id: session.user.id }, include: { consents: true } })
+      expect(user).toMatchObject({ accountStatus: 'ACTIVE', declaredAge: age, dateOfBirth: null, analyticsOptOut: true, statusReason: null })
+      expect(user.consents.map((c) => c.kind).sort()).toEqual(['PRIVACY', 'PUBLIC_CONTENT_LICENCE', 'TERMS'])
+      expect(user.consents.some((c) => c.kind === 'GUARDIAN')).toBe(false)
+      const viewer = await t.gql<{ viewer: { restrictedMinor: boolean; analyticsOptOut: boolean } }>(
+        '{ viewer { restrictedMinor analyticsOptOut } }',
+        {},
+        session.accessToken,
+      )
+      expect(viewer.data!.viewer).toEqual({ restrictedMinor: true, analyticsOptOut: true })
+      const stranger = await t.gql<{ userByHandle: { id: string } | null }>('query ($h: String!) { userByHandle(handle: $h) { id } }', { h: session.user.handle })
+      expect(stranger.data!.userByHandle).toBeNull()
+      const own = await t.gql<{ userByHandle: { id: string } | null }>('query ($h: String!) { userByHandle(handle: $h) { id } }', { h: session.user.handle }, session.accessToken)
+      expect(own.data!.userByHandle).toEqual({ id: session.user.id })
+      const again = await t.gql<{ signIn: { session: { user: { id: string } } | null; userErrors: { code: string }[] } }>(SIGN_IN, { input: { email: input.email, password: input.password } })
+      expect(again.data!.signIn.userErrors).toEqual([])
+      expect(again.data!.signIn.session!.user.id).toBe(session.user.id)
+      const optedIn = await t.gql<{ setAnalyticsOptOut: { ok: boolean } }>('mutation { setAnalyticsOptOut(optOut: false) { ok } }', {}, session.accessToken)
+      expect(optedIn.data!.setAnalyticsOptOut.ok).toBe(true)
+      expect(await db.user.findUniqueOrThrow({ where: { id: session.user.id }, select: { analyticsOptOut: true } })).toEqual({ analyticsOptOut: true })
+      expect((await t.gql<{ viewer: { analyticsOptOut: boolean } }>('{ viewer { analyticsOptOut } }', {}, session.accessToken)).data!.viewer.analyticsOptOut).toBe(true)
     })
 
     it('lets someone in on their eighteenth birthday from an older app, and stores the age, not the date', async () => {
@@ -195,7 +224,7 @@ describe('auth', () => {
       expect(res.data!.signUp.userErrors).toEqual([])
       const row = await t.app.get(PrismaService).user.findUniqueOrThrow({ where: { id: res.data!.signUp.session!.user.id } })
       expect(row).toMatchObject({ declaredAge: 30, dateOfBirth: null })
-      const young = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput({ age: 16, dateOfBirth: yearsAgo(40) }) })
+      const young = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput({ age: 7, dateOfBirth: yearsAgo(40) }) })
       expect(young.data!.signUp.userErrors[0]).toMatchObject({ code: 'AGE_RESTRICTED', field: ['input', 'age'] })
     })
 

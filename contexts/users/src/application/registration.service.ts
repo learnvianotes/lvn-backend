@@ -58,7 +58,16 @@ export class RegistrationService {
     }
 
     await this.db.$transaction([
-      this.db.user.update({ where: { id: userId }, data: { displayName, ...declared.value, registrationCompletedAt: new Date() } }),
+      this.db.user.update({
+        where: { id: userId },
+        data: {
+          displayName,
+          ...declared.value,
+          registrationCompletedAt: new Date(),
+          // Under the consent age the account is a restricted minor (ADR-0108): no usage analytics.
+          analyticsOptOut: declared.value.declaredAge < this.settings.consentAge(),
+        },
+      }),
       this.db.consentRecord.createMany({
         data: (['TERMS', 'PRIVACY', 'PUBLIC_CONTENT_LICENCE'] as const).map((kind) => ({ id: newId(), userId, kind, version: termsVersion })),
       }),
