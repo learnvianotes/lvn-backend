@@ -36,10 +36,18 @@ export const deviceOf = (ctx: RequestContext): DeviceInfo => ({
   userAgent: header(ctx, 'user-agent')?.slice(0, 200),
 })
 
-/** Session payload: the refresh token goes in the body for mobile and in the cookie for web. */
+/**
+ * Browsers set `Sec-Fetch-*` on every request and page script cannot remove them. A native client does not send them.
+ * The mobile header alone is not proof of a native app: a page can set it and would then read the long-lived refresh
+ * token out of the JSON, which the HttpOnly cookie is there to prevent.
+ */
+export const browserRequest = (ctx: RequestContext): boolean =>
+  header(ctx, 'sec-fetch-site') !== undefined || header(ctx, 'sec-fetch-mode') !== undefined || header(ctx, 'sec-fetch-dest') !== undefined
+
+/** Session payload: the refresh token goes in the body for a native client and in the cookie for a browser. */
 export async function deliverSession(ctx: RequestContext, cookie: RefreshCookieOptions, users: UsersService, s: IssuedSession): Promise<Session> {
-  const mobile = deviceOf(ctx).client === 'mobile'
-  if (!mobile) ctx.res.cookie(REFRESH_COOKIE, s.refreshToken, { ...cookie, expires: s.refreshTokenExpiresAt })
+  const native = deviceOf(ctx).client === 'mobile' && !browserRequest(ctx)
+  if (!native) ctx.res.cookie(REFRESH_COOKIE, s.refreshToken, { ...cookie, expires: s.refreshTokenExpiresAt })
   const user = await users.viewerProfile(s.userId)
-  return { accessToken: s.accessToken, accessTokenExpiresAt: s.accessTokenExpiresAt, refreshToken: mobile ? s.refreshToken : null, user: user! }
+  return { accessToken: s.accessToken, accessTokenExpiresAt: s.accessTokenExpiresAt, refreshToken: native ? s.refreshToken : null, user: user! }
 }

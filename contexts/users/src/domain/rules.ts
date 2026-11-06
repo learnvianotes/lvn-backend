@@ -26,6 +26,17 @@ export const LIMITS = {
    */
   signInFailuresPerNetwork: { max: 50, windowSeconds: 15 * 60 },
   passwordReset: { max: 3, windowSeconds: 60 * 60 },
+  /**
+   * Password-reset mail to many addresses from one network. The per-address cap above does not stop that.
+   * High enough that a campus behind one address can still ask for resets.
+   */
+  passwordResetPerNetwork: { max: 40, windowSeconds: 60 * 60 },
+  /**
+   * New accounts (and the verification mail they send) from one network. Anonymous GraphQL has no per-person cap;
+   * address floods are still the edge's job, and this stops one address creating accounts without a bound.
+   * The suite shares one Redis and one loopback address, so the ceiling sits above what the tests create in an hour.
+   */
+  signUpPerNetwork: { max: 300, windowSeconds: 60 * 60 },
   verifyEmailResend: { max: 3, windowSeconds: 60 * 60 },
   /** Emails that attach a password to an account that already exists (ADR-0100). */
   linkEmail: { max: 3, windowSeconds: 60 * 60 },

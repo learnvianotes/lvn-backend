@@ -3,7 +3,7 @@ import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { MAILER, type Mailer } from '@lvn-backend/facades'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
-import { RateLimiter } from '@lvn-backend/redis'
+import { RateLimiter, type Limit } from '@lvn-backend/redis'
 import { ageRestrictedError } from '../domain/account-status'
 import {
   displayNameSchema,
@@ -73,8 +73,9 @@ export class AuthService {
     private readonly terms: TermsVersionProvider,
   ) {}
 
-  async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string): Promise<SignUpResult> {
+  async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string, ip?: string): Promise<SignUpResult> {
     const email = parseField(emailSchema, input.email, 'email')
+    await this.limitNetwork('signup', ip, LIMITS.signUpPerNetwork, 'Too many sign-ups from your network. Try again in a few minutes.')
     const displayName = parseField(displayNameSchema, input.displayName, 'displayName')
     // ADR-0104: the age typed in whole years, or the age today from an older app's date of birth. No date is stored.
     const declared = readDeclaredAge(input)
@@ -222,8 +223,9 @@ export class AuthService {
   }
 
   /** Always succeeds for the caller (no account enumeration); emails a link only if an account exists. */
-  async requestPasswordReset(rawEmail: string): Promise<void> {
+  async requestPasswordReset(rawEmail: string, ip?: string): Promise<void> {
     const email = parseField(emailSchema, rawEmail, 'email')
+    await this.limitNetwork('reset-net', ip, LIMITS.passwordResetPerNetwork, 'Too many reset requests from your network. Try again later.')
     const limit = await this.limiter.hit(`reset:${email}`, LIMITS.passwordReset)
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many reset requests. Try again later.')
     // Same answer as an unknown address: the caller cannot tell whether the email is on the list.
@@ -306,6 +308,14 @@ export class AuthService {
     const { count } = await this.db.emailToken.updateMany({ where: { id: row.id, usedAt: null }, data: { usedAt: now, passwordHash: null } })
     if (count !== 1) throw Errors.validation(INVALID_LINK, ['input', 'token'])
     return row
+  }
+
+  /** One sliding window per network (IPv4, or IPv6 /64). No address: nothing to key, so the caller's other limits still apply. */
+  private async limitNetwork(name: string, ip: string | undefined, limit: Limit, message: string): Promise<void> {
+    const network = clientNetwork(ip)
+    if (!network) return
+    const hit = await this.limiter.hit(`${name}:${network}`, limit)
+    if (!hit.allowed) throw Errors.rateLimited(hit.retryAfter, message)
   }
 
   private link(path: string, token: string): string {
