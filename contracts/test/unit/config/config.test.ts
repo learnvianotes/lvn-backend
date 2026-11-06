@@ -30,6 +30,9 @@ describe('loadConfig', () => {
     const cfg = loadConfig(apiConfigSchema, valid)
     expect(cfg.API_PORT).toBe(4000)
     expect(cfg.CORS_ORIGINS).toEqual(['http://localhost:3000', 'https://sandbox.learnvianotes.in'])
+    expect(cfg.MAIL_FROM).toBe('LearnViaNotes <no-reply@learnvianotes.in>')
+    expect(cfg.MAIL_REPLY_TO).toBe('support@learnvianotes.in')
+    expect(cfg.JWT_EXTRA_ISSUERS).toEqual([])
   })
 
   it('fails fast, naming every bad variable but never its value', () => {
@@ -76,6 +79,13 @@ describe('apiConfigSchema (Phase 1)', () => {
     expect(loadConfig(apiConfigSchema, { ...valid, DIGITAL_CONSENT_AGE: '16' }).DIGITAL_CONSENT_AGE).toBe(16)
     expect(loadConfig(apiConfigSchema, valid).ACCOUNT_MINIMUM_AGE).toBe(18)
     expect(loadConfig(apiConfigSchema, { ...valid, ACCOUNT_MINIMUM_AGE: '0' }).ACCOUNT_MINIMUM_AGE).toBe(0)
+    const { MAIL_FROM: _from, ...withoutSender } = valid
+    expect(loadConfig(apiConfigSchema, withoutSender).MAIL_FROM).toBe('LearnViaNotes <no-reply@learnvianotes.in>')
+    expect(loadConfig(apiConfigSchema, { ...valid, MAIL_REPLY_TO: 'help@learnvianotes.in' }).MAIL_REPLY_TO).toBe('help@learnvianotes.in')
+    expect(loadConfig(apiConfigSchema, { ...valid, JWT_EXTRA_ISSUERS: 'https://www.learnvianotes.in, https://learnvianotes.in' }).JWT_EXTRA_ISSUERS).toEqual([
+      'https://www.learnvianotes.in',
+      'https://learnvianotes.in',
+    ])
     expect(loadConfig(apiConfigSchema, valid).SUPPORT_EMAIL).toBe('support@learnvianotes.in')
     expect(loadConfig(apiConfigSchema, { ...valid, SUPPORT_EMAIL: 'help@learnvianotes.in' }).SUPPORT_EMAIL).toBe('help@learnvianotes.in')
     expect(() => loadConfig(apiConfigSchema, { ...valid, DIGITAL_CONSENT_AGE: '10' })).toThrow(/DIGITAL_CONSENT_AGE/)

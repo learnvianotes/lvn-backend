@@ -2,6 +2,8 @@ import type { MailTemplate, MailTemplates } from '@lvn-backend/facades'
 import type { ReactElement } from 'react'
 import { AccountDeletion, ClassroomPost, DataExportReady, InstitutionalCode, LinkEmail, PasswordChanged, ResetPassword, VerifyEmail, WeeklyDigest } from './emails'
 
+export { MailContact } from './Layout'
+
 type Definition<T extends MailTemplate> = { subject: (data: MailTemplates[T]) => string; element: (data: MailTemplates[T]) => ReactElement }
 
 /** Subject and body of every email (React Email, §2). */

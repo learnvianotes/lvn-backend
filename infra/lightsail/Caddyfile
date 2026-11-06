@@ -1,18 +1,56 @@
-# The entrance on the Lightsail VM (ADR-0096), as the local environment's (envs/local/Caddyfile.tftpl) with real TLS:
-# Caddy gets and renews Let's Encrypt certificates for every host in LVN_SITE_HOSTS (space-separated), and sends every
-# host other than LVN_CANONICAL_HOST there (e.g. learnvianotes.in → www.learnvianotes.in). /graphql (and its WebSocket,
-# /graphql/live), /health/* and /webhooks/* go to the API; everything else to the web. Caddy replaces any
-# X-Forwarded-For a client sends with the address it sees, which is the one hop the API trusts (TRUST_PROXY_HOPS=1).
+# The entrance on the Lightsail VM (ADR-0096).
+#
+# Split (LVN_ENTRANCE=split_entrance, the default — production):
+#   {$LVN_API_HOST}  /graphql, /graphql/*, /health/*, /webhooks/* → api:4000; anything else 404
+#   {$LVN_APP_HOST}  everything → web:3000
+#   every other name in {$LVN_SITE_HOSTS} (www.learnvianotes.in, learnvianotes.in) → 301 to https://{$LVN_APP_HOST}{uri}
+# Single (LVN_ENTRANCE=single_entrance — beta, while the API and the app are the same host):
+#   /graphql, /health/* and /webhooks/* → api:4000; everything else → web:3000; other names redirect to the app host.
+#
+# Defaults below are the production hostnames. Deploy writes the real values (infra/lightsail/deploy.sh).
+# Caddy replaces any X-Forwarded-For a client sends with the address it sees, the one hop the API trusts
+# (TRUST_PROXY_HOPS=1).
 {
 	admin off
 	email {$LVN_ACME_EMAIL}
 }
 
-{$LVN_SITE_HOSTS} {
-	encode zstd gzip
+(security_headers) {
+	header {
+		# The web sets its own security headers (Content Security Policy, HSTS); these cover the API's answers too.
+		X-Content-Type-Options nosniff
+		-Server
+	}
+}
 
-	@elsewhere not host {$LVN_CANONICAL_HOST}
-	redir @elsewhere https://{$LVN_CANONICAL_HOST}{uri} permanent
+(split_entrance) {
+	encode zstd gzip
+	import security_headers
+
+	@redirect not host {$LVN_API_HOST:api.learnvianotes.in} {$LVN_APP_HOST:app.learnvianotes.in}
+	redir @redirect https://{$LVN_APP_HOST:app.learnvianotes.in}{uri} permanent
+
+	@api host {$LVN_API_HOST:api.learnvianotes.in}
+	handle @api {
+		@api_paths path /graphql /graphql/* /health/* /webhooks/*
+		handle @api_paths {
+			reverse_proxy api:4000
+		}
+		respond 404
+	}
+
+	@app host {$LVN_APP_HOST:app.learnvianotes.in}
+	handle @app {
+		reverse_proxy web:3000
+	}
+}
+
+(single_entrance) {
+	encode zstd gzip
+	import security_headers
+
+	@elsewhere not host {$LVN_APP_HOST:app.learnvianotes.in}
+	redir @elsewhere https://{$LVN_APP_HOST:app.learnvianotes.in}{uri} permanent
 
 	@api path /graphql /graphql/* /health/* /webhooks/*
 	handle @api {
@@ -21,10 +59,8 @@
 	handle {
 		reverse_proxy web:3000
 	}
+}
 
-	header {
-		# The web sets its own security headers (Content Security Policy, HSTS); these cover the API's answers too.
-		X-Content-Type-Options nosniff
-		-Server
-	}
+{$LVN_SITE_HOSTS:app.learnvianotes.in api.learnvianotes.in www.learnvianotes.in learnvianotes.in} {
+	import {$LVN_ENTRANCE:split_entrance}
 }

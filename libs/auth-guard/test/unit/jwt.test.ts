@@ -54,6 +54,16 @@ describe('access tokens', () => {
     expect(verifier.verify(otherAud, NOW)).toEqual({ ok: false, reason: 'claims' })
   })
 
+  it('accepts a previous issuer during a cutover and still rejects any other', () => {
+    const previous = 'https://www.learnvianotes.in'
+    const both = new AccessTokenVerifier(keys.pub, [ISS, previous], AUD)
+    const oldToken = new AccessTokenSigner(keys.priv, previous, AUD).sign(subject, NOW).token
+    expect(both.verify(oldToken, NOW)).toMatchObject({ ok: true, claims: { iss: previous } })
+    expect(both.verify(signer.sign(subject, NOW).token, NOW).ok).toBe(true)
+    const elsewhere = new AccessTokenSigner(keys.priv, 'https://evil.example', AUD).sign(subject, NOW).token
+    expect(both.verify(elsewhere, NOW)).toEqual({ ok: false, reason: 'claims' })
+  })
+
   it('rejects tokens issued in the future and missing claims', () => {
     expect(verifier.verify(signer.sign(subject, NOW + 3600).token, NOW)).toEqual({ ok: false, reason: 'claims' })
     const input = `${b64({ alg: 'RS256', typ: 'JWT' })}.${b64({ sub: 'u1', iss: ISS, aud: AUD, iat: NOW, exp: NOW + 900 })}`

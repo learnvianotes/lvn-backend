@@ -52,8 +52,13 @@ export type VerifyResult = { ok: true; claims: AccessClaims } | { ok: false; rea
 
 export class AccessTokenVerifier {
   private readonly key: KeyObject
-  constructor(publicKeyPem: string, private readonly issuer: string, private readonly audience: string) {
+  /** Issuers accepted on verify. New tokens are signed with the first one (`JWT_ISSUER`). */
+  private readonly issuers: ReadonlySet<string>
+  constructor(publicKeyPem: string, issuer: string | readonly string[], private readonly audience: string) {
     this.key = createPublicKey(publicKeyPem)
+    const issuers = typeof issuer === 'string' ? [issuer] : [...issuer]
+    if (!issuers.length || issuers.some((iss) => !iss)) throw new Error('at least one JWT issuer is required')
+    this.issuers = new Set(issuers)
   }
 
   verify(token: string, now = Math.floor(Date.now() / 1000)): VerifyResult {
@@ -73,7 +78,7 @@ export class AccessTokenVerifier {
     if (!verify('sha256', Buffer.from(`${header}.${payload}`), this.key, Buffer.from(signature, 'base64url'))) {
       return { ok: false, reason: 'signature' }
     }
-    if (claims.iss !== this.issuer || claims.aud !== this.audience) return { ok: false, reason: 'claims' }
+    if (typeof claims.iss !== 'string' || !this.issuers.has(claims.iss) || claims.aud !== this.audience) return { ok: false, reason: 'claims' }
     if (typeof claims.sub !== 'string' || typeof claims.sid !== 'string' || !Array.isArray(claims.roles)) return { ok: false, reason: 'claims' }
     if (typeof claims.exp !== 'number' || typeof claims.iat !== 'number') return { ok: false, reason: 'claims' }
     if (claims.iat > now + CLOCK_SKEW_SECONDS) return { ok: false, reason: 'claims' }

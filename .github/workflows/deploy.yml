@@ -93,6 +93,10 @@ jobs:
           # The site
           LVN_PUBLIC_URL: ${{ vars.LVN_PUBLIC_URL }}
           LVN_SITE_HOSTS: ${{ vars.LVN_SITE_HOSTS }}
+          # Optional. Unset, deploy.sh uses the host of LVN_PUBLIC_URL for both and keeps the single-host entrance.
+          LVN_APP_HOST: ${{ vars.LVN_APP_HOST }}
+          LVN_API_HOST: ${{ vars.LVN_API_HOST }}
+          LVN_MAIL_REPLY_TO: ${{ vars.LVN_MAIL_REPLY_TO }}
           LVN_ACME_EMAIL: ${{ vars.LVN_ACME_EMAIL }}
           LVN_APP_ENV: ${{ vars.LVN_APP_ENV }}
           LVN_UPLOADS_ENABLED: ${{ vars.LVN_UPLOADS_ENABLED }}

@@ -11,7 +11,7 @@ describe('MailService over SMTP', () => {
     const mailpit = await startMailpit()
     mailbox = new Mailbox(mailpit.apiUrl)
     stop = () => mailpit.container.stop()
-    mailer = new MailService(new SmtpTransport(mailpit.smtpUrl), 'LearnViaNotes <no-reply@learnvianotes.in>')
+    mailer = new MailService(new SmtpTransport(mailpit.smtpUrl), 'LearnViaNotes <no-reply@learnvianotes.in>', 'support@learnvianotes.in')
   })
 
   afterAll(() => stop())
@@ -22,6 +22,9 @@ describe('MailService over SMTP', () => {
     expect(mail.subject).toBe('Reset your password')
     expect(mail.html).toContain('http://localhost:3000/reset?token=xyz')
     expect(mail.text).toContain('Choose a new password')
+    expect(mail.text).toContain('support@learnvianotes.in')
+    const headers = await mailbox.headers(mail.id)
+    expect(headers['Reply-To']).toEqual(['support@learnvianotes.in'])
   })
 
   it('marks emails people can leave with one-click unsubscribe headers (RFC 8058, ADR-0050)', async () => {

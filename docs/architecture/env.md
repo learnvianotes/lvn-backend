@@ -15,7 +15,7 @@ Validated in lvn-web `lib/env.ts` until `@lvn/contracts/config` is published (AD
 | Variable | Required | Default | Development | Sandbox | Production | Purpose |
 | --- | --- | --- | --- | --- | --- | --- |
 | `NEXT_PUBLIC_APP_ENV` | yes | `development` | `development` | `sandbox` | `production` | Gates indexing (`robots`, `noindex`) and, later, feature defaults |
-| `NEXT_PUBLIC_SITE_URL` | yes | — | `http://localhost:3000` | the CloudFront address (ADR-0035) | `https://www.learnvianotes.in` | Canonical URLs, sitemap, Open Graph |
+| `NEXT_PUBLIC_SITE_URL` | yes | — | `http://localhost:3000` | the CloudFront address (ADR-0035) | `https://app.learnvianotes.in` | Canonical URLs, sitemap, Open Graph |
 | `NEXT_PUBLIC_FEEDBACK_URL` | no | — (sending disabled) | the old site's Apps Script URL | same | same | `/core` help-centre feedback reports (Google Apps Script → Sheet) |
 | `NEXT_PUBLIC_APP_VERSION` | no | `package.json` version | — | — | — | Version shown in the `/core` help centre and sent with feedback |
 | `NEXT_DIST_DIR` | no | `.next` | — | — | — | Build output folder; Playwright builds to `.next-e2e` so it never clobbers `next dev` |
@@ -83,7 +83,7 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `UPLOADS_PER_IP_PER_MINUTE` | api, worker | no | `30` | Upload URLs one client address may ask for per minute. Admin setting `uploads_per_ip_per_minute` |
 | `API_HOST` | api | no | `0.0.0.0` | Bind address |
 | `API_PORT` | api | no | `4000` | HTTP + WebSocket port |
-| `CORS_ORIGINS` | api | yes | — | Comma-separated allow-list (§7.2) |
+| `CORS_ORIGINS` | api | yes | — | Comma-separated browser origins allowed to call `/graphql` (and to open `/graphql/live`). No other path sends CORS headers. Production: `https://app.learnvianotes.in` |
 | `TRUST_PROXY_HOPS` | api | no | `0` | Proxies in front of the API whose `X-Forwarded-For` is trusted for the client address used by rate limits: `0` locally, `1` behind the ALB, `2` behind CloudFront + ALB. Higher than the real number lets clients choose their address |
 | `WORKER_HEALTH_PORT` | worker | no | `4001` | `/health/live` for the ECS health check |
 | `LEGACY_FIREBASE_PROJECT_ID` | worker | no | — | Old Firebase project read once by `pnpm --filter @lvn-backend/worker legacy:snapshot` (ADR-0023); credentials from `GOOGLE_APPLICATION_CREDENTIALS` (a read-only service account in Secrets Manager) |
@@ -96,18 +96,20 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `S3_BUCKET` | api, worker | yes | — | Uploads and media (§8) |
 | `UPLOADS_ENABLED` | api, worker | no | `false` | People may upload files (ADR-0097). Off, `createUploadIntent` answers UNAVAILABLE and the clients hide every upload control (`Query.uploadsEnabled`); `true` in development and the local environment. College ID verification does not use this switch (ADR-0099): platform admins turn that on in the app, and it is off until they do |
 | `S3_RESTRICTED_BUCKET` | api, worker | yes | — | Identity documents (ADR-0019), college ID cards (ADR-0099) and old-site snapshots (ADR-0023), own encryption key, never behind the CDN |
-| `MAIL_FROM` | api, worker | yes | — | Sender, e.g. `LearnViaNotes <no-reply@learnvianotes.in>` |
+| `MAIL_FROM` | api, worker | no | `LearnViaNotes <no-reply@learnvianotes.in>` | Sender of transactional mail. Production uses that default (Resend, the verified `learnvianotes.in` domain). Lightsail still writes it from `LVN_MAIL_FROM` |
+| `MAIL_REPLY_TO` | api, worker | no | `support@learnvianotes.in` | Reply-To on transactional mail, and the address in the email footer. The public support inbox |
 | `MAIL_TRANSPORT` | api, worker | yes | — | `smtp` (Mailpit locally), `resend` (Lightsail, ADR-0096) or `ses` (kept in the code; its AWS deployment was retired) |
 | `SMTP_URL` | api, worker | when `smtp` | — | `smtp://localhost:51025` for Mailpit |
 | `RESEND_API_KEY` | api, worker | when `resend` (secret) | — | Resend API key |
 | `SES_REGION` | api, worker | when `ses` | — | Region of the SES identity `MAIL_FROM` uses |
 | `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | api | yes (secret) | — | RS256 key pair for access tokens (§7.1), PEM with `\n` escapes; `pnpm keys:dev` writes a pair to `.env.local` |
-| `JWT_ISSUER` | api | yes | — | The API's public origin (`iss` claim); `https://` makes the web refresh cookie `Secure`, so a development API reached at the machine's LAN/VPN address over HTTP still keeps browser sessions |
-| `WEB_URL` | api | yes | — | lvn-web origin for links in emails and OAuth redirects |
+| `JWT_ISSUER` | api | yes | — | The API's public origin, the `iss` of new access tokens. Production: `https://api.learnvianotes.in`. `https://` makes the web refresh cookie `Secure`, so a development API reached at the machine's LAN/VPN address over HTTP still keeps browser sessions. Changing it rejects tokens that still carry the previous issuer until they expire (15 minutes); set `JWT_EXTRA_ISSUERS` for that window. Refresh tokens are opaque and are not affected |
+| `JWT_EXTRA_ISSUERS` | api | no | — (only `JWT_ISSUER`) | Comma-separated issuers accepted when verifying access tokens, besides `JWT_ISSUER`. Not used when signing. The previous public origin during a host cutover; remove it once outstanding access tokens have expired |
+| `WEB_URL` | api | yes | — | lvn-web origin for links in emails and OAuth redirects. Production: `https://app.learnvianotes.in` |
 | `CODE_HMAC_SECRET` | api | yes (secret, ≥ 32 chars) | — | HMAC key for short codes (institutional email) |
 | `DIGITAL_CONSENT_AGE` | api | no | `18` | Below it an account needs guardian or institutional consent or is a restricted minor (§15.2; 18 under DPDP) |
 | `ACCOUNT_MINIMUM_AGE` | api | no | `18` | Below it sign-up keeps the account as `AGE_BLOCKED` (no session, nothing public) and returns `AGE_RESTRICTED`. `0` lets everyone register (minors restricted by `DIGITAL_CONSENT_AGE`) |
-| `SUPPORT_EMAIL` | api | no | `support@learnvianotes.in` | Fallback for `userErrors.supportEmail` when no non-deleted `PLATFORM_ADMIN` exists. Otherwise that field is the earliest platform admin by `createdAt` |
+| `SUPPORT_EMAIL` | api | no | `support@learnvianotes.in` | The address on `userErrors.supportEmail` for an age-restricted or blocked sign-in. Always this value, not a platform admin's inbox |
 | `TERMS_VERSION` | api, worker | no | — (the built-in `DEFAULT_TERMS_VERSION`, `2026-11-03`) | ADR-0103: the Terms / Privacy version (YYYY-MM-DD) that `signUp`, `completeRegistration` and `acceptTerms` require and `Query.termsVersion` returns, while no platform admin has saved the `terms_version` setting. A saved setting wins; `resetAdminSetting` returns to this. Must be one of `TERMS_PUBLISHED_VERSIONS` when both are set (the process does not start otherwise); alone, a version outside the built-in list logs a warning |
 | `TERMS_PUBLISHED_VERSIONS` | api, worker | no | — (built-in `2026-10-08,2026-11-03`) | ADR-0103: comma-separated YYYY-MM-DD versions whose legal text lvn-web has published, while no admin has saved `terms_published_versions`. An admin can only set `terms_version` to one of these. Keep it in step with the web's published list |
 | `PASSWORD_BREACH_API_URL` | api | no | — (check off) | k-anonymity range API, `https://api.pwnedpasswords.com/range` (§7.1) |
@@ -163,7 +165,7 @@ in lvn-mobile `env/<variant>.env` (public, committed) with per-machine overrides
 | --- | --- | --- | --- | --- | --- |
 | `APP_VARIANT` | build time | `development` | `sandbox` | `production` | App name and bundle id in `app.config.ts` (not readable by app code) |
 | `EXPO_PUBLIC_APP_ENV` | yes | `development` | `sandbox` | `production` | Environment badge; later feature defaults |
-| `EXPO_PUBLIC_WEB_URL` | yes | `http://100.70.234.41:3000` | the CloudFront address, in `env/sandbox.local.env` | `https://www.learnvianotes.in` | Links into lvn-web |
+| `EXPO_PUBLIC_WEB_URL` | yes | `http://100.70.234.41:3000` | the CloudFront address, in `env/sandbox.local.env` | `https://app.learnvianotes.in` | Links into lvn-web |
 | `EXPO_PUBLIC_API_URL` | yes | `http://100.70.234.41:4000/graphql` | `<CloudFront address>/graphql`, in `env/sandbox.local.env` | `https://api.learnvianotes.in/graphql` | The API's GraphQL gateway; development builds allow plain HTTP for it |
 | `EXPO_PUBLIC_LIVE_URL` | no | `ws://100.70.234.41:4000/graphql/live` | `<CloudFront address, wss>/graphql/live`, in `env/sandbox.local.env` | `wss://api.learnvianotes.in/graphql/live` | Live updates while the app is open (ADR-0042); unset means none outside development |
 | `EXPO_PUBLIC_GITHUB_CLIENT_ID` | no | — | — | — | GitHub sign-in in the app; empty hides the button. Redirect URI `<scheme>://oauth/callback` (schemes `learnvianotes-dev`, `learnvianotes-sandbox`, `learnvianotes`) |
@@ -204,6 +206,11 @@ have these. The service has no `DATABASE_URL` and no `S3_*` credentials. `docs/o
 
 The environments above are set on each VM by lvn-backend's `infra/lightsail/deploy.sh` from the GitHub environment's
 secrets and variables (`LVN_*`); docs/runbooks/lightsail.md lists them and what each becomes.
+
+Production hosts (Caddy, not the API schema): `LVN_APP_HOST=app.learnvianotes.in`, `LVN_API_HOST=api.learnvianotes.in`,
+`LVN_SITE_HOSTS=app.learnvianotes.in api.learnvianotes.in www.learnvianotes.in learnvianotes.in`. Those are the defaults
+in `infra/lightsail/Caddyfile` when the variables are unset. `www.learnvianotes.in` and `learnvianotes.in` redirect to
+`https://app.learnvianotes.in`. Beta leaves `LVN_APP_HOST` and `LVN_API_HOST` unset so both stay the one public host.
 
 Backups are not part of that deploy and need no variable here: the host's own `/opt/lvn/backup.sh` (Infra's, not in
 this repository) dumps the database at 02:30 IST with a backup-only R2 token read from `/opt/lvn/backup-r2.env`.

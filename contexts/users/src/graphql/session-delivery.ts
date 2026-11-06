@@ -17,6 +17,10 @@ export interface RefreshCookieOptions {
  * Secure whenever the API is served over HTTPS — its public origin, JWT_ISSUER, says so (sandbox and production).
  * Browsers drop Secure cookies from plain-HTTP origins other than localhost, so a development API reached at the
  * machine's LAN or VPN address over HTTP must send the cookie without it.
+ *
+ * SameSite=Lax still sends the cookie on a credentialed POST from https://app.learnvianotes.in to
+ * https://api.learnvianotes.in/graphql: the two hosts share the registrable domain learnvianotes.in, so the request
+ * is same-site. The cookie stays host-only (no Domain attribute), set by the API host and sent only back to it.
  */
 export const refreshCookieOptions = (apiOrigin: string): RefreshCookieOptions => ({
   httpOnly: true,
