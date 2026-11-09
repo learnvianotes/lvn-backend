@@ -38,6 +38,7 @@ erDiagram
     date dateOfBirth "accounts before ADR-0104, or set by an admin"
     int declaredAge "whole years given at registration (ADR-0104)"
     timestamptz ageDeclaredAt "when declaredAge was given"
+    timestamptz welcomeEmailSentAt "when the one welcome email was claimed"
     timestamptz institutionVerifiedAt
     enum globalRole "STUDENT | TEACHER | PLATFORM_ADMIN"
     timestamptz deletionRequestedAt

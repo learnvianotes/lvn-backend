@@ -1,6 +1,6 @@
 import type { MailTemplate, MailTemplates } from '@lvn-backend/facades'
 import type { ReactElement } from 'react'
-import { AccountDeletion, ClassroomPost, DataExportReady, InstitutionalCode, LinkEmail, PasswordChanged, ResetPassword, VerifyEmail, WeeklyDigest } from './emails'
+import { AccountDeletion, ClassroomPost, DataExportReady, InstitutionalCode, LinkEmail, PasswordChanged, ResetPassword, VerifyEmail, WeeklyDigest, Welcome } from './emails'
 
 export { MailContact } from './Layout'
 
@@ -17,4 +17,5 @@ export const TEMPLATES: { [T in MailTemplate]: Definition<T> } = {
   dataExportReady: { subject: () => 'Your LearnViaNotes data is ready', element: (d) => <DataExportReady {...d} /> },
   classroomPost: { subject: (d) => `${d.teacherName} posted in ${d.classroomName}`, element: (d) => <ClassroomPost {...d} /> },
   weeklyDigest: { subject: () => 'Your week on LearnViaNotes', element: (d) => <WeeklyDigest {...d} /> },
+  welcome: { subject: () => 'Welcome to LearnViaNotes', element: (d) => <Welcome {...d} /> },
 }

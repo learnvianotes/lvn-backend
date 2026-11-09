@@ -1,6 +1,7 @@
 import { Button, Heading, Text } from '@react-email/components'
 import type { MailTemplates } from '@lvn-backend/facades'
-import { Layout, brand, button, muted, paragraph } from './Layout'
+import { useContext } from 'react'
+import { Layout, MailContact, brand, button, muted, paragraph } from './Layout'
 
 const heading = { fontSize: 20, fontWeight: 700, margin: '0 0 12px' }
 
@@ -118,6 +119,29 @@ export function WeeklyDigest({ displayName, lines, link, unsubscribeLink }: Mail
       </Button>
       <Text style={muted}>
         <a href={unsubscribeLink}>Stop the weekly email</a>.
+      </Text>
+    </Layout>
+  )
+}
+
+export function Welcome({ displayName, appLink, guideLink, lines }: MailTemplates['welcome']) {
+  const contactEmail = useContext(MailContact)
+  return (
+    <Layout preview={`Welcome to LearnViaNotes, ${displayName}`}>
+      <Heading as="h1" style={heading}>Welcome to LearnViaNotes</Heading>
+      <Text style={paragraph}>Hi {displayName}, your account is ready. We’re glad you’re here.</Text>
+      <Text style={paragraph}>Here is what you can do:</Text>
+      {lines.map((line) => (
+        <Text key={line} style={{ ...paragraph, margin: '0 0 6px' }}>
+          • {line}
+        </Text>
+      ))}
+      <Button href={appLink} style={{ ...button, marginTop: 16 }}>Open LearnViaNotes</Button>
+      <Text style={paragraph}>
+        New here? A short guide walks you through it: <a href={guideLink} style={{ color: brand.primary }}>{guideLink}</a>
+      </Text>
+      <Text style={muted}>
+        Questions? Write to <a href={`mailto:${contactEmail}`} style={{ color: brand.muted }}>{contactEmail}</a>.
       </Text>
     </Layout>
   )

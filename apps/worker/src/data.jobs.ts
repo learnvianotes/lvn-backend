@@ -1,7 +1,7 @@
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common'
 import { NOTES_IMPORT_QUEUE, NoteImportService } from '@lvn-backend/notes'
 import { Queues } from '@lvn-backend/queue'
-import { DataExportService, SkillsImportService, USERS_EXPORT_QUEUE, USERS_SKILLS_QUEUE } from '@lvn-backend/users'
+import { DataExportService, SkillsImportService, USERS_EXPORT_QUEUE, USERS_SKILLS_QUEUE, USERS_WELCOME_QUEUE, WelcomeEmailService } from '@lvn-backend/users'
 
 /**
  * Settings → Data (ADR-0018): exports built when asked for and deleted after 7 days; imports of notes. Teachers' skills
@@ -16,6 +16,7 @@ export class DataJobs implements OnApplicationBootstrap {
     private readonly exports: DataExportService,
     private readonly imports: NoteImportService,
     private readonly skills: SkillsImportService,
+    private readonly welcome: WelcomeEmailService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -48,6 +49,10 @@ export class DataJobs implements OnApplicationBootstrap {
       1,
     )
     await this.queues.repeat(USERS_SKILLS_QUEUE, 'refresh-due', '40 4 * * *')
+    // One welcome email, after a person first gives their name and age. Retried by the queue; the marker stops a second send.
+    this.queues.process(USERS_WELCOME_QUEUE, {
+      welcome: async (data) => ({ result: await this.welcome.deliver((data as { userId: string }).userId) }),
+    })
     this.queues.process(NOTES_IMPORT_QUEUE, {
       'run-import': async (data, job) => {
         const lastAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1)

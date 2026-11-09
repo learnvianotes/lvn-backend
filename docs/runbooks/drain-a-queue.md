@@ -4,7 +4,7 @@ When: a queue's waiting or failed count keeps growing (the DLQ-growth alert, §1
 needs a queue empty first; a provider (AI, mail, push) is down and jobs should wait rather than fail.
 
 Queues are BullMQ on Redis, named `<context>.<purpose>`: `ai.tasks`, `notes.media`, `notes.search`, `notes.chunks`,
-`notes.pdf`, `notes.pdf-parse`, `notes.import`, `users.export`, `users.skills`, `comms.email`, `comms.push`,
+`notes.pdf`, `notes.pdf-parse`, `notes.import`, `users.export`, `users.skills`, `users.welcome`, `comms.email`, `comms.push`,
 `core.engagement`, `core.github`, `core.learning-analytics`, and the `*.maintenance` schedules. Every job is
 idempotent (§9.2), so a job run twice does no harm.
 
@@ -40,8 +40,8 @@ Each with `node apps/worker/dist/cli.js` in the worker's container:
 - **Drop a poisoned job** (it fails every time and blocks nothing else, but fills the failed set): note its id and
   reason from `queue:failed` in the incident log, then remove it with BullMQ's `getJob(id)` and `remove()`.
 - **Empty a queue** only when its jobs are recomputed anyway: `notes.search` (reindex instead), `core.engagement`
-  (the next learning event queues it again). Use BullMQ's `obliterate({ force: true })`. Never empty `comms.email` or
-  `users.export`; people are waiting for those.
+  (the next learning event queues it again). Use BullMQ's `obliterate({ force: true })`. Never empty `comms.email`,
+  `users.export` or `users.welcome`; people are waiting for those.
 - **Before a deploy that changes a job's data shape**: pause the queue, deploy, resume. The new worker reads the old
   jobs as the old shape, so a job must accept both for one release.
 

@@ -11,6 +11,7 @@ import { SupportContact } from './support-contact'
 import { InstitutionalEmailService } from './institutional-email.service'
 import { parseField } from './input'
 import { TermsVersionProvider } from './terms-version.provider'
+import { WelcomeEmailService } from './welcome-email.service'
 
 export interface RegistrationDetails {
   displayName: string
@@ -38,6 +39,7 @@ export class RegistrationService {
     private readonly settings: PlatformSettingsStore,
     private readonly support: SupportContact,
     private readonly terms: TermsVersionProvider,
+    private readonly welcome: WelcomeEmailService,
   ) {}
 
   async complete(userId: string, input: RegistrationDetails): Promise<void> {
@@ -63,6 +65,8 @@ export class RegistrationService {
         data: (['TERMS', 'PRIVACY', 'PUBLIC_CONTENT_LICENCE'] as const).map((kind) => ({ id: newId(), userId, kind, version: termsVersion })),
       }),
     ])
+    // After the profile is stored. A mail or Redis failure here does not undo it, and does not fail registration.
+    await this.welcome.schedule(userId)
     // A name and an age: people search may now find them, once past the consent age (ADR-0055).
     await this.events.publish('PersonChanged', { userId })
     if (input.institutionalEmail) await this.institutional.start(userId, input.institutionalEmail)
