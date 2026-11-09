@@ -9,7 +9,7 @@ export interface UsersConfig {
   webUrl: string
   codeHmacSecret: string
   digitalConsentAge: number
-  /** ADR-0091: below this age the account is kept as AGE_BLOCKED and cannot sign in (0: everyone may register) */
+  /** ADR-0108: below this age the account is kept as AGE_BLOCKED and cannot sign in (0: everyone may register) */
   accountMinimumAge: number
   /** Address shown when someone must contact support. SUPPORT_EMAIL, or support@learnvianotes.in when unset. */
   supportEmail: string

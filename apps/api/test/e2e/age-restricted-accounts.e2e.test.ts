@@ -56,7 +56,7 @@ describe('age-restricted accounts', () => {
 
   it('keeps an under-age sign-up private and tells the client who to contact', async () => {
     const res = await t.gql<{ signUp: { session: { user: { id: string; handle: string } } | null; userErrors: Err[] } }>(SIGN_UP, {
-      input: { email, password, displayName: 'Young One', age: 16, acceptedTermsVersion: '2026-11-03' },
+      input: { email, password, displayName: 'Young One', age: 7, acceptedTermsVersion: '2026-11-03' },
     })
     expect(res.data!.signUp.session).toBeNull()
     expect(res.data!.signUp.userErrors).toEqual([{
@@ -69,7 +69,7 @@ describe('age-restricted accounts', () => {
     userId = user.id
     handle = user.handle
     expect(user).toMatchObject({ accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.', analyticsOptOut: true, deletedAt: null })
-    expect(user).toMatchObject({ declaredAge: 16, dateOfBirth: null })
+    expect(user).toMatchObject({ declaredAge: 7, dateOfBirth: null })
     expect(await db.session.count({ where: { userId } })).toBe(0)
     expect((await t.gql<{ userByHandle: { id: string } | null }>(BY_HANDLE, { h: handle })).data!.userByHandle).toBeNull()
     const signIn = await t.gql<{ signIn: { session: null; userErrors: Err[] } }>(SIGN_IN, { input: { email, password } })
@@ -82,7 +82,7 @@ describe('age-restricted accounts', () => {
     const listed = await t.gql<{ adminUsers: { total: number; users: Managed[] } }>(LIST, { status: 'AGE_BLOCKED', search: 'Young' }, admin.token)
     expect(listed.data!.adminUsers.users.map((u) => u.id)).toContain(userId)
     // ADR-0104: the age the person gave; there is no date of birth to show.
-    expect(listed.data!.adminUsers.users.find((u) => u.id === userId)).toMatchObject({ accountStatus: 'AGE_BLOCKED', email, age: 16, dateOfBirth: null })
+    expect(listed.data!.adminUsers.users.find((u) => u.id === userId)).toMatchObject({ accountStatus: 'AGE_BLOCKED', email, age: 7, dateOfBirth: null })
 
     const blank = await t.gql<{ adminUpdateUser: { user: null; userErrors: Err[] } }>(UPDATE, { input: { userId, age: 30, reason: '   ' } }, admin.token)
     expect(blank.data!.adminUpdateUser.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'reason'] })
@@ -95,9 +95,9 @@ describe('age-restricted accounts', () => {
     const both = await t.gql<{ adminUpdateUser: { user: null; userErrors: Err[] } }>(UPDATE, { input: { userId, age: 30, dateOfBirth: yearsAgo(30), reason: 'Both' } }, admin.token)
     expect(both.data!.adminUpdateUser.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'age'] })
 
-    const stillYoung = await t.gql<{ adminUpdateUser: { user: Managed; userErrors: Err[] } }>(UPDATE, { input: { userId, age: 15, reason: 'Still at school' } }, admin.token)
+    const stillYoung = await t.gql<{ adminUpdateUser: { user: Managed; userErrors: Err[] } }>(UPDATE, { input: { userId, age: 6, reason: 'Still at school' } }, admin.token)
     expect(stillYoung.data!.adminUpdateUser.userErrors).toEqual([])
-    expect(stillYoung.data!.adminUpdateUser.user).toMatchObject({ accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.', age: 15 })
+    expect(stillYoung.data!.adminUpdateUser.user).toMatchObject({ accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.', age: 6 })
 
     const forced = await t.gql<{ adminSetAccountStanding: { user: null; userErrors: Err[] } }>(STANDING, { input: { userId, status: 'ACTIVE', reason: 'Let them in anyway' } }, admin.token)
     expect(forced.data!.adminSetAccountStanding.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'age'] })
@@ -117,16 +117,16 @@ describe('age-restricted accounts', () => {
 
   it('corrects an account registered with a date of birth through its date of birth, which it keeps', async () => {
     const legacy = await seedUser(t.app, { displayName: 'Legacy Young' })
-    await db.user.update({ where: { id: legacy.id }, data: { dateOfBirth: new Date(`${yearsAgo(15)}T00:00:00Z`), accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.' } })
+    await db.user.update({ where: { id: legacy.id }, data: { dateOfBirth: new Date(`${yearsAgo(7)}T00:00:00Z`), accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.' } })
     const listed = await t.gql<{ adminUsers: { users: Managed[] } }>(LIST, { status: 'AGE_BLOCKED', search: legacy.email }, admin.token)
-    expect(listed.data!.adminUsers.users).toEqual([expect.objectContaining({ id: legacy.id, dateOfBirth: yearsAgo(15), age: 15 })])
+    expect(listed.data!.adminUsers.users).toEqual([expect.objectContaining({ id: legacy.id, dateOfBirth: yearsAgo(7), age: 7 })])
 
     // The date of birth decides the age, so an age cannot be set beside it, and nothing is changed.
     const byAge = await t.gql<{ adminUpdateUser: { user: null; userErrors: Err[] } }>(UPDATE, { input: { userId: legacy.id, age: 30, reason: 'Says 30' } }, admin.token)
     expect(byAge.data!.adminUpdateUser.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'age'] })
     const forced = await t.gql<{ adminSetAccountStanding: { userErrors: Err[] } }>(STANDING, { input: { userId: legacy.id, status: 'ACTIVE', reason: 'Let them in' } }, admin.token)
     expect(forced.data!.adminSetAccountStanding.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'dateOfBirth'] })
-    expect(await db.user.findUniqueOrThrow({ where: { id: legacy.id } })).toMatchObject({ dateOfBirth: new Date(`${yearsAgo(15)}T00:00:00Z`), declaredAge: null, accountStatus: 'AGE_BLOCKED' })
+    expect(await db.user.findUniqueOrThrow({ where: { id: legacy.id } })).toMatchObject({ dateOfBirth: new Date(`${yearsAgo(7)}T00:00:00Z`), declaredAge: null, accountStatus: 'AGE_BLOCKED' })
 
     const passed = await t.gql<{ adminUpdateUser: { user: Managed; userErrors: Err[] } }>(UPDATE, { input: { userId: legacy.id, dateOfBirth: yearsAgo(20), reason: 'Document shows an adult date of birth' } }, admin.token)
     expect(passed.data!.adminUpdateUser.userErrors).toEqual([])

@@ -45,7 +45,7 @@ function row(over: Partial<Row> = {}): Row {
   }
 }
 
-function harness(initial: Row = row()) {
+function harness(initial: Row = row(), minimum = 18) {
   let current = { ...initial }
   const audits: { action: string; actorId?: string; metadata?: Record<string, unknown> }[] = []
   const revoked: string[] = []
@@ -71,7 +71,7 @@ function harness(initial: Row = row()) {
   const service = new AccountAdminService(
     db as never,
     { actor: async (id: string) => (id === ADMIN ? { globalRole: 'PLATFORM_ADMIN' } : id === 'missing' ? null : { globalRole: 'STUDENT' }) } as never,
-    { minimumAge: () => 18 } as never,
+    { minimumAge: () => minimum } as never,
     { revokeAll: async (id: string) => void revoked.push(id) } as never,
     { record: async (entry: { action: string; metadata?: Record<string, unknown> }) => void audits.push(entry) } as never,
     { adminErase: async (...args: unknown[]) => void erased.push(args) } as never,
@@ -245,6 +245,16 @@ describe('AccountAdminService', () => {
 describe('declared ages (ADR-0104)', () => {
   /** An account registered with an age, not a date of birth. */
   const declared = (age: number, over: Partial<Row> = {}) => row({ dateOfBirth: null, declaredAge: age, ageDeclaredAt: new Date(), ...over })
+
+  it('clears AGE_BLOCKED at 8 and keeps it at 7 when the floor is 8 (ADR-0108)', async () => {
+    const passed = harness(declared(7), 8)
+    const user = await passed.service.update(ADMIN, { userId: USER, age: 8, reason: 'Now old enough' })
+    expect(user).toMatchObject({ accountStatus: 'ACTIVE', statusReason: null, age: 8 })
+    const held = harness(declared(10, { accountStatus: 'ACTIVE', statusReason: null }), 8)
+    const blocked = await held.service.update(ADMIN, { userId: USER, age: 7, reason: 'Typed the wrong age' })
+    expect(blocked).toMatchObject({ accountStatus: 'AGE_BLOCKED', age: 7 })
+    expect(held.revoked).toEqual([USER])
+  })
 
   it('keeps an account age-blocked while the corrected age is still too young', async () => {
     const h = harness(declared(15))

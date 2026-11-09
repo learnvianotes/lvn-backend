@@ -5,8 +5,13 @@ import { parsePlanDraft, parsePlanPatch } from '../../src/domain/plan-pricing'
 describe('admin setting catalog', () => {
   it('parses booleans, bounded integers and an empty cap', () => {
     const age = settingDef('account_minimum_age')!
+    expect(age).toMatchObject({ min: 8, max: 21, defaultValue: 8 })
+    expect(age.description).toContain('From 8 to 21')
+    expect(age.description).toContain('An admin cannot set this below 8')
+    expect(parseSettingInput(age, '8')).toEqual({ ok: true, value: 8 })
     expect(parseSettingInput(age, '18')).toEqual({ ok: true, value: 18 })
-    expect(parseSettingInput(age, '17').ok).toBe(false)
+    expect(parseSettingInput(age, '7').ok).toBe(false)
+    expect(parseSettingInput(age, '22').ok).toBe(false)
     expect(parseSettingInput(age, 'true').ok).toBe(false)
     const budget = settingDef('ai_monthly_budget_micro_usd')!
     expect(parseSettingInput(budget, '')).toEqual({ ok: true, value: null })

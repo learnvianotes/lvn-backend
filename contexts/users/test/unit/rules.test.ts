@@ -133,9 +133,12 @@ describe('isBelowMinimumAge (ADR-0091)', () => {
     expect(isBelowMinimumAge(ageOn(d('1990-01-01'), on), 18)).toBe(false)
   })
 
-  it('refuses a typed age below the minimum (ADR-0104)', () => {
+  it('refuses a typed age below the minimum (ADR-0104, ADR-0108)', () => {
     expect(isBelowMinimumAge(17, 18)).toBe(true)
     expect(isBelowMinimumAge(18, 18)).toBe(false)
+    expect(isBelowMinimumAge(7, 8)).toBe(true)
+    expect(isBelowMinimumAge(8, 8)).toBe(false)
+    expect(isBelowMinimumAge(17, 8)).toBe(false)
   })
 
   it('refuses nobody when the minimum is 0', () => {

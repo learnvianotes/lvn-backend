@@ -30,12 +30,21 @@ export class AnalyticsService {
   ) {}
 
   async optOut(userId: string): Promise<boolean> {
+    // A restricted minor is never personalised, even if the stored flag was cleared (ADR-0108).
+    if (await this.restrictedMinor(userId)) return true
     const user = await this.db.user.findUnique({ where: { id: userId }, select: { analyticsOptOut: true } })
     return user?.analyticsOptOut === true
   }
 
   async setOptOut(userId: string, optOut: boolean): Promise<void> {
-    await this.db.user.update({ where: { id: userId }, data: { analyticsOptOut: optOut } })
+    const keepOff = !optOut && (await this.restrictedMinor(userId))
+    await this.db.user.update({ where: { id: userId }, data: { analyticsOptOut: keepOff || optOut } })
+  }
+
+  /** §15.2: under the digital-consent age, with no guardian consent, usage analytics stay off. */
+  private async restrictedMinor(userId: string): Promise<boolean> {
+    const actor = await this.policy.actor(userId)
+    return actor?.restrictedMinor === true
   }
 
   async ingest(userId: string, sessionId: string, input: IngestInput): Promise<void> {

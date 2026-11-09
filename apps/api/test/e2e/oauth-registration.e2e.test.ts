@@ -115,11 +115,11 @@ describe('provider sign-in and registration', () => {
       adult.setUTCFullYear(adult.getUTCFullYear() - 40)
 
       // When both are sent the age decides; the adult date of birth is ignored.
-      const refused = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'Young One', age: 16, dateOfBirth: adult.toISOString().slice(0, 10), acceptedTermsVersion: terms } }, s.accessToken)
-      expect(refused.data!.completeRegistration).toEqual({ ok: false, userErrors: [{ code: 'AGE_RESTRICTED', field: ['input', 'age'], message: expect.stringMatching(/only for adults/) }] })
+      const refused = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'Young One', age: 7, dateOfBirth: adult.toISOString().slice(0, 10), acceptedTermsVersion: terms } }, s.accessToken)
+      expect(refused.data!.completeRegistration).toEqual({ ok: false, userErrors: [{ code: 'AGE_RESTRICTED', field: ['input', 'age'], message: expect.stringMatching(/create an account/) }] })
       const user = await db.user.findUniqueOrThrow({ where: { id } })
       expect(user).toMatchObject({ displayName: 'Young One', accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.' })
-      expect(user).toMatchObject({ declaredAge: 16, dateOfBirth: null })
+      expect(user).toMatchObject({ declaredAge: 7, dateOfBirth: null })
       expect(user.ageDeclaredAt).not.toBeNull()
       expect(user.registrationCompletedAt).not.toBeNull()
       expect(user.deletedAt).toBeNull()
@@ -131,6 +131,26 @@ describe('provider sign-in and registration', () => {
       expect(again.data!.signInWithGoogle.session).toBeNull()
       expect(again.data!.signInWithGoogle.userErrors[0]!.code).toBe('AGE_RESTRICTED')
       expect(await db.user.count({ where: { email: `${uid}@gmail.com` } })).toBe(1)
+    })
+
+    it.each([8, 17])('completes registration at %s as a restricted minor, keeps the session, and asks for no guardian consent', async (age) => {
+      const db = t.app.get(PrismaService)
+      const uid = unique(`age${age}`)
+      const res = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${uid}:${uid}@gmail.com:School Age` })
+      const s = res.data!.signInWithGoogle.session!
+      const id = s.user.id as string
+      const done = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'School Age', age, acceptedTermsVersion: terms } }, s.accessToken)
+      expect(done.data!.completeRegistration).toEqual({ ok: true, userErrors: [] })
+      const user = await db.user.findUniqueOrThrow({ where: { id }, include: { consents: true } })
+      expect(user).toMatchObject({ accountStatus: 'ACTIVE', declaredAge: age, analyticsOptOut: true, statusReason: null })
+      expect(user.consents.map((c) => c.kind).sort()).toEqual(['PRIVACY', 'PUBLIC_CONTENT_LICENCE', 'TERMS'])
+      expect((await t.gql<{ viewer: { restrictedMinor: boolean; registrationComplete: boolean } }>(VIEWER, {}, s.accessToken)).data!.viewer).toMatchObject({
+        restrictedMinor: true,
+        registrationComplete: true,
+      })
+      const again = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${uid}:${uid}@gmail.com:School Age` })
+      expect(again.data!.signInWithGoogle.session!.user.id).toBe(id)
+      expect(again.data!.signInWithGoogle.userErrors).toEqual([])
     })
 
     it('signs the same Google account into the same LVN account', async () => {
@@ -220,7 +240,7 @@ describe('provider sign-in and registration', () => {
       const before = await db.user.count()
       const form = { email, password, displayName: 'Other Name', age: 25, acceptedTermsVersion: terms }
 
-      const minor = await t.gql<Payload<'signUp'>>(SIGN_UP, { input: { ...form, age: 16 } })
+      const minor = await t.gql<Payload<'signUp'>>(SIGN_UP, { input: { ...form, age: 7 } })
       expect(minor.data!.signUp.userErrors[0]!.code).toBe('AGE_RESTRICTED')
       expect(await db.user.findUnique({ where: { id: userId }, select: { passwordHash: true, deletedAt: true, displayName: true } })).toMatchObject({
         passwordHash: null,

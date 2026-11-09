@@ -66,6 +66,22 @@ describe('AuthService age gate', () => {
     acceptedTermsVersion: DEFAULT_TERMS_VERSION,
   }
 
+  it('admits 8 and 17 when the floor is 8, and holds a 7-year-old with no session (ADR-0108)', async () => {
+    for (const age of [8, 17]) {
+      const { service, hold, start } = auth({ minimum: 8 })
+      const err = await rejection(() => service.signUp({ ...input, age }, { client: 'web' }))
+      // The stand-in already has this address, so a passing age is the usual "sign in instead" answer.
+      expect(err.code).toBe(ErrorCode.CONFLICT)
+      expect(hold).not.toHaveBeenCalled()
+      expect(start).not.toHaveBeenCalled()
+    }
+    const blocked = auth({ minimum: 8 })
+    const err = await rejection(() => blocked.service.signUp({ ...input, age: 7 }, { client: 'web' }))
+    expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, field: ['input', 'age'] })
+    expect(blocked.hold).toHaveBeenCalledWith(expect.objectContaining({ age: { declaredAge: 7, ageDeclaredAt: expect.any(Date) } }))
+    expect(blocked.start).not.toHaveBeenCalled()
+  })
+
   it('keeps an under-age sign-up and returns AGE_RESTRICTED', async () => {
     const { service, hold, start } = auth()
     const err = await rejection(() => service.signUp(input, { client: 'web' }))
@@ -147,6 +163,50 @@ describe('RegistrationService age gate', () => {
     )
     return { service, held }
   }
+
+  it('completes registration at 8 and 17 when the floor is 8, and holds 7 (ADR-0108)', async () => {
+    const updates: unknown[] = []
+    const open = (minimum: number) =>
+      new RegistrationService(
+        {
+          user: {
+            findUniqueOrThrow: async () => ({ registrationCompletedAt: null }),
+            update: (args: unknown) => {
+              updates.push(args)
+              return Promise.resolve(args)
+            },
+          },
+          consentRecord: { createMany: () => Promise.resolve({ count: 3 }) },
+          $transaction: async (ops: Promise<unknown>[]) => Promise.all(ops),
+        } as never,
+        { check: async () => undefined } as never,
+        { holdRegistration: jest.fn(async () => undefined) } as never,
+        { publish: async () => undefined } as never,
+        { minimumAge: () => minimum, consentAge: () => 18 } as never,
+        { email: async () => ADMIN_EMAIL } as never,
+        { current: () => DEFAULT_TERMS_VERSION } as never,
+      )
+    updates.length = 0
+    await open(8).complete('google-8', { displayName: 'Eight', age: 8, acceptedTermsVersion: DEFAULT_TERMS_VERSION })
+    await open(8).complete('google-17', { displayName: 'Seventeen', age: 17, acceptedTermsVersion: DEFAULT_TERMS_VERSION })
+    expect(updates).toEqual([
+      expect.objectContaining({ data: expect.objectContaining({ declaredAge: 8, analyticsOptOut: true }) }),
+      expect.objectContaining({ data: expect.objectContaining({ declaredAge: 17, analyticsOptOut: true }) }),
+    ])
+    const held = jest.fn(async () => undefined)
+    const young = new RegistrationService(
+      { user: { findUniqueOrThrow: async () => ({ registrationCompletedAt: null }) } } as never,
+      { check: async () => undefined } as never,
+      { holdRegistration: held } as never,
+      { publish: async () => undefined } as never,
+      { minimumAge: () => 8, consentAge: () => 18 } as never,
+      { email: async () => ADMIN_EMAIL } as never,
+      { current: () => DEFAULT_TERMS_VERSION } as never,
+    )
+    const err = await rejection(() => young.complete('google-7', { displayName: 'Seven', age: 7, acceptedTermsVersion: DEFAULT_TERMS_VERSION }))
+    expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, field: ['input', 'age'] })
+    expect(held).toHaveBeenCalledWith('google-7', 'Seven', { declaredAge: 7, ageDeclaredAt: expect.any(Date) }, DEFAULT_TERMS_VERSION)
+  })
 
   it('holds the provider account instead of erasing it', async () => {
     const { service, held } = registration()
