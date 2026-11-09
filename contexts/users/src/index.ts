@@ -26,6 +26,8 @@ export { GOOGLE_ID_TOKENS, MX_LOOKUP, type GoogleIdTokens, type MxLookup, type P
 export const usersSubgraph = { name: 'users', typeDefs: usersTypeDefs, modules: [UsersModule] }
 /** Data exports (ADR-0018): requested here, built by apps/worker from the users.export queue. */
 export { DataExportService, USERS_EXPORT_QUEUE } from './application/data-export.service'
+/** The one welcome email: enqueued when registration first completes, sent by apps/worker. */
+export { WelcomeEmailService, USERS_WELCOME_QUEUE } from './application/welcome-email.service'
 export { AccountDeletionService, DELETION_GRACE_DAYS } from './application/account-deletion.service'
 /** College ID and proof documents read by the worker's AI job. The API only enqueues. */
 export { AI_REVIEWER_ID, IdCardCheckService, USERS_ID_CHECK_QUEUE, type IdCardExtractor } from './application/id-card-check.service'

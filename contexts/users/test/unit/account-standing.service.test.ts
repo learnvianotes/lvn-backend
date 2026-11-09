@@ -54,6 +54,7 @@ describe('AuthService age gate', () => {
       { holdSignUp: hold } as never,
       { email: async () => ADMIN_EMAIL } as never,
       { current: () => DEFAULT_TERMS_VERSION } as never,
+      { schedule: async () => undefined } as never,
     )
     return { service, hold, start }
   }
@@ -160,6 +161,7 @@ describe('RegistrationService age gate', () => {
       { minimumAge: () => 18 } as never,
       { email: async () => ADMIN_EMAIL } as never,
       { current: () => DEFAULT_TERMS_VERSION } as never,
+      { schedule: async () => undefined } as never,
     )
     return { service, held }
   }

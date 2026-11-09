@@ -34,6 +34,7 @@ import { UsersService } from './application/users.service'
 import { AnalyticsService, BackendErrorSink } from './application/analytics.service'
 import { IdCardCheckService } from './application/id-card-check.service'
 import { VerificationService } from './application/verification.service'
+import { WelcomeEmailService } from './application/welcome-email.service'
 import { AuthResolver } from './graphql/auth.resolver'
 import { ProfileResolver } from './graphql/profile.resolver'
 import { TermsResolver } from './graphql/terms.resolver'
@@ -84,6 +85,7 @@ export class UsersModule {
         AuthService,
         OAuthService,
         RegistrationService,
+        WelcomeEmailService,
         InstitutionalEmailService,
         PolicyService,
         EntitlementService,
@@ -140,7 +142,7 @@ export class UsersModule {
         AnalyticsResolver,
         AnalyticsOptOutResolver,
       ],
-      exports: [PolicyService, EntitlementService, UsersMaintenance, DataExportService, SkillsImportService, AccountDeletionService, IdCardCheckService],
+      exports: [PolicyService, EntitlementService, UsersMaintenance, DataExportService, SkillsImportService, AccountDeletionService, IdCardCheckService, WelcomeEmailService],
     }
   }
 }

@@ -172,6 +172,8 @@ model User {
   /// When declaredAge was given. The age now is declaredAge plus the whole years since, never more than the real age.
   ageDeclaredAt           DateTime?           @db.Timestamptz(3)
   registrationCompletedAt DateTime?           @db.Timestamptz(3)
+  /// Claimed when the one welcome email goes out. A retry, a profile edit or another sign-in does not send a second one.
+  welcomeEmailSentAt      DateTime?           @db.Timestamptz(3)
   /// Verified by institutional email, a teacher or platform admins (ADR-0019)
   verifiedAt              DateTime?           @db.Timestamptz(3)
   verificationMethod      VerificationMethod?

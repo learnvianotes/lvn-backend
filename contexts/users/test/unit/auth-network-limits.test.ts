@@ -31,6 +31,7 @@ function service(limit: ReturnType<typeof limiter>, db: object = { user: { findU
     { holdSignUp: jest.fn() } as never,
     { email: async () => 'support@learnvianotes.in' } as never,
     { current: () => DEFAULT_TERMS_VERSION } as never,
+    { schedule: async () => undefined } as never,
   )
 }
 
@@ -70,6 +71,7 @@ describe('auth network ceilings', () => {
       {} as never,
       { email: async () => 'support@learnvianotes.in' } as never,
       { current: () => DEFAULT_TERMS_VERSION } as never,
+      { schedule: async () => undefined } as never,
     )
     const err = await rejection(() => auth.requestPasswordReset('person@example.com', '2001:db8:1:2::5'))
     expect(err).toMatchObject({ code: ErrorCode.RATE_LIMITED })

@@ -23,6 +23,11 @@ export interface MailTemplates {
   classroomPost: { displayName: string; teacherName: string; classroomName: string; text: string; link: string; unsubscribeLink: string }
   /** ADR-0050: the week's unread notifications, counted by kind */
   weeklyDigest: { displayName: string; lines: string[]; link: string; unsubscribeLink: string }
+  /**
+   * Once, when a person first gives their name and age. `lines` is what that account can do (a restricted minor
+   * is not offered public sharing). Links are absolute, from WEB_URL.
+   */
+  welcome: { displayName: string; appLink: string; guideLink: string; lines: string[] }
 }
 
 export type MailTemplate = keyof MailTemplates

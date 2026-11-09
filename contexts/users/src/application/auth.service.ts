@@ -29,6 +29,7 @@ import { PlatformSettingsStore } from './platform-settings.store'
 import { SupportContact } from './support-contact'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
 import { TermsVersionProvider } from './terms-version.provider'
+import { WelcomeEmailService } from './welcome-email.service'
 
 export interface SignUpInput {
   email: string
@@ -71,6 +72,7 @@ export class AuthService {
     private readonly ageBlock: AgeBlockService,
     private readonly support: SupportContact,
     private readonly terms: TermsVersionProvider,
+    private readonly welcome: WelcomeEmailService,
   ) {}
 
   async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string, ip?: string): Promise<SignUpResult> {
@@ -149,6 +151,8 @@ export class AuthService {
       throw e
     }
 
+    // After the account is stored. A mail or Redis failure here does not undo it, and does not fail sign-up.
+    await this.welcome.schedule(id)
     await this.sendEmailVerification(id, email, displayName)
     if (input.institutionalEmail) await this.institutional.start(id, input.institutionalEmail)
     await this.events.publish('UserRegistered', { userId: id }, { correlationId })

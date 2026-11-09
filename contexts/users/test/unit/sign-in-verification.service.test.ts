@@ -62,6 +62,7 @@ describe('resendVerification and verifyEmail', () => {
       {} as never,
       {} as never,
       {} as never,
+      { schedule: async () => undefined } as never,
     )
     return { service, sent, hits, updates }
   }
