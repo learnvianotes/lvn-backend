@@ -35,4 +35,4 @@ Sign-up does not write a `ConsentRecord` of kind `GUARDIAN`.
 - Public publishing, direct messages, behavioural recommendations and usage analytics stay off for a minor whose only consent is `auto_unverified`.
 - Contest bands and public achievements stay adult-only. Their copy still says 18.
 - Web and mobile must read `accountMinimumAge` and update sign-up copy. That work is outside this repository.
-- Turning off AI features or Sentry for under-13s, social-feature limits beyond the existing restricted-minor gates, a parent email, and a change to purge timing are not part of this decision.
+- Turning off AI features or Sentry for under-13s, and social-feature limits beyond the existing restricted-minor gates, are not part of this decision. The parent email, the notice, email-plus confirmation and the minor purge window are ADR-0110.

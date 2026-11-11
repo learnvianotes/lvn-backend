@@ -721,6 +721,8 @@ export interface CompleteRegistrationInput {
   /** YYYY-MM-DD, from apps released before ADR-0104. The age it gives today is stored, not the date. */
   dateOfBirth?: string | null
   institutionalEmail?: string | null
+  /** Parent or guardian email. Required for an admitted registration under 18. Stored with the consent record, not as this account's email. */
+  parentEmail?: string | null
   acceptedTermsVersion: string
 }
 
@@ -835,6 +837,41 @@ export interface FunnelStep {
 }
 
 export type GlobalRole = 'STUDENT' | 'TEACHER' | 'MANAGER' | 'PLATFORM_ADMIN'
+
+/** What a parent sees. Counts and the consent record only: no email address and no note text. */
+export interface GuardianChildSummary {
+  displayName: string
+  ageYears: number | null
+  /** under_13, 13_15 or 16_17, as recorded at sign-up. */
+  ageBand: string
+  noticeVersion: string
+  /** auto_unverified until the parent clicks confirm. email_plus after that click. */
+  consentMethod: string
+  /** True only when the method currently lifts restricted-minor limits. email_plus needs the click and the admin setting. */
+  consentVerified: boolean
+  accountStatus: string
+  notes: number
+  files: number
+  deletionScheduledFor: Date | null
+}
+
+export interface GuardianExportsPayload {
+  exports: Array<DataExport> | null
+  userErrors: Array<UserError>
+}
+
+export interface GuardianSessionPayload {
+  /** Present this on the later parent calls until expiresAt. The manage link that produced it cannot be used again. */
+  sessionToken: string | null
+  expiresAt: Date | null
+  summary: GuardianChildSummary | null
+  userErrors: Array<UserError>
+}
+
+export interface GuardianSummaryPayload {
+  summary: GuardianChildSummary | null
+  userErrors: Array<UserError>
+}
 
 /** match, mismatch or unreadable. A mismatch is never an automatic rejection. */
 export interface IdCardCheck {
@@ -993,6 +1030,27 @@ export interface MutationReviewStudentIdVerificationArgs {
 
 export interface MutationSetStudentIdVerificationEnabledArgs {
   enabled: boolean
+}
+
+export interface MutationConfirmGuardianConsentArgs {
+  token: string
+}
+
+export interface MutationRedeemGuardianManageLinkArgs {
+  token: string
+}
+
+export interface MutationGuardianRequestDataExportArgs {
+  sessionToken: string
+}
+
+export interface MutationGuardianWithdrawConsentArgs {
+  sessionToken: string
+}
+
+export interface MutationGuardianDeleteAccountArgs {
+  sessionToken: string
+  confirm: string
 }
 
 export interface MutationUpdateProfileArgs {
@@ -1318,6 +1376,14 @@ export interface QueryStudentIdCardUrlArgs {
   requestId: string
 }
 
+export interface QueryGuardianChildSummaryArgs {
+  sessionToken: string
+}
+
+export interface QueryGuardianDataExportsArgs {
+  sessionToken: string
+}
+
 export interface QueryUserByHandleArgs {
   handle: string
 }
@@ -1498,6 +1564,8 @@ export interface SignUpInput {
   /** YYYY-MM-DD, from apps released before ADR-0104. The age it gives today is stored, not the date. */
   dateOfBirth?: string | null
   institutionalEmail?: string | null
+  /** Parent or guardian email. Required for an admitted sign-up under 18. Stored with the consent record, not as this account's email. */
+  parentEmail?: string | null
   acceptedTermsVersion: string
 }
 

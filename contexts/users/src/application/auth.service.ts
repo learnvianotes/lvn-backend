@@ -5,7 +5,8 @@ import { MAILER, type Mailer } from '@lvn-backend/facades'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { RateLimiter, type Limit } from '@lvn-backend/redis'
 import { ageRestrictedError } from '../domain/account-status'
-import { guardianConsentFields } from '../domain/guardian-consent'
+import { GUARDIAN_CONSENT_UNDER, guardianConsentFields } from '../domain/guardian-consent'
+import { requireParentEmail } from '../domain/parent-email'
 import {
   displayNameSchema,
   emailSchema,
@@ -30,6 +31,7 @@ import { PlatformSettingsStore } from './platform-settings.store'
 import { SupportContact } from './support-contact'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
 import { TermsVersionProvider } from './terms-version.provider'
+import { GuardianNoticeService } from './guardian-notice.service'
 import { WelcomeEmailService } from './welcome-email.service'
 
 export interface SignUpInput {
@@ -41,6 +43,8 @@ export interface SignUpInput {
   /** Deprecated (ADR-0104): apps from before it send this instead of `age`. Ignored when `age` is sent. */
   dateOfBirth?: string | null
   institutionalEmail?: string | null
+  /** Required when the age is under 18 and the account is admitted. Stored on the guardian row, not as the child's email. */
+  parentEmail?: string | null
   acceptedTermsVersion: string
 }
 
@@ -74,6 +78,7 @@ export class AuthService {
     private readonly support: SupportContact,
     private readonly terms: TermsVersionProvider,
     private readonly welcome: WelcomeEmailService,
+    private readonly guardians?: GuardianNoticeService,
   ) {}
 
   async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string, ip?: string): Promise<SignUpResult> {
@@ -115,6 +120,9 @@ export class AuthService {
       return { status: 'emailLinkPending' }
     }
 
+    // After the floor and after an existing account, so a blocked sign-up stores no parent address and a conflict stays a conflict.
+    const parentEmail = declared.value.declaredAge < GUARDIAN_CONSENT_UNDER ? requireParentEmail(email, input.parentEmail) : null
+
     const id = newId()
     const passwordHash = await this.passwords.hash(input.password)
     try {
@@ -137,7 +145,7 @@ export class AuthService {
         await tx.consentRecord.createMany({
           data: (['TERMS', 'PRIVACY', 'PUBLIC_CONTENT_LICENCE'] as const).map((kind) => ({ id: newId(), userId: id, kind, version: termsVersion })),
         })
-        const guardian = guardianConsentFields(declared.value.declaredAge, this.settings.guardianNoticeVersion(), new Date())
+        const guardian = parentEmail ? guardianConsentFields(declared.value.declaredAge, this.settings.guardianNoticeVersion(), new Date(), parentEmail) : null
         if (guardian) await tx.guardianConsent.create({ data: { id: newId(), userId: id, ...guardian } })
       })
     } catch (e) {
@@ -156,6 +164,7 @@ export class AuthService {
 
     // After the account is stored. A mail or Redis failure here does not undo it, and does not fail sign-up.
     await this.welcome.schedule(id)
+    if (parentEmail) await this.guardians?.notify(id)
     await this.sendEmailVerification(id, email, displayName)
     if (input.institutionalEmail) await this.institutional.start(id, input.institutionalEmail)
     await this.events.publish('UserRegistered', { userId: id }, { correlationId })

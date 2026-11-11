@@ -14,7 +14,7 @@ type AccountDeletionPayload {
 }
 
 extend type Mutation {
-  "Ask for your account to be deleted in 14 days, with your private notes and learning history; every other device is signed out. Public notes, posts and comments stay, by \"Deleted user\""
+  "Ask for your account to be deleted after the grace period, with your private notes and learning history; every other device is signed out. Adults wait 14 days. A minor uses the admin purge window, which defaults to 14 days. Public notes, posts and comments stay, by \"Deleted user\""
   requestAccountDeletion(input: RequestAccountDeletionInput!): AccountDeletionPayload!
   "Keep your account: cancels a deletion you asked for"
   cancelAccountDeletion: AccountDeletionPayload!

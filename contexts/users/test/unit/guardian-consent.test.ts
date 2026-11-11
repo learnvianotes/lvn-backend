@@ -122,7 +122,14 @@ describe('email sign-up age gate', () => {
       { schedule: async () => undefined } as never,
     )
     const sign = (age: number) => service.signUp(
-      { email: `age${age}@example.com`, password: 'correct horse battery staple', displayName: 'Asha Rao', age, acceptedTermsVersion: DEFAULT_TERMS_VERSION },
+      {
+        email: `age${age}@example.com`,
+        password: 'correct horse battery staple',
+        displayName: 'Asha Rao',
+        age,
+        acceptedTermsVersion: DEFAULT_TERMS_VERSION,
+        ...(age < 18 ? { parentEmail: 'parent@example.com' } : {}),
+      },
       { client: 'web' },
     )
     return { sign, created, guardians }
@@ -140,7 +147,8 @@ describe('email sign-up age gate', () => {
     await expect(teen.sign(17)).resolves.toMatchObject({ status: 'created' })
     await expect(teen.sign(18)).resolves.toMatchObject({ status: 'created' })
     expect(teen.guardians.map((row) => row.ageBand)).toEqual(['13_15', '16_17', '16_17'])
-    expect(teen.guardians[0]).toMatchObject({ kind: 'GUARDIAN', method: 'auto_unverified', noticeVersion: '2026-12-01' })
+    expect(teen.guardians[0]).toMatchObject({ kind: 'GUARDIAN', method: 'auto_unverified', noticeVersion: '2026-12-01', parentEmail: 'parent@example.com' })
+    expect(teen.created.every((row) => row.email !== 'parent@example.com')).toBe(true)
     expect(teen.guardians[0]!.recordedAt).toBeInstanceOf(Date)
     expect(teen.created.filter((row) => row.declaredAge === 18)).toHaveLength(1)
   })
@@ -187,7 +195,12 @@ describe('provider registration age gate (Google, GitHub and LinkedIn)', () => {
       { current: () => DEFAULT_TERMS_VERSION } as never,
       { schedule: async () => undefined } as never,
     )
-    const complete = (userId: string, age: number) => service.complete(userId, { displayName: 'Asha Rao', age, acceptedTermsVersion: DEFAULT_TERMS_VERSION })
+    const complete = (userId: string, age: number) => service.complete(userId, {
+      displayName: 'Asha Rao',
+      age,
+      acceptedTermsVersion: DEFAULT_TERMS_VERSION,
+      ...(age < 18 ? { parentEmail: 'parent@example.com' } : {}),
+    })
     return { complete, guardians, batches }
   }
 
@@ -223,6 +236,9 @@ describe('guardian consent survives account purge', () => {
     const db = {
       accountTombstone: { create: async () => undefined },
       user: { findUniqueOrThrow: async () => ({ avatarFileId: null }), update: async () => undefined },
+      guardianConsent: { updateMany: async () => ({ count: 0 }) },
+      guardianLink: { deleteMany: async () => ({}) },
+      firebaseInstallation: { deleteMany: async () => ({}) },
       dataExport: { findMany: async () => [], deleteMany: async () => ({}) },
       verificationRequest: { findMany: async () => [], deleteMany: async () => ({}) },
       $transaction: async (ops: Promise<unknown>[]) => Promise.all(ops),

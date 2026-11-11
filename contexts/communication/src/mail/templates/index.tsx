@@ -1,6 +1,6 @@
 import type { MailTemplate, MailTemplates } from '@lvn-backend/facades'
 import type { ReactElement } from 'react'
-import { AccountDeletion, ClassroomPost, DataExportReady, InstitutionalCode, LinkEmail, PasswordChanged, ResetPassword, VerifyEmail, WeeklyDigest, Welcome } from './emails'
+import { AccountDeletion, ClassroomPost, DataExportReady, GuardianConsentConfirmed, GuardianManageLink, GuardianNotice, InstitutionalCode, LinkEmail, PasswordChanged, ResetPassword, VerifyEmail, WeeklyDigest, Welcome } from './emails'
 
 export { MailContact } from './Layout'
 
@@ -18,4 +18,7 @@ export const TEMPLATES: { [T in MailTemplate]: Definition<T> } = {
   classroomPost: { subject: (d) => `${d.teacherName} posted in ${d.classroomName}`, element: (d) => <ClassroomPost {...d} /> },
   weeklyDigest: { subject: () => 'Your week on LearnViaNotes', element: (d) => <WeeklyDigest {...d} /> },
   welcome: { subject: () => 'Welcome to LearnViaNotes', element: (d) => <Welcome {...d} /> },
+  guardianNotice: { subject: () => 'A LearnViaNotes account was created', element: (d) => <GuardianNotice {...d} /> },
+  guardianConsentConfirmed: { subject: () => 'You confirmed a LearnViaNotes account', element: (d) => <GuardianConsentConfirmed {...d} /> },
+  guardianManageLink: { subject: () => 'Manage a LearnViaNotes account', element: (d) => <GuardianManageLink {...d} /> },
 }

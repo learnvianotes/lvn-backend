@@ -394,10 +394,35 @@ export class FilesService implements Files {
 
   async delete(fileIds: string[]): Promise<void> {
     const files = await this.db.fileObject.findMany({ where: { id: { in: fileIds }, deletedAt: null } })
+    await this.deleteStored(files)
+  }
+
+  /** A minor purge: every object this person still has, including sizes and posters made later (ADR-0110). */
+  async purgeOwner(ownerId: string): Promise<{ objects: number }> {
+    const files = await this.db.fileObject.findMany({ where: { ownerId, deletedAt: null } })
+    return { objects: await this.deleteStored(files) }
+  }
+
+  /** Storage first, then the row. A retry deletes the same keys again; object storage treats that as gone. */
+  private async deleteStored(files: { id: string; bucket: string; storageKey: string; variants: unknown }[]): Promise<number> {
     const byBucket = new Map<string, string[]>()
-    for (const f of files) byBucket.set(f.bucket, [...(byBucket.get(f.bucket) ?? []), f.storageKey])
-    for (const [bucket, keys] of byBucket) await this.storage.delete(bucket, keys)
-    await this.db.fileObject.updateMany({ where: { id: { in: files.map((f) => f.id) } }, data: { status: 'DELETED', deletedAt: new Date() } })
+    const add = (bucket: string, key: string) => byBucket.set(bucket, [...(byBucket.get(bucket) ?? []), key])
+    for (const f of files) {
+      add(f.bucket, f.storageKey)
+      if (f.variants && typeof f.variants === 'object') {
+        for (const key of Object.values(f.variants as Record<string, unknown>)) {
+          if (typeof key === 'string' && key) add(f.bucket, key)
+        }
+      }
+    }
+    let objects = 0
+    for (const [bucket, keys] of byBucket) {
+      const unique = [...new Set(keys)]
+      for (let i = 0; i < unique.length; i += 1000) await this.storage.delete(bucket, unique.slice(i, i + 1000))
+      objects += unique.length
+    }
+    if (files.length) await this.db.fileObject.updateMany({ where: { id: { in: files.map((f) => f.id) } }, data: { status: 'DELETED', deletedAt: new Date() } })
+    return objects
   }
 
   async storageUsed(ownerId: string): Promise<bigint> {

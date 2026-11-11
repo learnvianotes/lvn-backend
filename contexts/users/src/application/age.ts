@@ -1,6 +1,6 @@
 import { Errors } from '@lvn-backend/errors'
 import type { Prisma } from '@lvn-backend/prisma-base'
-import { GUARDIAN_CONSENT_VERIFIED } from '../domain/guardian-consent'
+import { GUARDIAN_CONSENT_EMAIL_PLUS, GUARDIAN_CONSENT_VERIFIED } from '../domain/guardian-consent'
 import { ageOn, ageSchema, dateOfBirthSchema, latestDayYearsBefore } from '../domain/rules'
 import { parseField } from './input'
 
@@ -13,15 +13,22 @@ export const AGE_FIELDS = { dateOfBirth: true, declaredAge: true, ageDeclaredAt:
  */
 export const RESTRICTION_CONSENT_SELECT = {
   consents: { where: { kind: 'GUARDIAN' as const }, select: { kind: true }, take: 1 },
-  guardianConsents: { select: { method: true } },
+  guardianConsents: { select: { method: true, verifiedAt: true } },
 } as const
 
 /**
  * Who may be named in a list: old enough, or holding verified guardian consent. `auto_unverified` is not in this
  * filter. A legacy ConsentRecord of kind GUARDIAN is verified consent and still matches.
  */
-export function namedInLists(consentAge: number, on: Date = new Date()): Prisma.UserWhereInput[] {
-  return [...atLeastAge(consentAge, on), { consents: { some: { kind: 'GUARDIAN' } } }, { guardianConsents: { some: { method: GUARDIAN_CONSENT_VERIFIED } } }]
+export function namedInLists(consentAge: number, on: Date = new Date(), emailPlusEnabled = true): Prisma.UserWhereInput[] {
+  const branches: Prisma.UserWhereInput[] = [
+    ...atLeastAge(consentAge, on),
+    { consents: { some: { kind: 'GUARDIAN' } } },
+    { guardianConsents: { some: { method: GUARDIAN_CONSENT_VERIFIED } } },
+  ]
+  // A clicked confirm link, and only while the admin still allows that method. Opening the email does not match.
+  if (emailPlusEnabled) branches.push({ guardianConsents: { some: { method: GUARDIAN_CONSENT_EMAIL_PLUS, verifiedAt: { not: null } } } })
+  return branches
 }
 
 const DAY_MS = 86_400_000

@@ -92,7 +92,7 @@ export class SocialService {
         kind: 'user',
         targetId,
         targetGlobalRole: target.globalRole as GlobalRole,
-        targetRestrictedMinor: isRestrictedMinor(target, this.settings.consentAge(), methodsFromConsentRows(target)),
+        targetRestrictedMinor: isRestrictedMinor(target, this.settings.consentAge(), methodsFromConsentRows(target), new Date(), this.settings.verificationSettings()),
         following: following > 0,
         followsActor: followsActor > 0,
         blocked: blockedByActor + blockingActor > 0,
@@ -276,7 +276,7 @@ export class SocialService {
 
   /** People who may be named in a list: not deleted, and not restricted minors (ADR-0016; the age is ADR-0104's). */
   private nameable(): Prisma.UserWhereInput {
-    return { deletedAt: null, accountStatus: { notIn: ['AGE_BLOCKED', 'BLOCKED'] }, OR: namedInLists(this.settings.consentAge()) }
+    return { deletedAt: null, accountStatus: { notIn: ['AGE_BLOCKED', 'BLOCKED'] }, OR: namedInLists(this.settings.consentAge(), new Date(), this.settings.emailPlusEnabled()) }
   }
 
   /** The person's followers, newest first, restricted minors left out of the names (they are still counted). */
@@ -333,7 +333,7 @@ export class SocialService {
   async profileVisible(viewerId: string | null, userId: string): Promise<boolean> {
     if (viewerId === userId) return true
     const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { ...AGE_FIELDS, ...RESTRICTION_CONSENT_SELECT } })
-    return !!u && !isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u))
+    return !!u && !isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u), new Date(), this.settings.verificationSettings())
   }
 
   /** A user by handle, or by id (links in notifications carry ids); deleted accounts are not found. */

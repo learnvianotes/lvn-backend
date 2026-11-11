@@ -299,7 +299,7 @@ describe('viewerNeedsVerification', () => {
         },
       } as never,
       { statusOf: async () => ({ email: null, status: 'NONE', institution: null }) } as never,
-      { consentAge: () => 18 } as never,
+      { consentAge: () => 18, verificationSettings: () => ({ emailPlusEnabled: true }), minorPurgeWindowDays: () => 14 } as never,
     )
   }
 

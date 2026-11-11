@@ -397,7 +397,7 @@ The backend owns identity, sessions, roles and verification. Clients call `signU
 - Secrets from AWS Secrets Manager (sandbox/prod) or `.env.local` (dev, git-ignored). CI scans with `gitleaks`.
 - Dependency scanning (`pnpm audit`, Dependabot) on every PR; container image scanning before deploy.
 - Logs redact passwords, tokens, email bodies and note content. Request ids propagate from client to logs.
-- Account deletion: user-initiated, 14-day grace period, then hard delete of personal data and anonymisation of public contributions (author shown as "Deleted user").
+- Account deletion: user-initiated, 14-day grace period, then hard delete of personal data and anonymisation of public contributions (author shown as "Deleted user"). *[Amended: ADR-0110 — a minor uses admin setting `minor_purge_window_days`, default 14. Adults stay on 14 days.]*
 
 ## 8. Storage
 
@@ -639,10 +639,10 @@ A student community with public content and minors needs human moderation and a 
 
 | Requirement | Implementation |
 | --- | --- |
-| Age | Date of birth at signup *[Amended: ADR-0017, ADR-0019 — required; a college or organisation email is optional and verifies the account]*. Under 13 (or local digital-consent age: 16 in parts of the EU, 18 under India's DPDP Act) requires verifiable parental or institutional consent; without it the account is limited to private notes and classroom content, no public publishing, no DMs, no behavioural recommendations *[Amended: ADR-0091 — below the minimum no account is usable; every answer is confirmed before it is sent. Amended: ADR-0108 — ages from the floor up to `DIGITAL_CONSENT_AGE` sign in as restricted minors. Amended: ADR-0109 — the floor is admin setting `account_minimum_age`, default 13, range 5–21 (under-13 sign-up stays off until an admin sets 5). An admitted sign-up under 18 records `auto_unverified` guardian consent. Only a verified method lifts the limits.]* |
+| Age | Date of birth at signup *[Amended: ADR-0017, ADR-0019 — required; a college or organisation email is optional and verifies the account]*. Under 13 (or local digital-consent age: 16 in parts of the EU, 18 under India's DPDP Act) requires verifiable parental or institutional consent; without it the account is limited to private notes and classroom content, no public publishing, no DMs, no behavioural recommendations *[Amended: ADR-0091 — below the minimum no account is usable; every answer is confirmed before it is sent. Amended: ADR-0108 — ages from the floor up to `DIGITAL_CONSENT_AGE` sign in as restricted minors. Amended: ADR-0109 — the floor is admin setting `account_minimum_age`, default 13, range 5–21 (under-13 sign-up stays off until an admin sets 5). An admitted sign-up under 18 records `auto_unverified` guardian consent. Only a verified method lifts the limits. Amended: ADR-0110 — that sign-up also stores a parent email and sends a direct notice. Method `email_plus` is on by default and lifts limits, including for under 13, only after the parent clicks the confirm link.]* |
 | Consent and terms | Versioned Terms, Privacy Policy and public-content licence; acceptance recorded with version and timestamp; re-prompt on material change |
 | Data export | `requestDataExport` produces a ZIP (notes as Markdown + media + JSON) within 24 h via a job; downloadable for 7 days *[Amended: ADR-0018 — covers all personal data from every context; Settings → Data also imports notes only, always PRIVATE]* |
-| Deletion | Section 7.2; a deletion also purges search index, embeddings, S3 objects and FCM tokens, and anonymises comments |
+| Deletion | Section 7.2; a deletion also purges search index, embeddings, S3 objects and FCM tokens, and anonymises comments *[Amended: ADR-0110 — a minor's purge also deletes the Firebase Auth user and Firebase installation registrations, and keeps the guardian row with the parent email cleared. The wait is `minor_purge_window_days`, default 14. Adults stay on the 14-day grace.]* |
 | Data residency | One primary region per deployment (India: `ap-south-1`); no cross-region replication of personal data except encrypted backups |
 | Retention | Learning events raw 24 months then aggregated; audit log 7 years; AI usage 12 months; logs 30 days |
 | Encryption | TLS 1.2+ in transit; AES-256 at rest for RDS, S3, ElastiCache; application-level encryption for OAuth refresh tokens |

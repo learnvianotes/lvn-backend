@@ -67,7 +67,7 @@ function harness(initial: Partial<Row> = {}, queueAdd: (...args: unknown[]) => P
     db as never,
     { queue: () => ({ add: queueAdd }) } as never,
     { send: async (...args: unknown[]) => { if (failSend) throw new Error('smtp down'); sent.push(args) } } as never,
-    { consentAge: () => 18 } as never,
+    { consentAge: () => 18, verificationSettings: () => ({ emailPlusEnabled: true }) } as never,
     { webUrl: `${WEB}/` } as never,
   )
   return { service, stored, sent, failSend: (v: boolean) => { failSend = v } }

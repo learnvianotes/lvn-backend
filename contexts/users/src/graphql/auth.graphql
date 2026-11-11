@@ -64,6 +64,8 @@ input SignUpInput {
   "YYYY-MM-DD, from apps released before ADR-0104. The age it gives today is stored, not the date."
   dateOfBirth: String @deprecated(reason: "Send age, in whole years. Ignored when age is sent.")
   institutionalEmail: String
+  "Parent or guardian email. Required for an admitted sign-up under 18. Stored with the consent record, not as this account's email."
+  parentEmail: String
   acceptedTermsVersion: String!
 }
 

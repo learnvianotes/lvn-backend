@@ -202,7 +202,10 @@ model User {
   institutionalEmails  InstitutionalEmail[]
   consents             ConsentRecord[]
   /// Auto-recorded guardian notice for a sign-up under 18. Not deleted when the account is purged (ADR-0109).
-  guardianConsents     GuardianConsent[]
+  /// The parent email on the row is cleared at purge (ADR-0110).
+  guardianConsents      GuardianConsent[]
+  guardianLinks         GuardianLink[]
+  firebaseInstallations FirebaseInstallation[]
   dataExports          DataExport[]
   memberships          Membership[]
   verificationRequests VerificationRequest[] @relation("requester")
@@ -443,26 +446,25 @@ model ConsentRecord {
   @@schema("users")
 }
 
-/// How a guardian notice was recorded. Only `verified` lifts restricted-minor limits.
-enum GuardianConsentMethod {
-  auto_unverified
-  verified
-
-  @@schema("users")
-}
-
-/// Guardian notice for a sign-up under 18 (ADR-0109). Linked by user id with no cascade delete, so purging
-/// the account (which anonymises the user row and deletes ConsentRecord) leaves this row. It holds no name,
-/// email or date of birth: method, notice version, when it was recorded, and the age band.
+/// Guardian notice for a sign-up under 18 (ADR-0109, ADR-0110). Linked by user id with no cascade delete, so
+/// purging the account (which anonymises the user row and deletes ConsentRecord) leaves this row. `method` is
+/// text (`auto_unverified`, `email_plus`, `verified`, or a later id) so a new verification method needs no
+/// migration. `parentEmail` is the parent's address, not the child's, and purge sets it to null. The row then
+/// holds no name, email or date of birth.
 /// Bands: under_13 (below 13; ages 5–12 while the floor is 5), 13_15, 16_17.
 model GuardianConsent {
-  id            String                 @id @db.Uuid
-  userId        String                 @db.Uuid
+  id            String      @id @db.Uuid
+  userId        String      @db.Uuid
   /// The existing consent type. Always GUARDIAN. This is not a verified ConsentRecord.
-  kind          ConsentKind            @default(GUARDIAN)
-  method        GuardianConsentMethod
+  kind          ConsentKind @default(GUARDIAN)
+  /// auto_unverified at sign-up. email_plus only after the parent clicks the confirm link. verified is legacy.
+  method        String
   noticeVersion String
-  recordedAt    DateTime               @default(now()) @db.Timestamptz(3)
+  recordedAt    DateTime    @default(now()) @db.Timestamptz(3)
+  /// Set when the parent clicks confirm. Null for auto_unverified, and cleared if consent is withdrawn.
+  verifiedAt    DateTime?   @db.Timestamptz(3)
+  /// Parent or guardian address. Cleared when the account is purged.
+  parentEmail   String?     @db.Citext
   /// under_13, 13_15 or 16_17
   ageBand       String
 
@@ -470,6 +472,44 @@ model GuardianConsent {
 
   @@index([method, noticeVersion])
   @@index([ageBand])
+  @@index([userId])
+  @@schema("users")
+}
+
+/// A parent link. CONFIRM and MANAGE are single-use. SESSION is the manage session a manage link opens (ADR-0110).
+enum GuardianLinkPurpose {
+  CONFIRM
+  MANAGE
+  SESSION
+
+  @@schema("users")
+}
+
+/// Only the SHA-256 of the token is stored. The signature also carries the expiry.
+model GuardianLink {
+  id        String               @id @db.Uuid
+  userId    String               @db.Uuid
+  purpose   GuardianLinkPurpose
+  tokenHash Bytes                @unique
+  expiresAt DateTime             @db.Timestamptz(3)
+  usedAt    DateTime?            @db.Timestamptz(3)
+  createdAt DateTime             @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@schema("users")
+}
+
+/// A Firebase installation id registered for this account. The minor purge deletes these rows and asks Firebase
+/// to drop the installation (ADR-0110). Clients register the id later; an empty table is a no-op.
+model FirebaseInstallation {
+  fid       String   @id
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@schema("users")
 }

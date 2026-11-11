@@ -28,6 +28,25 @@ export interface MailTemplates {
    * is not offered public sharing). Links are absolute, from WEB_URL.
    */
   welcome: { displayName: string; appLink: string; guideLink: string; lines: string[] }
+  /**
+   * Direct notice to a parent when a minor account is created (ADR-0110). Transactional. `confirmLink` is null when
+   * email confirmation is turned off. Sending this does not record consent.
+   */
+  guardianNotice: {
+    childName: string
+    noticeVersion: string
+    confirmLink: string | null
+    manageLink: string
+    collects: string[]
+    why: string
+    processors: string[]
+    expiresInHours: number
+    supportEmail: string
+  }
+  /** The second email of email plus: sent only after the parent clicks the confirm link. */
+  guardianConsentConfirmed: { childName: string; manageLink: string; expiresInHours: number; supportEmail: string }
+  /** A new manage link, when the child or parent asks for another. Single use. */
+  guardianManageLink: { childName: string; manageLink: string; expiresInHours: number; supportEmail: string }
 }
 
 export type MailTemplate = keyof MailTemplates

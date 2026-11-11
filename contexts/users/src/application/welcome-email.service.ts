@@ -67,7 +67,7 @@ export class WelcomeEmailService {
         welcomeEmailSentAt: true,
         ...AGE_FIELDS,
         consents: { select: { kind: true } },
-        guardianConsents: { select: { method: true } },
+        guardianConsents: { select: { method: true, verifiedAt: true } },
       },
     })
     if (!user || !this.eligible(user)) return 'skipped'
@@ -80,7 +80,7 @@ export class WelcomeEmailService {
     if (claimed.count !== 1) return 'skipped'
 
     const origin = this.config.webUrl.replace(/\/$/, '')
-    const minor = isRestrictedMinor(user, this.settings.consentAge(), methodsFromConsentRows(user))
+    const minor = isRestrictedMinor(user, this.settings.consentAge(), methodsFromConsentRows(user), new Date(), this.settings.verificationSettings())
     try {
       await this.mailer.send(user.email, 'welcome', {
         displayName: user.displayName,

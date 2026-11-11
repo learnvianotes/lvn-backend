@@ -24,6 +24,10 @@ import { PolicyService } from './application/policy.service'
 import { ConsentService } from './application/consent.service'
 import { DataExportService } from './application/data-export.service'
 import { ProfileService } from './application/profile.service'
+import { FIREBASE_DIRECTORY, FirebaseAdminDirectory } from './application/firebase-directory'
+import { GuardianManageService } from './application/guardian-manage.service'
+import { GuardianNoticeService } from './application/guardian-notice.service'
+import { MinorPurgeService } from './application/minor-purge.service'
 import { DnsMxLookup, FirebaseGoogleIdTokens, GOOGLE_ID_TOKENS, MX_LOOKUP } from './application/providers'
 import { RegistrationService } from './application/registration.service'
 import { SessionService } from './application/session.service'
@@ -52,6 +56,7 @@ import { AccountDeletionService } from './application/account-deletion.service'
 import { AgeBlockService } from './application/age-block.service'
 import { SupportContact } from './application/support-contact'
 import { AccountResolver } from './graphql/account.resolver'
+import { GuardianResolver } from './graphql/guardian.resolver'
 import { AccessAllowlistResolver } from './graphql/access.resolver'
 import { AnalyticsOptOutResolver, AnalyticsResolver } from './graphql/analytics.resolver'
 import { AdminDashboardResolver } from './graphql/admin.resolver'
@@ -78,6 +83,7 @@ export class UsersModule {
         JsonScalar,
         // Google sign-in is off unless a Firebase project is configured (ADR-0007).
         { provide: GOOGLE_ID_TOKENS, useFactory: () => (config.firebaseProjectId ? new FirebaseGoogleIdTokens(config.firebaseProjectId) : null) },
+        { provide: FIREBASE_DIRECTORY, useFactory: () => new FirebaseAdminDirectory(config.firebaseProjectId) },
         { provide: MX_LOOKUP, useClass: DnsMxLookup },
         UsersService,
         PasswordService,
@@ -114,7 +120,11 @@ export class UsersModule {
         AgeBlockService,
         AccountAdminService,
         AccountDeletionService,
+        MinorPurgeService,
+        GuardianNoticeService,
+        GuardianManageService,
         AccountResolver,
+        GuardianResolver,
         AccessAllowlistResolver,
         AdminDashboardResolver,
         AdminUsageMetricsResolver,

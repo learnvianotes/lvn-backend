@@ -43,7 +43,7 @@ export class PolicyService implements Policy {
       // verifiedAt does not block an admin. Clients read viewer.viewerNeedsVerification for prompts.
       institutionVerified: u.verifiedAt !== null,
       // The age threshold is configuration, cached briefly (ADR-0101). The account itself is read every time.
-      restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u)),
+      restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u), new Date(), this.settings.verificationSettings()),
       // A dated suspension ends when its time is up, even before the row is rewritten to ACTIVE.
       suspended: u.accountStatus === 'SUSPENDED'
         ? u.suspendedUntil === null || u.suspendedUntil.getTime() > Date.now()
