@@ -32,7 +32,7 @@ export interface IdCardExtractor {
    * Reads one image or PDF. The implementation must send the bytes and nothing about the account.
    * Throws when the provider cannot answer; the check then stores `unreadable`.
    */
-  extract(bytes: Buffer, mimeType: string): Promise<IdCardExtraction>
+  extract(bytes: Buffer, mimeType: string, subjectId?: string | null): Promise<IdCardExtraction>
 }
 
 const IMAGE_OR_PDF = new Set(['image/png', 'image/jpeg', 'image/webp', 'application/pdf'])
@@ -82,7 +82,7 @@ export class IdCardCheckService {
         continue
       }
       try {
-        judgements.push(judgeIdCard(await extractor.extract(file.bytes, file.mimeType), profile))
+        judgements.push(judgeIdCard(await extractor.extract(file.bytes, file.mimeType, request.userId), profile))
       } catch (e) {
         this.log.warn(`id-card check could not read a document on ${requestId}: ${(e as Error).name}`)
         judgements.push(judgeIdCard(null, profile))

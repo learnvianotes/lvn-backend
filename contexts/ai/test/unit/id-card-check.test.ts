@@ -56,7 +56,7 @@ function brief(target: IdCardRouteTarget) {
 const SECRET = 'unit-test-secret-0123456789abcd'
 
 function aiConfig(over: Partial<AiConfig> = {}): AiConfig {
-  return { provider: 'none', ollama: null, chatModel: null, embedModel: null, timeoutMs: 1_000, monthlyBudgetMicroUsd: null, publicPipeline: false, keysSecret: SECRET, ...over }
+  return { appEnv: 'development', geminiEnvNames: [], provider: 'none', ollama: null, chatModel: null, embedModel: null, timeoutMs: 1_000, monthlyBudgetMicroUsd: null, publicPipeline: false, keysSecret: SECRET, ...over }
 }
 
 interface StoredConnection {
@@ -209,21 +209,26 @@ describe('ID card route in admin settings', () => {
 
   it('lets an admin save the route only on a connection that may receive private data', async () => {
     const h = settings([
-      { id: 'private', kind: 'GEMINI', mayReceivePrivate: true },
+      { id: 'private', kind: 'OPENAI', mayReceivePrivate: true },
       { id: 'public', kind: 'OPENAI', mayReceivePrivate: false },
+      { id: 'gemini', kind: 'GEMINI', mayReceivePrivate: true },
     ])
-    await expect(h.service.saveRoute('student', { task: ID_CARD_CHECK_TASK, connectionId: 'private', model: 'gemini-2.5-flash' })).rejects.toMatchObject({ code: ErrorCode.FORBIDDEN })
+    await expect(h.service.saveRoute('student', { task: ID_CARD_CHECK_TASK, connectionId: 'private', model: 'gpt-4o-mini' })).rejects.toMatchObject({ code: ErrorCode.FORBIDDEN })
     await expect(h.service.saveRoute('admin', { task: ID_CARD_CHECK_TASK, connectionId: 'public', model: 'gpt-4o-mini' })).rejects.toMatchObject({
       code: ErrorCode.VALIDATION,
       field: ['input', 'connectionId'],
       message: 'ID cards can only go to a connection that may receive private data.',
     })
+    await expect(h.service.saveRoute('admin', { task: ID_CARD_CHECK_TASK, connectionId: 'gemini', model: 'gemini-2.5-flash' })).rejects.toMatchObject({
+      code: ErrorCode.VALIDATION,
+      message: 'Gemini and Google Generative AI are not available.',
+    })
     expect(h.upserts).toEqual([])
-    await h.service.saveRoute('admin', { task: ID_CARD_CHECK_TASK, connectionId: 'private', model: 'gemini-2.5-flash' })
+    await h.service.saveRoute('admin', { task: ID_CARD_CHECK_TASK, connectionId: 'private', model: 'gpt-4o-mini' })
     expect(h.upserts).toEqual([
       expect.objectContaining({
         where: { task: ID_CARD_CHECK_TASK },
-        create: expect.objectContaining({ task: ID_CARD_CHECK_TASK, connectionId: 'private', model: 'gemini-2.5-flash' }),
+        create: expect.objectContaining({ task: ID_CARD_CHECK_TASK, connectionId: 'private', model: 'gpt-4o-mini' }),
       }),
     ])
   })

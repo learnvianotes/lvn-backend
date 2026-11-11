@@ -10,7 +10,7 @@ export const HYBRID_DEPTH = 50
 
 /** Notes semantically close to a query, best first, before any read rule: the caller applies the read predicate. */
 export interface SemanticSearch {
-  similarNotes(text: string, limit: number): Promise<string[]>
+  similarNotes(text: string, limit: number, subjectId?: string | null): Promise<string[]>
 }
 
 /** Bound by Phase 5 (pgvector over published versions' embeddings); null until then. */

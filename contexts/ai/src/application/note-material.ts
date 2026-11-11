@@ -10,6 +10,8 @@ export interface Reader {
   noteId: string
   ownerId: string | null
   private: boolean
+  /** Whose age decides the provider when it is not `ownerId` (a public note's owner on the platform pipeline). */
+  subjectId?: string | null
 }
 
 /** The cards whose material is read from their file: photos, PDFs and recordings (ADR-0085). */
@@ -61,7 +63,7 @@ export class NoteMaterial {
     const recordings = cards.filter((c) => isRecording(c) && !!fileOf(c) && !inWords.has(c.id))
     const said = recordings.length && reader.ownerId ? await this.transcripts(reader.noteId, reader.ownerId, recordings) : new Map<string, string>()
     const attach = photos.length && photos.length <= attachUpTo ? photos : []
-    const who = { userId: reader.ownerId, private: reader.private }
+    const who = { userId: reader.ownerId, subjectId: reader.subjectId ?? reader.ownerId, private: reader.private }
     const texts = new Map<string, string>()
     let photo = 0
     let pdf = 0

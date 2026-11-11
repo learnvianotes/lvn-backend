@@ -10,6 +10,8 @@ type DailyLine {
   line: String!
   "Written by AI for this person"
   fromAi: Boolean!
+  "True when a model wrote the line, false for the chosen line. Clients use this for the AI label."
+  aiGenerated: Boolean!
   "AI is writing today's line: ask again in a few seconds"
   pending: Boolean!
 }

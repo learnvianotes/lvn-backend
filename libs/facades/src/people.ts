@@ -55,4 +55,9 @@ export interface People {
   searchProfiles(ids: string[]): Promise<SearchProfile[]>
   /** Account ids after `after`, in id order, `take` at a time: for re-indexing everyone (ADR-0055). */
   personIdsAfter(after: string | null, take: number): Promise<string[]>
+  /**
+   * Under 18, or an age this account does not hold, including a deleted account (Families policy).
+   * Guardian consent does not change it. This is not the admin consent age.
+   */
+  isMinorForAi(userId: string): Promise<boolean>
 }

@@ -51,7 +51,7 @@ export class MediaInput {
   ) {}
 
   /** What a recording (an audio or video file) says; `cut` when it ran past MAX_SECONDS. */
-  async transcribe(fileId: string, who: { userId: string | null; private: boolean }): Promise<{ text: string; cut: boolean }> {
+  async transcribe(fileId: string, who: { userId: string | null; private: boolean; subjectId?: string | null }): Promise<{ text: string; cut: boolean }> {
     return this.inTemp(async (dir) => {
       const source = path.join(dir, 'source')
       await this.files.download(fileId, source, 'audio')
@@ -71,7 +71,7 @@ export class MediaInput {
    * A few seconds of audio for live captions when the browser cannot do it. The bytes are not stored, so they are
    * not scanned. Full recordings go through createUploadIntent and completeUpload instead.
    */
-  async transcribeClip(bytes: Buffer, mime: string, who: { userId: string | null; private: boolean }): Promise<{ text: string; cut: boolean }> {
+  async transcribeClip(bytes: Buffer, mime: string, who: { userId: string | null; private: boolean; subjectId?: string | null }): Promise<{ text: string; cut: boolean }> {
     const type = mime.split(';')[0]!.trim().toLowerCase()
     if (!CLIP_MIMES.has(mime.toLowerCase()) && !CLIP_MIMES.has(type)) throw Errors.validation('Send a short audio clip (WebM, WAV, MP3, M4A or Ogg).', ['input', 'mimeType'])
     if (bytes.length < 1 || bytes.length > CLIP_BYTES) throw Errors.validation('A caption clip can be at most about 2.5 MB.', ['input', 'audioBase64'])
@@ -107,13 +107,13 @@ export class MediaInput {
    * whoever asked (ADR-0084). The reading is kept for PHOTO_TEXT_SECONDS by file, so the note's other tasks do not read
    * it again (ADR-0085).
    */
-  async readPhoto(fileId: string, who: { userId: string | null; private: boolean }): Promise<string> {
+  async readPhoto(fileId: string, who: { userId: string | null; private: boolean; subjectId?: string | null }): Promise<string> {
     const key = `ai:photo-text:${fileId}`
     const kept = await this.redis.get(key).catch(() => null)
     // Readings kept before symbols were made plain (ADR-0086) are made plain as they are read.
     if (kept !== null) return plainSymbols(kept)
     const [jpeg] = await this.images([fileId])
-    const read = await this.gateway.generate({ task: 'READ_PAGE', userId: who.userId, private: who.private, prompt: 'read-page', images: [jpeg!], schema: pageSchema, temperature: 0 })
+    const read = await this.gateway.generate({ task: 'READ_PAGE', userId: who.userId, subjectId: who.subjectId, private: who.private, prompt: 'read-page', images: [jpeg!], schema: pageSchema, temperature: 0 })
     const text = blocksMarkdown(read.output.blocks)
     await this.redis.set(key, text, 'EX', PHOTO_TEXT_SECONDS).catch(() => undefined)
     return text

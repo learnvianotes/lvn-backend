@@ -2,9 +2,11 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
 import { presetOf } from '../domain/catalog'
+import { isGeminiModel, isGoogleGenerativeUrl, isOpenAiApiUrl } from '../domain/gemini-policy'
 import { modelCanHear } from '../domain/model-capabilities'
 import { chooseIdCardTargets, ID_CARD_CHECK_TASK, type IdCardRouteTarget } from '../domain/id-card-route'
-import type { AiProviderAdapter } from '../domain/provider'
+import { chooseMinorRoute, type AiCapability, type MinorRouteOption, type MinorRoutePolicy } from '../domain/minor-route'
+import type { AiProviderAdapter, AiProviderKind } from '../domain/provider'
 import { AnthropicProvider } from '../infrastructure/anthropic'
 import { OllamaProvider } from '../infrastructure/ollama'
 import { OpenAiProvider } from '../infrastructure/openai'
@@ -153,6 +155,23 @@ export class AiProviders {
     return chooseIdCardTargets(null, fallback).map((choice) => choice.target)
   }
 
+  /**
+   * The target a call may use. Adults receive the ordinary choice. A minor is moved off OpenAI (unless
+   * `openai_zdr_approved`) and off Gemini onto Anthropic, then a local model, when one can do the job.
+   * `'blocked'` means the ordinary choice was unsafe and nothing else can do it: the caller must not send the content.
+   */
+  async guarded(kind: 'task' | 'embed' | 'transcribe', task: string | null, policy: MinorRoutePolicy): Promise<Target | 'blocked' | null> {
+    const capability: AiCapability = kind === 'task' ? 'chat' : kind
+    const preferred = kind === 'embed' ? await this.forEmbeddings() : kind === 'transcribe' ? await this.transcriptionChoice() : await this.forTask(task)
+    if (!policy.minor) return preferred
+    if (!preferred) return null
+    const built = this.routeOptions(await this.state(), preferred, capability)
+    const decision = chooseMinorRoute(built.preferredKey, built.options, capability, policy)
+    if (decision.action === 'missing') return null
+    if (decision.action === 'blocked') return 'blocked'
+    return built.targets.get(decision.key) ?? 'blocked'
+  }
+
   /** Who makes embeddings: the EMBED route, the default embedding connection, else the environment's provider. */
   async forEmbeddings(): Promise<Target | null> {
     const state = await this.state()
@@ -179,6 +198,58 @@ export class AiProviders {
   private usable(state: State, id: string): { connectionId: string; row: Connection; adapter: AiProviderAdapter } | null {
     const c = state.connections.get(id)
     return c?.row.enabled && c.adapter ? { connectionId: id, row: c.row, adapter: c.adapter } : null
+  }
+
+  /** The preferred call, plus every other enabled chat or embedding model a minor can be moved to. */
+  private routeOptions(state: State, preferred: Target, capability: AiCapability): { preferredKey: string; options: MinorRouteOption[]; targets: Map<string, Target> } {
+    const targets = new Map<string, Target>()
+    const options: MinorRouteOption[] = []
+    const add = (key: string, option: Omit<MinorRouteOption, 'key'>, target: Target) => {
+      if (targets.has(key)) return
+      targets.set(key, target)
+      options.push({ key, ...option })
+    }
+    const rowOf = (id: string | null) => (id ? state.connections.get(id)?.row ?? null : null)
+    const preferredKey = preferred.connectionId ? `picked:${preferred.connectionId}:${preferred.model}` : `picked:env:${preferred.model}`
+    add(preferredKey, this.optionOf(preferred.adapter.name, preferred.model, preferred.adapter.mayReceivePrivate, rowOf(preferred.connectionId)?.baseUrl ?? null, capability), preferred)
+    for (const { row, adapter } of state.connections.values()) {
+      if (!row.enabled || !adapter) continue
+      if (row.chatModel) {
+        add(`chat:${row.id}:${row.chatModel}`, this.optionOf(adapter.name, row.chatModel, adapter.mayReceivePrivate, row.baseUrl, 'chat'), {
+          connectionId: row.id, adapter, model: row.chatModel, inPrice: row.inputMicroUsdPerMTok, outPrice: row.outputMicroUsdPerMTok,
+        })
+      }
+      if (row.embedModel) {
+        add(`embed:${row.id}:${row.embedModel}`, this.optionOf(adapter.name, row.embedModel, adapter.mayReceivePrivate, row.baseUrl, 'embed'), {
+          connectionId: row.id, adapter, model: row.embedModel, inPrice: row.embedMicroUsdPerMTok, outPrice: 0,
+        })
+      }
+    }
+    if (this.environment && this.config.chatModel) {
+      add(`chat:env:${this.config.chatModel}`, this.optionOf(this.environment.name, this.config.chatModel, this.environment.mayReceivePrivate, this.config.ollama?.url ?? null, 'chat'), {
+        connectionId: null, adapter: this.environment, model: this.config.chatModel, inPrice: 0, outPrice: 0,
+      })
+    }
+    if (this.environment && this.config.embedModel) {
+      add(`embed:env:${this.config.embedModel}`, this.optionOf(this.environment.name, this.config.embedModel, this.environment.mayReceivePrivate, this.config.ollama?.url ?? null, 'embed'), {
+        connectionId: null, adapter: this.environment, model: this.config.embedModel, inPrice: 0, outPrice: 0,
+      })
+    }
+    return { preferredKey, options, targets }
+  }
+
+  private optionOf(kind: AiProviderKind, model: string, mayReceivePrivate: boolean, baseUrl: string | null, capability: AiCapability): Omit<MinorRouteOption, 'key'> {
+    const google = kind === 'GEMINI' || isGoogleGenerativeUrl(baseUrl) || isGeminiModel(model)
+    return {
+      kind,
+      model,
+      mayReceivePrivate,
+      chats: capability !== 'embed',
+      embeds: capability === 'embed',
+      hears: capability === 'transcribe' || modelCanHear(model, kind),
+      google,
+      openAi: kind === 'OPENAI' || isOpenAiApiUrl(baseUrl),
+    }
   }
 
   private async state(): Promise<State> {

@@ -72,6 +72,7 @@ export class AiTasksService {
     await this.gateway.assertDailyRequests(viewerId)
     const { usedToday, limitToday } = await this.gateway.allowance(viewerId)
     if (limitToday !== null && usedToday >= limitToday) throw planLimitError(LimitKey.AI_TOKENS_DAILY)
+    await this.gateway.ensureRoutable(viewerId, def.input === 'AUDIO' ? 'TRANSCRIBE' : input.task, source.visibility !== 'PUBLIC')
     const options: Options = { language: input.language ?? 'ENGLISH', cardIds: input.cardIds?.length ? input.cardIds : null }
     const artifact = await this.db.noteArtifact.create({
       data: { id: newId(), noteId: input.noteId, versionId: source.versionId, ownerId: viewerId, task: input.task, options: options as unknown as Prisma.InputJsonValue, status: 'QUEUED' },
@@ -100,32 +101,34 @@ export class AiTasksService {
       if (def.editorsOnly && !source.canEdit) throw Errors.forbidden('You can no longer edit this note.')
       const cards = this.pick(source, options.cardIds, def)
       const isPrivate = source.visibility !== 'PUBLIC'
+      const subjectId = artifact.ownerId ?? source.ownerId
+      const reader = { noteId: artifact.noteId, ownerId: artifact.ownerId, private: isPrivate, subjectId }
       let result: TaskResult
       let cut = false
       let read: string[] = []
       if (def.input === 'AUDIO') {
         // TRANSCRIBE: the recording, heard piece by piece (ADR-0062).
-        const heard = await this.media.transcribe(fileOf(cards[0]!)!, { userId: artifact.ownerId, private: isPrivate })
+        const heard = await this.media.transcribe(fileOf(cards[0]!)!, { userId: artifact.ownerId, private: isPrivate, subjectId })
         cut = heard.cut
         result = def.result(heard, source.title)
       } else if (task === 'TRANSLATE') {
         // In plain text, piece by piece, each checked to be in the language (ADR-0086).
         // The words alone: "Photo 1:" is not part of the note to translate.
-        const material = await this.material.forTask(cards, { noteId: artifact.noteId, ownerId: artifact.ownerId, private: isPrivate, attach: false, labels: false })
+        const material = await this.material.forTask(cards, { ...reader, attach: false, labels: false })
         read = material.read
         let body = material.parts.join('\n\n')
         if (!body.trim()) throw Errors.validation('Nothing in this note’s photos, PDFs or recordings could be read. A scanned PDF becomes notes with Convert PDF.')
         cut = body.length > SOURCE_CHARS
         if (cut) body = body.slice(0, SOURCE_CHARS)
-        result = def.result(await this.translate(source.title, body, options.language, { userId: artifact.ownerId, private: isPrivate }), source.title)
+        result = def.result(await this.translate(source.title, body, options.language, { userId: artifact.ownerId, private: isPrivate, subjectId }), source.title)
       } else if (def.kind === 'CHANGES') {
         // CLEAN_UP: the note's words, batch by batch, as the person's work (ADR-0063).
-        const mended = await this.cleanUp(task, artifact.ownerId!, cards, isPrivate)
+        const mended = await this.cleanUp(task, artifact.ownerId!, cards, isPrivate, subjectId)
         cut = mended.cut
         result = def.result({ changes: mended.changes }, source.title)
       } else {
         // The note's words, what its photos say, its PDFs' words and its recordings' transcripts (ADR-0084, ADR-0085).
-        const material = await this.material.forTask(cards, { noteId: artifact.noteId, ownerId: artifact.ownerId, private: isPrivate, attach: def.input === 'IMAGES' })
+        const material = await this.material.forTask(cards, { ...reader, attach: def.input === 'IMAGES' })
         read = material.read
         let body = material.parts.join('\n\n')
         if (!body.trim() && !material.images.length) throw Errors.validation('Nothing in this note’s photos, PDFs or recordings could be read. A scanned PDF becomes notes with Convert PDF.')
@@ -136,6 +139,7 @@ export class AiTasksService {
         const generated = await this.gateway.generate({
           task,
           userId: artifact.ownerId,
+          subjectId,
           private: isPrivate,
           prompt: def.prompt,
           vars: { language, target: language, sentences: 5 },
@@ -162,7 +166,7 @@ export class AiTasksService {
    * temperature; a piece whose letters are not mostly in the language's script is asked again once, insisting, and the
    * answer more in the language is kept. The first piece carries the title, answered as its first line ("# Title").
    */
-  private async translate(title: string, body: string, language: AiLanguage, who: { userId: string | null; private: boolean }): Promise<string> {
+  private async translate(title: string, body: string, language: AiLanguage, who: { userId: string | null; private: boolean; subjectId: string | null }): Promise<string> {
     const target = LANGUAGE_NAMES[language] ?? 'English'
     const out: string[] = []
     for (const [i, piece] of pieces(body).entries()) {
@@ -171,6 +175,7 @@ export class AiTasksService {
           await this.gateway.generate({
             task: 'TRANSLATE',
             userId: who.userId,
+            subjectId: who.subjectId,
             private: who.private,
             prompt: i === 0 ? 'translate' : 'translate-more',
             vars: { target, insist },
@@ -193,12 +198,12 @@ export class AiTasksService {
    * The changes the model proposes for the cards' words, checked one by one (`isRepair`). Batches run in order; when the
    * allowance or the model gives out after the first, what was found so far is kept and the rest counts as cut.
    */
-  private async cleanUp(task: AiTaskType, userId: string, cards: NoteAiSource['cards'], isPrivate: boolean): Promise<{ changes: TextChange[]; cut: boolean }> {
+  private async cleanUp(task: AiTaskType, userId: string, cards: NoteAiSource['cards'], isPrivate: boolean, subjectId: string | null): Promise<{ changes: TextChange[]; cut: boolean }> {
     const plan = batches(cards)
     const changes: TextChange[] = []
     for (const [i, batch] of plan.batches.entries()) {
       try {
-        const generated = await this.gateway.generate({ task, userId, private: isPrivate, prompt: 'clean-up', content: { passages: batchText(batch) }, schema: repairs, temperature: 0 })
+        const generated = await this.gateway.generate({ task, userId, subjectId, private: isPrivate, prompt: 'clean-up', content: { passages: batchText(batch) }, schema: repairs, temperature: 0 })
         for (const { n, text } of generated.output.changes) {
           const card = batch[n - 1]
           if (card && !changes.some((c) => c.cardId === card.id) && isRepair(card.text, text)) changes.push({ cardId: card.id, before: card.text, after: text.trim() })

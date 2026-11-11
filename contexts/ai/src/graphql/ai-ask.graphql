@@ -35,6 +35,8 @@ type AiAnswer {
   sources: [AiSource!]!
   "FAILED: why, in words for the asker"
   error: String
+  "True when this text was produced by a model, so clients can show an AI label."
+  aiGenerated: Boolean!
   noteId: UUID
   doubtId: UUID
   createdAt: DateTime!

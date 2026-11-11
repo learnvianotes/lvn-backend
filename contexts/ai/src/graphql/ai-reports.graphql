@@ -1,0 +1,67 @@
+# Reports of AI answers (Families policy). The answer text is not stored on the report.
+
+"Why someone reported a model answer"
+enum AiReportReason {
+  INACCURATE
+  INAPPROPRIATE
+  HARMFUL
+  PERSONAL_INFO
+  OTHER
+}
+
+"Where a report sits in the admin queue"
+enum AiReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+"A report of one AI answer. context is the task, status and note id. The answer text is not here."
+type AiReport {
+  id: UUID!
+  reporterId: UUID!
+  responseId: UUID!
+  "ANSWER or ARTIFACT"
+  responseKind: String!
+  reason: AiReportReason!
+  comment: String
+  context: JSON!
+  status: AiReportStatus!
+  resolvedBy: UUID
+  resolvedAt: DateTime
+  createdAt: DateTime!
+}
+
+input ReportAiAnswerInput {
+  responseId: UUID!
+  "ANSWER (Ask AI) or ARTIFACT (a task result, including a public study aid)"
+  responseKind: String!
+  reason: AiReportReason!
+  comment: String
+}
+
+type ReportAiAnswerPayload {
+  reportId: UUID
+  userErrors: [UserError!]!
+}
+
+type AiReportPayload {
+  report: AiReport
+  userErrors: [UserError!]!
+}
+
+extend type Query {
+  "Platform admins. Newest first. status defaults to OPEN. first is 1–50."
+  aiReports(status: AiReportStatus, first: Int = 20): [AiReport!]!
+  "Platform admins."
+  aiReport(id: UUID!): AiReport!
+}
+
+extend type Mutation {
+  "The person who received the answer, or any signed-in person for a public study aid. Rate limited per account."
+  reportAiAnswer(input: ReportAiAnswerInput!): ReportAiAnswerPayload!
+  "Platform admins. Only an OPEN report can be resolved."
+  resolveAiReport(id: UUID!): AiReportPayload!
+  "Platform admins. Only an OPEN report can be dismissed."
+  dismissAiReport(id: UUID!): AiReportPayload!
+}

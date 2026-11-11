@@ -16,6 +16,8 @@ type Transcript {
   text: String!
   "The recording was longer than 30 minutes and the rest was not transcribed"
   cut: Boolean!
+  "True when a model produced this text, so clients can show an AI label. False for browser SpeechRecognition captions."
+  aiGenerated: Boolean!
 }
 
 type TranscriptPayload {
@@ -27,6 +29,8 @@ type NotesFromTranscript {
   noteId: UUID!
   title: String!
   summary: String!
+  "True when this text was produced by a model, so clients can show an AI label."
+  aiGenerated: Boolean!
 }
 
 type NotesFromTranscriptPayload {

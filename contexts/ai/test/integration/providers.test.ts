@@ -26,7 +26,7 @@ describe('AI providers', () => {
   const SECRET = 'a-test-secret-for-ai-keys-0123456789abcdef'
   const entitlements: Entitlements = { limit: async () => null }
   const events = { publish: async () => undefined, subscribe: () => undefined } as unknown as EventBus
-  const config = (over: Partial<AiConfig> = {}): AiConfig => ({ provider: 'ollama', ollama: { url: ollama.url }, chatModel: 'gemma4', embedModel: 'embeddinggemma', timeoutMs: 5_000, monthlyBudgetMicroUsd: null, publicPipeline: true, keysSecret: SECRET, ...over })
+  const config = (over: Partial<AiConfig> = {}): AiConfig => ({ appEnv: 'development', geminiEnvNames: [], provider: 'ollama', ollama: { url: ollama.url }, chatModel: 'gemma4', embedModel: 'embeddinggemma', timeoutMs: 5_000, monthlyBudgetMicroUsd: null, publicPipeline: true, keysSecret: SECRET, ...over })
   const gateway = (over: Partial<AiConfig> = {}) => {
     const c = config(over)
     return new AiGateway(db, new PromptLibrary(), c, new AiProviders(db, c, c.provider === 'ollama' ? new OllamaProvider(ollama.url) : null, new AiKeys(c)), entitlements, events)

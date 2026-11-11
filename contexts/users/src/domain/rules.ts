@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { AI_MINOR_AGE } from '@lvn/contracts/domain'
 import { hasVerifiedGuardianConsent } from './guardian-consent'
 import type { GuardianVerificationSettings } from './guardian-verification'
 
@@ -129,6 +130,15 @@ export function ageOf(facts: AgeFacts, on: Date = new Date()): number | null {
   if (facts.dateOfBirth) return ageOn(facts.dateOfBirth, on)
   if (facts.declaredAge === null || !facts.ageDeclaredAt) return null
   return facts.declaredAge + Math.max(0, ageOn(facts.ageDeclaredAt, on))
+}
+
+/**
+ * Families policy: under 18, or an age the account does not hold. Guardian consent does not change it, and it does
+ * not follow the admin consent age.
+ */
+export function isAiMinor(facts: AgeFacts, on: Date = new Date()): boolean {
+  const age = ageOf(facts, on)
+  return age === null || age < AI_MINOR_AGE
 }
 
 /**

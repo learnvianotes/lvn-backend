@@ -1075,6 +1075,10 @@ type AiAllowance {
 An Ask AI answer: the asker's own. Its text grows while it is RUNNING (live AI_ANSWER events say when)
 """
 type AiAnswer {
+  """
+  True when this text was produced by a model, so clients can show an AI label.
+  """
+  aiGenerated: Boolean!
   createdAt: DateTime!
   doubtId: UUID
 
@@ -1095,6 +1099,11 @@ type AiAnswer {
 What a task made for the viewer from a note (ADR-0059). Only its maker sees it, while they can read the note
 """
 type AiArtifact {
+  """
+  True when this text was produced by a model, so clients can show an AI label.
+  """
+  aiGenerated: Boolean!
+
   """Card tasks, once READY: the cards to choose from"""
   cards: [AiCard!]
 
@@ -1241,6 +1250,10 @@ type AiEnvironmentProvider {
 A study aid made from a public note's published version: a summary, key concepts, practice questions, a quiz or flashcards
 """
 type AiInsight {
+  """
+  True when this text was produced by a model, so clients can show an AI label.
+  """
+  aiGenerated: Boolean!
   cards: [AiCard!]
 
   """Hidden by the owner: only they see it"""
@@ -1370,6 +1383,46 @@ type AiProviderPreset {
   Private notes may go to it unless an admin says otherwise (a model on our own machine)
   """
   privateByDefault: Boolean!
+}
+
+"""
+A report of one AI answer. context is the task, status and note id. The answer text is not here.
+"""
+type AiReport {
+  comment: String
+  context: JSON!
+  createdAt: DateTime!
+  id: UUID!
+  reason: AiReportReason!
+  reporterId: UUID!
+  resolvedAt: DateTime
+  resolvedBy: UUID
+  responseId: UUID!
+
+  """ANSWER or ARTIFACT"""
+  responseKind: String!
+  status: AiReportStatus!
+}
+
+type AiReportPayload {
+  report: AiReport
+  userErrors: [UserError!]!
+}
+
+"""Why someone reported a model answer"""
+enum AiReportReason {
+  HARMFUL
+  INACCURATE
+  INAPPROPRIATE
+  OTHER
+  PERSONAL_INFO
+}
+
+"""Where a report sits in the admin queue"""
+enum AiReportStatus {
+  DISMISSED
+  OPEN
+  RESOLVED
 }
 
 type AiSettings {
@@ -2519,6 +2572,11 @@ input CreateUploadIntentInput {
 Written by AI for the person once a day; a chosen line until then, or when AI is off
 """
 type DailyLine {
+  """
+  True when a model wrote the line, false for the chosen line. Clients use this for the AI label.
+  """
+  aiGenerated: Boolean!
+
   """The learning day it is for (YYYY-MM-DD, in the person's zone)"""
   day: String!
 
@@ -2698,6 +2756,7 @@ enum EmailKind {
 """Fixed error vocabulary (§6.2)"""
 enum ErrorCode {
   AGE_RESTRICTED
+  AI_UNAVAILABLE_FOR_MINOR
   CONFLICT
   FORBIDDEN
   INTERNAL
@@ -3876,6 +3935,9 @@ type Mutation {
   """Stops the repository's activity and deletes what was kept"""
   disconnectRepositoryApp(input: GroupIdInput!): GroupPayload!
 
+  """Platform admins. Only an OPEN report can be dismissed."""
+  dismissAiReport(id: UUID!): AiReportPayload!
+
   """Signed in only: not shown again for 30 days"""
   dismissRecommendation(input: DismissRecommendationInput!): OkPayload!
 
@@ -4003,6 +4065,11 @@ type Mutation {
   reopenDoubt(input: DoubtIdInput!): DoubtPayload!
 
   """
+  The person who received the answer, or any signed-in person for a public study aid. Rate limited per account.
+  """
+  reportAiAnswer(input: ReportAiAnswerInput!): ReportAiAnswerPayload!
+
+  """
   Report what you can see (a note, a person, a comment, a post, an announcement, a doubt or a group); reporting again updates your report
   """
   reportContent(input: ReportContentInput!): OkPayload!
@@ -4061,6 +4128,9 @@ type Mutation {
 
   """Sets the password and signs out every device"""
   resetPassword(input: ResetPasswordInput!): OkPayload!
+
+  """Platform admins. Only an OPEN report can be resolved."""
+  resolveAiReport(id: UUID!): AiReportPayload!
 
   """The mentor, admins, the Owner or the asker"""
   resolveDoubt(input: DoubtIdInput!): DoubtPayload!
@@ -4741,6 +4811,10 @@ enum NoteVersionKind {
 }
 
 type NotesFromTranscript {
+  """
+  True when this text was produced by a model, so clients can show an AI label.
+  """
+  aiGenerated: Boolean!
   noteId: UUID!
   summary: String!
   title: String!
@@ -5300,6 +5374,12 @@ type Query {
   be read. Spends no tokens.
   """
   aiConnectionModels(input: AiConnectionIdInput!): AiConnectionModels!
+
+  """Platform admins."""
+  aiReport(id: UUID!): AiReport!
+
+  """Platform admins. Newest first. status defaults to OPEN. first is 1–50."""
+  aiReports(first: Int = 20, status: AiReportStatus): [AiReport!]!
 
   """Platform admins only"""
   aiSettings: AiSettings!
@@ -5897,6 +5977,22 @@ type RemovedGroup {
 input RenameTagInput {
   id: UUID!
   name: String!
+}
+
+input ReportAiAnswerInput {
+  comment: String
+  reason: AiReportReason!
+  responseId: UUID!
+
+  """
+  ANSWER (Ask AI) or ARTIFACT (a task result, including a public study aid)
+  """
+  responseKind: String!
+}
+
+type ReportAiAnswerPayload {
+  reportId: UUID
+  userErrors: [UserError!]!
 }
 
 input ReportContentInput {
@@ -7293,6 +7389,11 @@ input TranscribeCaptionClipInput {
 }
 
 type Transcript {
+  """
+  True when a model produced this text, so clients can show an AI label. False for browser SpeechRecognition captions.
+  """
+  aiGenerated: Boolean!
+
   """
   The recording was longer than 30 minutes and the rest was not transcribed
   """

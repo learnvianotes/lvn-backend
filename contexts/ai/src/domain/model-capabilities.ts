@@ -1,3 +1,4 @@
+import { isGeminiModel } from './gemini-policy'
 import type { AiProviderKind } from './provider'
 
 /**
@@ -118,7 +119,9 @@ export function classifyModel(id: string, provider: AiProviderKind): ClassifiedM
  */
 export function classifyModels(ids: readonly string[], provider: AiProviderKind): ConnectionModelLists {
   const all = [...new Set(ids.map((id) => id.trim()).filter(Boolean))].sort().map((id) => classifyModel(id, provider))
-  return { all, pickers: MODEL_USES.map((use) => ({ use, models: all.filter((model) => model.supports.includes(use)) })) }
+  // Gemini stays on the full list so an old connection can still be read. No picker offers it.
+  const offered = provider === 'GEMINI' ? [] : all.filter((model) => !isGeminiModel(model.id))
+  return { all, pickers: MODEL_USES.map((use) => ({ use, models: offered.filter((model) => model.supports.includes(use)) })) }
 }
 
 /** Whisper and *-transcribe (not a realtime or live model) use POST /audio/transcriptions. Everything else that hears uses the chat call. */
@@ -178,6 +181,7 @@ const KIND_WORD: Record<AiModelKind, string> = {
  * use, so the admin sees which select it belongs in.
  */
 export function rejectionFor(model: string, provider: AiProviderKind, use: AiModelUse): string | null {
+  if (provider === 'GEMINI' || isGeminiModel(model)) return 'Gemini and Google Generative AI are not available.'
   const found = classifyModel(model, provider)
   if (found.supports.includes(use)) return null
   if (use === 'EMBEDDING' && found.kind === 'EMBEDDING') return `${model} cannot make the 768-number embeddings this app stores. ${NEED.EMBEDDING}`

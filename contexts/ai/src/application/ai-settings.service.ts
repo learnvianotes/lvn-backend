@@ -5,6 +5,7 @@ import { AUDIT, POLICY, type Audit, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
 import { presetOf, PROVIDER_PRESETS, ROUTABLE_TASKS } from '../domain/catalog'
+import { isGeminiModel, isGoogleGenerativeUrl } from '../domain/gemini-policy'
 import { ID_CARD_CHECK_TASK } from '../domain/id-card-route'
 import { classifyModels, rejectionFor, useForTask, type AiModelUse } from '../domain/model-capabilities'
 import { ProviderError, type AiProviderAdapter, type AiProviderKind } from '../domain/provider'
@@ -94,7 +95,7 @@ export class AiSettingsService {
       environment: { kind: this.environment?.name ?? null, chatModel: this.environment ? this.config.chatModel : null, embedModel: this.environment ? this.config.embedModel : null },
       routes: routes.map((r) => ({ task: r.task, connectionId: r.connectionId, model: r.model, inputMicroUsdPerMTok: r.inputMicroUsdPerMTok, outputMicroUsdPerMTok: r.outputMicroUsdPerMTok })),
       tasks: ROUTABLE_TASKS,
-      presets: PROVIDER_PRESETS,
+      presets: PROVIDER_PRESETS.filter((preset) => preset.kind !== 'GEMINI'),
       keysCanBeSaved: this.keys.available,
       spentThisMonthMicroUsd: spent,
       monthlyBudgetMicroUsd: this.config.monthlyBudgetMicroUsd,
@@ -128,6 +129,9 @@ export class AiSettingsService {
     const chatModel = trimmed(input.chatModel)
     const embedModel = trimmed(input.embedModel)
     for (const [field, model] of [['chatModel', chatModel], ['embedModel', embedModel]] as const) if (model && model.length > 200) throw Errors.validation('That model name is too long.', ['input', field])
+    if (input.kind === 'GEMINI' || isGoogleGenerativeUrl(baseUrl) || isGeminiModel(chatModel) || isGeminiModel(embedModel)) {
+      throw Errors.validation('Gemini and Google Generative AI are not available.', ['input', input.kind === 'GEMINI' ? 'kind' : isGoogleGenerativeUrl(baseUrl) ? 'baseUrl' : 'chatModel'])
+    }
     if (embedModel && !preset.canEmbed) throw Errors.validation(`${preset.name} has no embeddings: leave the embedding model empty.`, ['input', 'embedModel'])
     rejectUnlessSupported(chatModel, input.kind, 'CHAT', 'chatModel')
     rejectUnlessSupported(embedModel, input.kind, 'EMBEDDING', 'embedModel')
@@ -173,6 +177,9 @@ export class AiSettingsService {
     if (!model || model.length > 200) throw Errors.validation('Name the model that answers this task.', ['input', 'model'])
     const connection = input.connectionId ? await this.db.aiConnection.findUnique({ where: { id: input.connectionId } }) : null
     if (input.connectionId && !connection) throw Errors.notFound('That connection no longer exists.')
+    if (connection?.kind === 'GEMINI' || isGeminiModel(model) || isGoogleGenerativeUrl(connection?.baseUrl)) {
+      throw Errors.validation('Gemini and Google Generative AI are not available.', ['input', 'model'])
+    }
     if (input.task === ID_CARD_CHECK_TASK && connection && !connection.mayReceivePrivate) throw Errors.validation('ID cards can only go to a connection that may receive private data.', ['input', 'connectionId'])
     if (connection && input.task === 'EMBED' && !presetOf(connection.kind).canEmbed) throw Errors.validation(`${presetOf(connection.kind).name} has no embeddings.`, ['input', 'connectionId'])
     if (connection && input.task === 'TRANSCRIBE' && !presetOf(connection.kind).canHear) throw Errors.validation(`${presetOf(connection.kind).name} cannot hear recordings.`, ['input', 'connectionId'])

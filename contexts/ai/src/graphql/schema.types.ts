@@ -19,6 +19,8 @@ export interface AiAnswer {
   sources: Array<AiSource>
   /** FAILED: why, in words for the asker */
   error: string | null
+  /** True when this text was produced by a model, so clients can show an AI label. */
+  aiGenerated: boolean
   noteId: string | null
   doubtId: string | null
   createdAt: Date
@@ -40,6 +42,8 @@ export interface AiArtifact {
   changes: Array<AiChange> | null
   /** FAILED: why, in words for the person */
   error: string | null
+  /** True when this text was produced by a model, so clients can show an AI label. */
+  aiGenerated: boolean
   /** Made from the published version (the viewer is a reader) rather than the draft */
   fromPublishedVersion: boolean
   /** The note was longer than a task reads; its start was used */
@@ -145,6 +149,8 @@ export interface AiInsight {
   cards: Array<AiCard> | null
   /** Hidden by the owner: only they see it */
   hidden: boolean
+  /** True when this text was produced by a model, so clients can show an AI label. */
+  aiGenerated: boolean
   versionId: string
 }
 
@@ -192,6 +198,33 @@ export interface AiProviderPreset {
   chatModels: Array<string>
   embedModels: Array<string>
 }
+
+/** A report of one AI answer. context is the task, status and note id. The answer text is not here. */
+export interface AiReport {
+  id: string
+  reporterId: string
+  responseId: string
+  /** ANSWER or ARTIFACT */
+  responseKind: string
+  reason: AiReportReason
+  comment: string | null
+  context: unknown
+  status: AiReportStatus
+  resolvedBy: string | null
+  resolvedAt: Date | null
+  createdAt: Date
+}
+
+export interface AiReportPayload {
+  report: AiReport | null
+  userErrors: Array<UserError>
+}
+
+/** Why someone reported a model answer */
+export type AiReportReason = 'INACCURATE' | 'INAPPROPRIATE' | 'HARMFUL' | 'PERSONAL_INFO' | 'OTHER'
+
+/** Where a report sits in the admin queue */
+export type AiReportStatus = 'OPEN' | 'RESOLVED' | 'DISMISSED'
 
 export interface AiSettings {
   connections: Array<AiConnection>
@@ -278,7 +311,7 @@ export interface AskAiPayload {
 /** Where Ask AI looks, always within what the asker may read */
 export type AskAiScope = 'THIS_NOTE' | 'MY_NOTES' | 'MY_PLACES' | 'PUBLIC' | 'WORKSPACE'
 
-export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED'
+export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED' | 'AI_UNAVAILABLE_FOR_MINOR'
 
 export interface KeepAiCardsInput {
   artifactId: string
@@ -333,6 +366,18 @@ export interface MutationDeleteAiAnswerArgs {
 export interface MutationSetAiInsightHiddenArgs {
   id: string
   hidden: boolean
+}
+
+export interface MutationReportAiAnswerArgs {
+  input: ReportAiAnswerInput
+}
+
+export interface MutationResolveAiReportArgs {
+  id: string
+}
+
+export interface MutationDismissAiReportArgs {
+  id: string
 }
 
 export interface MutationSaveAiConnectionArgs {
@@ -399,6 +444,8 @@ export interface NotesFromTranscript {
   noteId: string
   title: string
   summary: string
+  /** True when this text was produced by a model, so clients can show an AI label. */
+  aiGenerated: boolean
 }
 
 export interface NotesFromTranscriptPayload {
@@ -421,6 +468,15 @@ export interface QueryMyAiAnswersArgs {
   doubtId?: string | null
 }
 
+export interface QueryAiReportsArgs {
+  status?: AiReportStatus | null
+  first?: number | null
+}
+
+export interface QueryAiReportArgs {
+  id: string
+}
+
 export interface QueryAiConnectionModelsArgs {
   input: AiConnectionIdInput
 }
@@ -431,6 +487,19 @@ export interface QueryAiArtifactArgs {
 
 export interface QueryVoiceCaptureArgs {
   input: VoiceCaptureInput
+}
+
+export interface ReportAiAnswerInput {
+  responseId: string
+  /** ANSWER (Ask AI) or ARTIFACT (a task result, including a public study aid) */
+  responseKind: string
+  reason: AiReportReason
+  comment?: string | null
+}
+
+export interface ReportAiAnswerPayload {
+  reportId: string | null
+  userErrors: Array<UserError>
 }
 
 export interface RunAiTaskInput {
@@ -492,6 +561,8 @@ export interface Transcript {
   text: string
   /** The recording was longer than 30 minutes and the rest was not transcribed */
   cut: boolean
+  /** True when a model produced this text, so clients can show an AI label. False for browser SpeechRecognition captions. */
+  aiGenerated: boolean
 }
 
 export interface TranscriptPayload {

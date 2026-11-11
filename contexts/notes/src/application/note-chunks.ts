@@ -42,7 +42,7 @@ export class NoteChunks implements OnModuleInit {
 
   /** The note's chunks for its current published version: made, kept (already there for this model) or removed. */
   async embedNote(noteId: string): Promise<'made' | 'kept' | 'removed' | 'off'> {
-    const note = await this.db.note.findUnique({ where: { id: noteId }, select: { title: true, visibility: true, publishedVersion: { select: { id: true, title: true, cards: true } } } })
+    const note = await this.db.note.findUnique({ where: { id: noteId }, select: { title: true, visibility: true, ownerId: true, publishedVersion: { select: { id: true, title: true, cards: true } } } })
     if (!note?.publishedVersion) {
       await this.db.noteChunk.deleteMany({ where: { noteId } })
       return 'removed'
@@ -59,7 +59,7 @@ export class NoteChunks implements OnModuleInit {
     for (let i = 0; i < chunks.length; i += BATCH) {
       // The title goes with each chunk into the embedding, not into its stored text.
       const batch = chunks.slice(i, i + BATCH).map((c) => (title ? `${title}\n\n${c.text}` : c.text))
-      const out = await this.embeddings.embed(batch, { userId: null, private: note.visibility !== 'PUBLIC', task: 'EMBED' })
+      const out = await this.embeddings.embed(batch, { userId: null, subjectId: note.ownerId, private: note.visibility !== 'PUBLIC', task: 'EMBED' })
       vectors.push(...out.vectors)
       used = out.model
     }
@@ -190,10 +190,10 @@ export class PgvectorSemanticSearch implements SemanticSearch {
     @Inject(EMBEDDINGS) private readonly embeddings: Embeddings,
   ) {}
 
-  async similarNotes(text: string, limit: number): Promise<string[]> {
+  async similarNotes(text: string, limit: number, subjectId?: string | null): Promise<string[]> {
     if (!text.trim() || !(await this.embeddings.model())) return []
     try {
-      const { vectors } = await this.embeddings.embed([text], { userId: null, private: false, task: 'EMBED_QUERY' })
+      const { vectors } = await this.embeddings.embed([text], { userId: null, subjectId, private: false, task: 'EMBED_QUERY' })
       const vector = toVector(vectors[0]!)
       const rows = await this.db.$transaction(async (tx) => {
         await tx.$executeRawUnsafe('SET LOCAL hnsw.iterative_scan = relaxed_order')

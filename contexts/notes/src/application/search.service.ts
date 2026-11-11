@@ -165,7 +165,7 @@ export class SearchService {
    * the page is cut from the fused order, and the other kinds come only with the first page.
    */
   private async fused(found: Found, q: SearchQuery): Promise<Found> {
-    const similar = await this.semantic!.similarNotes(q.text, HYBRID_DEPTH)
+    const similar = await this.semantic!.similarNotes(q.text, HYBRID_DEPTH, q.viewerId)
     const filters = noteFiltersWhere(q.filters, q)
     const readable =
       similar.length && filters

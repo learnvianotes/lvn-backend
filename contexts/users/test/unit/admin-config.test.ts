@@ -42,6 +42,9 @@ describe('admin setting catalog', () => {
       'ai_public_pipeline',
       'ai_monthly_budget_micro_usd',
       'ai_timeout_ms',
+      'openai_zdr_approved',
+      'ai_child_safety_prompt',
+      'ai_report_max_per_hour',
       'search_hybrid',
       'search_timeout_ms',
       'account_minimum_age',
@@ -103,5 +106,16 @@ describe('plan pricing input', () => {
     ])
     const patch = parsePlanPatch({ priceMinor: 100 }, keys)
     expect(patch.ok && patch.value).toEqual({ priceMinor: 100 })
+  })
+
+  it('keeps Families AI settings off the environment', () => {
+    const zdr = settingDef('openai_zdr_approved')!
+    const prompt = settingDef('ai_child_safety_prompt')!
+    const reports = settingDef('ai_report_max_per_hour')!
+    expect(zdr).toMatchObject({ type: 'BOOLEAN', defaultValue: false, environmentFallback: false })
+    expect(prompt).toMatchObject({ type: 'STRING', defaultValue: '', environmentFallback: false })
+    expect(reports).toMatchObject({ type: 'INTEGER', defaultValue: 10, environmentFallback: false })
+    expect(parseSettingInput(zdr, 'true')).toEqual({ ok: true, value: true })
+    expect(parseSettingInput(prompt, '')).toEqual({ ok: true, value: '' })
   })
 })

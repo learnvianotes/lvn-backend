@@ -23,7 +23,7 @@ export class VerificationJobs implements OnApplicationBootstrap {
         const requestId = (data as { requestId: string }).requestId
         try {
           await this.checks.run(requestId, {
-            extract: async (bytes) => this.gateway.extractIdCard(bytes.toString('base64')),
+            extract: async (bytes, _mime, subjectId) => this.gateway.extractIdCard(bytes.toString('base64'), subjectId),
           })
         } catch (e) {
           this.log.warn(`id-card check failed for ${requestId}: ${(e as Error).name}`)

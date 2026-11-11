@@ -1,5 +1,5 @@
 import type { DynamicModule } from '@nestjs/common'
-import type { WorkerConfig } from '@lvn-backend/config'
+import { currentProcessEnv, type WorkerConfig } from '@lvn-backend/config'
 import { AiAdminStats, AiDailyLines, AiEmbeddings, AiExport, AiPageVision, AiPlanUsage, AiSkillsReader, AiModule, aiConfigFrom } from '@lvn-backend/ai'
 import { CommunicationModule, communicationConfigFrom, MailService, LiveNotifier } from '@lvn-backend/communication'
 import { CoreAdminStats, CoreExport, CoreModule, CorePlanUsage, coreConfigFrom, LearningEventsService, ModerationService, PlacesService, ResourceSearchFacade, WorkspacesService } from '@lvn-backend/core'
@@ -16,7 +16,7 @@ export function contextModules(config: WorkerConfig): DynamicModule[] {
     UsersModule.forRoot(usersConfigFrom(config)),
     NotesModule.forRoot(notesConfigFrom(config)),
     CoreModule.forRoot(coreConfigFrom(config)),
-    AiModule.forRoot(aiConfigFrom(config)),
+    AiModule.forRoot(aiConfigFrom(config, currentProcessEnv())),
     CommunicationModule.forRoot(communicationConfigFrom(config)),
   ]
 }
