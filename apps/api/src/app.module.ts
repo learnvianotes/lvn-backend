@@ -14,6 +14,7 @@ import { buildRequestContext } from './graphql/request-context'
 import { SuspendedRefusals } from './graphql/suspended-refusals'
 import { GitHubWebhookController } from '@lvn-backend/core'
 import { HealthController } from './health/health.controller'
+import { MonitoringController, SENTRY_DSN } from './monitoring/monitoring.controller'
 
 export { TOKEN_AUDIENCE }
 
@@ -60,9 +61,13 @@ export class AppModule {
         }),
       ],
       // ADR-0078: GitHub App deliveries arrive here (404 until the App is configured).
-      controllers: [HealthController, GitHubWebhookController],
+      controllers: [HealthController, GitHubWebhookController, MonitoringController],
       // A suspended person's refused change says why (ADR-0053).
-      providers: [{ provide: APP_INTERCEPTOR, useClass: SuspendedRefusals }],
+      providers: [
+        { provide: APP_INTERCEPTOR, useClass: SuspendedRefusals },
+        { provide: AccessTokenVerifier, useValue: verifier },
+        { provide: SENTRY_DSN, useValue: config.SENTRY_DSN },
+      ],
     }
   }
 }

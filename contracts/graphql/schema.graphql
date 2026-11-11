@@ -2758,8 +2758,10 @@ enum ErrorCode {
   AGE_RESTRICTED
   AI_UNAVAILABLE_FOR_MINOR
   CONFLICT
+  FEATURE_UNAVAILABLE_FOR_MINOR
   FORBIDDEN
   INTERNAL
+  MINOR_PII_BLOCKED
   NOT_FOUND
   RATE_LIMITED
   UNAUTHENTICATED
@@ -3209,6 +3211,11 @@ type GuardianChildSummary {
   files: Int!
   notes: Int!
   noticeVersion: String!
+
+  """
+  The parent's choice for groups, classes, doubts, messages and public posts. It applies only while consentVerified is true and ageBand is under_13. Withdrawing consent clears it.
+  """
+  socialEnabled: Boolean!
 }
 
 type GuardianExportsPayload {
@@ -3738,6 +3745,11 @@ type Mutation {
   acceptTerms(input: AcceptTermsInput!): OkPayload!
 
   """
+  The signed-in person has seen the safety reminder. Later reads of safetyReminderRequired are false.
+  """
+  acknowledgeSafetyReminder: OkPayload!
+
+  """
   Platform admins. CONFLICT when the email is already listed. VALIDATION when the email is not usable.
   """
   addAccessAllowlistEntry(input: AddAccessAllowlistEntryInput!): AccessAllowlistPayload!
@@ -3964,6 +3976,11 @@ type Mutation {
 
   """The same archive the account can ask for. One a day."""
   guardianRequestDataExport(sessionToken: String!): DataExportPayload!
+
+  """
+  Turns social features on or off for an under-13 child. Refused until consent is verified. Ages 13 to 17 keep the usual restricted-minor rules and do not use this.
+  """
+  guardianSetSocialEnabled(enabled: Boolean!, sessionToken: String!): GuardianSummaryPayload!
 
   """
   Puts consent back to auto_unverified. Restricted-minor limits apply again. Suspends only when an admin requires consent for access.
@@ -7777,6 +7794,11 @@ type User {
   Viewer only: a minor without verified consent (§15.2) — no public publishing, no DMs
   """
   restrictedMinor: Boolean
+
+  """
+  Viewer only. True when this person is under 18, or has no known age, and has not acknowledged the safety reminder. Clients show it before the first use of social features.
+  """
+  safetyReminderRequired: Boolean
 
   """
   Viewer only (ADR-0100): ways this account can sign in. Null for anyone else, so account settings can list them.

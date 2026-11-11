@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/node'
 import type { ErrorEvent, NodeOptions } from '@sentry/node'
 import { logContext } from '../src/log-context'
-import { flushErrors, reportError, scrubEvent, setBackendErrorSink, startErrorReporting } from '../src/error-reporting'
+import { flushErrors, reportError, scrubEvent, setBackendErrorSink, setSentrySubjectPolicy, startErrorReporting } from '../src/error-reporting'
 
 type Envelope = [Record<string, unknown>, [{ type: string }, Record<string, unknown>][]]
 
@@ -27,6 +27,22 @@ describe('error reporting', () => {
     expect(out.request?.cookies).toBeUndefined()
     expect(out.request?.headers).toEqual({ 'user-agent': 'ua' })
     expect(JSON.stringify(out)).not.toContain('ada@college.edu')
+  })
+
+  it('drops user id, email, username and request IP for a minor or an unknown age', () => {
+    const event = {
+      user: { id: 'user-1', email: 'ada@college.edu', username: 'Ada', ip_address: '203.0.113.8' },
+      tags: { userId: 'user-1', email: 'ada@college.edu' },
+      request: { headers: { 'user-agent': 'ua', 'x-forwarded-for': '203.0.113.8' }, env: { REMOTE_ADDR: '203.0.113.8' }, ip: '203.0.113.8' },
+    }
+    const out = scrubEvent(structuredClone(event) as unknown as ErrorEvent, 'minor')
+    expect(out.user).toBeUndefined()
+    expect(out.tags?.userId).toBeUndefined()
+    expect(out.request?.headers).toEqual({ 'user-agent': 'ua' })
+    expect((out.request as { ip?: string; env?: unknown }).ip).toBeUndefined()
+    expect(JSON.stringify(out)).not.toContain('203.0.113.8')
+    expect(JSON.stringify(out)).not.toContain('ada@college.edu')
+    expect(scrubEvent(structuredClone(event) as unknown as ErrorEvent, 'adult').user).toEqual({ id: 'user-1' })
   })
 
   it('writes our error log when Sentry is off, with a scrubbed message and the user id', () => {
@@ -107,5 +123,29 @@ describe('reportError user id', () => {
     const event = events().at(-1)
     expect(event?.user).toEqual({ id: 'user-2' })
     expect(event?.tags).toMatchObject({ queue: 'file-scan', job: 'scan', userId: 'user-2' })
+  })
+
+  it('strips a minor and an unknown age, keeps an adult, and can drop minor events', async () => {
+    setSentrySubjectPolicy({
+      classify: (userId) => (userId === 'adult' ? 'adult' : 'minor'),
+      minorEventsEnabled: () => true,
+    })
+    reportError(new Error('minor failed'), { userId: 'minor' })
+    reportError(new Error('unknown failed'), { userId: 'unknown-age' })
+    reportError(new Error('adult failed'), { userId: 'adult' })
+    await flushErrors()
+    const last = events().slice(-3)
+    expect(last[0]?.user).toBeUndefined()
+    expect((last[0]?.tags as { userId?: string } | undefined)?.userId).toBeUndefined()
+    expect(last[1]?.user).toBeUndefined()
+    expect((last[1]?.tags as { userId?: string } | undefined)?.userId).toBeUndefined()
+    expect(last[2]?.user).toEqual({ id: 'adult' })
+
+    const before = events().length
+    setSentrySubjectPolicy({ classify: () => 'minor', minorEventsEnabled: () => false })
+    reportError(new Error('dropped'), { userId: 'minor' })
+    await flushErrors()
+    expect(events()).toHaveLength(before)
+    setSentrySubjectPolicy(null)
   })
 })

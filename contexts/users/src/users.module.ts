@@ -35,7 +35,7 @@ import { SocialService } from './application/social.service'
 import { SkillsImportService } from './application/skills-import.service'
 import { TeacherProfileService } from './application/teacher-profile.service'
 import { UsersService } from './application/users.service'
-import { AnalyticsService, BackendErrorSink } from './application/analytics.service'
+import { AnalyticsService, BackendErrorSink, SentrySubjectBinding } from './application/analytics.service'
 import { IdCardCheckService } from './application/id-card-check.service'
 import { VerificationService } from './application/verification.service'
 import { WelcomeEmailService } from './application/welcome-email.service'
@@ -99,6 +99,7 @@ export class UsersModule {
         IdCardCheckService,
         AnalyticsService,
         BackendErrorSink,
+        SentrySubjectBinding,
         VerificationService,
         PlatformSettingsStore,
         TermsVersionProvider,
@@ -152,7 +153,7 @@ export class UsersModule {
         AnalyticsResolver,
         AnalyticsOptOutResolver,
       ],
-      exports: [PolicyService, EntitlementService, UsersMaintenance, DataExportService, SkillsImportService, AccountDeletionService, IdCardCheckService, WelcomeEmailService],
+      exports: [PolicyService, EntitlementService, UsersMaintenance, DataExportService, SkillsImportService, AccountDeletionService, IdCardCheckService, WelcomeEmailService, UsersService, PlatformSettingsStore],
     }
   }
 }

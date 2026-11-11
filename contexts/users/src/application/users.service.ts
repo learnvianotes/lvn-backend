@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common'
-import type { People, Person, SearchProfile } from '@lvn-backend/facades'
+import { FEATURE_UNAVAILABLE_FOR_MINOR_MESSAGE, MINOR_PII_BLOCKED_MESSAGE, applyMinorPii, applyMinorPiiValue, isCaptureUpload, minorPiiMode } from '@lvn/contracts/domain'
+import { Errors } from '@lvn-backend/errors'
+import type { FamiliesStanding, People, Person, SearchProfile } from '@lvn-backend/facades'
 import { $Enums, PrismaService } from '@lvn-backend/prisma-base'
+import { familiesStandingFrom, safetyReminderRequired, under13DevicesClosed, under13SocialClosed } from '../domain/families-standing'
 import { methodsFromConsentRows } from '../domain/guardian-consent'
 import { ageOf, dayReachingAge, isAiMinor, isRestrictedMinor } from '../domain/rules'
 import { AGE_FIELDS, atLeastAge, RESTRICTION_CONSENT_SELECT } from './age'
@@ -178,6 +181,7 @@ export class UsersService implements People {
       restrictedMinor: null,
       deletionScheduledFor: null,
       analyticsOptOut: null,
+      safetyReminderRequired: null,
     }
   }
 
@@ -216,6 +220,7 @@ export class UsersService implements People {
       restrictedMinor: null,
       deletionScheduledFor: null,
       analyticsOptOut: null,
+      safetyReminderRequired: null,
     }))
   }
 
@@ -260,6 +265,101 @@ export class UsersService implements People {
       restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u), new Date(), this.settings.verificationSettings()),
       deletionScheduledFor: deletionDate(u.deletionRequestedAt, graceDaysForAge(ageOf(u), this.settings.minorPurgeWindowDays())),
       analyticsOptOut: u.analyticsOptOut,
+      safetyReminderRequired: safetyReminderRequired(await this.standingOf(u.id, u)),
     }
+  }
+
+  /** People facade (ADR-0112). Null when the account is gone. */
+  async familiesStanding(userId: string): Promise<FamiliesStanding | null> {
+    const user = await this.db.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { id: true, safetyReminderAcknowledgedAt: true, ...AGE_FIELDS },
+    })
+    if (!user) return null
+    return this.standingOf(user.id, user)
+  }
+
+  async assertDevicesOpen(userId: string): Promise<void> {
+    const standing = await this.familiesStanding(userId)
+    if (!standing) throw Errors.unauthenticated()
+    if (under13DevicesClosed(standing)) throw Errors.minorFeature(FEATURE_UNAVAILABLE_FOR_MINOR_MESSAGE)
+  }
+
+  async assertSocialOpen(userId: string): Promise<void> {
+    const standing = await this.familiesStanding(userId)
+    if (!standing) throw Errors.unauthenticated()
+    if (under13SocialClosed(standing)) throw Errors.minorFeature(FEATURE_UNAVAILABLE_FOR_MINOR_MESSAGE)
+  }
+
+  async assertCaptureAllowed(userId: string, purpose: string, mimeType: string): Promise<void> {
+    if (!isCaptureUpload(purpose, mimeType)) return
+    await this.assertDevicesOpen(userId)
+  }
+
+  async socialClosedIds(userIds: string[]): Promise<string[]> {
+    const ids = [...new Set(userIds)].filter(Boolean)
+    if (!ids.length) return []
+    const rows = await this.loadStandings(ids)
+    return rows.filter((row) => under13SocialClosed(row.standing)).map((row) => row.id)
+  }
+
+  async filterMinorText(userId: string, text: string): Promise<string> {
+    const standing = await this.familiesStanding(userId)
+    if (!standing?.minor) return text
+    const outcome = applyMinorPii(text, minorPiiMode(this.settings.string('minor_pii_filter_mode', 'block')))
+    if (outcome.blocked) throw Errors.minorPii(MINOR_PII_BLOCKED_MESSAGE)
+    return outcome.text
+  }
+
+  async filterMinorDoc(userId: string, doc: unknown): Promise<unknown> {
+    const standing = await this.familiesStanding(userId)
+    if (!standing?.minor) return doc
+    const outcome = applyMinorPiiValue(doc, minorPiiMode(this.settings.string('minor_pii_filter_mode', 'block')))
+    if (outcome.blocked) throw Errors.minorPii(MINOR_PII_BLOCKED_MESSAGE)
+    return outcome.value
+  }
+
+  async acknowledgeSafetyReminder(userId: string): Promise<void> {
+    await this.db.user.update({ where: { id: userId }, data: { safetyReminderAcknowledgedAt: new Date() } })
+  }
+
+  private async standingOf(userId: string, facts: { dateOfBirth: Date | null; declaredAge: number | null; ageDeclaredAt: Date | null; safetyReminderAcknowledgedAt?: Date | null }): Promise<FamiliesStanding> {
+    const [row] = await this.loadStandings([userId])
+    if (row) return row.standing
+    return familiesStandingFrom({
+      facts,
+      ageBand: null,
+      methods: [],
+      socialEnabled: false,
+      safetyReminderAcknowledgedAt: facts.safetyReminderAcknowledgedAt ?? null,
+      verification: this.settings.verificationSettings(),
+    })
+  }
+
+  private async loadStandings(userIds: string[]): Promise<{ id: string; standing: FamiliesStanding }[]> {
+    const users = await this.db.user.findMany({
+      where: { id: { in: userIds }, deletedAt: null },
+      select: {
+        id: true,
+        safetyReminderAcknowledgedAt: true,
+        ...AGE_FIELDS,
+        consents: { where: { kind: 'GUARDIAN' as const }, select: { kind: true }, take: 1 },
+        guardianConsents: { orderBy: { recordedAt: 'desc' as const }, select: { method: true, verifiedAt: true, ageBand: true, socialEnabled: true } },
+      },
+    })
+    return users.map((user) => {
+      const latest = user.guardianConsents[0]
+      return {
+        id: user.id,
+        standing: familiesStandingFrom({
+          facts: user,
+          ageBand: latest?.ageBand ?? null,
+          methods: methodsFromConsentRows(user),
+          socialEnabled: latest?.socialEnabled === true,
+          safetyReminderAcknowledgedAt: user.safetyReminderAcknowledgedAt,
+          verification: this.settings.verificationSettings(),
+        }),
+      }
+    })
   }
 }

@@ -23,7 +23,9 @@ describe('createLogger', () => {
       user: { declaredAge: 53 },
       req: { headers: { authorization: 'Bearer abc', cookie: 'lvn_rt=xyz', 'user-agent': 'jest' } },
     })
-    const text = JSON.stringify(lines()[0])
+    const logged = { ...lines()[0] }
+    delete logged.time
+    const text = JSON.stringify(logged)
     for (const secret of ['hunter2hunter2', 'r-123', '123456', '2004-05-01', '47', '53', 'Bearer abc', 'lvn_rt=xyz']) expect(text).not.toContain(secret)
     expect(lines()[0]).toMatchObject({ password: '[redacted]', input: { email: 'asha@example.com' }, req: { headers: { 'user-agent': 'jest' } } })
   })

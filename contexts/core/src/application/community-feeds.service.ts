@@ -36,10 +36,10 @@ export class CommunityFeedsService {
    * they read in the last two weeks. A child account's feed follows only what they or their school chose (ADR-0026).
    */
   async topicsOf(userId: string, now = new Date()): Promise<string[]> {
-    const [interests, exams, contact] = await Promise.all([this.people.interestTopicIds(userId), this.exams.list(userId, now), this.people.contactOf(userId)])
+    const [interests, exams, minor] = await Promise.all([this.people.interestTopicIds(userId), this.exams.list(userId, now), this.people.isMinorForAi(userId)])
     const examTopics = exams.filter((e) => !e.past).flatMap((e) => e.topics.map((t) => t.key)).filter((k) => k.startsWith('topic:')).map((k) => k.slice(6))
     let read: string[] = []
-    if (contact && !contact.restrictedMinor) {
+    if (!minor) {
       const rows = await this.db.learningDayTopic.findMany({ where: { userId, day: { gte: new Date(now.getTime() - 14 * DAY) }, topicKey: { startsWith: 'topic:' }, seconds: { gt: 0 } }, select: { topicKey: true, seconds: true } })
       const seconds = new Map<string, number>()
       for (const r of rows) seconds.set(r.topicKey.slice(6), (seconds.get(r.topicKey.slice(6)) ?? 0) + r.seconds)
@@ -52,7 +52,14 @@ export class CommunityFeedsService {
   async forYou(viewerId: string, first: number | null | undefined, after: string | null | undefined) {
     const size = pageSize(first, 20)
     const cursor = decodeCursor(after, 2) as [string, string] | null
-    const [topics, blocked] = await Promise.all([this.topicsOf(viewerId), this.people.blockedIds(viewerId)])
+    const before = cursor ? { at: new Date(cursor[0]), id: cursor[1] } : null
+    const blocked = await this.people.blockedIds(viewerId)
+    if (await this.people.isMinorForAi(viewerId)) {
+      const rows = await this.notes.recentPublicPage(viewerId, blocked, before, size + 1)
+      const items: CommunityItem[] = rows.slice(0, size).map((r) => ({ noteId: r.noteId, topicId: null, cursor: encodeCursor([r.at.toISOString(), r.noteId]) }))
+      return { items, hasNextPage: rows.length > size, basedOn: [] as string[] }
+    }
+    const topics = await this.topicsOf(viewerId)
     const rows = await this.notes.publicOnTopicsPage(viewerId, topics, blocked, cursor ? { at: new Date(cursor[0]), id: cursor[1] } : null, size + 1)
     const order = new Map(topics.map((t, i) => [t, i]))
     const items: CommunityItem[] = rows.slice(0, size).map((r) => ({

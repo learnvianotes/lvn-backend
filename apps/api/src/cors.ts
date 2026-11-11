@@ -19,17 +19,22 @@ export function isGraphqlPath(path: string): boolean {
   return path === '/graphql' || path.startsWith('/graphql/')
 }
 
+/** GraphQL and the browser Sentry tunnel. Health and webhooks stay without CORS. */
+export function isBrowserApiPath(path: string): boolean {
+  return isGraphqlPath(path) || path === '/monitoring'
+}
+
 /** One Origin header value, or undefined when the header is missing or not a single origin. */
 export function singleOrigin(value: string | string[] | undefined): string | undefined {
   const raw = Array.isArray(value) ? (value.length === 1 ? value[0] : undefined) : value
   return raw ? raw : undefined
 }
 
-/** CORS for `/graphql` and `/graphql/*` only. `/health/*`, `/webhooks/*` and everything else are left untouched. */
+/** CORS for `/graphql`, `/graphql/*` and `/monitoring`. `/health/*`, `/webhooks/*` and everything else are left untouched. */
 export function graphqlCors(allowedOrigins: readonly string[]) {
   const allowed = new Set(allowedOrigins)
   return (req: Request, res: Response, next: NextFunction): void => {
-    if (!isGraphqlPath(req.path)) {
+    if (!isBrowserApiPath(req.path)) {
       next()
       return
     }

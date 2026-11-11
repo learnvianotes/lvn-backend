@@ -799,7 +799,7 @@ export interface DomainReview {
 export type DomainReviewStatus = 'ACADEMIC_QUEUED' | 'NEEDS_REVIEW' | 'APPROVED' | 'REJECTED'
 
 /** Fixed error vocabulary (§6.2) */
-export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED' | 'AI_UNAVAILABLE_FOR_MINOR'
+export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED' | 'AI_UNAVAILABLE_FOR_MINOR' | 'FEATURE_UNAVAILABLE_FOR_MINOR' | 'MINOR_PII_BLOCKED'
 
 /** A public identifier a teacher claims, and how to prove it is theirs (ADR-0077) */
 export interface ExternalIdentity {
@@ -849,6 +849,8 @@ export interface GuardianChildSummary {
   consentMethod: string
   /** True only when the method currently lifts restricted-minor limits. email_plus needs the click and the admin setting. */
   consentVerified: boolean
+  /** The parent's choice for groups, classes, doubts, messages and public posts. It applies only while consentVerified is true and ageBand is under_13. Withdrawing consent clears it. */
+  socialEnabled: boolean
   accountStatus: string
   notes: number
   files: number
@@ -1051,6 +1053,11 @@ export interface MutationGuardianWithdrawConsentArgs {
 export interface MutationGuardianDeleteAccountArgs {
   sessionToken: string
   confirm: string
+}
+
+export interface MutationGuardianSetSocialEnabledArgs {
+  sessionToken: string
+  enabled: boolean
 }
 
 export interface MutationUpdateProfileArgs {
@@ -1816,6 +1823,8 @@ export interface User {
   institution?: Institution | null
   /** Viewer only: a minor without verified consent (§15.2) — no public publishing, no DMs */
   restrictedMinor?: boolean | null
+  /** Viewer only. True when this person is under 18, or has no known age, and has not acknowledged the safety reminder. Clients show it before the first use of social features. */
+  safetyReminderRequired?: boolean | null
   /** Viewer only: exact counts */
   followerCount?: number | null
   followingCount?: number | null

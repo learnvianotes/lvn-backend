@@ -4,7 +4,7 @@ import { LearningEventType, SERVER_LEARNING_EVENTS } from '@lvn/contracts/domain
 import { isTimeZone, LEARNING_LIMITS, learningEventInputSchema } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import type { Learning, ServerLearningEvent } from '@lvn-backend/facades'
+import { PEOPLE, type Learning, type People, type ServerLearningEvent } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
 import { RateLimiter } from '@lvn-backend/redis'
@@ -52,6 +52,7 @@ export class LearningEventsService implements Learning, OnModuleInit {
     private readonly limiter: RateLimiter,
     private readonly queues: Queues,
     @Inject(EVENT_BUS) private readonly events: EventBus,
+    @Inject(PEOPLE) private readonly people: People,
     @Inject(CORE_CONFIG) private readonly config: CoreConfig,
   ) {}
 
@@ -165,7 +166,8 @@ export class LearningEventsService implements Learning, OnModuleInit {
     })
     if (fresh.length) {
       await this.events.publish('LearningEventRecorded', { userId, eventIds: fresh })
-      if (this.config.analytics) await this.queues.queue(LEARNING_ANALYTICS_QUEUE).add('copy', { userId, eventIds: fresh })
+      // First-party days stay. PostHog does not receive a minor's or an unknown-age account's events.
+      if (this.config.analytics && !(await this.people.isMinorForAi(userId))) await this.queues.queue(LEARNING_ANALYTICS_QUEUE).add('copy', { userId, eventIds: fresh })
     }
     return fresh.length
   }
@@ -176,7 +178,7 @@ export class LearningEventsService implements Learning, OnModuleInit {
    */
   async copyToAnalytics(userId: string, eventIds: string[]): Promise<number> {
     const target = this.config.analytics
-    if (!target || !eventIds.length) return 0
+    if (!target || !eventIds.length || (await this.people.isMinorForAi(userId))) return 0
     const rows = await this.db.$queryRaw<{ id: string; type: string; entityType: string | null; durationMs: number | null; clientTs: Date; platform: string }[]>`
       SELECT "id", "type", "entityType", "durationMs", "clientTs", "platform" FROM "learning"."LearningEvent"
       WHERE "userId" = ${userId}::uuid AND "id" = ANY(${eventIds}::uuid[])`

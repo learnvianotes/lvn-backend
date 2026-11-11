@@ -17,8 +17,10 @@ export class FollowingFeedService {
 
   async page(viewerId: string, first: number | null | undefined, after: string | null | undefined) {
     const size = pageSize(first, 50)
+    await this.people.assertSocialOpen(viewerId)
     const [following, blocked] = await Promise.all([this.people.followingIds(viewerId), this.people.blockedIds(viewerId)])
-    const owners = following.filter((id) => !blocked.includes(id))
+    const closed = new Set(await this.people.socialClosedIds(following))
+    const owners = following.filter((id) => !blocked.includes(id) && !closed.has(id))
     if (!owners.length) return { rows: [], size }
     const cursor = decodeCursor(after, 2) as [string, string] | null
     const rows = await this.db.note.findMany({

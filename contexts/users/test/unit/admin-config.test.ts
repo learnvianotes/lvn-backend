@@ -58,6 +58,10 @@ describe('admin setting catalog', () => {
       'minor_purge_window_days',
       'public_notes_require_verification',
       'terms_version',
+      'sentry_minor_events_enabled',
+      'minor_pii_filter_mode',
+      'sentry_tunnel_max_bytes',
+      'sentry_tunnel_per_minute',
       'terms_published_versions',
     ])
   })

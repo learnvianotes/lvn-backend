@@ -100,18 +100,42 @@ export class RecommendationsService implements OnModuleInit {
     return people.length
   }
 
-  /** One person's rows, replaced in one go. */
+  /** One person's rows, replaced in one go. A minor, or an unknown age, gets popular and recent public notes only. */
   async compute(userId: string, now = new Date()): Promise<Item[]> {
+    if (await this.people.isMinorForAi(userId)) return this.replace(userId, await this.publicItems(userId), now)
     const topics = await this.topicItems(userId, now)
     const items = [...topics, ...(await this.noteItems(userId, now)), ...(await this.resourceItems(topics))]
     // One row per entity: the higher band wins (a note can be both to continue and popular).
+    return this.replace(userId, items, now)
+  }
+
+  /** Popular public notes, then recent ones. No exams, interests, or this person's events. */
+  private async publicItems(userId: string): Promise<Item[]> {
+    const pool = await this.notes.recentPublic(userId, 40)
+    if (!pool.length) return []
+    const readers = new Map(
+      (
+        await this.db.$queryRaw<{ noteId: string; n: bigint }[]>`
+          SELECT "entityId" AS "noteId", count(DISTINCT "userId") AS "n" FROM "learning"."LearningEvent"
+          WHERE "type" = 'NOTE_OPENED' AND "entityId" = ANY(${pool.map((note) => note.noteId)}) AND "serverTs" > ${new Date(Date.now() - 30 * 86_400_000)}
+          GROUP BY "entityId"`
+      ).map((row) => [row.noteId, Number(row.n)]),
+    )
+    return pool
+      .map((note, index) => ({ note, readers: readers.get(note.noteId) ?? 0, index }))
+      .sort((a, b) => b.readers - a.readers || a.index - b.index)
+      .slice(0, 8)
+      .map((row, i) => ({ kind: 'POPULAR_NOTE', entityId: row.note.noteId, score: 30 - i * 2, reason: row.readers > 0 ? 'Popular right now' : 'Recently published' }))
+  }
+
+  private async replace(userId: string, items: Item[], now: Date): Promise<Item[]> {
     const best = new Map<string, Item>()
     for (const i of items) if (!best.has(i.entityId) || best.get(i.entityId)!.score < i.score) best.set(i.entityId, i)
     const kept = [...best.values()].sort((a, b) => b.score - a.score).slice(0, PER_PERSON)
     const expiresAt = new Date(now.getTime() + LIFETIME_MS)
     await this.db.$transaction([
       this.db.recommendation.deleteMany({ where: { userId } }),
-      this.db.recommendation.createMany({ data: kept.map((i) => ({ userId, ...i, computedAt: now, expiresAt })) }),
+      ...(kept.length ? [this.db.recommendation.createMany({ data: kept.map((i) => ({ userId, ...i, computedAt: now, expiresAt })) })] : []),
     ])
     return kept
   }

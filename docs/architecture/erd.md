@@ -41,6 +41,7 @@ erDiagram
     date dateOfBirth "accounts before ADR-0104, or set by an admin"
     int declaredAge "whole years given at registration (ADR-0104)"
     timestamptz ageDeclaredAt "when declaredAge was given"
+    timestamptz safetyReminderAcknowledgedAt "when the minor acknowledged the safety reminder; null until then"
     timestamptz welcomeEmailSentAt "when the one welcome email was claimed"
     timestamptz institutionVerifiedAt
     enum globalRole "STUDENT | TEACHER | PLATFORM_ADMIN"
@@ -187,6 +188,7 @@ erDiagram
     timestamptz verifiedAt "set on confirm click; null until then"
     citext parentEmail "cleared on purge"
     text ageBand "under_13 | 13_15 | 16_17"
+    boolean socialEnabled "parent toggle; applies only when consent is verified and the band is under_13"
   }
   GuardianLink {
     uuid id PK

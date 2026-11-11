@@ -64,6 +64,8 @@ extend type User {
   institution: Institution
   "Viewer only: a minor without verified consent (§15.2) — no public publishing, no DMs"
   restrictedMinor: Boolean
+  "Viewer only. True when this person is under 18, or has no known age, and has not acknowledged the safety reminder. Clients show it before the first use of social features."
+  safetyReminderRequired: Boolean
 }
 
 "Firebase ID token from a Google sign-in; verified by the API and exchanged for an LVN session (ADR-0007)"
@@ -110,6 +112,8 @@ extend type Query {
 }
 
 extend type Mutation {
+  "The signed-in person has seen the safety reminder. Later reads of safetyReminderRequired are false."
+  acknowledgeSafetyReminder: OkPayload!
   "Platform admins. Turns Google sign-in on or off without a deploy. Does nothing until FIREBASE_PROJECT_ID is set."
   setGoogleSignInEnabled(input: SetGoogleSignInEnabledInput!): AuthSettingsPayload!
   signInWithGoogle(input: SignInWithGoogleInput!): AuthPayload!

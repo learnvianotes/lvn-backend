@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common'
 import { CollegeIdCardLimits, collegeIdFileName, isCollegeIdMimeType, UploadLimits } from '@lvn/contracts/domain'
 import { assertWithinPlan, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { ENTITLEMENTS, PLATFORM_SETTINGS, POLICY, type Entitlements, type FileParentKind, type FilePurposeKind, type Files, type FileSummary, type PlatformSettings, type Policy } from '@lvn-backend/facades'
+import { ENTITLEMENTS, PEOPLE, PLATFORM_SETTINGS, POLICY, type Entitlements, type FileParentKind, type FilePurposeKind, type Files, type FileSummary, type People, type PlatformSettings, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { detectMimeType, Storage } from '@lvn-backend/storage'
@@ -91,6 +91,7 @@ export class FilesService implements Files {
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(NOTES_CONFIG) private readonly config: NotesConfig,
     @Inject(PLATFORM_SETTINGS) private readonly settings: PlatformSettings,
+    @Inject(PEOPLE) private readonly people: People,
   ) {}
 
   /** ADR-0097, ADR-0101: off until the environment or an admin turns uploads on. */
@@ -108,6 +109,9 @@ export class FilesService implements Files {
     const fileName = [...input.fileName].filter((c) => c !== '/' && c !== '\\' && c.charCodeAt(0) >= 0x20).join('').trim().slice(0, 255)
     if (!fileName) throw Errors.validation('Give the file a name.', field('fileName'))
     if (!rule.mimeTypes.includes(input.mimeType)) throw Errors.validation(`This kind of file is not accepted here (${rule.mimeTypes.join(', ')}).`, field('mimeType'))
+    // Camera stills are image/* and have no capture source, so they follow the usual image rules.
+    // Voice notes, and any audio or video MIME type, stay off for an under-13 account until consent is verified.
+    await this.people.assertCaptureAllowed(ownerId, input.purpose, input.mimeType)
     if (!Number.isInteger(input.sizeBytes) || input.sizeBytes < 1) throw Errors.validation('The file is empty.', field('sizeBytes'))
     const maxBytes = typeof rule.maxBytes === 'number' ? rule.maxBytes : rule.maxBytes(input.mimeType)
     if (input.sizeBytes > maxBytes) throw Errors.validation(`Files like this can be at most ${Math.round(maxBytes / 1024 ** 2)} MB.`, field('sizeBytes'))
@@ -167,6 +171,7 @@ export class FilesService implements Files {
   async completeUpload(ownerId: string, fileId: string): Promise<void> {
     const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
     if (!file || file.ownerId !== ownerId || file.deletedAt) throw Errors.notFound('Upload not found.')
+    await this.people.assertCaptureAllowed(ownerId, file.purpose, file.mimeType)
     // ADR-0099: a college ID card is finished by submitStudentIdVerification, which does not publish FileReady.
     if (file.purpose === 'COLLEGE_ID') throw Errors.validation('Send the college ID card with your verification request.')
     if (file.status === 'READY') return

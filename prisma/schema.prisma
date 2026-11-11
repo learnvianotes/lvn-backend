@@ -189,6 +189,8 @@ model User {
   suspensionReason        String?
   /// When true, usage analytics for this account are not stored (DPDP). Error reports from the app are stored without this id.
   analyticsOptOut         Boolean             @default(false)
+  /// When the person acknowledged the safety reminder (ADR-0112). Null until they do. Minors are asked before social features.
+  safetyReminderAcknowledgedAt DateTime?      @db.Timestamptz(3)
   /// AGE_BLOCKED has no session and is not public. BLOCKED and SUSPENDED are reversible admin holds.
   accountStatus           AccountStatus       @default(ACTIVE)
   /// Why the account is age-blocked, blocked, or suspended. Admins read it; it is not a public field.
@@ -467,6 +469,8 @@ model GuardianConsent {
   parentEmail   String?     @db.Citext
   /// under_13, 13_15 or 16_17
   ageBand       String
+  /// Parent allows groups, classes, doubts, messages and public posts. Ignored unless consent is verified, and only for under_13 (ADR-0112).
+  socialEnabled Boolean     @default(false)
 
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 

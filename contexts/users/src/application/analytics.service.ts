@@ -1,5 +1,5 @@
 import { Injectable, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common'
-import { setBackendErrorSink, type BackendErrorReport } from '@lvn-backend/observability'
+import { setBackendErrorSink, setSentrySubjectPolicy, type BackendErrorReport } from '@lvn-backend/observability'
 import { Errors } from '@lvn-backend/errors'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
@@ -7,6 +7,8 @@ import { scrubText } from '../domain/scrub-text'
 import { isUsageSessionId, normalizeAppVersion, sanitizeUsageProps } from '@lvn/contracts/validation'
 import { ERROR_RETENTION_DAYS, isUsageEventName, MAX_ANALYTICS_BATCH, USAGE_RETENTION_DAYS } from '../domain/usage-events'
 import { PolicyService } from './policy.service'
+import { PlatformSettingsStore } from './platform-settings.store'
+import { UsersService } from './users.service'
 
 const DAY_MS = 24 * 3600 * 1000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -27,24 +29,24 @@ export class AnalyticsService {
     private readonly db: PrismaService,
     private readonly policy: PolicyService,
     private readonly limiter: RateLimiter,
+    private readonly users: UsersService,
   ) {}
 
   async optOut(userId: string): Promise<boolean> {
-    // A restricted minor is never personalised, even if the stored flag was cleared (ADR-0108).
-    if (await this.restrictedMinor(userId)) return true
+    // A minor, including a verified one and an unknown age, is never sent to analytics (ADR-0112).
+    if (await this.minor(userId)) return true
     const user = await this.db.user.findUnique({ where: { id: userId }, select: { analyticsOptOut: true } })
     return user?.analyticsOptOut === true
   }
 
   async setOptOut(userId: string, optOut: boolean): Promise<void> {
-    const keepOff = !optOut && (await this.restrictedMinor(userId))
+    const keepOff = !optOut && (await this.minor(userId))
     await this.db.user.update({ where: { id: userId }, data: { analyticsOptOut: keepOff || optOut } })
   }
 
-  /** §15.2: under the digital-consent age, with no guardian consent, usage analytics stay off. */
-  private async restrictedMinor(userId: string): Promise<boolean> {
-    const actor = await this.policy.actor(userId)
-    return actor?.restrictedMinor === true
+  /** Under 18, or an age the account does not hold. Guardian consent does not turn this back on. */
+  private async minor(userId: string): Promise<boolean> {
+    return this.users.isMinorForAi(userId)
   }
 
   async ingest(userId: string, sessionId: string, input: IngestInput): Promise<void> {
@@ -62,7 +64,8 @@ export class AnalyticsService {
 
   /** Called by the process-wide sink. Must not throw into the request. */
   async recordBackendError(event: BackendErrorReport): Promise<void> {
-    const userId = event.userId && UUID.test(event.userId) ? event.userId : null
+    let userId = event.userId && UUID.test(event.userId) ? event.userId : null
+    if (userId && (await this.minor(userId).catch(() => true))) userId = null
     await this.db.errorEvent.create({
       data: {
         id: newId(),
@@ -230,6 +233,33 @@ export class BackendErrorSink implements OnModuleInit, OnModuleDestroy {
 
   onModuleDestroy(): void {
     setBackendErrorSink(null)
+  }
+}
+
+/** Tells Sentry which accounts are minors so their id, email, username and IP are dropped (ADR-0112). */
+@Injectable()
+export class SentrySubjectBinding implements OnModuleInit, OnModuleDestroy {
+  constructor(
+    private readonly users: UsersService,
+    private readonly settings: PlatformSettingsStore,
+  ) {}
+
+  onModuleInit(): void {
+    setSentrySubjectPolicy({
+      classify: async (userId) => {
+        try {
+          const standing = await this.users.familiesStanding(userId)
+          return standing && !standing.minor ? 'adult' : 'minor'
+        } catch {
+          return 'minor'
+        }
+      },
+      minorEventsEnabled: () => this.settings.boolean('sentry_minor_events_enabled', true),
+    })
+  }
+
+  onModuleDestroy(): void {
+    setSentrySubjectPolicy(null)
   }
 }
 

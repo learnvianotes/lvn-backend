@@ -3327,6 +3327,8 @@ enum ErrorCode
   UNDER_MINIMUM_AGE @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
   AGE_RESTRICTED @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
   AI_UNAVAILABLE_FOR_MINOR @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  FEATURE_UNAVAILABLE_FOR_MINOR @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  MINOR_PII_BLOCKED @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
 }
 
 type Exam
@@ -3851,6 +3853,11 @@ type GuardianChildSummary
   True only when the method currently lifts restricted-minor limits. email_plus needs the click and the admin setting.
   """
   consentVerified: Boolean!
+
+  """
+  The parent's choice for groups, classes, doubts, messages and public posts. It applies only while consentVerified is true and ageBand is under_13. Withdrawing consent clears it.
+  """
+  socialEnabled: Boolean!
   accountStatus: String!
   notes: Int!
   files: Int!
@@ -5075,6 +5082,11 @@ type Mutation
   guardianDeleteAccount(sessionToken: String!, confirm: String!): AccountDeletionPayload! @join__field(graph: USERS)
 
   """
+  Turns social features on or off for an under-13 child. Refused until consent is verified. Ages 13 to 17 keep the usual restricted-minor rules and do not use this.
+  """
+  guardianSetSocialEnabled(sessionToken: String!, enabled: Boolean!): GuardianSummaryPayload! @join__field(graph: USERS)
+
+  """
   Sends the notice again, with a new confirm link, to the stored parent address. Rate limited. Signed in.
   """
   resendGuardianConfirmLink: OkPayload! @join__field(graph: USERS)
@@ -5090,6 +5102,11 @@ type Mutation
 
   """Decline the old site's data, or remove it after it was attached"""
   declineLegacyData: OkPayload! @join__field(graph: USERS)
+
+  """
+  The signed-in person has seen the safety reminder. Later reads of safetyReminderRequired are false.
+  """
+  acknowledgeSafetyReminder: OkPayload! @join__field(graph: USERS)
 
   """
   Platform admins. Turns Google sign-in on or off without a deploy. Does nothing until FIREBASE_PROJECT_ID is set.
@@ -9170,6 +9187,11 @@ type User
   Viewer only: a minor without verified consent (§15.2) — no public publishing, no DMs
   """
   restrictedMinor: Boolean @join__field(graph: USERS)
+
+  """
+  Viewer only. True when this person is under 18, or has no known age, and has not acknowledged the safety reminder. Clients show it before the first use of social features.
+  """
+  safetyReminderRequired: Boolean @join__field(graph: USERS)
 
   """Viewer only: exact counts"""
   followerCount: Int @join__field(graph: USERS)
