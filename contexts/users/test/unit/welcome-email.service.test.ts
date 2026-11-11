@@ -176,7 +176,7 @@ describe('registration still completes when the welcome email cannot be queued',
       { check: async () => undefined } as never,
       { holdRegistration: async () => undefined } as never,
       { publish: async () => undefined } as never,
-      { minimumAge: () => 18 } as never,
+      { minimumAge: () => 18, consentAge: () => 18, guardianNoticeVersion: () => '2026-11-11' } as never,
       { email: async () => 'support@learnvianotes.in' } as never,
       { current: () => DEFAULT_TERMS_VERSION } as never,
       welcome,
@@ -188,7 +188,7 @@ describe('registration still completes when the welcome email cannot be queued',
     const { service, updates } = registration(async () => { throw new Error('redis down') })
     await expect(service.complete('user-1', { displayName: 'Asha Rao', age: 20, acceptedTermsVersion: DEFAULT_TERMS_VERSION })).resolves.toBeUndefined()
     expect(updates).toEqual([
-      { where: { id: 'user-1' }, data: { displayName: 'Asha Rao', declaredAge: 20, ageDeclaredAt: expect.any(Date), registrationCompletedAt: expect.any(Date) } },
+      { where: { id: 'user-1' }, data: { displayName: 'Asha Rao', declaredAge: 20, ageDeclaredAt: expect.any(Date), registrationCompletedAt: expect.any(Date), analyticsOptOut: false } },
     ])
   })
 
@@ -241,7 +241,7 @@ describe('sign-up still completes when the welcome email cannot be queued', () =
       { send: async () => undefined } as never,
       { publish: async () => undefined } as never,
       { webUrl: WEB } as never,
-      { minimumAge: () => 18 } as never,
+      { minimumAge: () => 18, consentAge: () => 18, guardianNoticeVersion: () => '2026-11-11' } as never,
       { assertAllowed: async () => undefined, roleFor: async () => 'STUDENT' } as never,
       { holdSignUp: async () => undefined } as never,
       { email: async () => 'support@learnvianotes.in' } as never,

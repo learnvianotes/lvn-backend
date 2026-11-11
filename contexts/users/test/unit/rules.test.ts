@@ -103,25 +103,31 @@ describe('latestDayYearsBefore', () => {
 describe('isRestrictedMinor (§15.2)', () => {
   const on = d('2026-10-08')
   it('restricts anyone under the consent age without guardian consent', () => {
-    expect(isRestrictedMinor(born('2009-01-01'), 18, false, on)).toBe(true)
-    expect(isRestrictedMinor(born('2009-01-01'), 16, false, on)).toBe(false)
-    expect(isRestrictedMinor(born('2000-01-01'), 18, false, on)).toBe(false)
+    expect(isRestrictedMinor(born('2009-01-01'), 18, [], on)).toBe(true)
+    expect(isRestrictedMinor(born('2009-01-01'), 16, [], on)).toBe(false)
+    expect(isRestrictedMinor(born('2000-01-01'), 18, [], on)).toBe(false)
   })
 
   it('restricts a declared minor until whole years since the declaration reach the consent age (ADR-0104)', () => {
-    expect(isRestrictedMinor(declared(17, '2026-01-15T00:00:00Z'), 18, false, on)).toBe(true)
-    expect(isRestrictedMinor(declared(17, '2025-10-08T09:00:00Z'), 18, false, on)).toBe(false)
-    expect(isRestrictedMinor(declared(17, '2025-10-09T00:00:00Z'), 18, false, on)).toBe(true)
-    expect(isRestrictedMinor(declared(30, '2026-10-08T00:00:00Z'), 18, false, on)).toBe(false)
+    expect(isRestrictedMinor(declared(17, '2026-01-15T00:00:00Z'), 18, [], on)).toBe(true)
+    expect(isRestrictedMinor(declared(17, '2025-10-08T09:00:00Z'), 18, [], on)).toBe(false)
+    expect(isRestrictedMinor(declared(17, '2025-10-09T00:00:00Z'), 18, [], on)).toBe(true)
+    expect(isRestrictedMinor(declared(30, '2026-10-08T00:00:00Z'), 18, [], on)).toBe(false)
   })
 
-  it('lifts the restriction with verified consent', () => {
-    expect(isRestrictedMinor(born('2015-01-01'), 18, true, on)).toBe(false)
-    expect(isRestrictedMinor(declared(11, '2026-10-01T00:00:00Z'), 18, true, on)).toBe(false)
+  it('lifts the restriction only for a verified consent method (ADR-0109)', () => {
+    const child = born('2015-01-01')
+    expect(isRestrictedMinor(child, 18, ['verified'], on)).toBe(false)
+    expect(isRestrictedMinor(declared(11, '2026-10-01T00:00:00Z'), 18, ['verified'], on)).toBe(false)
+    expect(isRestrictedMinor(child, 18, ['auto_unverified'], on)).toBe(true)
+    expect(isRestrictedMinor(child, 18, ['auto_unverified', 'verified'], on)).toBe(false)
+    expect(isRestrictedMinor(child, 18, ['not_a_method'], on)).toBe(true)
   })
 
   it('treats an unknown age as restricted', () => {
-    expect(isRestrictedMinor(unknown, 18, false, on)).toBe(true)
+    expect(isRestrictedMinor(unknown, 18, [], on)).toBe(true)
+    expect(isRestrictedMinor(unknown, 18, ['auto_unverified'], on)).toBe(true)
+    expect(isRestrictedMinor(unknown, 18, ['verified'], on)).toBe(false)
   })
 })
 

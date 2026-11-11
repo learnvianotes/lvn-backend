@@ -90,7 +90,8 @@ enum ConsentKind {
   TERMS
   PRIVACY
   PUBLIC_CONTENT_LICENCE
-  /// Verified parental or institutional consent for a minor (§15.2)
+  /// Verified parental or institutional consent for a minor (§15.2). Sign-up does not write this.
+  /// An auto_unverified notice lives on GuardianConsent and does not use this row (ADR-0109).
   GUARDIAN
 
   @@schema("users")
@@ -200,6 +201,8 @@ model User {
   emailTokens          EmailToken[]
   institutionalEmails  InstitutionalEmail[]
   consents             ConsentRecord[]
+  /// Auto-recorded guardian notice for a sign-up under 18. Not deleted when the account is purged (ADR-0109).
+  guardianConsents     GuardianConsent[]
   dataExports          DataExport[]
   memberships          Membership[]
   verificationRequests VerificationRequest[] @relation("requester")
@@ -437,6 +440,37 @@ model ConsentRecord {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, kind])
+  @@schema("users")
+}
+
+/// How a guardian notice was recorded. Only `verified` lifts restricted-minor limits.
+enum GuardianConsentMethod {
+  auto_unverified
+  verified
+
+  @@schema("users")
+}
+
+/// Guardian notice for a sign-up under 18 (ADR-0109). Linked by user id with no cascade delete, so purging
+/// the account (which anonymises the user row and deletes ConsentRecord) leaves this row. It holds no name,
+/// email or date of birth: method, notice version, when it was recorded, and the age band.
+/// Bands: under_13 (below 13; ages 5–12 while the floor is 5), 13_15, 16_17.
+model GuardianConsent {
+  id            String                 @id @db.Uuid
+  userId        String                 @db.Uuid
+  /// The existing consent type. Always GUARDIAN. This is not a verified ConsentRecord.
+  kind          ConsentKind            @default(GUARDIAN)
+  method        GuardianConsentMethod
+  noticeVersion String
+  recordedAt    DateTime               @default(now()) @db.Timestamptz(3)
+  /// under_13, 13_15 or 16_17
+  ageBand       String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([method, noticeVersion])
+  @@index([ageBand])
+  @@index([userId])
   @@schema("users")
 }
 

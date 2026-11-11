@@ -1,5 +1,6 @@
 /** One admin-editable application setting (ADR-0101). Ports, URLs and secrets stay in the environment. */
 import { DEFAULT_UNVERIFIED_GATED_ACTIONS, parseUnverifiedGateSetting, PUBLIC_NOTES_REQUIRE_VERIFICATION } from '@lvn/contracts/domain'
+import { ACCOUNT_MINIMUM_AGE_MAX, ACCOUNT_MINIMUM_AGE_MIN, DEFAULT_ACCOUNT_MINIMUM_AGE, DEFAULT_GUARDIAN_NOTICE_VERSION, GUARDIAN_NOTICE_VERSION_SETTING } from './guardian-consent'
 import { DEFAULT_PUBLISHED_TERMS_VERSIONS, DEFAULT_TERMS_VERSION } from './rules'
 import { isTermsVersion, parsePublishedTermsVersions, TERMS_PUBLISHED_VERSIONS_PATTERN, TERMS_PUBLISHED_VERSIONS_SETTING, TERMS_VERSION_PATTERN, TERMS_VERSION_SETTING } from './terms'
 
@@ -245,23 +246,34 @@ export const SETTING_CATALOG: SettingDef[] = [
     key: 'account_minimum_age',
     type: 'INTEGER',
     category: 'accounts',
-    description: 'Youngest age that may hold an account. From 8 to 21. An admin cannot set this below 8. Until an admin saves this, ACCOUNT_MINIMUM_AGE applies.',
-    defaultValue: 8,
-    environmentFallback: true,
+    description: `Youngest age that may sign up. From ${ACCOUNT_MINIMUM_AGE_MIN} to ${ACCOUNT_MINIMUM_AGE_MAX}. Default ${DEFAULT_ACCOUNT_MINIMUM_AGE}, so ages under 13 are blocked until an admin sets this to 5. An admin cannot set this below ${ACCOUNT_MINIMUM_AGE_MIN}. A missing row is ${DEFAULT_ACCOUNT_MINIMUM_AGE}. The environment does not set this.`,
+    defaultValue: DEFAULT_ACCOUNT_MINIMUM_AGE,
+    environmentFallback: false,
     nullable: false,
-    min: 8,
-    max: 21,
+    min: ACCOUNT_MINIMUM_AGE_MIN,
+    max: ACCOUNT_MINIMUM_AGE_MAX,
   },
   {
     key: 'digital_consent_age',
     type: 'INTEGER',
     category: 'accounts',
-    description: 'Below this age an account is a restricted minor. A guardian consent record lifts that if one exists; sign-up and sign-in never wait for one. It does not let anyone under account_minimum_age register. Until an admin saves this, DIGITAL_CONSENT_AGE applies.',
+    description: 'Below this age an account is a restricted minor. Only a verified guardian consent lifts that. An auto_unverified sign-up record does not. Sign-up and sign-in never wait for consent. It does not let anyone under account_minimum_age register. Until an admin saves this, DIGITAL_CONSENT_AGE applies.',
     defaultValue: 18,
     environmentFallback: true,
     nullable: false,
     min: 13,
     max: 21,
+  },
+  {
+    key: GUARDIAN_NOTICE_VERSION_SETTING,
+    type: 'STRING',
+    category: 'legal',
+    description: `Version (YYYY-MM-DD) of the guardian notice stored on an under-18 sign-up. New accounts record this value with method auto_unverified. Changing it does not ask existing accounts again. A missing row means ${DEFAULT_GUARDIAN_NOTICE_VERSION}. The environment does not set this.`,
+    defaultValue: DEFAULT_GUARDIAN_NOTICE_VERSION,
+    environmentFallback: false,
+    nullable: false,
+    maxLength: 10,
+    pattern: TERMS_VERSION_PATTERN,
   },
   {
     key: PUBLIC_NOTES_REQUIRE_VERIFICATION,
@@ -341,7 +353,7 @@ export function parseSettingInput(def: SettingDef, raw: string): { ok: true; val
     if (!parsed.ok) return parsed
     return { ok: true, value: [...parsed.actions].join(',') }
   }
-  if (def.key === TERMS_VERSION_SETTING) {
+  if (def.key === TERMS_VERSION_SETTING || def.key === GUARDIAN_NOTICE_VERSION_SETTING) {
     const value = raw.trim()
     if (!isTermsVersion(value)) return { ok: false, message: 'Use a real date as YYYY-MM-DD, such as 2026-11-03.' }
     return { ok: true, value }

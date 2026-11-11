@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common'
 import type { People, Person, SearchProfile } from '@lvn-backend/facades'
 import { $Enums, PrismaService } from '@lvn-backend/prisma-base'
+import { methodsFromConsentRows } from '../domain/guardian-consent'
 import { dayReachingAge, isRestrictedMinor } from '../domain/rules'
-import { AGE_FIELDS, atLeastAge } from './age'
+import { AGE_FIELDS, atLeastAge, RESTRICTION_CONSENT_SELECT } from './age'
 import type { SignInMethod, User } from '../graphql/schema.types'
 import { InstitutionalEmailService } from './institutional-email.service'
 import { PlatformSettingsStore } from './platform-settings.store'
@@ -93,9 +94,9 @@ export class UsersService implements People {
 
   /** People facade (ADR-0050): where communication writes to a person. */
   async contactOf(userId: string): Promise<{ email: string; displayName: string; restrictedMinor: boolean } | null> {
-    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null, accountStatus: PUBLIC_ACCOUNT }, select: { email: true, displayName: true, ...AGE_FIELDS, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } } })
+    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null, accountStatus: PUBLIC_ACCOUNT }, select: { email: true, displayName: true, ...AGE_FIELDS, ...RESTRICTION_CONSENT_SELECT } })
     if (!u) return null
-    return { email: u.email, displayName: u.displayName, restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), u.consents.length > 0) }
+    return { email: u.email, displayName: u.displayName, restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u)) }
   }
 
   /** People facade (ADR-0069): when the account was made; null for deleted accounts. */
@@ -230,7 +231,7 @@ export class UsersService implements People {
   async viewerProfile(userId: string): Promise<User | null> {
     const u = await this.db.user.findFirst({
       where: { id: userId, deletedAt: null },
-      include: { consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } },
+      include: RESTRICTION_CONSENT_SELECT,
     })
     if (!u || u.accountStatus === 'AGE_BLOCKED' || u.accountStatus === 'BLOCKED') return null
     const institutional = await this.institutional.statusOf(userId)
@@ -249,7 +250,7 @@ export class UsersService implements People {
       institutionalEmail: institutional.email,
       institutionalEmailStatus: institutional.status,
       institution: institutional.institution,
-      restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), u.consents.length > 0),
+      restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u)),
       deletionScheduledFor: deletionDate(u.deletionRequestedAt),
       analyticsOptOut: u.analyticsOptOut,
     }

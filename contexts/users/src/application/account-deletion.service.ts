@@ -101,6 +101,9 @@ export class AccountDeletionService {
       this.db.institutionalEmail.deleteMany({ where: { userId } }),
       this.db.membership.deleteMany({ where: { userId } }),
       this.db.consentRecord.deleteMany({ where: { userId } }),
+      // GuardianConsent stays. It has no name, email or date of birth, and the user row is anonymised below
+      // rather than deleted, so the link by user id survives (ADR-0109). Do not add a delete of that table.
+
       this.db.dataExport.deleteMany({ where: { userId } }),
       this.db.verificationRequest.deleteMany({ where: { userId } }),
       this.db.studentProfile.deleteMany({ where: { userId } }),

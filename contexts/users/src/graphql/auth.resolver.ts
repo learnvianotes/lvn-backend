@@ -43,6 +43,12 @@ export class AuthResolver {
     return this.terms.current()
   }
 
+  /** ADR-0109: the admin setting account_minimum_age, or 13 when no row is saved. */
+  @Query('accountMinimumAge')
+  accountMinimumAge(): number {
+    return this.settings.minimumAge()
+  }
+
   @Query('unverifiedGatedActions')
   unverifiedGatedActions(): string[] {
     return this.settings.unverifiedGatedActions()

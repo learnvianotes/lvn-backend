@@ -71,6 +71,11 @@ export class AppSettingsService {
     return this.store.boolean(PUBLIC_NOTES_REQUIRE_VERIFICATION, true)
   }
 
+  /** Public. Youngest age that may sign up. 13 when no admin has saved `account_minimum_age`. */
+  minimumAge(): number {
+    return this.store.minimumAge()
+  }
+
   /** Public to sign-in. True until an admin writes the row off, including when the row has never been written. */
   async googleSignInEnabled(): Promise<boolean> {
     return this.store.boolean('google_sign_in', true)

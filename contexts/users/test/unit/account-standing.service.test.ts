@@ -179,14 +179,16 @@ describe('RegistrationService age gate', () => {
             },
           },
           consentRecord: { createMany: () => Promise.resolve({ count: 3 }) },
+          guardianConsent: { create: () => Promise.resolve({}) },
           $transaction: async (ops: Promise<unknown>[]) => Promise.all(ops),
         } as never,
         { check: async () => undefined } as never,
         { holdRegistration: jest.fn(async () => undefined) } as never,
         { publish: async () => undefined } as never,
-        { minimumAge: () => minimum, consentAge: () => 18 } as never,
+        { minimumAge: () => minimum, consentAge: () => 18, guardianNoticeVersion: () => '2026-11-11' } as never,
         { email: async () => ADMIN_EMAIL } as never,
         { current: () => DEFAULT_TERMS_VERSION } as never,
+        { schedule: async () => undefined } as never,
       )
     updates.length = 0
     await open(8).complete('google-8', { displayName: 'Eight', age: 8, acceptedTermsVersion: DEFAULT_TERMS_VERSION })
@@ -204,6 +206,7 @@ describe('RegistrationService age gate', () => {
       { minimumAge: () => 8, consentAge: () => 18 } as never,
       { email: async () => ADMIN_EMAIL } as never,
       { current: () => DEFAULT_TERMS_VERSION } as never,
+      { schedule: async () => undefined } as never,
     )
     const err = await rejection(() => young.complete('google-7', { displayName: 'Seven', age: 7, acceptedTermsVersion: DEFAULT_TERMS_VERSION }))
     expect(err).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, field: ['input', 'age'] })
@@ -301,6 +304,7 @@ describe('AccountDeletionService.adminErase', () => {
     const deletedFiles: string[][] = []
     const revoked: string[] = []
     let anonymised: Record<string, unknown> | null = null
+    const purged: string[] = []
     const rest = new Proxy({}, { get: () => async () => ({}) })
     const db = {
       accountTombstone: { create: async ({ data }: { data: Record<string, unknown> }) => void tombstones.push(data) },
@@ -315,7 +319,12 @@ describe('AccountDeletionService.adminErase', () => {
       $transaction: async (ops: Promise<unknown>[]) => Promise.all(ops),
     }
     const service = new AccountDeletionService(
-      new Proxy(db, { get: (target, prop, receiver) => (prop in target ? Reflect.get(target, prop, receiver) : rest) }) as never,
+      new Proxy(db, {
+        get: (target, prop, receiver) => {
+          if (typeof prop === 'string' && !(prop in target)) purged.push(prop)
+          return prop in target ? Reflect.get(target, prop, receiver) : rest
+        },
+      }) as never,
       {} as never,
       { revokeAll: async (id: string) => void revoked.push(id) } as never,
       { record: async (entry: { action: string; actorId: string | null; metadata?: Record<string, unknown> }) => void audits.push(entry) } as never,
@@ -330,7 +339,9 @@ describe('AccountDeletionService.adminErase', () => {
     expect(tombstones[0]!.deletedAt).toBeInstanceOf(Date)
     expect(deletedFiles).toEqual([['export-1', 'doc-1', 'avatar-1']])
     expect(revoked).toEqual(['user-1'])
-    expect(anonymised).toMatchObject({ displayName: 'Deleted user', dateOfBirth: null, accountStatus: 'ACTIVE', statusReason: null, passwordHash: null })
+    expect(anonymised).toMatchObject({ displayName: 'Deleted user', dateOfBirth: null, declaredAge: null, ageDeclaredAt: null, accountStatus: 'ACTIVE', statusReason: null, passwordHash: null })
+    expect(purged).toContain('consentRecord')
+    expect(purged).not.toContain('guardianConsent')
     expect(String(anonymised!.email)).toMatch(/^deleted-user-1@deleted\.learnvianotes\.invalid$/)
     expect(audits.map((a) => a.action)).toEqual(['account.admin.deleted', 'account.deleted'])
     expect(audits[0]).toMatchObject({ actorId: 'admin-1', metadata: { reason: 'User asked', emailHash: hash } })

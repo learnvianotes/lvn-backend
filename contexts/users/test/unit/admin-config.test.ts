@@ -5,13 +5,19 @@ import { parsePlanDraft, parsePlanPatch } from '../../src/domain/plan-pricing'
 describe('admin setting catalog', () => {
   it('parses booleans, bounded integers and an empty cap', () => {
     const age = settingDef('account_minimum_age')!
-    expect(age).toMatchObject({ min: 8, max: 21, defaultValue: 8 })
-    expect(age.description).toContain('From 8 to 21')
-    expect(age.description).toContain('An admin cannot set this below 8')
-    expect(parseSettingInput(age, '8')).toEqual({ ok: true, value: 8 })
+    expect(age).toMatchObject({ min: 5, max: 21, defaultValue: 13, environmentFallback: false })
+    expect(age.description).toContain('From 5 to 21')
+    expect(age.description).toContain('An admin cannot set this below 5')
+    expect(age.description).toContain('sets this to 5')
+    expect(parseSettingInput(age, '13')).toEqual({ ok: true, value: 13 })
+    expect(parseSettingInput(age, '5')).toEqual({ ok: true, value: 5 })
     expect(parseSettingInput(age, '18')).toEqual({ ok: true, value: 18 })
-    expect(parseSettingInput(age, '7').ok).toBe(false)
+    expect(parseSettingInput(age, '4').ok).toBe(false)
     expect(parseSettingInput(age, '22').ok).toBe(false)
+    const notice = settingDef('guardian_notice_version')!
+    expect(notice).toMatchObject({ defaultValue: '2026-11-11', environmentFallback: false })
+    expect(parseSettingInput(notice, '2026-12-01')).toEqual({ ok: true, value: '2026-12-01' })
+    expect(parseSettingInput(notice, '2026-02-30').ok).toBe(false)
     expect(parseSettingInput(age, 'true').ok).toBe(false)
     const budget = settingDef('ai_monthly_budget_micro_usd')!
     expect(parseSettingInput(budget, '')).toEqual({ ok: true, value: null })
@@ -40,6 +46,7 @@ describe('admin setting catalog', () => {
       'search_timeout_ms',
       'account_minimum_age',
       'digital_consent_age',
+      'guardian_notice_version',
       'public_notes_require_verification',
       'terms_version',
       'terms_published_versions',

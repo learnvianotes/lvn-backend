@@ -133,7 +133,7 @@ describe('provider sign-in and registration', () => {
       expect(await db.user.count({ where: { email: `${uid}@gmail.com` } })).toBe(1)
     })
 
-    it.each([8, 17])('completes registration at %s as a restricted minor, keeps the session, and asks for no guardian consent', async (age) => {
+    it.each([13, 17])('completes registration at %s as a restricted minor, keeps the session, and records auto_unverified consent', async (age) => {
       const db = t.app.get(PrismaService)
       const uid = unique(`age${age}`)
       const res = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${uid}:${uid}@gmail.com:School Age` })
@@ -141,9 +141,10 @@ describe('provider sign-in and registration', () => {
       const id = s.user.id as string
       const done = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'School Age', age, acceptedTermsVersion: terms } }, s.accessToken)
       expect(done.data!.completeRegistration).toEqual({ ok: true, userErrors: [] })
-      const user = await db.user.findUniqueOrThrow({ where: { id }, include: { consents: true } })
+      const user = await db.user.findUniqueOrThrow({ where: { id }, include: { consents: true, guardianConsents: true } })
       expect(user).toMatchObject({ accountStatus: 'ACTIVE', declaredAge: age, analyticsOptOut: true, statusReason: null })
       expect(user.consents.map((c) => c.kind).sort()).toEqual(['PRIVACY', 'PUBLIC_CONTENT_LICENCE', 'TERMS'])
+      expect(user.guardianConsents).toEqual([expect.objectContaining({ method: 'auto_unverified', ageBand: age === 13 ? '13_15' : '16_17' })])
       expect((await t.gql<{ viewer: { restrictedMinor: boolean; registrationComplete: boolean } }>(VIEWER, {}, s.accessToken)).data!.viewer).toMatchObject({
         restrictedMinor: true,
         registrationComplete: true,

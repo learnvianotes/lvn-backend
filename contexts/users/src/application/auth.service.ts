@@ -5,6 +5,7 @@ import { MAILER, type Mailer } from '@lvn-backend/facades'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { RateLimiter, type Limit } from '@lvn-backend/redis'
 import { ageRestrictedError } from '../domain/account-status'
+import { guardianConsentFields } from '../domain/guardian-consent'
 import {
   displayNameSchema,
   emailSchema,
@@ -136,6 +137,8 @@ export class AuthService {
         await tx.consentRecord.createMany({
           data: (['TERMS', 'PRIVACY', 'PUBLIC_CONTENT_LICENCE'] as const).map((kind) => ({ id: newId(), userId: id, kind, version: termsVersion })),
         })
+        const guardian = guardianConsentFields(declared.value.declaredAge, this.settings.guardianNoticeVersion(), new Date())
+        if (guardian) await tx.guardianConsent.create({ data: { id: newId(), userId: id, ...guardian } })
       })
     } catch (e) {
       // Two sign-ups with the same email at once: the unique index decides.

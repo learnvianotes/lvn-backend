@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { hasVerifiedGuardianConsent } from './guardian-consent'
 
 /**
  * Built-in version of the Terms, Privacy Policy and public-content licence (§15.2), all three accepted together.
@@ -159,7 +160,7 @@ export function isBelowMinimumAge(age: number, minimumAge: number): boolean {
 
 /**
  * What a refused person reads (web and phone show it, and remember the refusal on the device for a day).
- * It does not name the cut-off (ADR-0091). Accounts from 8 up are allowed; this is only for an age below the floor.
+ * It does not name the cut-off (ADR-0091). The floor is the admin setting `account_minimum_age` (default 13).
  */
 export const UNDER_MINIMUM_AGE_MESSAGE = 'Sorry, you can’t create an account. You can still read the public notes without one.'
 
@@ -172,12 +173,15 @@ export function ageRestrictedMessage(supportEmail: string): string {
 }
 
 /**
- * A minor without verified guardian or institutional consent (§15.2): private notes and classroom content only, no
- * public publishing, no DMs, no behavioural recommendations. The age is `ageOf` (ADR-0104). An unknown age
- * (registration not finished) is treated as restricted.
+ * A minor without verified guardian consent (§15.2): private notes and classroom content only, no public
+ * publishing, no DMs, no behavioural recommendations. The age is `ageOf` (ADR-0104). An unknown age (registration
+ * not finished) is treated as restricted.
+ *
+ * `methods` are guardian consent methods (`auto_unverified`, `verified`, …). Only a verified method lifts the
+ * limits (ADR-0109). `auto_unverified`, recorded at sign-up, does not. An empty list does not.
  */
-export function isRestrictedMinor(facts: AgeFacts, consentAge: number, hasGuardianConsent: boolean, on = new Date()): boolean {
-  if (hasGuardianConsent) return false
+export function isRestrictedMinor(facts: AgeFacts, consentAge: number, methods: readonly (string | null | undefined)[] = [], on = new Date()): boolean {
+  if (hasVerifiedGuardianConsent(methods)) return false
   const age = ageOf(facts, on)
   return age === null || age < consentAge
 }
