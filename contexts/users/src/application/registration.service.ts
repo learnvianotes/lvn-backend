@@ -3,7 +3,8 @@ import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { ageRestrictedError } from '../domain/account-status'
-import { guardianConsentFields } from '../domain/guardian-consent'
+import { GUARDIAN_CONSENT_UNDER, guardianConsentFields } from '../domain/guardian-consent'
+import { requireParentEmail } from '../domain/parent-email'
 import { displayNameSchema, isBelowMinimumAge } from '../domain/rules'
 import { readDeclaredAge } from './age'
 import { AgeBlockService } from './age-block.service'
@@ -12,6 +13,7 @@ import { SupportContact } from './support-contact'
 import { InstitutionalEmailService } from './institutional-email.service'
 import { parseField } from './input'
 import { TermsVersionProvider } from './terms-version.provider'
+import { GuardianNoticeService } from './guardian-notice.service'
 import { WelcomeEmailService } from './welcome-email.service'
 
 export interface RegistrationDetails {
@@ -21,6 +23,8 @@ export interface RegistrationDetails {
   /** Deprecated (ADR-0104): apps from before it send this instead of `age`. Ignored when `age` is sent. */
   dateOfBirth?: string | null
   institutionalEmail?: string | null
+  /** Required when the age is under 18 and the account is admitted. Stored on the guardian row, not as the child's email. */
+  parentEmail?: string | null
   acceptedTermsVersion: string
 }
 
@@ -41,10 +45,11 @@ export class RegistrationService {
     private readonly support: SupportContact,
     private readonly terms: TermsVersionProvider,
     private readonly welcome: WelcomeEmailService,
+    private readonly guardians?: GuardianNoticeService,
   ) {}
 
   async complete(userId: string, input: RegistrationDetails): Promise<void> {
-    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, select: { registrationCompletedAt: true } })
+    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, select: { registrationCompletedAt: true, email: true } })
     if (user.registrationCompletedAt) throw Errors.conflict('Your registration is already complete.')
     const displayName = parseField(displayNameSchema, input.displayName, 'displayName')
     // ADR-0104: the age typed in whole years, or the age today from an older app's date of birth. No date is stored.
@@ -60,7 +65,8 @@ export class RegistrationService {
       throw ageRestrictedError(await this.support.email(), ['input', declared.field])
     }
 
-    const guardian = guardianConsentFields(declared.value.declaredAge, this.settings.guardianNoticeVersion(), new Date())
+    const parentEmail = declared.value.declaredAge < GUARDIAN_CONSENT_UNDER ? requireParentEmail(user.email ?? '', input.parentEmail) : null
+    const guardian = parentEmail ? guardianConsentFields(declared.value.declaredAge, this.settings.guardianNoticeVersion(), new Date(), parentEmail) : null
     await this.db.$transaction([
       this.db.user.update({
         where: { id: userId },
@@ -80,6 +86,7 @@ export class RegistrationService {
     ])
     // After the profile is stored. A mail or Redis failure here does not undo it, and does not fail registration.
     await this.welcome.schedule(userId)
+    if (parentEmail) await this.guardians?.notify(userId)
     // A name and an age: people search may now find them, once past the consent age (ADR-0055).
     await this.events.publish('PersonChanged', { userId })
     if (input.institutionalEmail) await this.institutional.start(userId, input.institutionalEmail)

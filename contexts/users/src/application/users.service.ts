@@ -2,12 +2,12 @@ import { Injectable } from '@nestjs/common'
 import type { People, Person, SearchProfile } from '@lvn-backend/facades'
 import { $Enums, PrismaService } from '@lvn-backend/prisma-base'
 import { methodsFromConsentRows } from '../domain/guardian-consent'
-import { dayReachingAge, isRestrictedMinor } from '../domain/rules'
+import { ageOf, dayReachingAge, isRestrictedMinor } from '../domain/rules'
 import { AGE_FIELDS, atLeastAge, RESTRICTION_CONSENT_SELECT } from './age'
 import type { SignInMethod, User } from '../graphql/schema.types'
 import { InstitutionalEmailService } from './institutional-email.service'
 import { PlatformSettingsStore } from './platform-settings.store'
-import { deletionDate } from './account-deletion.service'
+import { deletionDate, graceDaysForAge } from './account-deletion.service'
 
 /** Age-blocked and admin-blocked accounts are not public and cannot be found by handle or email. */
 const PUBLIC_ACCOUNT = { notIn: [$Enums.AccountStatus.AGE_BLOCKED, $Enums.AccountStatus.BLOCKED] }
@@ -96,7 +96,7 @@ export class UsersService implements People {
   async contactOf(userId: string): Promise<{ email: string; displayName: string; restrictedMinor: boolean } | null> {
     const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null, accountStatus: PUBLIC_ACCOUNT }, select: { email: true, displayName: true, ...AGE_FIELDS, ...RESTRICTION_CONSENT_SELECT } })
     if (!u) return null
-    return { email: u.email, displayName: u.displayName, restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u)) }
+    return { email: u.email, displayName: u.displayName, restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u), new Date(), this.settings.verificationSettings()) }
   }
 
   /** People facade (ADR-0069): when the account was made; null for deleted accounts. */
@@ -250,8 +250,8 @@ export class UsersService implements People {
       institutionalEmail: institutional.email,
       institutionalEmailStatus: institutional.status,
       institution: institutional.institution,
-      restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u)),
-      deletionScheduledFor: deletionDate(u.deletionRequestedAt),
+      restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u), new Date(), this.settings.verificationSettings()),
+      deletionScheduledFor: deletionDate(u.deletionRequestedAt, graceDaysForAge(ageOf(u), this.settings.minorPurgeWindowDays())),
       analyticsOptOut: u.analyticsOptOut,
     }
   }

@@ -191,8 +191,8 @@ describe('RegistrationService age gate', () => {
         { schedule: async () => undefined } as never,
       )
     updates.length = 0
-    await open(8).complete('google-8', { displayName: 'Eight', age: 8, acceptedTermsVersion: DEFAULT_TERMS_VERSION })
-    await open(8).complete('google-17', { displayName: 'Seventeen', age: 17, acceptedTermsVersion: DEFAULT_TERMS_VERSION })
+    await open(8).complete('google-8', { displayName: 'Eight', age: 8, parentEmail: 'parent@example.com', acceptedTermsVersion: DEFAULT_TERMS_VERSION })
+    await open(8).complete('google-17', { displayName: 'Seventeen', age: 17, parentEmail: 'parent@example.com', acceptedTermsVersion: DEFAULT_TERMS_VERSION })
     expect(updates).toEqual([
       expect.objectContaining({ data: expect.objectContaining({ declaredAge: 8, analyticsOptOut: true }) }),
       expect.objectContaining({ data: expect.objectContaining({ declaredAge: 17, analyticsOptOut: true }) }),
@@ -314,6 +314,9 @@ describe('AccountDeletionService.adminErase', () => {
           anonymised = data
         },
       },
+      guardianConsent: { updateMany: async () => ({ count: 0 }) },
+      guardianLink: { deleteMany: async () => ({}) },
+      firebaseInstallation: { deleteMany: async () => ({}) },
       dataExport: { findMany: async () => [{ fileId: 'export-1' }], deleteMany: async () => ({}) },
       verificationRequest: { findMany: async () => [{ documentIds: ['doc-1'] }], deleteMany: async () => ({}) },
       $transaction: async (ops: Promise<unknown>[]) => Promise.all(ops),

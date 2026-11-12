@@ -124,6 +124,57 @@ export function WeeklyDigest({ displayName, lines, link, unsubscribeLink }: Mail
   )
 }
 
+export function GuardianNotice({ childName, noticeVersion, confirmLink, manageLink, collects, why, processors, expiresInHours, supportEmail }: MailTemplates['guardianNotice']) {
+  return (
+    <Layout preview={`${childName} created a LearnViaNotes account`}>
+      <Heading as="h1" style={heading}>A LearnViaNotes account was created</Heading>
+      <Text style={paragraph}>{childName} created a LearnViaNotes account and gave this address as a parent or guardian. This message says what the account collects and who handles it. Receiving it does not record your consent.</Text>
+      <Text style={paragraph}>What LearnViaNotes collects:</Text>
+      {collects.map((line) => (
+        <Text key={line} style={{ ...paragraph, margin: '0 0 6px' }}>• {line}</Text>
+      ))}
+      <Text style={paragraph}>Why: {why}</Text>
+      <Text style={paragraph}>Who processes it:</Text>
+      {processors.map((line) => (
+        <Text key={line} style={{ ...paragraph, margin: '0 0 6px' }}>• {line}</Text>
+      ))}
+      <Text style={paragraph}>Notice version {noticeVersion}.</Text>
+      {confirmLink ? (
+        <>
+          <Text style={paragraph}>To allow the account, confirm with the button. That is the step that records consent. If you do nothing, the account stays limited.</Text>
+          <Button href={confirmLink} style={button}>Confirm consent</Button>
+        </>
+      ) : null}
+      <Text style={paragraph}>To see a summary, download the data, withdraw consent or delete the account:</Text>
+      <Button href={manageLink} style={button}>Manage the account</Button>
+      <Text style={muted}>Each link works once and expires in {expiresInHours} hours. Questions? Write to {supportEmail}.</Text>
+    </Layout>
+  )
+}
+
+export function GuardianConsentConfirmed({ childName, manageLink, expiresInHours, supportEmail }: MailTemplates['guardianConsentConfirmed']) {
+  return (
+    <Layout preview={`You confirmed ${childName}'s LearnViaNotes account`}>
+      <Heading as="h1" style={heading}>You confirmed this account</Heading>
+      <Text style={paragraph}>You confirmed that {childName} may use LearnViaNotes. Consent was recorded when you clicked the link in the earlier message.</Text>
+      <Text style={paragraph}>You can withdraw that consent, or delete the account, from the manage page. Withdrawing consent returns the account to limited use.</Text>
+      <Button href={manageLink} style={button}>Manage the account</Button>
+      <Text style={muted}>This link works once and expires in {expiresInHours} hours. Questions? Write to {supportEmail}.</Text>
+    </Layout>
+  )
+}
+
+export function GuardianManageLink({ childName, manageLink, expiresInHours, supportEmail }: MailTemplates['guardianManageLink']) {
+  return (
+    <Layout preview={`Manage ${childName}'s LearnViaNotes account`}>
+      <Heading as="h1" style={heading}>Manage the account</Heading>
+      <Text style={paragraph}>Use this link to see a summary of {childName}&apos;s LearnViaNotes account, download the data, withdraw consent or delete the account.</Text>
+      <Button href={manageLink} style={button}>Manage the account</Button>
+      <Text style={muted}>The link works once and expires in {expiresInHours} hours. Questions? Write to {supportEmail}.</Text>
+    </Layout>
+  )
+}
+
 export function Welcome({ displayName, appLink, guideLink, lines }: MailTemplates['welcome']) {
   const contactEmail = useContext(MailContact)
   return (

@@ -1,5 +1,7 @@
+import { methodLiftsRestrictions, type GuardianVerificationSettings } from './guardian-verification'
+
 /**
- * Guardian consent recorded when someone under 18 signs up (ADR-0109).
+ * Guardian consent recorded when someone under 18 signs up (ADR-0109, ADR-0110).
  *
  * Age bands, stored on the row so a later re-consent can query them:
  * - `under_13`: sign-up age below 13. With the admin floor at 5 this is ages 5–12
@@ -9,19 +11,27 @@
  * - 18 or older: no row.
  *
  * `auto_unverified` is written at sign-up with no check of a parent. It does not lift
- * restricted-minor limits. Only `verified` does. A `ConsentRecord` of kind GUARDIAN is the
- * older verified-consent row (it has no method) and still lifts those limits. Sign-up does
- * not write that row.
+ * restricted-minor limits. `email_plus` is written only when the parent clicks the confirm
+ * link, and lifts limits while that method is enabled (ADR-0110). `verified` is the legacy
+ * method. A `ConsentRecord` of kind GUARDIAN is the older verified-consent row (it has no
+ * method) and still lifts those limits. Sign-up does not write that row.
+ *
+ * The parent email lives on this row, not on the child's account. Purge clears it and keeps
+ * the row.
  */
 
 /** Written for every admitted sign-up under 18. Not a verified consent. */
 export const GUARDIAN_CONSENT_AUTO_UNVERIFIED = 'auto_unverified'
 
 /**
- * The method a later verified-consent flow records. The only method that lifts public
- * publishing, direct messages, behavioural recommendations and usage analytics.
+ * The method a later verified-consent flow records. It lifts public publishing, direct
+ * messages, behavioural recommendations and usage analytics. `email_plus` does too, while
+ * its admin setting is on (ADR-0110).
  */
 export const GUARDIAN_CONSENT_VERIFIED = 'verified'
+
+/** Set when the parent clicks the confirm link. Not set because the email was sent or opened. */
+export const GUARDIAN_CONSENT_EMAIL_PLUS = 'email_plus'
 
 /** Sign-up ages under this get a guardian consent row. Not the admin minimum, and not `digital_consent_age`. */
 export const GUARDIAN_CONSENT_UNDER = 18
@@ -41,15 +51,24 @@ export const DEFAULT_GUARDIAN_NOTICE_VERSION = '2026-11-11'
 
 export type SignUpAgeBand = 'under_13' | '13_15' | '16_17'
 
-const VERIFIED_METHODS: ReadonlySet<string> = new Set([GUARDIAN_CONSENT_VERIFIED])
-
-/** True only for a verified consent method. `auto_unverified` and anything unknown are false. */
-export function guardianConsentLiftsRestrictions(method: string | null | undefined): boolean {
-  return method != null && VERIFIED_METHODS.has(method)
+/**
+ * True when this method lifts restricted-minor limits under the current admin settings.
+ * `auto_unverified` and anything unknown are false. `email_plus` counts only while its setting is on.
+ * The default matches the setting's default (on), so a caller that has not loaded settings yet does not
+ * treat a clicked confirm as unverified.
+ */
+export function guardianConsentLiftsRestrictions(
+  method: string | null | undefined,
+  settings: GuardianVerificationSettings = { emailPlusEnabled: true },
+): boolean {
+  return methodLiftsRestrictions(method, settings)
 }
 
-export function hasVerifiedGuardianConsent(methods: readonly (string | null | undefined)[]): boolean {
-  return methods.some((method) => guardianConsentLiftsRestrictions(method))
+export function hasVerifiedGuardianConsent(
+  methods: readonly (string | null | undefined)[],
+  settings: GuardianVerificationSettings = { emailPlusEnabled: true },
+): boolean {
+  return methods.some((method) => guardianConsentLiftsRestrictions(method, settings))
 }
 
 /**
@@ -58,10 +77,12 @@ export function hasVerifiedGuardianConsent(methods: readonly (string | null | un
  */
 export function methodsFromConsentRows(row: {
   consents?: readonly { kind?: string | null }[] | null
-  guardianConsents?: readonly { method: string }[] | null
+  guardianConsents?: readonly { method: string; verifiedAt?: Date | null }[] | null
 }): string[] {
   const legacy = (row.consents ?? []).some((consent) => consent.kind === 'GUARDIAN')
-  return [...(legacy ? [GUARDIAN_CONSENT_VERIFIED] : []), ...(row.guardianConsents ?? []).map((consent) => consent.method)]
+  // email_plus with no verifiedAt was never clicked. Sending or opening the email does not set it.
+  const methods = (row.guardianConsents ?? []).flatMap((consent) => (consent.method === GUARDIAN_CONSENT_EMAIL_PLUS && consent.verifiedAt == null ? [] : [consent.method]))
+  return [...(legacy ? [GUARDIAN_CONSENT_VERIFIED] : []), ...methods]
 }
 
 /** The band stored at sign-up, or null when the age is 18 or older (no guardian row). */
@@ -72,15 +93,19 @@ export function signUpAgeBand(age: number): SignUpAgeBand | null {
   return '16_17'
 }
 
-/** Fields for the guardian row, or null when this age does not get one. The caller supplies the id. */
-export function guardianConsentFields(age: number, noticeVersion: string, recordedAt: Date): {
+/**
+ * Fields for the guardian row, or null when this age does not get one. The caller supplies the id.
+ * `parentEmail` is the parent's address, already checked. It is not the child's login email.
+ */
+export function guardianConsentFields(age: number, noticeVersion: string, recordedAt: Date, parentEmail: string): {
   kind: 'GUARDIAN'
   method: typeof GUARDIAN_CONSENT_AUTO_UNVERIFIED
   noticeVersion: string
   recordedAt: Date
   ageBand: SignUpAgeBand
+  parentEmail: string
 } | null {
   const ageBand = signUpAgeBand(age)
   if (!ageBand) return null
-  return { kind: 'GUARDIAN', method: GUARDIAN_CONSENT_AUTO_UNVERIFIED, noticeVersion, recordedAt, ageBand }
+  return { kind: 'GUARDIAN', method: GUARDIAN_CONSENT_AUTO_UNVERIFIED, noticeVersion, recordedAt, ageBand, parentEmail }
 }

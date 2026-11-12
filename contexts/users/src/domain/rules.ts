@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { hasVerifiedGuardianConsent } from './guardian-consent'
+import type { GuardianVerificationSettings } from './guardian-verification'
 
 /**
  * Built-in version of the Terms, Privacy Policy and public-content licence (§15.2), all three accepted together.
@@ -177,11 +178,18 @@ export function ageRestrictedMessage(supportEmail: string): string {
  * publishing, no DMs, no behavioural recommendations. The age is `ageOf` (ADR-0104). An unknown age (registration
  * not finished) is treated as restricted.
  *
- * `methods` are guardian consent methods (`auto_unverified`, `verified`, …). Only a verified method lifts the
- * limits (ADR-0109). `auto_unverified`, recorded at sign-up, does not. An empty list does not.
+ * `methods` are guardian consent methods (`auto_unverified`, `email_plus`, `verified`, …). Only a method that
+ * currently counts as verified lifts the limits (ADR-0109, ADR-0110). `auto_unverified`, recorded at sign-up,
+ * does not. `email_plus` does only while its admin setting is on. An empty list does not.
  */
-export function isRestrictedMinor(facts: AgeFacts, consentAge: number, methods: readonly (string | null | undefined)[] = [], on = new Date()): boolean {
-  if (hasVerifiedGuardianConsent(methods)) return false
+export function isRestrictedMinor(
+  facts: AgeFacts,
+  consentAge: number,
+  methods: readonly (string | null | undefined)[] = [],
+  on = new Date(),
+  verification: GuardianVerificationSettings = { emailPlusEnabled: true },
+): boolean {
+  if (hasVerifiedGuardianConsent(methods, verification)) return false
   const age = ageOf(facts, on)
   return age === null || age < consentAge
 }

@@ -2,6 +2,21 @@ import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } f
 import type { PlatformSettings } from '@lvn-backend/facades'
 import { PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { DEFAULT_ACCOUNT_MINIMUM_AGE, DEFAULT_GUARDIAN_NOTICE_VERSION, GUARDIAN_NOTICE_VERSION_SETTING } from '../domain/guardian-consent'
+import {
+  DEFAULT_GUARDIAN_LINK_RESEND_PER_HOUR,
+  DEFAULT_GUARDIAN_LINK_TTL_HOURS,
+  DEFAULT_GUARDIAN_MANAGE_SESSION_MINUTES,
+  DEFAULT_MINOR_PURGE_WINDOW_DAYS,
+  GUARDIAN_CONSENT_REQUIRED_FOR_ACCESS_SETTING,
+  GUARDIAN_EMAIL_PLUS_ENABLED_SETTING,
+  GUARDIAN_LINK_RESEND_PER_HOUR_SETTING,
+  GUARDIAN_LINK_TTL_HOURS_SETTING,
+  GUARDIAN_MANAGE_SESSION_MINUTES_SETTING,
+  MINOR_PURGE_WINDOW_DAYS_MAX,
+  MINOR_PURGE_WINDOW_DAYS_MIN,
+  MINOR_PURGE_WINDOW_DAYS_SETTING,
+  type GuardianVerificationSettings,
+} from '../domain/guardian-verification'
 import { decodeSettingValue } from '../domain/setting-catalog'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 
@@ -59,6 +74,43 @@ export class PlatformSettingsStore implements OnModuleInit, OnModuleDestroy, Pla
   /** Notice version stored on a new under-18 guardian consent row. */
   guardianNoticeVersion(): string {
     return this.string(GUARDIAN_NOTICE_VERSION_SETTING, DEFAULT_GUARDIAN_NOTICE_VERSION) || DEFAULT_GUARDIAN_NOTICE_VERSION
+  }
+
+  /** Whether a clicked parent confirm link counts. On when no row is saved. */
+  emailPlusEnabled(): boolean {
+    return this.boolean(GUARDIAN_EMAIL_PLUS_ENABLED_SETTING, true)
+  }
+
+  verificationSettings(): GuardianVerificationSettings {
+    return { emailPlusEnabled: this.emailPlusEnabled() }
+  }
+
+  /** Withdrawal suspends the account only when an admin has turned this on. */
+  consentRequiredForAccess(): boolean {
+    return this.boolean(GUARDIAN_CONSENT_REQUIRED_FOR_ACCESS_SETTING, false)
+  }
+
+  guardianLinkTtlHours(): number {
+    return this.boundedInteger(GUARDIAN_LINK_TTL_HOURS_SETTING, DEFAULT_GUARDIAN_LINK_TTL_HOURS, 1, 336)
+  }
+
+  guardianManageSessionMinutes(): number {
+    return this.boundedInteger(GUARDIAN_MANAGE_SESSION_MINUTES_SETTING, DEFAULT_GUARDIAN_MANAGE_SESSION_MINUTES, 10, 1440)
+  }
+
+  guardianLinkResendPerHour(): number {
+    return this.boundedInteger(GUARDIAN_LINK_RESEND_PER_HOUR_SETTING, DEFAULT_GUARDIAN_LINK_RESEND_PER_HOUR, 1, 20)
+  }
+
+  /** Days before a minor's deletion is purged. 14 when no row is saved. Adults do not use this. */
+  minorPurgeWindowDays(): number {
+    return this.boundedInteger(MINOR_PURGE_WINDOW_DAYS_SETTING, DEFAULT_MINOR_PURGE_WINDOW_DAYS, MINOR_PURGE_WINDOW_DAYS_MIN, MINOR_PURGE_WINDOW_DAYS_MAX)
+  }
+
+  private boundedInteger(key: string, fallback: number, min: number, max: number): number {
+    const value = this.integer(key, fallback) ?? fallback
+    if (value < min || value > max) return fallback
+    return value
   }
 
   /** Age below which an account is a restricted minor. The environment applies until an admin saves it. */

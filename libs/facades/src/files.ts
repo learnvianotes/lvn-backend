@@ -50,6 +50,11 @@ export interface Files {
   /** Deletes the bytes and marks the rows DELETED (§8.2: the row stays as a record). */
   delete(fileIds: string[]): Promise<void>
   /**
+   * Deletes every object this owner still has in storage, including variant keys, and marks the rows DELETED.
+   * Idempotent: a second call finds nothing left to delete. Used when a minor's account is purged (ADR-0110).
+   */
+  purgeOwner(ownerId: string): Promise<{ objects: number }>
+  /**
    * Stores a file the server made (a data export, ADR-0018) as READY, in the restricted bucket when asked; it is deleted
    * after `expiresAt`. Returns its id.
    */

@@ -139,12 +139,13 @@ describe('provider sign-in and registration', () => {
       const res = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${uid}:${uid}@gmail.com:School Age` })
       const s = res.data!.signInWithGoogle.session!
       const id = s.user.id as string
-      const done = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'School Age', age, acceptedTermsVersion: terms } }, s.accessToken)
+      const done = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'School Age', age, parentEmail: `parent-${age}@example.com`, acceptedTermsVersion: terms } }, s.accessToken)
       expect(done.data!.completeRegistration).toEqual({ ok: true, userErrors: [] })
       const user = await db.user.findUniqueOrThrow({ where: { id }, include: { consents: true, guardianConsents: true } })
       expect(user).toMatchObject({ accountStatus: 'ACTIVE', declaredAge: age, analyticsOptOut: true, statusReason: null })
       expect(user.consents.map((c) => c.kind).sort()).toEqual(['PRIVACY', 'PUBLIC_CONTENT_LICENCE', 'TERMS'])
-      expect(user.guardianConsents).toEqual([expect.objectContaining({ method: 'auto_unverified', ageBand: age === 13 ? '13_15' : '16_17' })])
+      expect(user.email).not.toBe(`parent-${age}@example.com`)
+      expect(user.guardianConsents).toEqual([expect.objectContaining({ method: 'auto_unverified', ageBand: age === 13 ? '13_15' : '16_17', parentEmail: `parent-${age}@example.com`, verifiedAt: null })])
       expect((await t.gql<{ viewer: { restrictedMinor: boolean; registrationComplete: boolean } }>(VIEWER, {}, s.accessToken)).data!.viewer).toMatchObject({
         restrictedMinor: true,
         registrationComplete: true,

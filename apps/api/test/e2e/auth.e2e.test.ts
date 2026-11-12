@@ -184,7 +184,7 @@ describe('auth', () => {
     })
 
     it.each([13, 17])('lets a %s-year-old sign up as a restricted minor, records auto_unverified consent, and sign in again', async (age) => {
-      const input = signUpInput({ age, displayName: `Age ${age}` })
+      const input = signUpInput({ age, displayName: `Age ${age}`, parentEmail: `parent-${age}@example.com` })
       const res = await t.gql<SignUpResult>(SIGN_UP, { input })
       expect(res.data!.signUp.userErrors).toEqual([])
       const session = res.data!.signUp.session!
@@ -193,7 +193,8 @@ describe('auth', () => {
       expect(user).toMatchObject({ accountStatus: 'ACTIVE', declaredAge: age, dateOfBirth: null, analyticsOptOut: true, statusReason: null })
       expect(user.consents.map((c) => c.kind).sort()).toEqual(['PRIVACY', 'PUBLIC_CONTENT_LICENCE', 'TERMS'])
       expect(user.consents.some((c) => c.kind === 'GUARDIAN')).toBe(false)
-      expect(user.guardianConsents).toEqual([expect.objectContaining({ kind: 'GUARDIAN', method: 'auto_unverified', ageBand: age === 13 ? '13_15' : '16_17', noticeVersion: '2026-11-11' })])
+      expect(user.email).toBe(input.email)
+      expect(user.guardianConsents).toEqual([expect.objectContaining({ kind: 'GUARDIAN', method: 'auto_unverified', ageBand: age === 13 ? '13_15' : '16_17', noticeVersion: '2026-11-11', parentEmail: `parent-${age}@example.com`, verifiedAt: null })])
       const viewer = await t.gql<{ viewer: { restrictedMinor: boolean; analyticsOptOut: boolean } }>(
         '{ viewer { restrictedMinor analyticsOptOut } }',
         {},

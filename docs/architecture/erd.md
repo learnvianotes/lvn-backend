@@ -16,7 +16,9 @@ erDiagram
   User ||--o{ Membership : "belongs to"
   Organization ||--o{ Membership : has
   User ||--o{ ConsentRecord : accepts
-  User ||--o{ GuardianConsent : "auto notice, kept on purge (ADR-0109)"
+  User ||--o{ GuardianConsent : "auto notice, kept on purge (ADR-0109, ADR-0110)"
+  User ||--o{ GuardianLink : "confirm and manage links (ADR-0110)"
+  User ||--o{ FirebaseInstallation : "minor purge (ADR-0110)"
   User ||--o| InstitutionalEmail : "verifies (ADR-0017)"
   User ||--o{ VerificationRequest : "asks (ADR-0019)"
   User ||--o| StudentProfile : "ADR-0026"
@@ -179,10 +181,24 @@ erDiagram
     uuid id PK
     uuid userId FK "ON DELETE RESTRICT"
     enum kind "GUARDIAN"
-    enum method "auto_unverified | verified"
+    text method "auto_unverified | email_plus | verified | later id"
     text noticeVersion
     timestamptz recordedAt
+    timestamptz verifiedAt "set on confirm click; null until then"
+    citext parentEmail "cleared on purge"
     text ageBand "under_13 | 13_15 | 16_17"
+  }
+  GuardianLink {
+    uuid id PK
+    uuid userId FK "ON DELETE CASCADE"
+    enum purpose "CONFIRM | MANAGE | SESSION"
+    bytes tokenHash UK
+    timestamptz expiresAt
+    timestamptz usedAt
+  }
+  FirebaseInstallation {
+    text fid PK
+    uuid userId FK "ON DELETE CASCADE"
   }
   AuditLog {
     uuid id PK

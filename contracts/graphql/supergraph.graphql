@@ -2612,6 +2612,11 @@ input CompleteRegistrationInput
   """
   dateOfBirth: String @deprecated(reason: "Send age, in whole years. Ignored when age is sent.")
   institutionalEmail: String
+
+  """
+  Parent or guardian email. Required for an admitted registration under 18. Stored with the consent record, not as this account's email.
+  """
+  parentEmail: String
   acceptedTermsVersion: String!
 }
 
@@ -3755,6 +3760,60 @@ enum GroupType
   PROJECT @join__enumValue(graph: CORE)
 }
 
+"""
+What a parent sees. Counts and the consent record only: no email address and no note text.
+"""
+type GuardianChildSummary
+  @join__type(graph: USERS)
+{
+  displayName: String!
+  ageYears: Int
+
+  """under_13, 13_15 or 16_17, as recorded at sign-up."""
+  ageBand: String!
+  noticeVersion: String!
+
+  """
+  auto_unverified until the parent clicks confirm. email_plus after that click.
+  """
+  consentMethod: String!
+
+  """
+  True only when the method currently lifts restricted-minor limits. email_plus needs the click and the admin setting.
+  """
+  consentVerified: Boolean!
+  accountStatus: String!
+  notes: Int!
+  files: Int!
+  deletionScheduledFor: DateTime
+}
+
+type GuardianExportsPayload
+  @join__type(graph: USERS)
+{
+  exports: [DataExport!]
+  userErrors: [UserError!]!
+}
+
+type GuardianSessionPayload
+  @join__type(graph: USERS)
+{
+  """
+  Present this on the later parent calls until expiresAt. The manage link that produced it cannot be used again.
+  """
+  sessionToken: String
+  expiresAt: DateTime
+  summary: GuardianChildSummary
+  userErrors: [UserError!]!
+}
+
+type GuardianSummaryPayload
+  @join__type(graph: USERS)
+{
+  summary: GuardianChildSummary
+  userErrors: [UserError!]!
+}
+
 enum HighlightColor
   @join__type(graph: NOTES)
 {
@@ -4831,7 +4890,7 @@ type Mutation
   removeAccessAllowlistEntry(id: UUID!): OkPayload! @join__field(graph: USERS)
 
   """
-  Ask for your account to be deleted in 14 days, with your private notes and learning history; every other device is signed out. Public notes, posts and comments stay, by "Deleted user"
+  Ask for your account to be deleted after the grace period, with your private notes and learning history; every other device is signed out. Adults wait 14 days. A minor uses the admin purge window, which defaults to 14 days. Public notes, posts and comments stay, by "Deleted user"
   """
   requestAccountDeletion(input: RequestAccountDeletionInput!): AccountDeletionPayload! @join__field(graph: USERS)
 
@@ -4911,6 +4970,39 @@ type Mutation
   Ask for an archive of everything about you: notes as Markdown and JSON with their files, and your account data. One a day; you are emailed when it is ready
   """
   requestDataExport: DataExportPayload! @join__field(graph: USERS)
+
+  """
+  The parent clicked the confirm link. Receiving or opening the email does not call this. Sets method email_plus.
+  """
+  confirmGuardianConsent(token: String!): OkPayload! @join__field(graph: USERS)
+
+  """
+  One use of the manage link. Returns a session for the summary, export, withdrawal and deletion calls.
+  """
+  redeemGuardianManageLink(token: String!): GuardianSessionPayload! @join__field(graph: USERS)
+
+  """The same archive the account can ask for. One a day."""
+  guardianRequestDataExport(sessionToken: String!): DataExportPayload! @join__field(graph: USERS)
+
+  """
+  Puts consent back to auto_unverified. Restricted-minor limits apply again. Suspends only when an admin requires consent for access.
+  """
+  guardianWithdrawConsent(sessionToken: String!): GuardianSummaryPayload! @join__field(graph: USERS)
+
+  """
+  Schedules deletion. confirm must be the word DELETE. There is no child password.
+  """
+  guardianDeleteAccount(sessionToken: String!, confirm: String!): AccountDeletionPayload! @join__field(graph: USERS)
+
+  """
+  Sends the notice again, with a new confirm link, to the stored parent address. Rate limited. Signed in.
+  """
+  resendGuardianConfirmLink: OkPayload! @join__field(graph: USERS)
+
+  """
+  Sends a new manage link to the stored parent address. Rate limited. Signed in.
+  """
+  resendGuardianManageLink: OkPayload! @join__field(graph: USERS)
   updateProfile(input: UpdateProfileInput!): ProfilePayload! @join__field(graph: USERS)
 
   """Attach the old site's data to this account"""
@@ -6460,6 +6552,14 @@ type Query
   """Your latest data exports, newest first"""
   myDataExports: [DataExport!]! @join__field(graph: USERS)
 
+  """The child's summary for a live manage session."""
+  guardianChildSummary(sessionToken: String!): GuardianSummaryPayload! @join__field(graph: USERS)
+
+  """
+  Data exports already asked for on this account. A ready one includes a short-lived download link.
+  """
+  guardianDataExports(sessionToken: String!): GuardianExportsPayload! @join__field(graph: USERS)
+
   """
   Active plans, cheapest first. Works signed out; `current` is then false on every plan.
   """
@@ -7945,6 +8045,11 @@ input SignUpInput
   """
   dateOfBirth: String @deprecated(reason: "Send age, in whole years. Ignored when age is sent.")
   institutionalEmail: String
+
+  """
+  Parent or guardian email. Required for an admitted sign-up under 18. Stored with the consent record, not as this account's email.
+  """
+  parentEmail: String
   acceptedTermsVersion: String!
 }
 
