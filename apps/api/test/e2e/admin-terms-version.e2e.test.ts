@@ -69,11 +69,11 @@ describe('terms version managed by an admin', () => {
   })
 
   it('starts from the built-in version and its published list', async () => {
-    expect(await termsVersion()).toBe('2026-11-03')
-    expect(await status()).toEqual({ current: '2026-11-03', source: 'DEFAULT', publishedVersions: ['2026-10-08', '2026-11-03'], acceptedCurrent: null, acceptedOlder: null, lastChange: null })
+    expect(await termsVersion()).toBe('2026-11-12')
+    expect(await status()).toEqual({ current: '2026-11-12', source: 'DEFAULT', publishedVersions: ['2026-10-08', '2026-11-03', '2026-11-12'], acceptedCurrent: null, acceptedOlder: null, lastChange: null })
     const listed = (await t.gql<{ adminSettings: { key: string; category: string; value: string; overridden: boolean; constraints: { pattern: string | null } }[] }>(SETTINGS, {}, admin.token)).data!.adminSettings
-    expect(listed.find((s) => s.key === 'terms_version')).toMatchObject({ category: 'legal', value: '2026-11-03', overridden: false, constraints: { pattern: '^\\d{4}-\\d{2}-\\d{2}$' } })
-    expect(listed.find((s) => s.key === 'terms_published_versions')).toMatchObject({ category: 'legal', value: '2026-10-08,2026-11-03', overridden: false })
+    expect(listed.find((s) => s.key === 'terms_version')).toMatchObject({ category: 'legal', value: '2026-11-12', overridden: false, constraints: { pattern: '^\\d{4}-\\d{2}-\\d{2}$' } })
+    expect(listed.find((s) => s.key === 'terms_published_versions')).toMatchObject({ category: 'legal', value: '2026-10-08,2026-11-03,2026-11-12', overridden: false })
   })
 
   it('is platform-admin only', async () => {
@@ -84,7 +84,7 @@ describe('terms version managed by an admin', () => {
       expect((await t.gql(SET, { input: { key: 'terms_published_versions', value: '2026-11-03' } }, token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
       expect((await t.gql(RESET, { key: 'terms_version' }, token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     }
-    expect(await termsVersion()).toBe('2026-11-03')
+    expect(await termsVersion()).toBe('2026-11-12')
     expect(await termsAudits()).toEqual([])
   })
 
@@ -96,20 +96,20 @@ describe('terms version managed by an admin', () => {
     expect((await set('terms_version', 'next week')).userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'value'] })
     const dropped = await set('terms_published_versions', '2026-10-08')
     expect(dropped.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'value'] })
-    expect(dropped.userErrors[0]!.message).toMatch(/must include the terms version in effect \(2026-11-03\)/)
-    expect(await termsVersion()).toBe('2026-11-03')
+    expect(dropped.userErrors[0]!.message).toMatch(/must include the terms version in effect \(2026-11-12\)/)
+    expect(await termsVersion()).toBe('2026-11-12')
     expect(await termsAudits()).toEqual([])
   })
 
   it('switches the version: sign-up and acceptTerms follow it, sign-in stays open, and the change is audited', async () => {
-    // Someone who signed up under 2026-11-03.
-    const before = signUpInput('2026-11-03')
+    // Someone who signed up under the built-in version.
+    const before = signUpInput('2026-11-12')
     const first = (await t.gql<{ signUp: { session: { user: { id: string } } | null; userErrors: Err[] } }>(SIGN_UP, { input: before })).data!.signUp
     expect(first.userErrors).toEqual([])
     earlier = { id: first.session!.user.id, email: before.email }
 
     // The web publishes 2026-12-01; the operator lists it, then switches to it.
-    expect((await set('terms_published_versions', '2026-12-01,2026-10-08,2026-11-03')).setting).toEqual({ key: 'terms_published_versions', value: '2026-10-08,2026-11-03,2026-12-01', overridden: true })
+    expect((await set('terms_published_versions', '2026-12-01,2026-10-08,2026-11-03,2026-11-12')).setting).toEqual({ key: 'terms_published_versions', value: '2026-10-08,2026-11-03,2026-11-12,2026-12-01', overridden: true })
     expect(await set('terms_version', '2026-12-01')).toEqual({ setting: { key: 'terms_version', value: '2026-12-01', overridden: true }, userErrors: [] })
     expect(await termsVersion()).toBe('2026-12-01')
 
@@ -133,12 +133,12 @@ describe('terms version managed by an admin', () => {
 
     const audits = await termsAudits()
     expect(audits).toHaveLength(1)
-    expect(audits[0]).toMatchObject({ actorId: admin.id, action: 'settings.updated', metadata: { key: 'terms_version', value: '2026-12-01', previous: '2026-11-03' } })
-    expect(await db.auditLog.findFirst({ where: { action: 'settings.updated', metadata: { path: ['key'], equals: 'terms_published_versions' } } })).toMatchObject({ metadata: { value: '2026-10-08,2026-11-03,2026-12-01', previous: '2026-10-08,2026-11-03' } })
+    expect(audits[0]).toMatchObject({ actorId: admin.id, action: 'settings.updated', metadata: { key: 'terms_version', value: '2026-12-01', previous: '2026-11-12' } })
+    expect(await db.auditLog.findFirst({ where: { action: 'settings.updated', metadata: { path: ['key'], equals: 'terms_published_versions' } } })).toMatchObject({ metadata: { value: '2026-10-08,2026-11-03,2026-11-12,2026-12-01', previous: '2026-10-08,2026-11-03,2026-11-12' } })
 
     const now = await status()
-    expect(now).toMatchObject({ current: '2026-12-01', source: 'SETTING', publishedVersions: ['2026-10-08', '2026-11-03', '2026-12-01'] })
-    expect(now.lastChange).toEqual({ actorId: admin.id, actorDisplayName: 'Terms Admin', at: audits[0]!.createdAt.toISOString(), previous: '2026-11-03' })
+    expect(now).toMatchObject({ current: '2026-12-01', source: 'SETTING', publishedVersions: ['2026-10-08', '2026-11-03', '2026-11-12', '2026-12-01'] })
+    expect(now.lastChange).toEqual({ actorId: admin.id, actorDisplayName: 'Terms Admin', at: audits[0]!.createdAt.toISOString(), previous: '2026-11-12' })
   })
 
   it('reaches a second process when it re-reads its settings', async () => {
@@ -171,12 +171,12 @@ describe('terms version managed by an admin', () => {
     expect(blocked.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['key'] })
     expect(await termsVersion()).toBe('2026-12-01')
 
-    expect(await reset('terms_version')).toEqual({ setting: { key: 'terms_version', value: '2026-11-03', overridden: false }, userErrors: [] })
-    expect(await termsVersion()).toBe('2026-11-03')
+    expect(await reset('terms_version')).toEqual({ setting: { key: 'terms_version', value: '2026-11-12', overridden: false }, userErrors: [] })
+    expect(await termsVersion()).toBe('2026-11-12')
     const audits = await termsAudits()
-    expect(audits.at(-1)).toMatchObject({ actorId: admin.id, action: 'settings.reset', metadata: { key: 'terms_version', previous: '2026-12-01', value: '2026-11-03' } })
+    expect(audits.at(-1)).toMatchObject({ actorId: admin.id, action: 'settings.reset', metadata: { key: 'terms_version', previous: '2026-12-01', value: '2026-11-12' } })
     expect((await reset('terms_published_versions')).userErrors).toEqual([])
-    expect(await status()).toMatchObject({ current: '2026-11-03', source: 'DEFAULT', publishedVersions: ['2026-10-08', '2026-11-03'], lastChange: { actorId: admin.id, previous: '2026-12-01' } })
+    expect(await status()).toMatchObject({ current: '2026-11-12', source: 'DEFAULT', publishedVersions: ['2026-10-08', '2026-11-03', '2026-11-12'], lastChange: { actorId: admin.id, previous: '2026-12-01' } })
 
     // Sign-in is never gated on the terms: the earlier account (latest acceptance 2026-12-01) still signs in.
     const session = await signIn(earlier.email)

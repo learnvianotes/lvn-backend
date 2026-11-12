@@ -98,7 +98,7 @@ describe('security: roles', () => {
   it('makes every new account a student, whatever it sends', async () => {
     const res = await t.gql<{ signUp: { session: { user: { globalRole: string } } | null } }>(
       'mutation ($input: SignUpInput!) { signUp(input: $input) { session { user { globalRole } } } }',
-      { input: { email: 'new-teacher-claim@example.com', password: 'a long enough passphrase', displayName: 'Claims To Teach', age: 36, acceptedTermsVersion: '2026-11-03' } },
+      { input: { email: 'new-teacher-claim@example.com', password: 'a long enough passphrase', displayName: 'Claims To Teach', age: 36, acceptedTermsVersion: '2026-11-12' } },
     )
     expect(res.data?.signUp.session?.user.globalRole).toBe('STUDENT')
   })

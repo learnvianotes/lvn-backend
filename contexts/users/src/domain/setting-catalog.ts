@@ -290,7 +290,7 @@ export const SETTING_CATALOG: SettingDef[] = [
     key: 'account_minimum_age',
     type: 'INTEGER',
     category: 'accounts',
-    description: `Youngest age that may sign up. From ${ACCOUNT_MINIMUM_AGE_MIN} to ${ACCOUNT_MINIMUM_AGE_MAX}. Default ${DEFAULT_ACCOUNT_MINIMUM_AGE}, so ages under 13 are blocked until an admin sets this to 5. An admin cannot set this below ${ACCOUNT_MINIMUM_AGE_MIN}. A missing row is ${DEFAULT_ACCOUNT_MINIMUM_AGE}. The environment does not set this.`,
+    description: `Youngest age that may sign up. From ${ACCOUNT_MINIMUM_AGE_MIN} to ${ACCOUNT_MINIMUM_AGE_MAX}. Default ${DEFAULT_ACCOUNT_MINIMUM_AGE}. Ages under 13 cannot sign up. An admin cannot set this below ${ACCOUNT_MINIMUM_AGE_MIN}. A saved value below ${ACCOUNT_MINIMUM_AGE_MIN} is left as it is and read as ${ACCOUNT_MINIMUM_AGE_MIN}. A missing row is ${DEFAULT_ACCOUNT_MINIMUM_AGE}. The environment does not set this.`,
     defaultValue: DEFAULT_ACCOUNT_MINIMUM_AGE,
     environmentFallback: false,
     nullable: false,
@@ -503,7 +503,7 @@ export function parseSettingInput(def: SettingDef, raw: string): { ok: true; val
   }
   if (def.key === TERMS_VERSION_SETTING || def.key === GUARDIAN_NOTICE_VERSION_SETTING) {
     const value = raw.trim()
-    if (!isTermsVersion(value)) return { ok: false, message: 'Use a real date as YYYY-MM-DD, such as 2026-11-03.' }
+    if (!isTermsVersion(value)) return { ok: false, message: 'Use a real date as YYYY-MM-DD, such as 2026-11-12.' }
     return { ok: true, value }
   }
   if (def.key === TERMS_PUBLISHED_VERSIONS_SETTING) {

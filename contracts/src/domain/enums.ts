@@ -85,7 +85,7 @@ export const ErrorCode = {
   CONFLICT: 'CONFLICT', RATE_LIMITED: 'RATE_LIMITED', INTERNAL: 'INTERNAL',
   /** A service the request needs is off or out of budget for now (AI, ADR-0058); worth trying later */
   UNAVAILABLE: 'UNAVAILABLE',
-  /** Sign-up refused: the age given is below the admin setting account_minimum_age (ADR-0091, ADR-0109). Kept for older clients. */
+  /** Sign-up refused: the age given is below the sign-up floor, at least 13 (ADR-0091, ADR-0109, ADR-0113). Kept for older clients. */
   UNDER_MINIMUM_AGE: 'UNDER_MINIMUM_AGE',
   /** The account exists and is age-blocked. `userErrors[].supportEmail` is who to contact. */
   AGE_RESTRICTED: 'AGE_RESTRICTED',

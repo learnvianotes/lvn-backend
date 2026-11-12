@@ -148,10 +148,10 @@ describe('admin dashboard', () => {
     expect(byKey.get('account_minimum_age')).toMatchObject({
       value: '13',
       overridden: false,
-      description: expect.stringContaining('From 5 to 21'),
-      constraints: { min: 5, max: 21, nullable: false },
+      description: expect.stringContaining('From 13 to 21'),
+      constraints: { min: 13, max: 21, nullable: false },
     })
-    expect(byKey.get('account_minimum_age')!.description).toContain('An admin cannot set this below 5')
+    expect(byKey.get('account_minimum_age')!.description).toContain('An admin cannot set this below 13')
     expect(byKey.get('ai_monthly_budget_micro_usd')!.constraints.nullable).toBe(true)
 
     const off = await t.gql<{ updateAdminSetting: { setting: { value: string; overridden: boolean } | null; userErrors: Err[] } }>(SET, { input: { key: 'uploads_enabled', value: 'false' } }, admin.token)
@@ -159,15 +159,15 @@ describe('admin dashboard', () => {
     expect((await t.gql('{ uploadsEnabled }')).data).toEqual({ uploadsEnabled: false })
     expect(await db.auditLog.findFirst({ where: { action: 'settings.updated', actorId: admin.id } })).toMatchObject({ metadata: { key: 'uploads_enabled', value: 'false' } })
 
-    const young = await t.gql<{ updateAdminSetting: { setting: null; userErrors: Err[] } }>(SET, { input: { key: 'account_minimum_age', value: '4' } }, admin.token)
+    const young = await t.gql<{ updateAdminSetting: { setting: null; userErrors: Err[] } }>(SET, { input: { key: 'account_minimum_age', value: '12' } }, admin.token)
     expect(young.data!.updateAdminSetting.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'value'] })
-    const floor = await t.gql<{ updateAdminSetting: { userErrors: Err[] } }>(SET, { input: { key: 'account_minimum_age', value: '5' } }, admin.token)
+    const floor = await t.gql<{ updateAdminSetting: { userErrors: Err[] } }>(SET, { input: { key: 'account_minimum_age', value: '13' } }, admin.token)
     expect(floor.data!.updateAdminSetting.userErrors).toEqual([])
     const older = await t.gql<{ updateAdminSetting: { userErrors: Err[] } }>(SET, { input: { key: 'account_minimum_age', value: '21' } }, admin.token)
     expect(older.data!.updateAdminSetting.userErrors).toEqual([])
     const signUp = await t.gql<{ signUp: { session: { accessToken: string } | null; userErrors: Err[] } }>(
       `mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken } userErrors { code field } } }`,
-      { input: { email: `young-${newId().slice(0, 8)}@example.com`, password: 'a long passphrase for asha', displayName: 'Asha Rao', age: 20, acceptedTermsVersion: '2026-11-03' } },
+      { input: { email: `young-${newId().slice(0, 8)}@example.com`, password: 'a long passphrase for asha', displayName: 'Asha Rao', age: 20, acceptedTermsVersion: '2026-11-12' } },
     )
     expect(signUp.data!.signUp.userErrors[0]!.code).toBe('AGE_RESTRICTED')
     expect(signUp.data!.signUp.session).toBeNull()

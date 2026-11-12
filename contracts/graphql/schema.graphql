@@ -5269,7 +5269,7 @@ type Query {
   accessPolicy: AccessPolicy!
 
   """
-  Youngest whole-year age that may sign up. A platform admin changes it (account_minimum_age). Default 13. Ages under 13 stay blocked until an admin sets this to 5. Read it here instead of hard-coding a minimum.
+  Youngest whole-year age that may sign up. A platform admin changes it (account_minimum_age). Default 13. It cannot be set below 13, and a lower saved value is still enforced as 13. Ages under 13 cannot create an account. Read it here instead of hard-coding a minimum.
   """
   accountMinimumAge: Int!
   achievementSettings: AchievementSettings!

@@ -41,7 +41,7 @@ describe('terms settings input', () => {
 
   it('normalises the published list and refuses anything that is not a date', () => {
     const def = settingDef('terms_published_versions')!
-    expect(def.defaultValue).toBe('2026-10-08,2026-11-03')
+    expect(def.defaultValue).toBe('2026-10-08,2026-11-03,2026-11-12')
     expect(parseSettingInput(def, ' 2026-11-03, 2026-10-08,2026-11-03 ,')).toEqual({ ok: true, value: '2026-10-08,2026-11-03' })
     expect(parseSettingInput(def, '').ok).toBe(false)
     expect(parseSettingInput(def, '2026-10-08,soon').ok).toBe(false)
@@ -156,11 +156,11 @@ describe('TermsVersionProvider with the settings service', () => {
 
     const dropped = await rejection(() => h.settings.update('admin', 'terms_published_versions', '2026-10-08'))
     expect(dropped).toMatchObject({ code: ErrorCode.VALIDATION, field: ['input', 'value'] })
-    expect(dropped.message).toMatch(/must include the terms version in effect \(2026-11-03\)/)
+    expect(dropped.message).toMatch(/must include the terms version in effect \(2026-11-12\)/)
 
-    // Publish first, then switch.
-    await h.settings.update('admin', 'terms_published_versions', '2026-12-01, 2026-11-03,2026-10-08')
-    expect(h.terms.resolve().published).toEqual(['2026-10-08', '2026-11-03', '2026-12-01'])
+    // Publish first, then switch. The list has to keep the version in effect.
+    await h.settings.update('admin', 'terms_published_versions', '2026-12-01, 2026-11-12,2026-11-03,2026-10-08')
+    expect(h.terms.resolve().published).toEqual(['2026-10-08', '2026-11-03', '2026-11-12', '2026-12-01'])
     await h.settings.update('admin', 'terms_version', '2026-12-01')
     expect(h.terms.current()).toBe('2026-12-01')
 
