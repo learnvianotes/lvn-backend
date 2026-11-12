@@ -247,25 +247,24 @@ describe('parent email on an admitted sign-up under 18', () => {
     return { sign, created, guardians, notified, welcomed }
   }
 
-  it('stores the parent address on the consent row, keeps the child email, and still sends the welcome', async () => {
+  it('stores the parent address on the consent row for ages 13 to 17, keeps the child email, and still sends the welcome', async () => {
     const gate = auth()
-    await expect(gate.sign(10, PARENT)).resolves.toMatchObject({ status: 'created' })
+    await expect(gate.sign(14, PARENT)).resolves.toMatchObject({ status: 'created' })
     expect(gate.created[0]).toMatchObject({ email: CHILD })
-    expect(gate.guardians[0]).toMatchObject({ method: 'auto_unverified', parentEmail: PARENT, ageBand: 'under_13' })
+    expect(gate.guardians[0]).toMatchObject({ method: 'auto_unverified', parentEmail: PARENT, ageBand: '13_15' })
     expect(gate.notified).toEqual([expect.any(String)])
     expect(gate.welcomed).toHaveLength(1)
   })
 
-  it('rejects a missing, invalid, or same-as-child parent address, and stores nothing below the floor', async () => {
+  it('rejects a missing, invalid, or same-as-child parent address, and stores nothing under 13', async () => {
     const open = auth()
-    expect((await rejection(() => open.sign(12))).code).toBe(ErrorCode.VALIDATION)
-    expect((await rejection(() => open.sign(12, 'not-an-email'))).field).toEqual(['input', 'parentEmail'])
-    expect((await rejection(() => open.sign(12, ` ${CHILD.toUpperCase()} `))).message).toMatch(/not the account email/)
+    expect((await rejection(() => open.sign(14))).code).toBe(ErrorCode.VALIDATION)
+    expect((await rejection(() => open.sign(14, 'not-an-email'))).field).toEqual(['input', 'parentEmail'])
+    expect((await rejection(() => open.sign(14, ` ${CHILD.toUpperCase()} `))).message).toMatch(/not the account email/)
     expect(open.guardians).toEqual([])
-    const blocked = auth(13)
-    expect((await rejection(() => blocked.sign(12, PARENT))).code).toBe(ErrorCode.AGE_RESTRICTED)
-    expect(blocked.guardians).toEqual([])
-    expect(blocked.notified).toEqual([])
+    expect((await rejection(() => open.sign(12, PARENT))).code).toBe(ErrorCode.AGE_RESTRICTED)
+    expect(open.guardians).toEqual([])
+    expect(open.notified).toEqual([])
   })
 
   it('does not ask an adult for a parent email', async () => {
@@ -527,7 +526,7 @@ describe('minor purge deletes Firebase, FCM, installations and R2, and keeps the
 })
 
 describe('provider registration requires the parent email only after the floor', () => {
-  it('writes the parent address for an admitted 8-year-old and not for a blocked 4-year-old', async () => {
+  it('writes the parent address for an admitted 14-year-old and not for a blocked 12-year-old', async () => {
     const guardians: Record<string, unknown>[] = []
     const service = new RegistrationService(
       {
@@ -544,9 +543,9 @@ describe('provider registration requires the parent email only after the floor',
       { current: () => DEFAULT_TERMS_VERSION } as never,
       { schedule: async () => undefined } as never,
     )
-    await service.complete('google-8', { displayName: 'Eight', age: 8, parentEmail: PARENT, acceptedTermsVersion: DEFAULT_TERMS_VERSION })
-    expect(guardians[0]).toMatchObject({ parentEmail: PARENT, method: 'auto_unverified', ageBand: 'under_13' })
-    expect((await rejection(() => service.complete('google-4', { displayName: 'Four', age: 4, parentEmail: PARENT, acceptedTermsVersion: DEFAULT_TERMS_VERSION }))).code).toBe(ErrorCode.AGE_RESTRICTED)
+    await service.complete('google-14', { displayName: 'Fourteen', age: 14, parentEmail: PARENT, acceptedTermsVersion: DEFAULT_TERMS_VERSION })
+    expect(guardians[0]).toMatchObject({ parentEmail: PARENT, method: 'auto_unverified', ageBand: '13_15' })
+    expect((await rejection(() => service.complete('google-12', { displayName: 'Twelve', age: 12, parentEmail: PARENT, acceptedTermsVersion: DEFAULT_TERMS_VERSION }))).code).toBe(ErrorCode.AGE_RESTRICTED)
     expect(guardians).toHaveLength(1)
   })
 })

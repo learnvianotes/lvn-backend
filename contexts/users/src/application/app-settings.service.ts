@@ -71,7 +71,7 @@ export class AppSettingsService {
     return this.store.boolean(PUBLIC_NOTES_REQUIRE_VERIFICATION, true)
   }
 
-  /** Public. Youngest age that may sign up. 13 when no admin has saved `account_minimum_age`. */
+  /** Public. Youngest age that may sign up. At least 13. A saved value below 13 is read as 13 and is not rewritten. */
   minimumAge(): number {
     return this.store.minimumAge()
   }

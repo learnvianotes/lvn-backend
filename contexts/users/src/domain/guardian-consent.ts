@@ -4,8 +4,8 @@ import { methodLiftsRestrictions, type GuardianVerificationSettings } from './gu
  * Guardian consent recorded when someone under 18 signs up (ADR-0109, ADR-0110).
  *
  * Age bands, stored on the row so a later re-consent can query them:
- * - `under_13`: sign-up age below 13. With the admin floor at 5 this is ages 5–12
- *   (Google Play Families). One band, so every under-13 account is one query.
+ * - `under_13`: sign-up age below 13. New sign-ups are not admitted here (ADR-0113).
+ *   Rows already stored stay, so every existing under-13 account is still one query.
  * - `13_15`: 13, 14 or 15.
  * - `16_17`: 16 or 17.
  * - 18 or older: no row.
@@ -36,18 +36,33 @@ export const GUARDIAN_CONSENT_EMAIL_PLUS = 'email_plus'
 /** Sign-up ages under this get a guardian consent row. Not the admin minimum, and not `digital_consent_age`. */
 export const GUARDIAN_CONSENT_UNDER = 18
 
-/** Admin setting `account_minimum_age` when no row is saved. Under-13 sign-up stays off. */
+/** Admin setting `account_minimum_age` when no row is saved. Sign-up is 13+ only (ADR-0113). */
 export const DEFAULT_ACCOUNT_MINIMUM_AGE = 13
 
-/** Lowest value an admin may save. 5 admits ages 5–12. 4 cannot sign up. */
-export const ACCOUNT_MINIMUM_AGE_MIN = 5
+/**
+ * Lowest age that may sign up, and the lowest value an admin may save.
+ * 13 admits the 13–15 and 16–17 groups. 12 cannot sign up. The app stays out of the Families policy.
+ */
+export const ACCOUNT_MINIMUM_AGE_MIN = 13
 
 export const ACCOUNT_MINIMUM_AGE_MAX = 21
+
+/**
+ * The floor sign-up, registration, admin unblocking and `accountMinimumAge` actually use.
+ * A stored `account_minimum_age` below 13 is left in the database and read as 13.
+ * A stored value from 13 to 21 is kept, so an admin may still raise the floor.
+ * 0 used to mean "no minimum"; it is 13 now. The floor cannot be turned off.
+ */
+export function enforcedMinimumAge(configured: number): number {
+  if (!Number.isInteger(configured) || configured < ACCOUNT_MINIMUM_AGE_MIN) return ACCOUNT_MINIMUM_AGE_MIN
+  return configured > ACCOUNT_MINIMUM_AGE_MAX ? ACCOUNT_MINIMUM_AGE_MAX : configured
+}
 
 /** Admin setting `guardian_notice_version` when no row is saved. */
 export const GUARDIAN_NOTICE_VERSION_SETTING = 'guardian_notice_version'
 
-export const DEFAULT_GUARDIAN_NOTICE_VERSION = '2026-11-11'
+/** Parent notice recorded on a new under-18 sign-up. Matches the 13+ legal update. A saved row wins. */
+export const DEFAULT_GUARDIAN_NOTICE_VERSION = '2026-11-12'
 
 export type SignUpAgeBand = 'under_13' | '13_15' | '16_17'
 

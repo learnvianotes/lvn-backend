@@ -27,7 +27,7 @@ const signUpInput = (over: Record<string, unknown> = {}) => ({
   password: 'correct horse battery staple',
   displayName: 'Asha Rao',
   age: 22,
-  acceptedTermsVersion: '2026-11-03',
+  acceptedTermsVersion: '2026-11-12',
   ...over,
 })
 
@@ -194,7 +194,7 @@ describe('auth', () => {
       expect(user.consents.map((c) => c.kind).sort()).toEqual(['PRIVACY', 'PUBLIC_CONTENT_LICENCE', 'TERMS'])
       expect(user.consents.some((c) => c.kind === 'GUARDIAN')).toBe(false)
       expect(user.email).toBe(input.email)
-      expect(user.guardianConsents).toEqual([expect.objectContaining({ kind: 'GUARDIAN', method: 'auto_unverified', ageBand: age === 13 ? '13_15' : '16_17', noticeVersion: '2026-11-11', parentEmail: `parent-${age}@example.com`, verifiedAt: null })])
+      expect(user.guardianConsents).toEqual([expect.objectContaining({ kind: 'GUARDIAN', method: 'auto_unverified', ageBand: age === 13 ? '13_15' : '16_17', noticeVersion: '2026-11-12', parentEmail: `parent-${age}@example.com`, verifiedAt: null })])
       const viewer = await t.gql<{ viewer: { restrictedMinor: boolean; analyticsOptOut: boolean } }>(
         '{ viewer { restrictedMinor analyticsOptOut } }',
         {},
@@ -238,7 +238,7 @@ describe('auth', () => {
     })
 
     it('exposes the terms version new accounts must accept', async () => {
-      expect((await t.gql('{ termsVersion }')).data).toEqual({ termsVersion: '2026-11-03' })
+      expect((await t.gql('{ termsVersion }')).data).toEqual({ termsVersion: '2026-11-12' })
     })
   })
 

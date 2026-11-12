@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common'
 import type { PlatformSettings } from '@lvn-backend/facades'
 import { PrismaService, type Prisma } from '@lvn-backend/prisma-base'
-import { DEFAULT_ACCOUNT_MINIMUM_AGE, DEFAULT_GUARDIAN_NOTICE_VERSION, GUARDIAN_NOTICE_VERSION_SETTING } from '../domain/guardian-consent'
+import { DEFAULT_ACCOUNT_MINIMUM_AGE, DEFAULT_GUARDIAN_NOTICE_VERSION, enforcedMinimumAge, GUARDIAN_NOTICE_VERSION_SETTING } from '../domain/guardian-consent'
 import {
   DEFAULT_GUARDIAN_LINK_RESEND_PER_HOUR,
   DEFAULT_GUARDIAN_LINK_TTL_HOURS,
@@ -66,9 +66,12 @@ export class PlatformSettingsStore implements OnModuleInit, OnModuleDestroy, Pla
     return typeof value === 'string' ? value : fallback
   }
 
-  /** Youngest age that may sign up. The admin setting, or 13 when no row is saved. The environment is not read. */
+  /**
+   * Youngest age that may sign up. The admin setting, or 13 when no row is saved.
+   * A stored value below 13 is not rewritten; it is read as 13 (ADR-0113). The environment is not read.
+   */
   minimumAge(): number {
-    return this.integer('account_minimum_age', DEFAULT_ACCOUNT_MINIMUM_AGE) ?? DEFAULT_ACCOUNT_MINIMUM_AGE
+    return enforcedMinimumAge(this.integer('account_minimum_age', DEFAULT_ACCOUNT_MINIMUM_AGE) ?? DEFAULT_ACCOUNT_MINIMUM_AGE)
   }
 
   /** Notice version stored on a new under-18 guardian consent row. */

@@ -4,6 +4,7 @@ import { Errors } from '@lvn-backend/errors'
 import { Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import type { AccountStatus } from '../domain/account-status'
 import { isStudyPublisher } from '../domain/study-publisher'
+import { enforcedMinimumAge } from '../domain/guardian-consent'
 import { AGE_BLOCK_REASON, ageOf, ageSchema, dateOfBirthSchema, displayNameSchema, emailSchema, isBelowMinimumAge, type AgeFacts } from '../domain/rules'
 import { AGE_FIELDS } from './age'
 import { AccountDeletionService } from './account-deletion.service'
@@ -121,7 +122,7 @@ export class AccountAdminService {
     }
     const ageChanged = input.dateOfBirth != null || input.age != null
     const age = ageOf(next)
-    const passes = age !== null && !isBelowMinimumAge(age, this.settings.minimumAge())
+    const passes = age !== null && !isBelowMinimumAge(age, enforcedMinimumAge(this.settings.minimumAge()))
     if (!fields.length) throw Errors.validation('Choose a name, an email, an age or a date of birth to change.', ['input'])
     // A new age that would let an under-age account pass is refused until the reason note is present.
     // `reason` was already required above; an empty note never reaches this point.
@@ -161,7 +162,7 @@ export class AccountAdminService {
     if (input.status === 'AGE_BLOCKED') throw Errors.validation('The age gate sets this status. Correct the age, with a reason.', ['input', 'status'])
     if (input.status === 'ACTIVE') {
       const age = ageOf(user)
-      const stillUnder = user.accountStatus === 'AGE_BLOCKED' || (age !== null && isBelowMinimumAge(age, this.settings.minimumAge()))
+      const stillUnder = user.accountStatus === 'AGE_BLOCKED' || (age !== null && isBelowMinimumAge(age, enforcedMinimumAge(this.settings.minimumAge())))
       if (stillUnder) {
         // Point at the input that would correct it: the date of birth when the account has one (ADR-0104).
         if (user.dateOfBirth) throw Errors.validation('This date of birth is still below the minimum age. Correct it, with a reason, before the account can pass.', ['input', 'dateOfBirth'])

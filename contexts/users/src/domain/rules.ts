@@ -8,13 +8,14 @@ import type { GuardianVerificationSettings } from './guardian-verification'
  * ADR-0103: the version in effect is the admin setting `terms_version`, else the TERMS_VERSION environment variable,
  * else this. Read it through TermsVersionProvider, never directly.
  */
-export const DEFAULT_TERMS_VERSION = '2026-11-03'
+export const DEFAULT_TERMS_VERSION = '2026-11-12'
 
 /**
  * Built-in list of versions whose text lvn-web has published (`features/legal/documents.ts`). ADR-0103: an admin may
  * only choose one of these. The admin setting `terms_published_versions`, else TERMS_PUBLISHED_VERSIONS, replaces it.
+ * `2026-11-12` is the 13+ terms update (ADR-0113). Older dates stay so an acceptance of them is still a known version.
  */
-export const DEFAULT_PUBLISHED_TERMS_VERSIONS: readonly string[] = ['2026-10-08', '2026-11-03']
+export const DEFAULT_PUBLISHED_TERMS_VERSIONS: readonly string[] = ['2026-10-08', '2026-11-03', '2026-11-12']
 
 export const SESSION_TTL_DAYS = 30
 export const VERIFY_EMAIL_TTL_HOURS = 24
@@ -171,7 +172,8 @@ export function isBelowMinimumAge(age: number, minimumAge: number): boolean {
 
 /**
  * What a refused person reads (web and phone show it, and remember the refusal on the device for a day).
- * It does not name the cut-off (ADR-0091). The floor is the admin setting `account_minimum_age` (default 13).
+ * It does not name the cut-off (ADR-0091). The floor is at least 13 (ADR-0113), from `account_minimum_age` when that
+ * setting is 13 or higher.
  */
 export const UNDER_MINIMUM_AGE_MESSAGE = 'Sorry, you can’t create an account. You can still read the public notes without one.'
 

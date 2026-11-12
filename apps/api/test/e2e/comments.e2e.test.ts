@@ -15,7 +15,8 @@ describe('comments and reactions', () => {
   type Person = { id: string; handle: string; token: string }
   const person = async (opts: { verified?: boolean; teacher?: boolean; minor?: boolean; name?: string } = {}): Promise<Person> => {
     const u = await seedUser(t.app, { verified: opts.verified ?? true, globalRole: opts.teacher ? 'TEACHER' : 'STUDENT', displayName: opts.name ?? 'Someone' })
-    if (opts.minor) await db.user.update({ where: { id: u.id }, data: { dateOfBirth: new Date('2015-03-01') } })
+    // 16: a restricted minor (under 18) who is not under the Families under-13 social gate.
+    if (opts.minor) await db.user.update({ where: { id: u.id }, data: { dateOfBirth: new Date(Date.UTC(new Date().getUTCFullYear() - 16, 0, 15)) } })
     return { id: u.id, handle: u.handle, token: tokenFor(t.config, u.id) }
   }
   const doc = (s: string) => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: s }] }] })

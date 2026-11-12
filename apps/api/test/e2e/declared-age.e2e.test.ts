@@ -47,7 +47,7 @@ describe('declared ages', () => {
 
   it('treats an age typed at sign-up as the person’s age: an adult is found, followed and named', async () => {
     const res = await t.gql<{ signUp: { session: { accessToken: string; user: { id: string; handle: string } }; userErrors: unknown[] } }>(SIGN_UP, {
-      input: { email: `${tag.toLowerCase()}@example.com`, password: 'correct horse battery staple', displayName: `${tag} Adult`, age: 30, acceptedTermsVersion: '2026-11-03' },
+      input: { email: `${tag.toLowerCase()}@example.com`, password: 'correct horse battery staple', displayName: `${tag} Adult`, age: 30, acceptedTermsVersion: '2026-11-12' },
     })
     expect(res.data!.signUp.userErrors).toEqual([])
     const { accessToken, user } = res.data!.signUp.session

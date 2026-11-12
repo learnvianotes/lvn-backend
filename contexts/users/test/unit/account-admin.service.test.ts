@@ -246,13 +246,13 @@ describe('declared ages (ADR-0104)', () => {
   /** An account registered with an age, not a date of birth. */
   const declared = (age: number, over: Partial<Row> = {}) => row({ dateOfBirth: null, declaredAge: age, ageDeclaredAt: new Date(), ...over })
 
-  it('clears AGE_BLOCKED at 8 and keeps it at 7 when the floor is 8 (ADR-0108)', async () => {
-    const passed = harness(declared(7), 8)
-    const user = await passed.service.update(ADMIN, { userId: USER, age: 8, reason: 'Now old enough' })
-    expect(user).toMatchObject({ accountStatus: 'ACTIVE', statusReason: null, age: 8 })
-    const held = harness(declared(10, { accountStatus: 'ACTIVE', statusReason: null }), 8)
-    const blocked = await held.service.update(ADMIN, { userId: USER, age: 7, reason: 'Typed the wrong age' })
-    expect(blocked).toMatchObject({ accountStatus: 'AGE_BLOCKED', age: 7 })
+  it('clears AGE_BLOCKED at 13 and keeps it at 12 even when the configured floor is 8 (ADR-0113)', async () => {
+    const passed = harness(declared(12), 8)
+    const user = await passed.service.update(ADMIN, { userId: USER, age: 13, reason: 'Now old enough' })
+    expect(user).toMatchObject({ accountStatus: 'ACTIVE', statusReason: null, age: 13 })
+    const held = harness(declared(14, { accountStatus: 'ACTIVE', statusReason: null }), 8)
+    const blocked = await held.service.update(ADMIN, { userId: USER, age: 12, reason: 'Typed the wrong age' })
+    expect(blocked).toMatchObject({ accountStatus: 'AGE_BLOCKED', age: 12 })
     expect(held.revoked).toEqual([USER])
   })
 

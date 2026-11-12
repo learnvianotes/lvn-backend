@@ -7,6 +7,7 @@ import { RegistrationService } from '../../src/application/registration.service'
 import {
   DEFAULT_ACCOUNT_MINIMUM_AGE,
   DEFAULT_GUARDIAN_NOTICE_VERSION,
+  enforcedMinimumAge,
   GUARDIAN_CONSENT_AUTO_UNVERIFIED,
   GUARDIAN_CONSENT_VERIFIED,
   methodsFromConsentRows,
@@ -57,16 +58,23 @@ describe('auto_unverified consent does not lift minor limits', () => {
 })
 
 describe('account_minimum_age is an admin setting', () => {
-  it('defaults to 13 and ignores an environment fallback of 8', async () => {
+  it('defaults to 13, ignores an environment fallback of 8, and reads a saved value below 13 as 13', async () => {
     const store = new PlatformSettingsStore(
       { appSetting: { upsert: async () => ({}) } } as never,
       { settingFallbacks: { account_minimum_age: 8 } } as never,
     )
     expect(DEFAULT_ACCOUNT_MINIMUM_AGE).toBe(13)
+    expect(enforcedMinimumAge(0)).toBe(13)
+    expect(enforcedMinimumAge(8)).toBe(13)
+    expect(enforcedMinimumAge(13)).toBe(13)
+    expect(enforcedMinimumAge(18)).toBe(18)
     expect(store.minimumAge()).toBe(13)
     expect(store.guardianNoticeVersion()).toBe(DEFAULT_GUARDIAN_NOTICE_VERSION)
     await store.put('account_minimum_age', 5, 'admin')
-    expect(store.minimumAge()).toBe(5)
+    expect(store.integer('account_minimum_age', 13)).toBe(5)
+    expect(store.minimumAge()).toBe(13)
+    await store.put('account_minimum_age', 18, 'admin')
+    expect(store.minimumAge()).toBe(18)
     await store.put('guardian_notice_version', '2026-12-01', 'admin')
     expect(store.guardianNoticeVersion()).toBe('2026-12-01')
   })
@@ -153,15 +161,13 @@ describe('email sign-up age gate', () => {
     expect(teen.created.filter((row) => row.declaredAge === 18)).toHaveLength(1)
   })
 
-  it('admits a 5-year-old when the setting is 5, and blocks a 4-year-old', async () => {
+  it('blocks 12 even when the setting is 5, and still records consent for 13', async () => {
     const open = auth(5)
-    await expect(open.sign(5)).resolves.toMatchObject({ status: 'created' })
-    await expect(open.sign(12)).resolves.toMatchObject({ status: 'created' })
-    expect(open.guardians.map((row) => row.ageBand)).toEqual(['under_13', 'under_13'])
-    expect(open.guardians.every((row) => row.method === 'auto_unverified')).toBe(true)
-    const closed = auth(5)
-    expect(await rejection(() => closed.sign(4))).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, field: ['input', 'age'] })
-    expect(closed.guardians).toEqual([])
+    expect(await rejection(() => open.sign(12))).toMatchObject({ code: ErrorCode.AGE_RESTRICTED, field: ['input', 'age'] })
+    expect(open.guardians).toEqual([])
+    expect(open.created).toEqual([])
+    await expect(open.sign(13)).resolves.toMatchObject({ status: 'created' })
+    expect(open.guardians).toEqual([expect.objectContaining({ ageBand: '13_15', method: 'auto_unverified' })])
   })
 })
 
@@ -219,13 +225,12 @@ describe('provider registration age gate (Google, GitHub and LinkedIn)', () => {
     expect(teen.batches).toEqual([3, 3, 2])
   })
 
-  it('admits 5 and blocks 4 when an admin has set the minimum to 5', async () => {
+  it('blocks 12 and admits 13 when an admin has set the minimum to 5', async () => {
     const open = registration(5)
-    await open.complete('google-5', 5)
-    expect(open.guardians).toEqual([expect.objectContaining({ ageBand: 'under_13', method: 'auto_unverified' })])
-    const closed = registration(5)
-    expect(await rejection(() => closed.complete('google-4', 4))).toMatchObject({ code: ErrorCode.AGE_RESTRICTED })
-    expect(closed.guardians).toEqual([])
+    expect(await rejection(() => open.complete('google-12', 12))).toMatchObject({ code: ErrorCode.AGE_RESTRICTED })
+    expect(open.guardians).toEqual([])
+    await open.complete('google-13', 13)
+    expect(open.guardians).toEqual([expect.objectContaining({ ageBand: '13_15', method: 'auto_unverified' })])
   })
 })
 

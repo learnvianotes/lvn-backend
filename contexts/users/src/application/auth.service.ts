@@ -5,7 +5,7 @@ import { MAILER, type Mailer } from '@lvn-backend/facades'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { RateLimiter, type Limit } from '@lvn-backend/redis'
 import { ageRestrictedError } from '../domain/account-status'
-import { GUARDIAN_CONSENT_UNDER, guardianConsentFields } from '../domain/guardian-consent'
+import { enforcedMinimumAge, GUARDIAN_CONSENT_UNDER, guardianConsentFields } from '../domain/guardian-consent'
 import { requireParentEmail } from '../domain/parent-email'
 import {
   displayNameSchema,
@@ -97,7 +97,7 @@ export class AuthService {
     await this.access.assertAllowed(email)
     const role = (await this.access.roleFor(email)) ?? 'STUDENT'
     // Below the minimum the account is kept as AGE_BLOCKED (no session). An address that already has an account is not changed.
-    if (isBelowMinimumAge(declared.value.declaredAge, this.settings.minimumAge())) {
+    if (isBelowMinimumAge(declared.value.declaredAge, enforcedMinimumAge(this.settings.minimumAge()))) {
       const passwordHash = await this.passwords.hash(input.password)
       await this.ageBlock.holdSignUp({ email, displayName, age: declared.value, passwordHash, globalRole: role, termsVersion })
       throw ageRestrictedError(await this.support.email(), ['input', declared.field])

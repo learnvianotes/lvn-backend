@@ -453,7 +453,7 @@ model ConsentRecord {
 /// text (`auto_unverified`, `email_plus`, `verified`, or a later id) so a new verification method needs no
 /// migration. `parentEmail` is the parent's address, not the child's, and purge sets it to null. The row then
 /// holds no name, email or date of birth.
-/// Bands: under_13 (below 13; ages 5–12 while the floor is 5), 13_15, 16_17.
+/// Bands: under_13 (below 13; existing accounts only — new sign-ups are 13 or older, ADR-0113), 13_15, 16_17.
 model GuardianConsent {
   id            String      @id @db.Uuid
   userId        String      @db.Uuid

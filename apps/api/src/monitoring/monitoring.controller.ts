@@ -1,5 +1,5 @@
 import { Controller, Inject, Post, Req, Res } from '@nestjs/common'
-import type { AccessTokenVerifier } from '@lvn-backend/auth-guard'
+import { AccessTokenVerifier } from '@lvn-backend/auth-guard'
 import { envelopeUserId, prepareSentryTunnel, type TunnelSubject } from '@lvn-backend/observability'
 import { RateLimiter, SessionRevocations } from '@lvn-backend/redis'
 import { PlatformSettingsStore, UsersService } from '@lvn-backend/users'
@@ -24,7 +24,7 @@ export class MonitoringController {
     private readonly settings: PlatformSettingsStore,
     private readonly limiter: RateLimiter,
     private readonly revocations: SessionRevocations,
-    private readonly verifier: AccessTokenVerifier,
+    @Inject(AccessTokenVerifier) private readonly verifier: AccessTokenVerifier,
     @Inject(SENTRY_DSN) private readonly dsn: string | undefined,
   ) {}
 

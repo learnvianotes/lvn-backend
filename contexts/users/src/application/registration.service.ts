@@ -3,7 +3,7 @@ import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { ageRestrictedError } from '../domain/account-status'
-import { GUARDIAN_CONSENT_UNDER, guardianConsentFields } from '../domain/guardian-consent'
+import { enforcedMinimumAge, GUARDIAN_CONSENT_UNDER, guardianConsentFields } from '../domain/guardian-consent'
 import { requireParentEmail } from '../domain/parent-email'
 import { displayNameSchema, isBelowMinimumAge } from '../domain/rules'
 import { readDeclaredAge } from './age'
@@ -60,7 +60,7 @@ export class RegistrationService {
       throw Errors.validation('Accept the current Terms and Privacy Policy to continue.', ['input', 'acceptedTermsVersion'])
     }
     if (input.institutionalEmail) await this.institutional.check(input.institutionalEmail, ['input', 'institutionalEmail'])
-    if (isBelowMinimumAge(declared.value.declaredAge, this.settings.minimumAge())) {
+    if (isBelowMinimumAge(declared.value.declaredAge, enforcedMinimumAge(this.settings.minimumAge()))) {
       await this.ageBlock.holdRegistration(userId, displayName, declared.value, termsVersion)
       throw ageRestrictedError(await this.support.email(), ['input', declared.field])
     }

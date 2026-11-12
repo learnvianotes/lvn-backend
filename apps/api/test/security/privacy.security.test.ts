@@ -446,8 +446,9 @@ describe('security: privacy', () => {
       expect(moderation).toEqual([{ category: 'MODERATION', actor: null, data: { kind: 'HIDDEN', entityType: 'GROUP_POST' } }])
       expect(JSON.stringify(told.data)).not.toMatch(/B wrote this|Be kind/)
       // No type a member can reach carries a reporter, except the moderators' ModerationReport.
+      // Platform admins also see AiReport.reporterId. Members do not get aiReports.
       const reporters = Object.values(schema.getTypeMap()).filter((type) => isObjectType(type) && !type.name.startsWith('__') && Object.keys(type.getFields()).some((f) => /reporter/i.test(f))).map((type) => type.name)
-      expect(reporters).toEqual(['ModerationReport'])
+      expect(reporters.sort()).toEqual(['AiReport', 'ModerationReport'])
     })
   })
 })
