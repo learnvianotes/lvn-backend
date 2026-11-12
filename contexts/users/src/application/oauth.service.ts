@@ -23,7 +23,7 @@ const NAMES = { GOOGLE: 'Google', GITHUB: 'GitHub', LINKEDIN: 'LinkedIn' } as co
  * does not set institution `verifiedAt`. Linking onto an address that was never confirmed drops that account's
  * password and signs it out everywhere: a sign-up that only reserved the address must not stay in beside the person
  * who just proved the inbox. A new provider account still owes its registration details (completeRegistration,
- * ADR-0017); the adults-only gate runs there (ADR-0091).
+ * ADR-0017); the minimum-age gate runs there (ADR-0109), for Google, GitHub and LinkedIn alike.
  */
 @Injectable()
 export class OAuthService {

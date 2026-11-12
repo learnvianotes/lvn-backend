@@ -93,6 +93,8 @@ input ResetPasswordInput {
 extend type Query {
   "Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2). A platform admin can change it (ADR-0103), so read it here instead of hard-coding it."
   termsVersion: String!
+  "Youngest whole-year age that may sign up. A platform admin changes it (account_minimum_age). Default 13. Ages under 13 stay blocked until an admin sets this to 5. Read it here instead of hard-coding a minimum."
+  accountMinimumAge: Int!
   "Action ids an institution-unverified account cannot do. Empty means none. Pass these into can() on web and mobile."
   unverifiedGatedActions: [String!]!
   "Whether Public notes and quizzes require an institution-verified account. True when the admin has not saved the row. Anyone may read it."

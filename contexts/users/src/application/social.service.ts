@@ -4,8 +4,9 @@ import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
+import { methodsFromConsentRows } from '../domain/guardian-consent'
 import { isRestrictedMinor } from '../domain/rules'
-import { AGE_FIELDS, atLeastAge } from './age'
+import { AGE_FIELDS, namedInLists, RESTRICTION_CONSENT_SELECT } from './age'
 import { AuditService } from './audit.service'
 import { PlatformSettingsStore } from './platform-settings.store'
 import { PolicyService } from './policy.service'
@@ -69,7 +70,7 @@ export class SocialService {
     if (!actor) throw Errors.unauthenticated()
     const target = await this.db.user.findFirst({
       where: { id: targetId, deletedAt: null },
-      select: { id: true, globalRole: true, ...AGE_FIELDS, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } },
+      select: { id: true, globalRole: true, ...AGE_FIELDS, ...RESTRICTION_CONSENT_SELECT },
     })
     if (!target) throw Errors.notFound('Nobody on LearnViaNotes has that account.')
     const [following, followsActor, blockedByActor, blockingActor, restrictedByActor, connected, pending] = await Promise.all([
@@ -91,7 +92,7 @@ export class SocialService {
         kind: 'user',
         targetId,
         targetGlobalRole: target.globalRole as GlobalRole,
-        targetRestrictedMinor: isRestrictedMinor(target, this.settings.consentAge(), target.consents.length > 0),
+        targetRestrictedMinor: isRestrictedMinor(target, this.settings.consentAge(), methodsFromConsentRows(target)),
         following: following > 0,
         followsActor: followsActor > 0,
         blocked: blockedByActor + blockingActor > 0,
@@ -275,7 +276,7 @@ export class SocialService {
 
   /** People who may be named in a list: not deleted, and not restricted minors (ADR-0016; the age is ADR-0104's). */
   private nameable(): Prisma.UserWhereInput {
-    return { deletedAt: null, accountStatus: { notIn: ['AGE_BLOCKED', 'BLOCKED'] }, OR: [...atLeastAge(this.settings.consentAge()), { consents: { some: { kind: 'GUARDIAN' } } }] }
+    return { deletedAt: null, accountStatus: { notIn: ['AGE_BLOCKED', 'BLOCKED'] }, OR: namedInLists(this.settings.consentAge()) }
   }
 
   /** The person's followers, newest first, restricted minors left out of the names (they are still counted). */
@@ -331,8 +332,8 @@ export class SocialService {
   /** A restricted minor's profile is theirs alone (ADR-0043). */
   async profileVisible(viewerId: string | null, userId: string): Promise<boolean> {
     if (viewerId === userId) return true
-    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { ...AGE_FIELDS, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } } })
-    return !!u && !isRestrictedMinor(u, this.settings.consentAge(), u.consents.length > 0)
+    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { ...AGE_FIELDS, ...RESTRICTION_CONSENT_SELECT } })
+    return !!u && !isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u))
   }
 
   /** A user by handle, or by id (links in notifications carry ids); deleted accounts are not found. */

@@ -6420,6 +6420,11 @@ type Query
   termsVersion: String! @join__field(graph: USERS)
 
   """
+  Youngest whole-year age that may sign up. A platform admin changes it (account_minimum_age). Default 13. Ages under 13 stay blocked until an admin sets this to 5. Read it here instead of hard-coding a minimum.
+  """
+  accountMinimumAge: Int! @join__field(graph: USERS)
+
+  """
   Action ids an institution-unverified account cannot do. Empty means none. Pass these into can() on web and mobile.
   """
   unverifiedGatedActions: [String!]! @join__field(graph: USERS)

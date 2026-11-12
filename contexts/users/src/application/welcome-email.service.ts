@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common'
 import { MAILER, type Mailer } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
+import { methodsFromConsentRows } from '../domain/guardian-consent'
 import { isRestrictedMinor } from '../domain/rules'
 import { isStudyPublisher } from '../domain/study-publisher'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
@@ -66,6 +67,7 @@ export class WelcomeEmailService {
         welcomeEmailSentAt: true,
         ...AGE_FIELDS,
         consents: { select: { kind: true } },
+        guardianConsents: { select: { method: true } },
       },
     })
     if (!user || !this.eligible(user)) return 'skipped'
@@ -78,7 +80,7 @@ export class WelcomeEmailService {
     if (claimed.count !== 1) return 'skipped'
 
     const origin = this.config.webUrl.replace(/\/$/, '')
-    const minor = isRestrictedMinor(user, this.settings.consentAge(), user.consents.some((c) => c.kind === 'GUARDIAN'))
+    const minor = isRestrictedMinor(user, this.settings.consentAge(), methodsFromConsentRows(user))
     try {
       await this.mailer.send(user.email, 'welcome', {
         displayName: user.displayName,

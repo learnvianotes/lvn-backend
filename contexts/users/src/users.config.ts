@@ -9,8 +9,6 @@ export interface UsersConfig {
   webUrl: string
   codeHmacSecret: string
   digitalConsentAge: number
-  /** ADR-0108: below this age the account is kept as AGE_BLOCKED and cannot sign in (0: everyone may register) */
-  accountMinimumAge: number
   /** Address shown when someone must contact support. SUPPORT_EMAIL, or support@learnvianotes.in when unset. */
   supportEmail: string
   passwordBreachApiUrl?: string
@@ -43,7 +41,6 @@ export interface UsersConfig {
     ai_timeout_ms: number
     search_hybrid: boolean
     search_timeout_ms: number
-    account_minimum_age: number
     digital_consent_age: number
     /** ADR-0103. Undefined when the variable is unset: the built-in default applies, and is reported as DEFAULT. */
     terms_version: string | undefined
@@ -62,7 +59,6 @@ export function usersConfigFrom(c: ApiConfig): UsersConfig {
     webUrl: c.WEB_URL,
     codeHmacSecret: c.CODE_HMAC_SECRET,
     digitalConsentAge: c.DIGITAL_CONSENT_AGE,
-    accountMinimumAge: c.ACCOUNT_MINIMUM_AGE,
     supportEmail: c.SUPPORT_EMAIL,
     passwordBreachApiUrl: c.PASSWORD_BREACH_API_URL,
     firebaseProjectId: c.FIREBASE_PROJECT_ID,
@@ -91,7 +87,6 @@ export function usersConfigFrom(c: ApiConfig): UsersConfig {
       ai_timeout_ms: c.AI_TIMEOUT_MS,
       search_hybrid: c.SEARCH_HYBRID,
       search_timeout_ms: c.SEARCH_TIMEOUT_MS,
-      account_minimum_age: c.ACCOUNT_MINIMUM_AGE,
       digital_consent_age: c.DIGITAL_CONSENT_AGE,
       terms_version: c.TERMS_VERSION,
       terms_published_versions: c.TERMS_PUBLISHED_VERSIONS,

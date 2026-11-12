@@ -16,6 +16,7 @@ erDiagram
   User ||--o{ Membership : "belongs to"
   Organization ||--o{ Membership : has
   User ||--o{ ConsentRecord : accepts
+  User ||--o{ GuardianConsent : "auto notice, kept on purge (ADR-0109)"
   User ||--o| InstitutionalEmail : "verifies (ADR-0017)"
   User ||--o{ VerificationRequest : "asks (ADR-0019)"
   User ||--o| StudentProfile : "ADR-0026"
@@ -173,6 +174,15 @@ erDiagram
     enum document "TERMS | PRIVACY | PUBLIC_LICENCE"
     text version
     timestamptz acceptedAt
+  }
+  GuardianConsent {
+    uuid id PK
+    uuid userId FK "ON DELETE RESTRICT"
+    enum kind "GUARDIAN"
+    enum method "auto_unverified | verified"
+    text noticeVersion
+    timestamptz recordedAt
+    text ageBand "under_13 | 13_15 | 16_17"
   }
   AuditLog {
     uuid id PK

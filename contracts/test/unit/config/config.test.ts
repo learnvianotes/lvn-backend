@@ -77,10 +77,8 @@ describe('apiConfigSchema (Phase 1)', () => {
   it('defaults the digital consent age to 18 (DPDP) and bounds it', () => {
     expect(loadConfig(apiConfigSchema, valid).DIGITAL_CONSENT_AGE).toBe(18)
     expect(loadConfig(apiConfigSchema, { ...valid, DIGITAL_CONSENT_AGE: '16' }).DIGITAL_CONSENT_AGE).toBe(16)
-    expect(loadConfig(apiConfigSchema, valid).ACCOUNT_MINIMUM_AGE).toBe(8)
-    expect(loadConfig(apiConfigSchema, { ...valid, ACCOUNT_MINIMUM_AGE: '0' }).ACCOUNT_MINIMUM_AGE).toBe(0)
-    expect(loadConfig(apiConfigSchema, { ...valid, ACCOUNT_MINIMUM_AGE: '8' }).ACCOUNT_MINIMUM_AGE).toBe(8)
-    expect(() => loadConfig(apiConfigSchema, { ...valid, ACCOUNT_MINIMUM_AGE: '22' })).toThrow(/ACCOUNT_MINIMUM_AGE/)
+    // The sign-up floor is the admin setting account_minimum_age, not an environment variable (ADR-0109).
+    expect(loadConfig(apiConfigSchema, { ...valid, ACCOUNT_MINIMUM_AGE: '4' })).not.toHaveProperty('ACCOUNT_MINIMUM_AGE')
     const { MAIL_FROM: _from, ...withoutSender } = valid
     expect(loadConfig(apiConfigSchema, withoutSender).MAIL_FROM).toBe('LearnViaNotes <no-reply@learnvianotes.in>')
     expect(loadConfig(apiConfigSchema, { ...valid, MAIL_REPLY_TO: 'help@learnvianotes.in' }).MAIL_REPLY_TO).toBe('help@learnvianotes.in')

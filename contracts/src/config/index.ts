@@ -122,12 +122,6 @@ const auth = z.object({
    */
   DIGITAL_CONSENT_AGE: z.coerce.number().int().min(13).max(21).default(18),
   /**
-   * ADR-0108: the youngest age that may use an account. Below it sign-up keeps the account as AGE_BLOCKED
-   * (no session, nothing public) and returns AGE_RESTRICTED. Default 8. From that age up to DIGITAL_CONSENT_AGE
-   * the account is a restricted minor and can sign in with no guardian consent (§15.2). 0 lets everyone in.
-   */
-  ACCOUNT_MINIMUM_AGE: z.coerce.number().int().min(0).max(21).default(8),
-  /**
    * The address shown on AGE_RESTRICTED and on a blocked sign-in (`userErrors.supportEmail`).
    * Always this value: a platform admin's own inbox is not shown to people.
    */

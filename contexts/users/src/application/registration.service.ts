@@ -3,6 +3,7 @@ import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { ageRestrictedError } from '../domain/account-status'
+import { guardianConsentFields } from '../domain/guardian-consent'
 import { displayNameSchema, isBelowMinimumAge } from '../domain/rules'
 import { readDeclaredAge } from './age'
 import { AgeBlockService } from './age-block.service'
@@ -59,6 +60,7 @@ export class RegistrationService {
       throw ageRestrictedError(await this.support.email(), ['input', declared.field])
     }
 
+    const guardian = guardianConsentFields(declared.value.declaredAge, this.settings.guardianNoticeVersion(), new Date())
     await this.db.$transaction([
       this.db.user.update({
         where: { id: userId },
@@ -73,6 +75,8 @@ export class RegistrationService {
       this.db.consentRecord.createMany({
         data: (['TERMS', 'PRIVACY', 'PUBLIC_CONTENT_LICENCE'] as const).map((kind) => ({ id: newId(), userId, kind, version: termsVersion })),
       }),
+      // Same transaction as the account becoming usable. Absent at 18 or older.
+      ...(guardian ? [this.db.guardianConsent.create({ data: { id: newId(), userId, ...guardian } })] : []),
     ])
     // After the profile is stored. A mail or Redis failure here does not undo it, and does not fail registration.
     await this.welcome.schedule(userId)

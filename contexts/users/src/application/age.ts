@@ -1,10 +1,28 @@
 import { Errors } from '@lvn-backend/errors'
 import type { Prisma } from '@lvn-backend/prisma-base'
+import { GUARDIAN_CONSENT_VERIFIED } from '../domain/guardian-consent'
 import { ageOn, ageSchema, dateOfBirthSchema, latestDayYearsBefore } from '../domain/rules'
 import { parseField } from './input'
 
 /** The columns `ageOf` and `isRestrictedMinor` read (ADR-0104). Spread into a Prisma `select`. */
 export const AGE_FIELDS = { dateOfBirth: true, declaredAge: true, ageDeclaredAt: true } as const
+
+/**
+ * Consent rows `isRestrictedMinor` reads (ADR-0109). `consents` is the legacy verified GUARDIAN record.
+ * `guardianConsents` includes `auto_unverified`, which must be passed through and not treated as verified.
+ */
+export const RESTRICTION_CONSENT_SELECT = {
+  consents: { where: { kind: 'GUARDIAN' as const }, select: { kind: true }, take: 1 },
+  guardianConsents: { select: { method: true } },
+} as const
+
+/**
+ * Who may be named in a list: old enough, or holding verified guardian consent. `auto_unverified` is not in this
+ * filter. A legacy ConsentRecord of kind GUARDIAN is verified consent and still matches.
+ */
+export function namedInLists(consentAge: number, on: Date = new Date()): Prisma.UserWhereInput[] {
+  return [...atLeastAge(consentAge, on), { consents: { some: { kind: 'GUARDIAN' } } }, { guardianConsents: { some: { method: GUARDIAN_CONSENT_VERIFIED } } }]
+}
 
 const DAY_MS = 86_400_000
 
