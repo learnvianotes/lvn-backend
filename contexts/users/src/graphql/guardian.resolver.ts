@@ -50,6 +50,11 @@ export class GuardianResolver {
     return withUserErrors(async () => ({ summary: await this.manage.withdraw(sessionToken) }), { summary: null })
   }
 
+  @Mutation('guardianSetSocialEnabled')
+  setSocial(@Args('sessionToken') sessionToken: string, @Args('enabled') enabled: boolean) {
+    return withUserErrors(async () => ({ summary: await this.manage.setSocialEnabled(sessionToken, enabled) }), { summary: null })
+  }
+
   @Mutation('guardianDeleteAccount')
   deleteAccount(@Args('sessionToken') sessionToken: string, @Args('confirm') confirm: string): Promise<AccountDeletionPayload> {
     return withUserErrors<AccountDeletionPayload>(async () => ({ deletionScheduledFor: await this.manage.deleteAccount(sessionToken, confirm) }), { deletionScheduledFor: null })

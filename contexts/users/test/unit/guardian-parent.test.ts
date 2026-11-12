@@ -35,6 +35,7 @@ interface ConsentRow {
   noticeVersion: string
   ageBand: string
   recordedAt: Date
+  socialEnabled?: boolean
 }
 
 interface LinkRow {
@@ -547,5 +548,56 @@ describe('provider registration requires the parent email only after the floor',
     expect(guardians[0]).toMatchObject({ parentEmail: PARENT, method: 'auto_unverified', ageBand: 'under_13' })
     expect((await rejection(() => service.complete('google-4', { displayName: 'Four', age: 4, parentEmail: PARENT, acceptedTermsVersion: DEFAULT_TERMS_VERSION }))).code).toBe(ErrorCode.AGE_RESTRICTED)
     expect(guardians).toHaveLength(1)
+  })
+})
+
+describe('parent social toggle', () => {
+  function opened(age: number, band: string, method: string, verified: boolean) {
+    const db = memory()
+    const { user, consent } = child(age, band)
+    consent.method = method
+    consent.verifiedAt = verified ? new Date() : null
+    db.users.push(user)
+    db.consents.push(consent)
+    const { notice, sent } = noticeOf(db)
+    const service = new GuardianManageService(
+      db as never,
+      notice,
+      { scheduledFor: async () => new Date() } as never,
+      {} as never,
+      { suspend: async () => undefined, lift: async () => undefined } as never,
+      { revokeAll: async () => undefined } as never,
+      settings() as never,
+    )
+    return { db, user, consent, notice, sent, service }
+  }
+
+  async function sessionFor(age: number, band: string, method: string, verified: boolean) {
+    const openedRow = opened(age, band, method, verified)
+    await openedRow.notice.notify(openedRow.user.id)
+    const token = new URL(String(openedRow.sent[0]!.data.manageLink)).searchParams.get('token')!
+    const session = await openedRow.service.redeem(token)
+    return { ...openedRow, session }
+  }
+
+  it('stays off until email_plus is verified, then the parent can turn it on and off', async () => {
+    const unverified = await sessionFor(10, 'under_13', 'email_plus', false)
+    expect(unverified.session.summary.socialEnabled).toBe(false)
+    expect((await rejection(() => unverified.service.setSocialEnabled(unverified.session.sessionToken, true))).message).toMatch(/Confirm this account/)
+
+    const verified = await sessionFor(10, 'under_13', 'email_plus', true)
+    expect(verified.session.summary.socialEnabled).toBe(false)
+    expect((await verified.service.setSocialEnabled(verified.session.sessionToken, true)).socialEnabled).toBe(true)
+    expect(verified.consent.socialEnabled).toBe(true)
+    expect((await verified.service.setSocialEnabled(verified.session.sessionToken, false)).socialEnabled).toBe(false)
+    verified.consent.socialEnabled = true
+    const withdrawn = await verified.service.withdraw(verified.session.sessionToken)
+    expect(withdrawn.socialEnabled).toBe(false)
+    expect(verified.consent.socialEnabled).toBe(false)
+  })
+
+  it('refuses the toggle on a 13–17 account even when consent is verified', async () => {
+    const row = await sessionFor(15, '13_15', 'email_plus', true)
+    expect((await rejection(() => row.service.setSocialEnabled(row.session.sessionToken, true))).message).toMatch(/under-13/)
   })
 })

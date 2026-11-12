@@ -12,6 +12,29 @@ export interface ErrorReportingOptions {
 }
 
 const KEPT_HEADERS = new Set(['user-agent', 'x-request-id', 'content-type'])
+/** Headers that carry a client address. Dropped for a minor or an unknown age (ADR-0112). */
+const IP_HEADER = /^(x-forwarded-for|x-real-ip|x-client-ip|x-cluster-client-ip|true-client-ip|cf-connecting-ip|fastly-client-ip|fly-client-ip|forwarded|forwarded-for|x-forwarded)$/i
+
+/**
+ * `adult` keeps user.id. `minor` is under 18 or an age the account does not hold: no user id, email, username or IP.
+ * When no classifier is registered, events stay on the adult path so a process that has not loaded accounts yet
+ * does not drop every id.
+ */
+export type SentrySubject = 'adult' | 'minor'
+
+export interface SentrySubjectPolicy {
+  /** `minor` for under 18, an unknown age, or an id that cannot be shown to be an adult. */
+  classify(userId: string): Promise<SentrySubject> | SentrySubject
+  /** Default on: scrubbed events still flow. Off drops the event. */
+  minorEventsEnabled(): boolean
+}
+
+let sentryPolicy: SentrySubjectPolicy | null = null
+
+/** The API registers this once accounts can be classified. Tests set it directly. */
+export function setSentrySubjectPolicy(policy: SentrySubjectPolicy | null): void {
+  sentryPolicy = policy
+}
 const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
 const BEARER = /bearer\s+\S+/gi
 const LONG_SECRET = /[A-Za-z0-9+/_-]{80,}={0,2}/g
@@ -93,7 +116,20 @@ export function startErrorReporting(options: ErrorReportingOptions): boolean {
     },
     integrations: (defaults) => defaults.filter((i) => !DROPPED_INTEGRATIONS.has(i.name)),
     transport: options.transport,
-    beforeSend: (event) => scrubEvent(event),
+    beforeSend: async (event) => {
+      const userId = sentryUserId(event)
+      let subject: SentrySubject = 'adult'
+      if (userId && sentryPolicy) {
+        try {
+          subject = await sentryPolicy.classify(userId)
+        } catch {
+          // An id we could not classify is treated as a minor so it is not stored.
+          subject = 'minor'
+        }
+      }
+      if (subject === 'minor' && sentryPolicy && !sentryPolicy.minorEventsEnabled()) return null
+      return scrubEvent(event, subject)
+    },
     beforeBreadcrumb: (crumb) => ({ ...crumb, data: crumb.data?.url ? { url: String(crumb.data.url).split('?')[0] } : undefined }),
   })
   return true
@@ -118,7 +154,8 @@ export function reportError(error: unknown, tags: Record<string, string | undefi
     for (const [k, v] of Object.entries({ requestId: ctx?.requestId, operation: ctx?.operation, queue: ctx?.queue, jobId: ctx?.jobId, ...tags })) {
       if (v) scope.setTag(k, v)
     }
-    // UUID only. Email and name are stripped again in scrubEvent. A scan job has no request, so the owner is on the tags.
+    // UUID only. Email and name are stripped again in scrubEvent. A minor or an unknown age loses the id there too.
+    // A scan job has no request, so the owner is on the tags.
     if (userId) scope.setUser({ id: userId })
     Sentry.captureException(error)
   })
@@ -129,18 +166,41 @@ export async function flushErrors(timeoutMs = 2000): Promise<void> {
   if (Sentry.isInitialized()) await Sentry.flush(timeoutMs)
 }
 
-/** Keeps user.id and drops email, username, ip and name. Request bodies, cookies and query strings go too. */
-export function scrubEvent<E extends Sentry.ErrorEvent>(event: E): E {
-  const id = typeof event.user?.id === 'string' ? event.user.id : undefined
-  if (id) event.user = { id }
-  else delete event.user
+function sentryUserId(event: Sentry.ErrorEvent): string | undefined {
+  if (typeof event.user?.id === 'string' && event.user.id) return event.user.id
+  const tagged = event.tags?.userId
+  return typeof tagged === 'string' && tagged ? tagged : undefined
+}
+
+/** Keeps user.id for an adult and drops email, username, ip and name. A minor or an unknown age has no user and no IP. */
+export function scrubEvent<E extends Sentry.ErrorEvent>(event: E, subject: SentrySubject = 'adult'): E {
+  if (subject === 'minor') {
+    delete event.user
+    if (event.tags) {
+      delete event.tags.userId
+      delete event.tags.email
+      delete event.tags.username
+      delete event.tags.ip
+    }
+  } else {
+    const id = typeof event.user?.id === 'string' ? event.user.id : undefined
+    if (id) event.user = { id }
+    else delete event.user
+  }
   if (event.request) {
     delete event.request.cookies
     delete event.request.data
     delete event.request.query_string
     if (event.request.url) event.request.url = event.request.url.split('?')[0]
     if (event.request.headers) {
-      event.request.headers = Object.fromEntries(Object.entries(event.request.headers).filter(([k]) => KEPT_HEADERS.has(k.toLowerCase())))
+      event.request.headers = Object.fromEntries(
+        Object.entries(event.request.headers).filter(([k]) => KEPT_HEADERS.has(k.toLowerCase()) && (subject === 'adult' || !IP_HEADER.test(k))),
+      )
+    }
+    if (subject === 'minor') {
+      const request = event.request as { env?: Record<string, unknown>; ip?: unknown }
+      delete request.env
+      delete request.ip
     }
   }
   return event

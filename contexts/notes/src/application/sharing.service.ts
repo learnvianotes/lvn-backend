@@ -44,6 +44,8 @@ export class SharingService implements OnModuleInit {
     const actor = this.gated(opened.actor)
     if (note.deletedAt) throw Errors.validation('Restore the note from the trash first.')
     if (note.visibility === visibility) return opened
+    // Under-13 accounts get FEATURE_UNAVAILABLE_FOR_MINOR before the 13–17 restricted-minor refusal.
+    if (visibility === 'PUBLIC') await this.people.assertSocialOpen(ownerId)
     const visibilityResource = { kind: 'note' as const, note: noteFacts(note, null), targetVisibility: visibility }
     if (!can(actor, Action.NOTE_CHANGE_VISIBILITY, visibilityResource)) {
       if (verificationBlocks(actor, Action.NOTE_CHANGE_VISIBILITY, visibilityResource)) throw Errors.forbidden('Verify your account to share notes.')
@@ -59,6 +61,7 @@ export class SharingService implements OnModuleInit {
     if (listed && (note.moderation === 'HIDDEN' || note.moderation === 'REMOVED')) {
       throw Errors.forbidden('Moderators took this note off the public pages. You can appeal from the note.')
     }
+    if (visibility === 'PUBLIC' && note.publishedVersionId) await this.scrubPublished(ownerId, note.publishedVersionId)
     await this.db.note.update({ where: { id: noteId }, data: { visibility } })
     await this.audit.record({ actorId: ownerId, action: 'note.visibility', targetType: 'NOTE', targetId: noteId, metadata: { from: note.visibility, to: visibility } })
     if (visibility === 'PUBLIC' || visibility === 'UNLISTED') {
@@ -71,6 +74,22 @@ export class SharingService implements OnModuleInit {
       await this.events.publish('NoteUnpublished', { noteId, ownerId })
     }
     return (await this.notes.open(ownerId, noteId, actor))!
+  }
+
+  /** Phone numbers, emails, street addresses and social handles in a minor's published copy. Block throws before the note goes public. */
+  private async scrubPublished(ownerId: string, versionId: string): Promise<void> {
+    const version = await this.db.noteVersion.findUnique({ where: { id: versionId } })
+    if (!version) return
+    const title = await this.people.filterMinorText(ownerId, version.title)
+    const cards = await this.people.filterMinorDoc(ownerId, version.cards)
+    if (title !== version.title || JSON.stringify(cards) !== JSON.stringify(version.cards)) {
+      await this.db.noteVersion.update({ where: { id: versionId }, data: { title, cards: cards as Prisma.InputJsonValue } })
+    }
+    const chunks = await this.db.noteChunk.findMany({ where: { versionId }, select: { id: true, text: true } })
+    for (const chunk of chunks) {
+      const text = await this.people.filterMinorText(ownerId, chunk.text)
+      if (text !== chunk.text) await this.db.noteChunk.update({ where: { id: chunk.id }, data: { text } })
+    }
   }
 
   /** The owner's visibility control. Null is not asked for: the resolver shows this only to the owner. */

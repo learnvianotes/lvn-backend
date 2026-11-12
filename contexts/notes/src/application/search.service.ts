@@ -156,6 +156,7 @@ export class SearchService {
     }
     found ??= await this.postgres.find(asked)
     if (how.hybrid) found = await this.fused(found, q)
+    found = await this.dropClosedNotes(found)
     const next = offset + q.size
     return { ...found, ...(await this.live(found, q)), notesCursor: q.scopes.has('NOTES') && next < found.notesTotal ? encodeCursor(next, key) : null }
   }
@@ -206,6 +207,16 @@ export class SearchService {
     // A resource rejected a moment ago may still be in the index: only approved ones come back (ADR-0075).
     const resourceOk = new Set(resources.map((r) => r.id))
     return { groups: found.groups.filter((id) => groupOk.has(id)), classrooms: found.classrooms.filter((id) => classOk.has(id)), resources: found.resources.filter((id) => resourceOk.has(id)) }
+  }
+
+  /** A public note by an under-13 account stays out of search until a parent turns social features on. */
+  private async dropClosedNotes(found: Found): Promise<Found> {
+    if (!found.notes.length) return found
+    const rows = await this.db.note.findMany({ where: { id: { in: found.notes.map((note) => note.noteId) } }, select: { id: true, ownerId: true } })
+    const closed = new Set(await this.people.socialClosedIds(rows.map((row) => row.ownerId)))
+    if (!closed.size) return found
+    const hidden = new Set(rows.filter((row) => closed.has(row.ownerId)).map((row) => row.id))
+    return { ...found, notes: found.notes.filter((note) => !hidden.has(note.noteId)) }
   }
 
   private fellBack(e: Error): void {

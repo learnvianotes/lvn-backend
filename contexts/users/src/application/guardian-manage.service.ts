@@ -19,6 +19,8 @@ export interface GuardianChildSummary {
   noticeVersion: string
   consentMethod: string
   consentVerified: boolean
+  /** The stored parent choice. It takes effect only while consentVerified is true and the band is under_13. */
+  socialEnabled: boolean
   accountStatus: string
   notes: number
   files: number
@@ -70,13 +72,28 @@ export class GuardianManageService {
     const userId = await this.notice.sessionUserId(sessionToken)
     const now = new Date()
     await this.db.$transaction([
-      this.db.guardianConsent.updateMany({ where: { userId }, data: { method: GUARDIAN_CONSENT_AUTO_UNVERIFIED, verifiedAt: null } }),
+      this.db.guardianConsent.updateMany({ where: { userId }, data: { method: GUARDIAN_CONSENT_AUTO_UNVERIFIED, verifiedAt: null, socialEnabled: false } }),
       this.db.guardianLink.updateMany({ where: { userId, purpose: 'CONFIRM', usedAt: null }, data: { usedAt: now } }),
     ])
     if (this.settings.consentRequiredForAccess()) {
       await this.policy.suspend(userId, new Date('9999-12-31T00:00:00.000Z'), GUARDIAN_CONSENT_WITHDRAWN_REASON)
       await this.sessions.revokeAll(userId)
     }
+    return this.summaryOf(userId)
+  }
+
+  /**
+   * Turns groups, classes, doubts, messages and public posts on or off for this child.
+   * Only an under-13 account, and only after consent is verified. Withdrawing consent clears the choice.
+   */
+  async setSocialEnabled(sessionToken: string, enabled: boolean): Promise<GuardianChildSummary> {
+    const userId = await this.notice.sessionUserId(sessionToken)
+    const consent = await this.db.guardianConsent.findFirst({ where: { userId }, orderBy: { recordedAt: 'desc' } })
+    if (!consent) throw Errors.validation('This link is invalid or has expired. Ask for a new one.')
+    const verified = hasVerifiedGuardianConsent([consent.method], this.settings.verificationSettings()) && (consent.method !== 'email_plus' || consent.verifiedAt !== null)
+    if (!verified) throw Errors.validation('Confirm this account before changing social features.')
+    if (consent.ageBand !== 'under_13') throw Errors.validation('This choice is for an under-13 account.')
+    await this.db.guardianConsent.update({ where: { id: consent.id }, data: { socialEnabled: enabled } })
     return this.summaryOf(userId)
   }
 
@@ -106,6 +123,7 @@ export class GuardianManageService {
       consentMethod: consent.method,
       // email_plus counts only after the click (verifiedAt) and only while the setting allows it.
       consentVerified: verified && (consent.method !== 'email_plus' || consent.verifiedAt !== null),
+      socialEnabled: consent.socialEnabled === true,
       accountStatus: user.accountStatus,
       notes,
       files,

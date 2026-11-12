@@ -60,4 +60,37 @@ export interface People {
    * Guardian consent does not change it. This is not the admin consent age.
    */
   isMinorForAi(userId: string): Promise<boolean>
+  /**
+   * Age band, verified consent and the parent social choice (ADR-0112). Null when the account is gone.
+   * `minor` is under 18 or an unknown age. `under13` is the guardian age band, or a known age under 13.
+   */
+  familiesStanding(userId: string): Promise<FamiliesStanding | null>
+  /** Throws FEATURE_UNAVAILABLE_FOR_MINOR when an under-13 account has no verified consent. */
+  assertDevicesOpen(userId: string): Promise<void>
+  /**
+   * Throws FEATURE_UNAVAILABLE_FOR_MINOR when an under-13 account may not use groups, classes, doubts,
+   * direct messages or public posts. Ages 13–17 are not this gate. There is no direct-message store yet;
+   * a message write calls this same check.
+   */
+  assertSocialOpen(userId: string): Promise<void>
+  /** Throws FEATURE_UNAVAILABLE_FOR_MINOR for a camera, microphone, audio or video upload while devices are closed. */
+  assertCaptureAllowed(userId: string, purpose: string, mimeType: string): Promise<void>
+  /** Of these accounts, the ones whose under-13 social features are still off. */
+  socialClosedIds(userIds: string[]): Promise<string[]>
+  /**
+   * The text a minor may store. Block mode throws MINOR_PII_BLOCKED. Redact mode returns the cleaned text.
+   * An adult's text is returned unchanged.
+   */
+  filterMinorText(userId: string, text: string): Promise<string>
+  /** The same filter for a rich-text document or other JSON value. */
+  filterMinorDoc(userId: string, doc: unknown): Promise<unknown>
+}
+
+/** What Families gates read. `socialEnabled` is the stored parent choice and applies only with verified consent. */
+export interface FamiliesStanding {
+  minor: boolean
+  under13: boolean
+  consentVerified: boolean
+  socialEnabled: boolean
+  safetyReminderAcknowledgedAt: Date | null
 }

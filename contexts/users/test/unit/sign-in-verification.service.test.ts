@@ -277,25 +277,31 @@ describe('reviewing your own verification request', () => {
 
 describe('viewerNeedsVerification', () => {
   function users(row: { globalRole: string; verifiedAt: Date | null }) {
+    const person = () => ({
+      id: 'u',
+      handle: 'ada',
+      displayName: 'Ada',
+      email: 'ada@example.com',
+      emailVerifiedAt: new Date(),
+      registrationCompletedAt: new Date(),
+      verificationMethod: null,
+      createdAt: new Date(),
+      dateOfBirth: new Date('2000-01-01'),
+      declaredAge: null,
+      ageDeclaredAt: null,
+      safetyReminderAcknowledgedAt: null,
+      accountStatus: 'ACTIVE',
+      deletionRequestedAt: null,
+      analyticsOptOut: false,
+      consents: [],
+      guardianConsents: [],
+      ...row,
+    })
     return new UsersService(
       {
         user: {
-          findFirst: async () => ({
-            id: 'u',
-            handle: 'ada',
-            displayName: 'Ada',
-            email: 'ada@example.com',
-            emailVerifiedAt: new Date(),
-            registrationCompletedAt: new Date(),
-            verificationMethod: null,
-            createdAt: new Date(),
-            dateOfBirth: new Date('2000-01-01'),
-            accountStatus: 'ACTIVE',
-            deletionRequestedAt: null,
-            analyticsOptOut: false,
-            consents: [],
-            ...row,
-          }),
+          findFirst: async () => person(),
+          findMany: async () => [person()],
         },
       } as never,
       { statusOf: async () => ({ email: null, status: 'NONE', institution: null }) } as never,

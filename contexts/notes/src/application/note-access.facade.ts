@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common'
+import { Inject, Injectable } from '@nestjs/common'
 import { Action, can } from '@lvn/contracts/domain'
-import type { NoteAccess, NoteReach, PlaceShare, PublicTopicNote, PublicTopicPage, ReadableNote, StudyCard } from '@lvn-backend/facades'
+import { PEOPLE, type NoteAccess, type NoteReach, type People, type PlaceShare, type PublicTopicNote, type PublicTopicPage, type ReadableNote, type StudyCard } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { noteFacts, visibleNotesWhere, type NoteAccessRow } from '../domain/note-access'
 import { NotesService } from './notes.service'
@@ -11,6 +11,7 @@ export class NoteAccessFacade implements NoteAccess {
   constructor(
     private readonly db: PrismaService,
     private readonly notes: NotesService,
+    @Inject(PEOPLE) private readonly people: People,
   ) {}
 
   async reach(viewerId: string, noteId: string): Promise<NoteReach | null> {
@@ -61,10 +62,11 @@ export class NoteAccessFacade implements NoteAccess {
       where: { AND: [visibleNotesWhere(viewerId), { id: { in: noteIds } }] },
       select: { id: true, ownerId: true, title: true, visibility: true, shares: { where: { userId: viewerId }, select: { role: true } }, publishedVersion: { select: { title: true } } },
     })
+    const closed = await this.closedOwners(rows.map((n) => n.ownerId), viewerId)
     const byId = new Map(rows.map((n) => [n.id, n]))
     return noteIds.flatMap((id) => {
       const n = byId.get(id)
-      if (!n) return []
+      if (!n || closed.has(n.ownerId)) return []
       // Owners and editors see the draft's title; everyone else the published one.
       const drafts = n.ownerId === viewerId || n.shares.some((s) => s.role === 'EDITOR')
       return [{ noteId: n.id, ownerId: n.ownerId, visibility: n.visibility, title: drafts ? n.title : (n.publishedVersion?.title ?? n.title) }]
@@ -75,11 +77,13 @@ export class NoteAccessFacade implements NoteAccess {
     if (!topicIds.length) return []
     const rows = await this.db.note.findMany({
       where: { AND: [visibleNotesWhere(null), { ownerId: { not: viewerId }, topics: { some: { topicId: { in: topicIds } } } }] },
-      select: { id: true, publishedAt: true, topics: { select: { topicId: true } }, publishedVersion: { select: { title: true, cards: options.withQuiz ?? false } } },
+      select: { id: true, ownerId: true, publishedAt: true, topics: { select: { topicId: true } }, publishedVersion: { select: { title: true, cards: options.withQuiz ?? false } } },
       orderBy: { publishedAt: 'desc' },
       take: options.withQuiz ? options.take * 5 : options.take,
     })
+    const closed = await this.closedOwners(rows.map((n) => n.ownerId), viewerId)
     return rows
+      .filter((n) => !closed.has(n.ownerId))
       .filter((n) => !options.withQuiz || ((n.publishedVersion?.cards ?? []) as { type: string }[]).some((c) => c.type === 'quiz'))
       .slice(0, options.take)
       .map((n) => ({ noteId: n.id, title: n.publishedVersion?.title ?? '', topicIds: n.topics.map((t) => t.topicId) }))
@@ -95,17 +99,49 @@ export class NoteAccessFacade implements NoteAccess {
           ...(before ? [{ OR: [{ publishedAt: { lt: before.at } }, { publishedAt: before.at, id: { lt: before.id } }] }] : []),
         ],
       },
-      select: { id: true, publishedAt: true, topics: { select: { topicId: true } } },
+      select: { id: true, ownerId: true, publishedAt: true, topics: { select: { topicId: true } } },
       orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
       take,
     })
-    return rows.map((n) => ({ noteId: n.id, at: n.publishedAt!, topicIds: n.topics.map((t) => t.topicId) }))
+    const closed = await this.closedOwners(rows.map((n) => n.ownerId), viewerId)
+    return rows.filter((n) => !closed.has(n.ownerId)).map((n) => ({ noteId: n.id, at: n.publishedAt!, topicIds: n.topics.map((t) => t.topicId) }))
+  }
+
+  async recentPublic(viewerId: string, take: number): Promise<PublicTopicNote[]> {
+    if (take <= 0) return []
+    const rows = await this.db.note.findMany({
+      where: { AND: [visibleNotesWhere(null), { ownerId: { not: viewerId } }] },
+      select: { id: true, ownerId: true, topics: { select: { topicId: true } }, publishedVersion: { select: { title: true } } },
+      orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
+      take,
+    })
+    const closed = await this.closedOwners(rows.map((n) => n.ownerId), viewerId)
+    return rows.filter((n) => !closed.has(n.ownerId)).map((n) => ({ noteId: n.id, title: n.publishedVersion?.title ?? '', topicIds: n.topics.map((t) => t.topicId) }))
+  }
+
+  async recentPublicPage(viewerId: string, excludeOwners: string[], before: { at: Date; id: string } | null, take: number): Promise<PublicTopicPage[]> {
+    if (take <= 0) return []
+    const rows = await this.db.note.findMany({
+      where: {
+        AND: [
+          visibleNotesWhere(null),
+          { ownerId: { notIn: [viewerId, ...excludeOwners] } },
+          ...(before ? [{ OR: [{ publishedAt: { lt: before.at } }, { publishedAt: before.at, id: { lt: before.id } }] }] : []),
+        ],
+      },
+      select: { id: true, ownerId: true, publishedAt: true, topics: { select: { topicId: true } } },
+      orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
+      take,
+    })
+    const closed = await this.closedOwners(rows.map((n) => n.ownerId), viewerId)
+    return rows.filter((n) => !closed.has(n.ownerId)).map((n) => ({ noteId: n.id, at: n.publishedAt!, topicIds: n.topics.map((t) => t.topicId) }))
   }
 
   async publicAmong(noteIds: string[]): Promise<{ noteId: string; ownerId: string }[]> {
     if (!noteIds.length) return []
     const rows = await this.db.note.findMany({ where: { AND: [visibleNotesWhere(null), { id: { in: noteIds } }] }, select: { id: true, ownerId: true } })
-    const byId = new Map(rows.map((n) => [n.id, n.ownerId]))
+    const closed = await this.closedOwners(rows.map((n) => n.ownerId), null)
+    const byId = new Map(rows.filter((n) => !closed.has(n.ownerId)).map((n) => [n.id, n.ownerId]))
     return noteIds.flatMap((id) => (byId.has(id) ? [{ noteId: id, ownerId: byId.get(id)! }] : []))
   }
 
@@ -132,6 +168,13 @@ export class NoteAccessFacade implements NoteAccess {
     ]
       .sort((a, b) => b.at.getTime() - a.at.getTime() || (a.noteId < b.noteId ? 1 : -1))
       .slice(0, take)
+  }
+
+  /** Under-13 accounts whose parent has not turned social features on. The viewer still sees their own notes. */
+  private async closedOwners(ownerIds: string[], viewerId: string | null): Promise<Set<string>> {
+    const closed = new Set(await this.people.socialClosedIds(ownerIds))
+    if (viewerId) closed.delete(viewerId)
+    return closed
   }
 
   async hasCard(noteId: string, cardId: string): Promise<boolean> {

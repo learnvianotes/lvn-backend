@@ -1,5 +1,6 @@
 export * from './enums'
 export * from './ai-safety'
+export * from './families'
 export * from './limits'
 export * from './college-id'
 export * from './permissions'

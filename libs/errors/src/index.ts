@@ -61,6 +61,10 @@ export const Errors = {
   unavailable: (message: string) => new AppError(ErrorCode.UNAVAILABLE, message),
   /** A minor's content has no provider except OpenAI, which is not approved for them. */
   minorAi: (message: string) => new AppError(ErrorCode.AI_UNAVAILABLE_FOR_MINOR, message),
+  /** Push, a camera or microphone upload, or a social feature an under-13 account cannot use yet. */
+  minorFeature: (message: string) => new AppError(ErrorCode.FEATURE_UNAVAILABLE_FOR_MINOR, message),
+  /** A minor wrote a phone number, email, street address or social handle, and the filter is set to block. */
+  minorPii: (message: string) => new AppError(ErrorCode.MINOR_PII_BLOCKED, message),
   underMinimumAge: (message: string, field?: string[]) => new AppError(ErrorCode.UNDER_MINIMUM_AGE, message, field),
   ageRestricted: (message: string, supportEmail: string, field?: string[]) => new AppError(ErrorCode.AGE_RESTRICTED, message, field, undefined, supportEmail),
 }
@@ -78,7 +82,7 @@ type Body<P> = Omit<P, 'userErrors'>
 
 /**
  * Runs a mutation body and turns expected failures (VALIDATION, CONFLICT, NOT_FOUND, RATE_LIMITED, UNAVAILABLE,
- * UNDER_MINIMUM_AGE, AGE_RESTRICTED, AI_UNAVAILABLE_FOR_MINOR, and a plan-cap FORBIDDEN) into the payload's `userErrors`. UNAUTHENTICATED, other FORBIDDEN
+ * UNDER_MINIMUM_AGE, AGE_RESTRICTED, AI_UNAVAILABLE_FOR_MINOR, FEATURE_UNAVAILABLE_FOR_MINOR, MINOR_PII_BLOCKED, and a plan-cap FORBIDDEN) into the payload's `userErrors`. UNAUTHENTICATED, other FORBIDDEN
  * errors and anything unexpected still throw, so clients handle permission in one place.
  * `P` is the payload type, e.g. `withUserErrors<AuthPayload>(…)`.
  */
@@ -87,7 +91,7 @@ export async function withUserErrors<P extends { userErrors: UserError[] }>(run:
     return { ...(await run()), userErrors: [] } as unknown as P
   } catch (e) {
     const planCap = e instanceof AppError && e.code === ErrorCode.FORBIDDEN && e.message.startsWith(PLAN_LIMIT_MESSAGE_PREFIX)
-    if (e instanceof AppError && (planCap || e.code === ErrorCode.VALIDATION || e.code === ErrorCode.CONFLICT || e.code === ErrorCode.NOT_FOUND || e.code === ErrorCode.RATE_LIMITED || e.code === ErrorCode.UNAVAILABLE || e.code === ErrorCode.UNDER_MINIMUM_AGE || e.code === ErrorCode.AGE_RESTRICTED || e.code === ErrorCode.AI_UNAVAILABLE_FOR_MINOR)) {
+    if (e instanceof AppError && (planCap || e.code === ErrorCode.VALIDATION || e.code === ErrorCode.CONFLICT || e.code === ErrorCode.NOT_FOUND || e.code === ErrorCode.RATE_LIMITED || e.code === ErrorCode.UNAVAILABLE || e.code === ErrorCode.UNDER_MINIMUM_AGE || e.code === ErrorCode.AGE_RESTRICTED || e.code === ErrorCode.AI_UNAVAILABLE_FOR_MINOR || e.code === ErrorCode.FEATURE_UNAVAILABLE_FOR_MINOR || e.code === ErrorCode.MINOR_PII_BLOCKED)) {
       return { ...empty, userErrors: [toUserError(e)] } as unknown as P
     }
     throw e

@@ -3,7 +3,7 @@ import { Inject, Injectable, type OnModuleInit } from '@nestjs/common'
 import { LearningEventType, PUBLIC_NOTES_REQUIRE_VERIFICATION, type Actor } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { PLATFORM_SETTINGS, POLICY, type PlatformSettings, type Policy } from '@lvn-backend/facades'
+import { PEOPLE, PLATFORM_SETTINGS, POLICY, type People, type PlatformSettings, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { answerIsCorrect, maySetQuizPublic, quizReadable, quizReadableByLink, quizStats, quizVisibilityChoices, type QuizStats, type QuizVisibility, type QuizVisibilityChoice } from '../domain/shared-quiz'
@@ -36,6 +36,7 @@ export class SharedQuizzesService implements OnModuleInit {
     private readonly limiter: RateLimiter,
     private readonly learning: LearningEventsService,
     @Inject(POLICY) private readonly policy: Policy,
+    @Inject(PEOPLE) private readonly people: People,
     @Inject(PLATFORM_SETTINGS) private readonly settings: PlatformSettings,
     @Inject(EVENT_BUS) private readonly events: EventBus,
   ) {}
@@ -48,9 +49,10 @@ export class SharedQuizzesService implements OnModuleInit {
 
   async create(ownerId: string, input: SharedQuizInput): Promise<SharedQuizRow> {
     const actor = await this.requireActor(ownerId)
-    const title = this.title(input.title)
-    const questions = this.questionsOf(input.questions)
     const visibility = input.visibility ?? 'PRIVATE'
+    const prepared = await this.forAudience(ownerId, visibility, this.title(input.title), this.questionsOf(input.questions))
+    const title = prepared.title
+    const questions = prepared.questions
     this.assertVisibility(actor, visibility)
     const rate = await this.limiter.hit(`core:quiz:${ownerId}`, { max: QUIZ_LIMITS.quizzesPerHour, windowSeconds: 3600 })
     if (!rate.allowed) throw Errors.rateLimited(rate.retryAfter, 'You have made a lot of quizzes in the last hour. Try again later.')
@@ -69,8 +71,9 @@ export class SharedQuizzesService implements OnModuleInit {
 
   async update(ownerId: string, quizId: string, input: SharedQuizInput): Promise<SharedQuizRow> {
     const quiz = await this.owned(ownerId, quizId)
-    const title = this.title(input.title)
-    const questions = this.questionsOf(input.questions)
+    const prepared = await this.forAudience(ownerId, quiz.visibility, this.title(input.title), this.questionsOf(input.questions))
+    const title = prepared.title
+    const questions = prepared.questions
     const taken = await this.db.sharedQuizAttempt.count({ where: { quizId } })
     if (taken) throw Errors.validation('This quiz has been taken, so its questions stay as they are.')
     await this.db.$transaction(async (tx) => {
@@ -86,6 +89,7 @@ export class SharedQuizzesService implements OnModuleInit {
   async setVisibility(ownerId: string, quizId: string, visibility: QuizVisibility): Promise<SharedQuizRow> {
     const actor = await this.requireActor(ownerId)
     const quiz = await this.owned(ownerId, quizId)
+    if (visibility === 'PUBLIC') await this.scrubPublic(ownerId, quiz)
     this.assertVisibility(actor, visibility)
     const publishedAt = visibility === 'PRIVATE' ? null : (quiz.publishedAt ?? new Date())
     return this.db.sharedQuiz.update({ where: { id: quizId }, data: { visibility, publishedAt } })
@@ -183,6 +187,32 @@ export class SharedQuizzesService implements OnModuleInit {
     } catch (e) {
       if ((e as { code?: string }).code === 'P2002') return this.db.sharedQuizAttempt.findUniqueOrThrow({ where: { clientOpId: input.clientOpId }, include: { answers: true } })
       throw e
+    }
+  }
+
+  /** Rewrites a stored quiz before it becomes public. Block mode throws and leaves the row unchanged. */
+  private async scrubPublic(ownerId: string, quiz: SharedQuizRow): Promise<void> {
+    const rows = await this.db.sharedQuizQuestion.findMany({ where: { quizId: quiz.id }, orderBy: { position: 'asc' } })
+    const prepared = await this.forAudience(ownerId, 'PUBLIC', quiz.title, rows.map((row) => row.content as unknown as QuizContent))
+    const titleChanged = prepared.title !== quiz.title
+    const changed = rows.filter((row, i) => JSON.stringify(row.content) !== JSON.stringify(prepared.questions[i]))
+    if (!titleChanged && !changed.length) return
+    await this.db.$transaction(async (tx) => {
+      if (titleChanged) await tx.sharedQuiz.update({ where: { id: quiz.id }, data: { title: prepared.title } })
+      for (const row of changed) {
+        const next = prepared.questions[rows.indexOf(row)]
+        await tx.sharedQuizQuestion.update({ where: { id: row.id }, data: { content: next as unknown as Prisma.InputJsonValue } })
+      }
+    })
+  }
+
+  /** A public quiz is a public post: the under-13 gate, then the minor PII filter on the title and questions. */
+  private async forAudience(ownerId: string, visibility: QuizVisibility, title: string, questions: QuizContent[]): Promise<{ title: string; questions: QuizContent[] }> {
+    if (visibility !== 'PUBLIC') return { title, questions }
+    await this.people.assertSocialOpen(ownerId)
+    return {
+      title: await this.people.filterMinorText(ownerId, title),
+      questions: (await this.people.filterMinorDoc(ownerId, questions)) as QuizContent[],
     }
   }
 

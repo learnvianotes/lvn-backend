@@ -94,6 +94,10 @@ export const ErrorCode = {
    * and no other provider can do that job. Clients show this instead of calling the feature.
    */
   AI_UNAVAILABLE_FOR_MINOR: 'AI_UNAVAILABLE_FOR_MINOR',
+  /** An under-13 account asked for push, a capture upload, or a social feature a parent has not turned on. */
+  FEATURE_UNAVAILABLE_FOR_MINOR: 'FEATURE_UNAVAILABLE_FOR_MINOR',
+  /** A minor's post or message contained a phone, email, street address or social handle, and the filter is set to block. */
+  MINOR_PII_BLOCKED: 'MINOR_PII_BLOCKED',
 } as const
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode]
 
