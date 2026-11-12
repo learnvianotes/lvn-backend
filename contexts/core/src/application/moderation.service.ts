@@ -432,10 +432,9 @@ export class ModerationService implements Moderation {
       throw Errors.validation('Say why: the author is told.', ['input', 'reason'])
     }
     // Accounts (ADR-0053): warned, suspended for a number of days, a suspension lifted (APPROVE), or reports dismissed.
-    let suspension: { until: Date; reason: string | null } | null = null
     if (input.entityType === 'USER') {
       if (!['DISMISS', 'WARN', 'SUSPEND', 'APPROVE'].includes(input.action)) throw Errors.validation('Accounts can be warned, suspended, or their reports dismissed.', ['input', 'action'])
-      suspension = await this.policy.suspension(input.entityId)
+      const suspension = await this.policy.suspension(input.entityId)
       if (input.action === 'APPROVE' && !suspension) throw Errors.validation('This account is not suspended.', ['input', 'action'])
       if (input.action === 'SUSPEND') {
         const days = input.suspendDays ?? 0
@@ -446,11 +445,10 @@ export class ModerationService implements Moderation {
       throw Errors.validation('Only accounts are suspended.', ['input', 'action'])
     }
     // A group (ADR-0051, ADR-0053): warned, removed, put back after a removal (APPROVE), or its reports dismissed.
-    let removedGroup = false
     if (input.entityType === 'GROUP') {
       if (!['WARN', 'DISMISS', 'REMOVE', 'APPROVE'].includes(input.action)) throw Errors.validation('A group can be warned, removed, or its reports dismissed.', ['input', 'action'])
       const g = await this.db.group.findUnique({ where: { id: input.entityId }, select: { deletedAt: true, removedReason: true } })
-      removedGroup = !!g?.deletedAt && g.removedReason !== null
+      const removedGroup = !!g?.deletedAt && g.removedReason !== null
       if (input.action === 'APPROVE' && !removedGroup) throw Errors.validation('Only a group moderators removed can be put back.', ['input', 'action'])
       if (input.action !== 'APPROVE' && input.action !== 'DISMISS' && g?.deletedAt) throw Errors.notFound('That group is not there any more.')
     }

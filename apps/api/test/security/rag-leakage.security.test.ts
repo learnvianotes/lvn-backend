@@ -126,7 +126,7 @@ describe('security: Ask AI leaks nothing (§10.2)', () => {
           refused++
           continue
         }
-        throw new Error(`#${i} ${who} ${scope} ${target}: ${(e as Error).message}`)
+        throw new Error(`#${i} ${who} ${scope} ${target}: ${(e as Error).message}`, { cause: e })
       }
       if (scope === 'THIS_NOTE' && !mayOpen.has(target)) leaks.push(`#${i} ${who} could ask about ${target}`)
       const chatsBefore = ollama.chats.length

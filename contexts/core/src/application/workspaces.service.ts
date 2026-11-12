@@ -124,7 +124,7 @@ export class WorkspacesService implements OnModuleInit {
   async refresh(groupId: string): Promise<void> {
     const repo = await this.db.groupRepository.findUnique({ where: { groupId } })
     if (!repo) return
-    let details: RepositoryDetails | null = null
+    let details: RepositoryDetails | null
     try {
       details = await this.fetchDetails(repo.provider, repo.path)
     } catch (err) {
