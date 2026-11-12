@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common'
-import { Query, Resolver } from '@nestjs/graphql'
+import { Query, ResolveField, Resolver } from '@nestjs/graphql'
 import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { DailyLineService } from '../application/daily-line.service'
 
@@ -12,5 +12,14 @@ export class DailyLineResolver {
   @Query('dailyLine')
   dailyLine(@CurrentViewer() viewer: Viewer) {
     return this.lines.forViewer(viewer.userId)
+  }
+}
+
+/** `fromAi` is the chosen-line flag. The label field follows it. */
+@Resolver('DailyLine')
+export class DailyLineLabelResolver {
+  @ResolveField('aiGenerated')
+  aiGenerated(parent: { fromAi?: boolean }): boolean {
+    return parent.fromAi === true
   }
 }

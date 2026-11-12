@@ -162,7 +162,7 @@ export class PdfConversionService {
    * too little of the OCR's words is rejected; a page that fails, or AI being off, keeps the OCR's cards. Never fails
    * the conversion.
    */
-  private async readAgain<T extends { type: CardType; content: unknown }>(c: { id: string; fileId: string }, m: ParsedMessage, cards: T[]) {
+  private async readAgain<T extends { type: CardType; content: unknown }>(c: { id: string; fileId: string; userId: string }, m: ParsedMessage, cards: T[]) {
     const pages = m.escalate ?? []
     if (!pages.length) return { cards: cards as { type: T['type']; content: unknown }[], aiPages: null, aiRejected: null }
     if (!(await this.vision.available().catch(() => false))) return { cards: cards as { type: T['type']; content: unknown }[], aiPages: 0, aiRejected: 0 }
@@ -172,7 +172,7 @@ export class PdfConversionService {
     for (const p of pages) {
       try {
         const png = Buffer.from(await this.storage.getBytes(m.bucket, p.key, 20 * 1024 ** 2)).toString('base64')
-        const reading = await this.vision.read(png)
+        const reading = await this.vision.read(png, c.userId)
         read++
         if (!acceptReading(pageText(out, p.page), reading.text, p.ocr ?? null)) {
           rejected++

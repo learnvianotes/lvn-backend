@@ -89,6 +89,11 @@ export const ErrorCode = {
   UNDER_MINIMUM_AGE: 'UNDER_MINIMUM_AGE',
   /** The account exists and is age-blocked. `userErrors[].supportEmail` is who to contact. */
   AGE_RESTRICTED: 'AGE_RESTRICTED',
+  /**
+   * A minor (under 18, or an unknown age) asked for an AI feature that would have to send their content to OpenAI,
+   * and no other provider can do that job. Clients show this instead of calling the feature.
+   */
+  AI_UNAVAILABLE_FOR_MINOR: 'AI_UNAVAILABLE_FOR_MINOR',
 } as const
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode]
 

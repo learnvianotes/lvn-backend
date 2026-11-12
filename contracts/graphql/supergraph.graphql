@@ -1297,6 +1297,11 @@ type AiAnswer
 
   """FAILED: why, in words for the asker"""
   error: String
+
+  """
+  True when this text was produced by a model, so clients can show an AI label.
+  """
+  aiGenerated: Boolean!
   noteId: UUID
   doubtId: UUID
   createdAt: DateTime!
@@ -1329,6 +1334,11 @@ type AiArtifact
 
   """FAILED: why, in words for the person"""
   error: String
+
+  """
+  True when this text was produced by a model, so clients can show an AI label.
+  """
+  aiGenerated: Boolean!
 
   """
   Made from the published version (the viewer is a reader) rather than the draft
@@ -1492,6 +1502,11 @@ type AiInsight
 
   """Hidden by the owner: only they see it"""
   hidden: Boolean!
+
+  """
+  True when this text was produced by a model, so clients can show an AI label.
+  """
+  aiGenerated: Boolean!
   versionId: UUID!
 }
 
@@ -1622,6 +1637,54 @@ type AiProviderPreset
   """Hints; a connection test lists what the account has"""
   chatModels: [String!]!
   embedModels: [String!]!
+}
+
+"""
+A report of one AI answer. context is the task, status and note id. The answer text is not here.
+"""
+type AiReport
+  @join__type(graph: AI)
+{
+  id: UUID!
+  reporterId: UUID!
+  responseId: UUID!
+
+  """ANSWER or ARTIFACT"""
+  responseKind: String!
+  reason: AiReportReason!
+  comment: String
+  context: JSON!
+  status: AiReportStatus!
+  resolvedBy: UUID
+  resolvedAt: DateTime
+  createdAt: DateTime!
+}
+
+type AiReportPayload
+  @join__type(graph: AI)
+{
+  report: AiReport
+  userErrors: [UserError!]!
+}
+
+"""Why someone reported a model answer"""
+enum AiReportReason
+  @join__type(graph: AI)
+{
+  INACCURATE @join__enumValue(graph: AI)
+  INAPPROPRIATE @join__enumValue(graph: AI)
+  HARMFUL @join__enumValue(graph: AI)
+  PERSONAL_INFO @join__enumValue(graph: AI)
+  OTHER @join__enumValue(graph: AI)
+}
+
+"""Where a report sits in the admin queue"""
+enum AiReportStatus
+  @join__type(graph: AI)
+{
+  OPEN @join__enumValue(graph: AI)
+  RESOLVED @join__enumValue(graph: AI)
+  DISMISSED @join__enumValue(graph: AI)
 }
 
 type AiSettings
@@ -3029,6 +3092,11 @@ type DailyLine
   """Written by AI for this person"""
   fromAi: Boolean!
 
+  """
+  True when a model wrote the line, false for the chosen line. Clients use this for the AI label.
+  """
+  aiGenerated: Boolean!
+
   """AI is writing today's line: ask again in a few seconds"""
   pending: Boolean!
 }
@@ -3258,6 +3326,7 @@ enum ErrorCode
   UNAVAILABLE @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
   UNDER_MINIMUM_AGE @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
   AGE_RESTRICTED @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  AI_UNAVAILABLE_FOR_MINOR @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
 }
 
 type Exam
@@ -4479,6 +4548,17 @@ type Mutation
   """The note's owner only"""
   setAiInsightHidden(id: UUID!, hidden: Boolean!): OkPayload! @join__field(graph: AI)
 
+  """
+  The person who received the answer, or any signed-in person for a public study aid. Rate limited per account.
+  """
+  reportAiAnswer(input: ReportAiAnswerInput!): ReportAiAnswerPayload! @join__field(graph: AI)
+
+  """Platform admins. Only an OPEN report can be resolved."""
+  resolveAiReport(id: UUID!): AiReportPayload! @join__field(graph: AI)
+
+  """Platform admins. Only an OPEN report can be dismissed."""
+  dismissAiReport(id: UUID!): AiReportPayload! @join__field(graph: AI)
+
   """Platform admins only, as every mutation below"""
   saveAiConnection(input: SaveAiConnectionInput!): AiConnectionPayload! @join__field(graph: AI)
 
@@ -5517,6 +5597,11 @@ type NotesFromTranscript
   noteId: UUID!
   title: String!
   summary: String!
+
+  """
+  True when this text was produced by a model, so clients can show an AI label.
+  """
+  aiGenerated: Boolean!
 }
 
 type NotesFromTranscriptPayload
@@ -6137,6 +6222,12 @@ type Query
   The viewer's recent answers, newest first: about one note, one doubt, or all
   """
   myAiAnswers(first: Int = 20, noteId: UUID, doubtId: UUID): [AiAnswer!]! @join__field(graph: AI)
+
+  """Platform admins. Newest first. status defaults to OPEN. first is 1–50."""
+  aiReports(status: AiReportStatus, first: Int = 20): [AiReport!]! @join__field(graph: AI)
+
+  """Platform admins."""
+  aiReport(id: UUID!): AiReport! @join__field(graph: AI)
 
   """Platform admins only"""
   aiSettings: AiSettings! @join__field(graph: AI)
@@ -6906,6 +6997,26 @@ input RenameTagInput
 {
   id: UUID!
   name: String!
+}
+
+input ReportAiAnswerInput
+  @join__type(graph: AI)
+{
+  responseId: UUID!
+
+  """
+  ANSWER (Ask AI) or ARTIFACT (a task result, including a public study aid)
+  """
+  responseKind: String!
+  reason: AiReportReason!
+  comment: String
+}
+
+type ReportAiAnswerPayload
+  @join__type(graph: AI)
+{
+  reportId: UUID
+  userErrors: [UserError!]!
 }
 
 input ReportContentInput
@@ -8610,6 +8721,11 @@ type Transcript
   The recording was longer than 30 minutes and the rest was not transcribed
   """
   cut: Boolean!
+
+  """
+  True when a model produced this text, so clients can show an AI label. False for browser SpeechRecognition captions.
+  """
+  aiGenerated: Boolean!
 }
 
 type TranscriptPayload

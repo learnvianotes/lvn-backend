@@ -693,6 +693,8 @@ export interface DailyLine {
   line: string
   /** Written by AI for this person */
   fromAi: boolean
+  /** True when a model wrote the line, false for the chosen line. Clients use this for the AI label. */
+  aiGenerated: boolean
   /** AI is writing today's line: ask again in a few seconds */
   pending: boolean
 }
@@ -788,7 +790,7 @@ export interface EditGroupPostInput {
   body: unknown
 }
 
-export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED'
+export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED' | 'AI_UNAVAILABLE_FOR_MINOR'
 
 export interface Exam {
   id: string

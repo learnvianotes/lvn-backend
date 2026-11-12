@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common'
 import type { People, Person, SearchProfile } from '@lvn-backend/facades'
 import { $Enums, PrismaService } from '@lvn-backend/prisma-base'
 import { methodsFromConsentRows } from '../domain/guardian-consent'
-import { ageOf, dayReachingAge, isRestrictedMinor } from '../domain/rules'
+import { ageOf, dayReachingAge, isAiMinor, isRestrictedMinor } from '../domain/rules'
 import { AGE_FIELDS, atLeastAge, RESTRICTION_CONSENT_SELECT } from './age'
 import type { SignInMethod, User } from '../graphql/schema.types'
 import { InstitutionalEmailService } from './institutional-email.service'
@@ -90,6 +90,13 @@ export class UsersService implements People {
     // A deleted account's name is its tombstone's, "Deleted user" (ADR-0088).
     const rows = await this.db.user.findMany({ where: { id: { in: [...new Set(ids)] } }, select: { id: true, displayName: true } })
     return Object.fromEntries(rows.map((r) => [r.id, r.displayName]))
+  }
+
+  /** People facade: under 18, unknown age, or a deleted account. Guardian consent is not read. */
+  async isMinorForAi(userId: string): Promise<boolean> {
+    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: AGE_FIELDS })
+    if (!u) return true
+    return isAiMinor(u)
   }
 
   /** People facade (ADR-0050): where communication writes to a person. */

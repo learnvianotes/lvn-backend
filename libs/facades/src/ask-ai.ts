@@ -14,8 +14,12 @@ export const LIVE = Symbol('LIVE')
 export interface Embeddings {
   /** The model embeddings come from now, or null when AI is off or not answering: then nothing is embedded. */
   model(): Promise<string | null>
-  /** One vector per text. `userId` null is the platform's own work (no quota); `private`: material that is not public. */
-  embed(texts: string[], who: { userId: string | null; private: boolean; task: string }): Promise<{ model: string; vectors: number[][] }>
+  /**
+   * One vector per text. `userId` null is the platform's own work (no quota). `subjectId` is whose age decides the
+   * provider when the content belongs to one person and `userId` does not (a published note's owner). `private`:
+   * material that is not public.
+   */
+  embed(texts: string[], who: { userId: string | null; private: boolean; task: string; subjectId?: string | null }): Promise<{ model: string; vectors: number[][] }>
 }
 
 /** Where to look, within what the asker may read: a workspace is a group whose shared notes a doubt is asked over. */

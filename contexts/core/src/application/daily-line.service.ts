@@ -57,7 +57,7 @@ export class DailyLineService {
   async write(userId: string, day: string, now = new Date()): Promise<boolean> {
     if (await this.redis.exists(key(userId, day))) return false
     try {
-      const written = await this.writer.write({ day: spokenDay(day), facts: await this.facts(userId, now) })
+      const written = await this.writer.write({ day: spokenDay(day), facts: await this.facts(userId, now), userId })
       await this.redis.set(key(userId, day), JSON.stringify(written), 'EX', KEPT_SECONDS)
       return true
     } catch (e) {

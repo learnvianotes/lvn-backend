@@ -1,5 +1,5 @@
 import type { DynamicModule } from '@nestjs/common'
-import type { ApiConfig } from '@lvn-backend/config'
+import { currentProcessEnv, type ApiConfig } from '@lvn-backend/config'
 import { AiModule, aiConfigFrom, aiSubgraph } from '@lvn-backend/ai'
 import { CommunicationModule, communicationConfigFrom, communicationSubgraph } from '@lvn-backend/communication'
 import { CoreModule, coreConfigFrom, coreSubgraph } from '@lvn-backend/core'
@@ -18,7 +18,7 @@ export function contextModules(config: ApiConfig): DynamicModule[] {
     UsersModule.forRoot(usersConfigFrom(config)),
     NotesModule.forRoot(notesConfigFrom(config)),
     CoreModule.forRoot(coreConfigFrom(config)),
-    AiModule.forRoot(aiConfigFrom(config)),
+    AiModule.forRoot(aiConfigFrom(config, currentProcessEnv())),
     // The API holds the live-update sockets (ADR-0042); the worker only publishes to them.
     CommunicationModule.forRoot(communicationConfigFrom(config), { serveLive: true }),
   ]

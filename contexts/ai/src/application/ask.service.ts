@@ -56,6 +56,10 @@ export class AskService {
       const source = await this.notes.source(viewerId, input.noteId)
       if (!source?.mayAskAi) throw Errors.notFound('Note not found.')
       noteId = input.noteId
+      await this.gateway.ensureRoutable(viewerId, 'ASK', source.visibility !== 'PUBLIC')
+    } else {
+      await this.gateway.ensureRoutable(viewerId, 'ASK', false)
+      await this.gateway.ensureRoutable(viewerId, 'EMBED_QUERY', false)
     }
     const answer = await this.queue({ askerId: viewerId, question, scope: input.scope, noteId })
     await this.learning.record(viewerId, { type: LearningEventType.AI_REQUESTED, entityType: 'AI_ANSWER', entityId: answer.id, metadata: { task: 'ASK', scope: input.scope } })
@@ -65,6 +69,8 @@ export class AskService {
   /** Ask AI on a workspace doubt (ADR-0015): the doubt and its thread as the question, over the workspace's notes. */
   async askAboutDoubt(viewerId: string, doubtId: string): Promise<AnswerRow> {
     await this.ready(viewerId)
+    await this.gateway.ensureRoutable(viewerId, 'ASK', false)
+    await this.gateway.ensureRoutable(viewerId, 'EMBED_QUERY', false)
     const doubt = await this.doubts.forAi(viewerId, doubtId)
     if (!doubt) throw Errors.notFound('Doubt not found.')
     const question = `${doubt.title}\n\n${doubt.text}`.trim().slice(0, QUESTION_CHARS * 2)

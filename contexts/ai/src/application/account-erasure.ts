@@ -22,6 +22,7 @@ export class AiAccountErasure implements OnModuleInit {
     await this.db.$transaction([
       this.db.noteArtifact.deleteMany({ where: { ownerId: userId } }),
       this.db.aiAnswer.deleteMany({ where: { askerId: userId } }),
+      this.db.aiReport.deleteMany({ where: { reporterId: userId } }),
       this.db.aiUsage.updateMany({ where: { userId }, data: { userId: null } }),
     ])
   }

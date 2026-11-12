@@ -18,12 +18,16 @@ import { AiPageVision } from './application/page-vision'
 import { AiSkillsReader } from './application/skills-reader'
 import { AiDailyLines } from './application/daily-lines'
 import { AiAccountErasure } from './application/account-erasure'
+import { AiReportsService } from './application/ai-reports.service'
+import { GeminiStartup } from './application/gemini-startup'
 import { PromptLibrary } from './application/prompts'
 import { AiResolver } from './graphql/ai.resolver'
 import { AiSettingsResolver } from './graphql/ai-settings.resolver'
 import { AiTasksResolver, NoteAiArtifactsResolver } from './graphql/ai-tasks.resolver'
 import { AskResolver } from './graphql/ai-ask.resolver'
 import { VoiceResolver } from './graphql/voice.resolver'
+import { AiReportsResolver } from './graphql/ai-reports.resolver'
+import { AiAnswerLabelResolver, AiArtifactLabelResolver, AiInsightLabelResolver, NotesFromTranscriptLabelResolver, TranscriptLabelResolver } from './graphql/ai-label.resolver'
 import { InsightsResolver, NoteInsightsResolver } from './graphql/ai-insights.resolver'
 import { OllamaProvider } from './infrastructure/ollama'
 
@@ -59,6 +63,8 @@ export class AiModule {
         AiSkillsReader,
         AiDailyLines,
         AiAccountErasure,
+        AiReportsService,
+        GeminiStartup,
         AskService,
         PublicPipeline,
         AiEmbeddings,
@@ -71,6 +77,12 @@ export class AiModule {
         InsightsResolver,
         AiSettingsResolver,
         VoiceResolver,
+        AiReportsResolver,
+        AiAnswerLabelResolver,
+        AiArtifactLabelResolver,
+        AiInsightLabelResolver,
+        TranscriptLabelResolver,
+        NotesFromTranscriptLabelResolver,
       ],
       exports: [AiGateway, AiAdminStats, AiTasksService, AskService, PublicPipeline, AiEmbeddings, AiExport, AiPageVision, AiSkillsReader, AiDailyLines],
     }

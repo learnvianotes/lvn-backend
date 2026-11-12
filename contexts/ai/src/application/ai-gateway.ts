@@ -1,14 +1,17 @@
-import { Inject, Injectable, Logger } from '@nestjs/common'
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common'
 import { z } from 'zod'
-import { LimitKey } from '@lvn/contracts/domain'
+import { AI_CHILD_SAFETY_PROMPT_SETTING, CHILD_SAFETY_PROMPT, LimitKey, OPENAI_ZDR_APPROVED_SETTING } from '@lvn/contracts/domain'
 import { assertWithinPlan, Errors, planLimitError } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { ENTITLEMENTS, PLATFORM_SETTINGS, fallbackPlatformSettings, type Entitlements, type PlatformSettings } from '@lvn-backend/facades'
+import { ENTITLEMENTS, PEOPLE, PLATFORM_SETTINGS, fallbackPlatformSettings, type Entitlements, type People, type PlatformSettings } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
 import { mendAll } from '../domain/escapes'
 import { ID_CARD_CHECK_TASK } from '../domain/id-card-route'
 import { audioTransport, modelCanHear } from '../domain/model-capabilities'
+import { blockedForMinor, MINOR_AI_MESSAGES, type AiCapability, type MinorRoutePolicy } from '../domain/minor-route'
+import { filterMinorOutput, withChildSafety } from '../domain/minor-output'
+import { isGeminiModel } from '../domain/gemini-policy'
 import { HttpProviderError, MODEL_UNSUPPORTED, ProviderError, UnsupportedInput, type ChatMessage } from '../domain/provider'
 import { AiProviders, type Target } from './ai-providers'
 import { PromptLibrary } from './prompts'
@@ -30,10 +33,15 @@ export interface GenerateCall<T> {
   /** The answer must parse as JSON of this shape; without it the answer is text */
   schema?: z.ZodType<T>
   images?: string[]
-  /** Streams the answer's text as it comes (text answers only) */
+  /** Streams the answer's text as it comes (text answers only). A minor's answer is not streamed until it has passed the output filter. */
   onDelta?: (text: string) => void
   maxTokens?: number
   temperature?: number
+  /**
+   * Whose age decides OpenAI and child-safety when it is not `userId` (platform work that still carries one person's
+   * content: a public note's owner, a daily line). Quota stays on `userId`.
+   */
+  subjectId?: string | null
 }
 
 export interface Generated<T> {
@@ -99,6 +107,7 @@ export class AiGateway {
     @Inject(ENTITLEMENTS) private readonly entitlements: Entitlements,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(PLATFORM_SETTINGS) private readonly settings: PlatformSettings = fallbackPlatformSettings,
+    @Optional() @Inject(PEOPLE) private readonly people: People | null = null,
   ) {}
 
   /** An admin's saved timeout, or the environment's AI_TIMEOUT_MS (ADR-0101). */
@@ -135,15 +144,34 @@ export class AiGateway {
   }
 
   async generate<T = string>(call: GenerateCall<T>): Promise<Generated<T>> {
-    return this.complete(await this.ready(await this.providers.forTask(call.task), call.userId, call.private), call)
+    const minor = await this.isMinor(call.subjectId ?? call.userId)
+    const chosen = await this.providers.guarded('task', call.task, this.routePolicy(minor, call.private))
+    if (chosen === 'blocked') throw Errors.minorAi(MINOR_AI_MESSAGES.chat)
+    return this.complete(await this.ready(chosen, call.userId, call.private), call, minor)
+  }
+
+  /**
+   * Refuses before a task is queued when this person would have nowhere to send it except OpenAI.
+   * A configured provider that is simply off still reports UNAVAILABLE, as it does for an adult.
+   */
+  async ensureRoutable(userId: string, task: string, isPrivate: boolean): Promise<void> {
+    const kind = task === 'EMBED' || task === 'EMBED_QUERY' ? 'embed' : task === 'TRANSCRIBE' ? 'transcribe' : 'task'
+    const capability: AiCapability = kind === 'task' ? 'chat' : kind
+    const minor = await this.isMinor(userId)
+    const chosen = await this.providers.guarded(kind, kind === 'task' ? task : null, this.routePolicy(minor, isPrivate))
+    if (chosen === 'blocked') throw Errors.minorAi(MINOR_AI_MESSAGES[capability])
+    if (!chosen) throw Errors.unavailable('AI is not switched on here.')
   }
 
   /**
    * One piece of a recording. Whisper and *-transcribe go to /audio/transcriptions. A chat model that can hear
    * takes the WAV on the chat call. A TRANSCRIBE route that names a deaf model is not replaced.
    */
-  async transcribeBytes(wav: Buffer, who: { userId: string | null; private: boolean }, piece: { part: number; parts: number } = { part: 1, parts: 1 }): Promise<string> {
-    const target = await this.providers.transcriptionChoice()
+  async transcribeBytes(wav: Buffer, who: { userId: string | null; private: boolean; subjectId?: string | null }, piece: { part: number; parts: number } = { part: 1, parts: 1 }): Promise<string> {
+    const minor = await this.isMinor(who.subjectId ?? who.userId)
+    const chosen = await this.providers.guarded('transcribe', null, this.routePolicy(minor, who.private))
+    if (chosen === 'blocked') throw Errors.minorAi(MINOR_AI_MESSAGES.transcribe)
+    const target = chosen
     if (!target) throw Errors.unavailable('AI is not switched on here.')
     if (!modelCanHear(target.model, target.adapter.name)) {
       throw Errors.unavailable(`${target.model} cannot hear recordings. Pick a model from the Transcribe list in Admin.`)
@@ -156,8 +184,9 @@ export class AiGateway {
       const started = Date.now()
       try {
         const heard = await this.withRetries(route, () => route.adapter.transcribe!({ model: route.model, wav, timeoutMs: this.timeoutMs() }))
+        const text = this.screen(heard.text.trim(), minor, 'TRANSCRIBE')
         await this.record({ userId: who.userId, task: 'TRANSCRIBE', model: route.model, promptTokens: heard.promptTokens, completionTokens: 0, ok: true, started, route })
-        return heard.text.trim()
+        return text
       } catch (e) {
         if (e instanceof ProviderError) {
           await this.record({ userId: who.userId, task: 'TRANSCRIBE', model: route.model, promptTokens: 0, completionTokens: 0, ok: false, started, route })
@@ -166,7 +195,7 @@ export class AiGateway {
         throw e
       }
     }
-    const generated = await this.complete<string>(target, { task: 'TRANSCRIBE', userId: who.userId, private: who.private, prompt: 'transcribe', vars: { part: piece.part, parts: piece.parts }, images: [wav.toString('base64')], temperature: 0 })
+    const generated = await this.complete<string>(target, { task: 'TRANSCRIBE', userId: who.userId, private: who.private, prompt: 'transcribe', vars: { part: piece.part, parts: piece.parts }, images: [wav.toString('base64')], temperature: 0 }, minor)
     return generated.output.replace(/<\/?content>/g, '').trim()
   }
 
@@ -176,9 +205,11 @@ export class AiGateway {
    * With no route: a private Gemini Flash, then GPT-4o-mini, then any other private chat model.
    * A provider that cannot take the file is skipped. Nothing about the image is logged.
    */
-  async extractIdCard(imageBase64: string): Promise<IdCardReading> {
-    const targets = await this.providers.idCardCandidates()
-    if (!targets.length) throw Errors.unavailable('AI is not switched on here.')
+  async extractIdCard(imageBase64: string, subjectId?: string | null): Promise<IdCardReading> {
+    const minor = await this.isMinor(subjectId ?? null)
+    const all = await this.providers.idCardCandidates()
+    const targets = minor ? all.filter((target) => !this.minorBlockedTarget(target)) : all
+    if (!targets.length) throw all.length && minor ? Errors.minorAi(MINOR_AI_MESSAGES.chat) : Errors.unavailable('AI is not switched on here.')
     let last: unknown = Errors.unavailable('AI is not switched on here.')
     for (const target of targets) {
       try {
@@ -191,7 +222,8 @@ export class AiGateway {
           schema: idCardSchema,
           temperature: 0,
           maxTokens: 600,
-        })
+          subjectId,
+        }, minor)
         const confidence = generated.output.confidence > 1 ? Math.min(1, generated.output.confidence / 100) : Math.max(0, generated.output.confidence)
         return { ...generated.output, confidence }
       } catch (e) {
@@ -203,17 +235,21 @@ export class AiGateway {
   }
 
   /** One call on an already chosen provider. `ready` still checks the budget, the circuit and private data. */
-  private async complete<T>(target: Target, call: GenerateCall<T>): Promise<Generated<T>> {
+  private async complete<T>(target: Target, call: GenerateCall<T>, minor = false): Promise<Generated<T>> {
     const route = await this.ready(target, call.userId, call.private)
     const adapter = route.adapter
     const rendered = this.prompts.render(call.prompt, call.vars, call.content)
     const messages: ChatMessage[] = rendered.messages.map((m, i) => (i === rendered.messages.length - 1 && call.images?.length ? { ...m, images: call.images } : m))
+    // ID-card extraction must read the document. The child-safety prompt would tell the model not to collect names.
+    const safety = minor && call.task !== ID_CARD_CHECK_TASK
+    if (safety && messages[0]?.role === 'system') messages[0] = { ...messages[0], content: withChildSafety(messages[0].content, this.childSafetyPrompt()) }
     const schema = call.schema ? (z.toJSONSchema(call.schema) as object) : undefined
     const started = Date.now()
     let promptTokens = 0
     let completionTokens = 0
     const ask = async (msgs: ChatMessage[]) => {
-      const res = await this.withRetries(route, () => adapter.chat({ model: route.model, messages: msgs, schema, maxTokens: call.maxTokens, temperature: call.temperature, timeoutMs: this.timeoutMs() }, schema ? undefined : call.onDelta))
+      // A minor's tokens are not written out until the finished answer has passed the filter.
+      const res = await this.withRetries(route, () => adapter.chat({ model: route.model, messages: msgs, schema, maxTokens: call.maxTokens, temperature: call.temperature, timeoutMs: this.timeoutMs() }, schema || safety ? undefined : call.onDelta))
       promptTokens += res.promptTokens
       completionTokens += res.completionTokens
       return res.text
@@ -222,14 +258,25 @@ export class AiGateway {
       this.record({ userId: call.userId, task: call.task, model: route.model, promptId: rendered.id, promptVersion: rendered.version, promptTokens, completionTokens, ok, started, route })
     try {
       const text = await ask(messages)
+      const screened = safety ? this.screen(text, true, call.task) : text
+      if (screened !== text) {
+        await record(!call.schema)
+        if (call.schema) throw Errors.unavailable(screened)
+        return { output: screened as T, model: route.model, promptTokens, completionTokens }
+      }
       if (!call.schema) {
         await record(true)
         return { output: text as T, model: route.model, promptTokens, completionTokens }
       }
       let parsed = parseAs(call.schema, text)
       if (!parsed.success) {
-        // One repair: the model sees its answer and what was wrong with it.
-        const again = await ask([...messages, { role: 'assistant', content: text }, { role: 'user', content: `That answer does not match the format: ${parsed.problem}. Answer again with JSON only, in the format asked.` }])
+        // One repair: the model sees its answer and what was wrong with it. A minor's repair is filtered before it is parsed.
+        const againRaw = await ask([...messages, { role: 'assistant', content: text }, { role: 'user', content: `That answer does not match the format: ${parsed.problem}. Answer again with JSON only, in the format asked.` }])
+        const again = safety ? this.screen(againRaw, true, call.task) : againRaw
+        if (again !== againRaw) {
+          await record(false)
+          throw Errors.unavailable(again)
+        }
         parsed = parseAs(call.schema, again)
       }
       if (!parsed.success) {
@@ -260,9 +307,12 @@ export class AiGateway {
    * Vectors for texts, in order. Every embedding comes from the `EMBED` route's model, so a question and the chunks it
    * is compared with always share one model; `task` only labels the usage (EMBED, EMBED_QUERY).
    */
-  async embed(texts: string[], who: { userId: string | null; private: boolean; task?: string }): Promise<number[][]> {
+  async embed(texts: string[], who: { userId: string | null; private: boolean; task?: string; subjectId?: string | null }): Promise<number[][]> {
     if (!texts.length) return []
-    const route = await this.ready(await this.providers.forEmbeddings(), who.userId, who.private)
+    const minor = await this.isMinor(who.subjectId ?? who.userId)
+    const chosen = await this.providers.guarded('embed', null, this.routePolicy(minor, who.private))
+    if (chosen === 'blocked') throw Errors.minorAi(MINOR_AI_MESSAGES.embed)
+    const route = await this.ready(chosen, who.userId, who.private)
     const started = Date.now()
     try {
       const res = await this.withRetries(route, () => route.adapter.embed(route.model, texts, this.timeoutMs()))
@@ -291,6 +341,49 @@ export class AiGateway {
       if (limitToday !== null && usedToday >= limitToday) throw planLimitError(LimitKey.AI_TOKENS_DAILY)
     }
     return target
+  }
+
+  /** Under 18, or an age the platform cannot tell. No people binding (unit tests, platform jobs) is an adult. A lookup that throws fails safe as a minor. */
+  private async isMinor(userId: string | null | undefined): Promise<boolean> {
+    if (!userId || !this.people) return false
+    try {
+      return await this.people.isMinorForAi(userId)
+    } catch (e) {
+      this.log.warn(`Could not read the age for AI routing: ${e instanceof Error ? e.name : 'error'}`)
+      return true
+    }
+  }
+
+  private routePolicy(minor: boolean, needsPrivate: boolean): MinorRoutePolicy {
+    return { minor, openAiAllowed: minor && this.settings.boolean(OPENAI_ZDR_APPROVED_SETTING, false), needsPrivate }
+  }
+
+  private childSafetyPrompt(): string {
+    const saved = (this.settings.string(AI_CHILD_SAFETY_PROMPT_SETTING, '') ?? '').trim()
+    return saved || CHILD_SAFETY_PROMPT
+  }
+
+  /** Replaces a minor's unsafe answer and logs the category only. The text and the person are not logged. */
+  private screen(text: string, minor: boolean, task: string): string {
+    if (!minor) return text
+    const verdict = filterMinorOutput(text)
+    if (verdict.ok) return text
+    this.log.warn(`AI output for a minor was replaced (${verdict.category}, task ${task})`)
+    return verdict.message
+  }
+
+  private minorBlockedTarget(target: Target): boolean {
+    return blockedForMinor({
+      key: '',
+      kind: target.adapter.name,
+      model: target.model,
+      mayReceivePrivate: target.adapter.mayReceivePrivate,
+      chats: true,
+      embeds: false,
+      hears: false,
+      google: target.adapter.name === 'GEMINI' || isGeminiModel(target.model),
+      openAi: target.adapter.name === 'OPENAI',
+    }, this.settings.boolean(OPENAI_ZDR_APPROVED_SETTING, false))
   }
 
   private async withRetries<R>(target: Target, run: () => Promise<R>): Promise<R> {

@@ -3531,3 +3531,43 @@ model AiAnswer {
   @@index([askerId, doubtId])
   @@schema("ai")
 }
+
+enum AiReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+
+  @@schema("ai")
+}
+
+enum AiReportReason {
+  INACCURATE
+  INAPPROPRIATE
+  HARMFUL
+  PERSONAL_INFO
+  OTHER
+
+  @@schema("ai")
+}
+
+/// A report of one AI answer (Families policy). The answer text is not stored: `context` holds the task, status and
+/// note id so an admin can find the row. `reporterId` has no foreign key, matching AiUsage, and is cleared with the account.
+model AiReport {
+  id           String         @id @db.Uuid
+  reporterId   String         @db.Uuid
+  responseId   String         @db.Uuid
+  /// ANSWER or ARTIFACT
+  responseKind String
+  reason       AiReportReason
+  comment      String?
+  /// { task, status, noteId }
+  context      Json           @default("{}")
+  status       AiReportStatus @default(OPEN)
+  resolvedBy   String?        @db.Uuid
+  resolvedAt   DateTime?      @db.Timestamptz(3)
+  createdAt    DateTime       @default(now()) @db.Timestamptz(3)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([reporterId, createdAt(sort: Desc)])
+  @@schema("ai")
+}

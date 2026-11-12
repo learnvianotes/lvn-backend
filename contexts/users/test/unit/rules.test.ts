@@ -9,6 +9,7 @@ import {
   emailSchema,
   handleBase,
   handleSchema,
+  isAiMinor,
   isBelowMinimumAge,
   isReservedHandle,
   isRestrictedMinor,
@@ -60,6 +61,9 @@ describe('ageOf (ADR-0104)', () => {
 
   it('is unknown before registration is finished', () => {
     expect(ageOf(unknown, d('2026-11-04'))).toBeNull()
+    expect(isAiMinor(born('2009-01-01'), d('2026-11-04'))).toBe(true)
+    expect(isAiMinor(born('2008-11-04'), d('2026-11-04'))).toBe(false)
+    expect(isAiMinor(unknown, d('2026-11-04'))).toBe(true)
     expect(ageOf({ dateOfBirth: null, declaredAge: 20, ageDeclaredAt: null }, d('2026-11-04'))).toBeNull()
   })
 })

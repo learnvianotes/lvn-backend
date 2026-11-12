@@ -1,5 +1,5 @@
 /** One admin-editable application setting (ADR-0101). Ports, URLs and secrets stay in the environment. */
-import { DEFAULT_UNVERIFIED_GATED_ACTIONS, parseUnverifiedGateSetting, PUBLIC_NOTES_REQUIRE_VERIFICATION } from '@lvn/contracts/domain'
+import { AI_CHILD_SAFETY_PROMPT_SETTING, AI_REPORT_MAX_PER_HOUR_DEFAULT, AI_REPORT_MAX_PER_HOUR_SETTING, DEFAULT_UNVERIFIED_GATED_ACTIONS, OPENAI_ZDR_APPROVED_SETTING, parseUnverifiedGateSetting, PUBLIC_NOTES_REQUIRE_VERIFICATION } from '@lvn/contracts/domain'
 import { ACCOUNT_MINIMUM_AGE_MAX, ACCOUNT_MINIMUM_AGE_MIN, DEFAULT_ACCOUNT_MINIMUM_AGE, DEFAULT_GUARDIAN_NOTICE_VERSION, GUARDIAN_NOTICE_VERSION_SETTING } from './guardian-consent'
 import {
   DEFAULT_GUARDIAN_LINK_RESEND_PER_HOUR,
@@ -235,6 +235,36 @@ export const SETTING_CATALOG: SettingDef[] = [
     nullable: false,
     min: 1_000,
     max: 600_000,
+  },
+  {
+    key: OPENAI_ZDR_APPROVED_SETTING,
+    type: 'BOOLEAN',
+    category: 'ai',
+    description: 'Allow OpenAI to receive content from anyone under 18, or whose age is unknown, because a zero-data-retention agreement is in place. Off until an admin turns it on. It does not allow Gemini. The environment does not set this.',
+    defaultValue: false,
+    environmentFallback: false,
+    nullable: false,
+  },
+  {
+    key: AI_CHILD_SAFETY_PROMPT_SETTING,
+    type: 'STRING',
+    category: 'ai',
+    description: 'System prompt prepended for anyone under 18, or whose age is unknown, on every AI provider. Empty uses the built-in child-safety prompt. The environment does not set this.',
+    defaultValue: '',
+    environmentFallback: false,
+    nullable: false,
+    maxLength: 8_000,
+  },
+  {
+    key: AI_REPORT_MAX_PER_HOUR_SETTING,
+    type: 'INTEGER',
+    category: 'ai',
+    description: 'How many AI answers one account may report per hour. A missing row means 10. The environment does not set this.',
+    defaultValue: AI_REPORT_MAX_PER_HOUR_DEFAULT,
+    environmentFallback: false,
+    nullable: false,
+    min: 1,
+    max: 100,
   },
   {
     key: 'search_hybrid',

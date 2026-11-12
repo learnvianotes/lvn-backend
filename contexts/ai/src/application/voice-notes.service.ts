@@ -56,10 +56,10 @@ export class VoiceNotesService {
   }
 
   /** Browser captions when they are present. Otherwise the uploaded clip. */
-  async transcribeCaption(userId: string, input: VoiceNoteInput): Promise<{ text: string; cut: boolean }> {
+  async transcribeCaption(userId: string, input: VoiceNoteInput): Promise<{ text: string; cut: boolean; aiGenerated?: boolean }> {
     await this.readable(userId, input.noteId)
     const captions = input.captions?.trim() ?? ''
-    if (captions) return { text: captions.slice(0, TRANSCRIPT_CHARS), cut: captions.length > TRANSCRIPT_CHARS }
+    if (captions) return { text: captions.slice(0, TRANSCRIPT_CHARS), cut: captions.length > TRANSCRIPT_CHARS, aiGenerated: false }
     if (input.fileId) return this.recording(userId, input.noteId, input.fileId)
     throw Errors.validation('Send the captions or the clip.', ['input', 'captions'])
   }

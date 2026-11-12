@@ -25,7 +25,7 @@ describe('AiGateway', () => {
   const published: { name: string; payload: unknown }[] = []
   const entitlements: Entitlements = { limit: async (userId) => planned.get(userId) ?? null }
   const events = { publish: async (name: string, payload: unknown) => void published.push({ name, payload }), subscribe: () => undefined } as unknown as EventBus
-  const config = (over: Partial<AiConfig> = {}): AiConfig => ({ provider: 'ollama', ollama: { url: ollama.url }, chatModel: 'gemma4', embedModel: 'embeddinggemma', timeoutMs: 5_000, monthlyBudgetMicroUsd: null, publicPipeline: true, keysSecret: null, ...over })
+  const config = (over: Partial<AiConfig> = {}): AiConfig => ({ appEnv: 'development', geminiEnvNames: [], provider: 'ollama', ollama: { url: ollama.url }, chatModel: 'gemma4', embedModel: 'embeddinggemma', timeoutMs: 5_000, monthlyBudgetMicroUsd: null, publicPipeline: true, keysSecret: null, ...over })
   const gateway = (over: Partial<AiConfig> = {}, adapter: AiProviderAdapter | null = new OllamaProvider(ollama.url)) => {
     const c = config(over)
     return new AiGateway(db, new PromptLibrary(), c, new AiProviders(db, c, adapter, new AiKeys(c)), entitlements, events)
