@@ -50,6 +50,7 @@ import { StudentIdVerificationPublicResolver, StudentIdVerificationResolver } fr
 import { TeacherStatusResolver, VerificationResolver } from './graphql/verification.resolver'
 import { UserReferenceResolver } from './graphql/user-reference.resolver'
 import { UserSignInMethodsResolver, ViewerResolver } from './graphql/viewer.resolver'
+import { VersionResolver } from './graphql/version.resolver'
 import { USERS_CONFIG, type UsersConfig } from './users.config'
 import { AccountAdminService } from './application/account-admin.service'
 import { AccountDeletionService } from './application/account-deletion.service'
@@ -135,6 +136,7 @@ export class UsersModule {
         TeacherProfileService,
         SkillsImportService,
         ViewerResolver,
+        VersionResolver,
         UserSignInMethodsResolver,
         SocialResolver,
         PeopleResolver,

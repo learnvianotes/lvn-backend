@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@lvn-backend/auth-guard": "workspace:*",
+    "@lvn-backend/config": "workspace:*",
     "@lvn-backend/errors": "workspace:*",
     "@lvn-backend/event-bus": "workspace:*",
     "@lvn-backend/facades": "workspace:*",

@@ -574,6 +574,9 @@ importers:
       '@lvn-backend/auth-guard':
         specifier: workspace:*
         version: link:../../libs/auth-guard
+      '@lvn-backend/config':
+        specifier: workspace:*
+        version: link:../../libs/config
       '@lvn-backend/errors':
         specifier: workspace:*
         version: link:../../libs/errors

@@ -6734,6 +6734,11 @@ type Query
   Platform admins: the same queue, or every domain of one status. Omit status for domains still waiting.
   """
   institutionDomains(status: DomainReviewStatus, first: Int): [DomainReview!]! @join__field(graph: USERS)
+
+  """
+  Public. This running build: the package version plus the short git SHA, as vX.Y.Z+sha. Not the terms date (termsVersion).
+  """
+  version: String! @join__field(graph: USERS)
 }
 
 type QuizAnswer

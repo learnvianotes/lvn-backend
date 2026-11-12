@@ -15,7 +15,11 @@ describe('health', () => {
 
   it('is ready when Postgres and Redis answer and the database has this build’s migrations', async () => {
     const res = await request(t.app.getHttpServer()).get('/health/ready').expect(200)
-    expect(res.body).toEqual({ status: 'ok', checks: { database: 'ok', redis: 'ok', schema: 'ok' } })
+    expect(res.body).toEqual({
+      status: 'ok',
+      checks: { database: 'ok', redis: 'ok', schema: 'ok' },
+      version: expect.stringMatching(/^v\d+\.\d+\.\d+\+/),
+    })
   })
 
   it('is not ready while the database lacks a migration this build ships (a deploy before its migrate task)', async () => {
