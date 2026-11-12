@@ -97,7 +97,7 @@ export class LiveServer implements OnApplicationBootstrap, OnApplicationShutdown
 
   /** Refuses a browser Origin that is not on the allow-list before the socket is accepted. */
   private readonly onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
-    let pathname = ''
+    let pathname: string
     try {
       pathname = new URL(req.url ?? '/', 'http://localhost').pathname
     } catch {

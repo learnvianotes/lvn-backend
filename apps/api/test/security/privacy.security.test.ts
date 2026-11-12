@@ -414,7 +414,7 @@ describe('security: privacy', () => {
       const groupId = (await t.gql<{ createGroup: { group: { id: string } } }>('mutation { createGroup(input: { name: "Group H", privacy: PRIVATE }) { group { id } } }', {}, t1.token)).data!.createGroup.group.id
       // A writes in H; B reports it. Both are verified for this, and go back to unverified afterwards.
       await db.user.updateMany({ where: { id: { in: [actors.a.id, actors.b.id] } }, data: { verifiedAt: new Date(), verificationMethod: 'INSTITUTIONAL_EMAIL' } })
-      let postId = ''
+      let postId!: string
       try {
         for (const who of [actors.a, actors.b]) await db.groupMember.create({ data: { groupId, userId: who.id, role: 'MEMBER' } })
         postId = (await t.gql<{ createGroupPost: { post: { id: string } } }>('mutation ($input: CreateGroupPostInput!) { createGroupPost(input: $input) { post { id } } }', { input: { groupId, body: doc('A’s rant') } }, actors.a.token)).data!.createGroupPost.post.id

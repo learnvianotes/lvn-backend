@@ -340,7 +340,7 @@ const scanConfigured = <T extends { APP_ENV: string; SCAN_MODE?: 'remote' | 'loc
     if (!c.SCANNER_URL) ctx.addIssue({ code: 'custom', path: ['SCANNER_URL'], message: 'required when SCAN_MODE=remote' })
     if (!c.SCANNER_SECRET) ctx.addIssue({ code: 'custom', path: ['SCANNER_SECRET'], message: 'required when SCAN_MODE=remote' })
     if (c.SCANNER_URL && c.APP_ENV !== 'development') {
-      let host = ''
+      let host: string
       try {
         host = new URL(c.SCANNER_URL).hostname
       } catch {

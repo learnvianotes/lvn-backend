@@ -143,7 +143,7 @@ export class SkillsImportService {
     const identity = await this.db.externalIdentity.findUnique({ where: { id: identityId } })
     if (!identity?.verifiedAt) return
     let found: Found[]
-    let note: string | null = null
+    let note: string | null
     try {
       ;({ found, note } = identity.kind === 'GITHUB' ? await this.fromGitHub(identity.value, identity.userId) : await this.fromWebsite(identity.value, identity.userId))
     } catch (err) {
