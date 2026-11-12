@@ -11,3 +11,4 @@ export const loadWorkerConfig = (env: NodeJS.ProcessEnv = process.env): WorkerCo
 export const currentProcessEnv = (env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv => env
 
 export type { ApiConfig, WorkerConfig }
+export { appVersion, formatRunningRelease, runningRelease, shortSha } from './release'

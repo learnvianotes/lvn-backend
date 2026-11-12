@@ -5754,6 +5754,11 @@ type Query {
   """
   verificationRequestsToReview(after: UUID, first: Int): [VerificationRequest!]!
 
+  """
+  Public. This running build: the package version plus the short git SHA, as vX.Y.Z+sha. Not the terms date (termsVersion).
+  """
+  version: String!
+
   """The signed-in user, null for anonymous visitors"""
   viewer: User
 
