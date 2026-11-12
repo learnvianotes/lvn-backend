@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- The running release (the package version plus the short git SHA) shows on the readiness check and as the GraphQL `version` field, and the versioning rules are written down.
+- The running release (the package version plus the short git SHA) shows on the readiness check and as the GraphQL `version` field, and the versioning rules are written down. [#78](https://github.com/learnvianotes/lvn-backend/pull/78)
 
 ## [0.5.0] - 2026-11-12
 
