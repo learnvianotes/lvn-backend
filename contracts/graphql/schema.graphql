@@ -2894,7 +2894,7 @@ type ExternalIdentityPayload {
 }
 
 """
-What an upload is for. ATTACHMENT is a picture, video, audio or PDF for a note you can edit (parentId). PAGE_IMAGE is a PNG or JPEG for a note page (parentId). VOICE_NOTE is audio; parentId is the note when the recording belongs to one, and omitted when it stands alone. Every one of these finishes with completeUpload, so a remote scan still runs.
+What an upload is for. ATTACHMENT is a picture, video, audio, PDF, Word (.doc, .docx), PowerPoint (.ppt, .pptx) or plain-text file for a note you can edit (parentId). PAGE_IMAGE is a PNG or JPEG for a note page (parentId). VOICE_NOTE is audio; parentId is the note when the recording belongs to one, and omitted when it stands alone. Every one of these finishes with completeUpload, so a remote scan still runs.
 """
 enum FilePurpose {
   ATTACHMENT
