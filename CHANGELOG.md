@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Notes can have Word, PowerPoint and plain-text attachments. The file contents are checked, so a renamed archive or a binary renamed as text is refused.
+- Notes can have Word, PowerPoint and plain-text attachments. The file contents are checked, so a renamed archive or a binary renamed as text is refused. [#79](https://github.com/learnvianotes/lvn-backend/pull/79)
 - The running release (the package version plus the short git SHA) shows on the readiness check and as the GraphQL `version` field, and the versioning rules are written down. [#78](https://github.com/learnvianotes/lvn-backend/pull/78)
 
 ## [0.5.0] - 2026-11-12
