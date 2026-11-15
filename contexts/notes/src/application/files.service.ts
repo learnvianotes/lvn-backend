@@ -5,7 +5,7 @@ import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { ENTITLEMENTS, PEOPLE, PLATFORM_SETTINGS, POLICY, type Entitlements, type FileParentKind, type FilePurposeKind, type Files, type FileSummary, type People, type PlatformSettings, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
-import { detectMimeType, Storage } from '@lvn-backend/storage'
+import { detectMimeType, isPlainText, MIME_SAMPLE_BYTES, sameKind, sniffBytes, Storage } from '@lvn-backend/storage'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
 import { NotesService } from './notes.service'
 import { uploadRefusal, type UploadLimitConfig, type WindowResult } from './scan-policy'
@@ -19,12 +19,22 @@ const READ_URL_TTL_SECONDS = 15 * 60
 const PENDING_TTL_MS = 24 * 60 * 60 * 1000
 const IMAGES = ['image/jpeg', 'image/png', 'image/webp']
 
-/** What a note may show (§8.1 limits by kind): pictures, video, audio and PDF documents. */
+/** Documents share the PDF limit: PDF, Word, PowerPoint and plain text. */
+const DOCUMENTS = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+]
+
+/** What a note may show (§8.1 limits by kind): pictures, video, audio and documents. */
 const NOTE_MEDIA: Record<string, number> = {
   ...Object.fromEntries([...IMAGES, 'image/gif'].map((m) => [m, UploadLimits.image])),
   ...Object.fromEntries(['video/mp4', 'video/webm', 'video/quicktime'].map((m) => [m, UploadLimits.video])),
   ...Object.fromEntries(['audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/webm'].map((m) => [m, UploadLimits.audio])),
-  'application/pdf': UploadLimits.document,
+  ...Object.fromEntries(DOCUMENTS.map((m) => [m, UploadLimits.document])),
 }
 
 interface PurposeRule {
@@ -62,17 +72,6 @@ export interface UploadRequest {
 }
 
 const field = (name: string) => ['input', name]
-
-/**
- * Whether the bytes are what was declared. WebM and MP4 are containers: a recording made in the browser is audio/webm
- * whose bytes look like video/webm, and many .m4a files carry an MP4 brand.
- */
-function sameKind(declared: string, detected: string | null): boolean {
-  if (declared === detected) return true
-  // Text has no magic bytes; it must at least not look like binary.
-  if (declared.startsWith('text/') && detected === null) return true
-  return (declared === 'audio/webm' && detected === 'video/webm') || (declared === 'audio/mp4' && detected === 'video/mp4')
-}
 
 /**
  * The upload flow of §8.1 and the FileObject record of §8.2: a row first, then a pre-signed PUT bound to the declared
@@ -185,8 +184,8 @@ export class FilesService implements Files {
       throw Errors.validation(message)
     }
     if (object.sizeBytes !== Number(file.sizeBytes)) await fail('The uploaded file is not the size that was declared.')
-    const detected = detectMimeType(await this.storage.firstBytes(file.bucket, file.storageKey))
-    if (!sameKind(file.mimeType, detected)) await fail('The file content does not match its type.')
+    const { detected, sample } = await this.sniff(file.bucket, file.storageKey, object.sizeBytes)
+    if (!sameKind(file.mimeType, detected, sample, sample.length < object.sizeBytes)) await fail('The file content does not match its type.')
     if (this.config.scan.mode === 'remote') await this.assertPendingScans(ownerId)
 
     await this.db.fileObject.update({
@@ -281,8 +280,8 @@ export class FilesService implements Files {
       throw Errors.validation(message, ['input', 'fileId'])
     }
     if (object.sizeBytes !== Number(file.sizeBytes)) await fail('The uploaded file is not the size that was declared.')
-    const detected = detectMimeType(await this.storage.firstBytes(file.bucket, file.storageKey))
-    if (!sameKind(file.mimeType, detected)) await fail('The file content does not match its type.')
+    const { detected, sample } = await this.sniff(file.bucket, file.storageKey, object.sizeBytes)
+    if (!sameKind(file.mimeType, detected, sample, sample.length < object.sizeBytes)) await fail('The file content does not match its type.')
 
     // READY, but not FileReady and not scanned: the media pipeline would write derivative copies of an identity
     // document, and a college ID card never enters it (ADR-0099, ADR-0102).
@@ -314,7 +313,7 @@ export class FilesService implements Files {
         bucket,
         storageKey,
         mimeType: file.mimeType,
-        detectedMimeType: detectMimeType(file.bytes.slice(0, 64)),
+        detectedMimeType: detectMimeType(file.bytes),
         sizeBytes: BigInt(file.bytes.length),
         originalFileName: file.fileName,
         status: 'READY',
@@ -350,9 +349,9 @@ export class FilesService implements Files {
    * Returns the file id, or why it was left out.
    */
   async storeAttachment(ownerId: string, noteId: string, fileName: string, bytes: Uint8Array): Promise<{ fileId: string } | { refused: string }> {
-    const mimeType = detectMimeType(bytes.slice(0, 64))
+    const mimeType = detectMimeType(bytes) ?? (isPlainText(bytes) ? 'text/plain' : null)
     const limit = mimeType ? NOTE_MEDIA[mimeType] : undefined
-    if (!mimeType || limit === undefined) return { refused: 'not a picture, video, audio or PDF notes accept' }
+    if (!mimeType || limit === undefined) return { refused: 'not a picture, video, audio, PDF, Word, PowerPoint or text file notes accept' }
     if (bytes.length > limit) return { refused: `larger than ${Math.round(limit / 1024 ** 2)} MB` }
     try {
       await this.assertQuota(ownerId, bytes.length)
@@ -433,6 +432,14 @@ export class FilesService implements Files {
   async storageUsed(ownerId: string): Promise<bigint> {
     const used = await this.db.fileObject.aggregate({ where: { ownerId, deletedAt: null, status: { notIn: ['FAILED', 'DELETED'] } }, _sum: { sizeBytes: true } })
     return used._sum.sizeBytes ?? 0n
+  }
+
+  /** Leading bytes, plus a zip's central directory or an OLE file's FAT and directory when the object is larger. */
+  private async sniff(bucket: string, key: string, sizeBytes: number): Promise<{ detected: string | null; sample: Uint8Array }> {
+    const sampleLen = Math.min(sizeBytes, MIME_SAMPLE_BYTES)
+    const sample = sampleLen > 0 ? await this.storage.firstBytes(bucket, key, sampleLen) : new Uint8Array()
+    const detected = await sniffBytes(sizeBytes, sample, (start, end) => this.storage.rangeBytes(bucket, key, start, end))
+    return { detected, sample }
   }
 
   /** Storage comes from the plan's STORAGE_BYTES entitlement (ADR-0024). A null limit is unlimited. */

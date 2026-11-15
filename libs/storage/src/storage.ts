@@ -96,7 +96,14 @@ export class Storage {
 
   /** The first `bytes` bytes of an object (magic-byte checks, §7.2). */
   async firstBytes(bucket: string, key: string, bytes = 64): Promise<Uint8Array> {
-    const r = await this.client.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: `bytes=0-${bytes - 1}` }))
+    if (bytes < 1) return new Uint8Array()
+    return this.rangeBytes(bucket, key, 0, bytes - 1)
+  }
+
+  /** An inclusive range. Zip sniffing reads the tail and the central directory this way, not the whole object. */
+  async rangeBytes(bucket: string, key: string, start: number, endInclusive: number): Promise<Uint8Array> {
+    if (!Number.isInteger(start) || !Number.isInteger(endInclusive) || start < 0 || endInclusive < start) return new Uint8Array()
+    const r = await this.client.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: `bytes=${start}-${endInclusive}` }))
     return r.Body ? await r.Body.transformToByteArray() : new Uint8Array()
   }
 
