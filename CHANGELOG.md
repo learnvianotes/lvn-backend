@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-15
+
 ### Added
 
 - Notes can have Word, PowerPoint and plain-text attachments. The file contents are checked, including a large Word or PowerPoint file and text cut mid-character, so a renamed archive or a binary renamed as text is refused. [#79](https://github.com/learnvianotes/lvn-backend/pull/79)
