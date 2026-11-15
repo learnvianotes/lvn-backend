@@ -254,7 +254,158 @@ describe('detectMimeType', () => {
   })
 })
 
+describe('OLE files larger than the sample', () => {
+  const END = 0xfffffffe
+  const FREE = 0xffffffff
+
+  function oleHeader(fields: { fatCount: number; firstDir: number; fats?: Array<[number, number]>; firstDifat?: number; difatCount?: number }): Uint8Array {
+    const header = new Uint8Array(512)
+    header.set([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1], 0)
+    writeU16(header, 0x1a, 3)
+    writeU16(header, 0x1c, 0xfffe)
+    writeU16(header, 0x1e, 9)
+    writeU16(header, 0x20, 6)
+    writeU32(header, 0x2c, fields.fatCount)
+    writeU32(header, 0x30, fields.firstDir)
+    writeU32(header, 0x44, fields.firstDifat ?? END)
+    writeU32(header, 0x48, fields.difatCount ?? 0)
+    for (let i = 0; i < 109; i++) writeU32(header, 0x4c + i * 4, FREE)
+    for (const [index, sector] of fields.fats ?? []) writeU32(header, 0x4c + index * 4, sector)
+    return header
+  }
+
+  function directorySector(name: string): Uint8Array {
+    const dir = new Uint8Array(512)
+    writeEntry(dir, 0, 'Root Entry', 5)
+    writeEntry(dir, 1, name, 2)
+    return dir
+  }
+
+  function fatSector(entries: Array<[number, number]>): Uint8Array {
+    const fat = new Uint8Array(512)
+    for (const [index, value] of entries) writeU32(fat, index * 4, value)
+    return fat
+  }
+
+  function headOf(header: Uint8Array): Uint8Array {
+    const head = new Uint8Array(MIME_SAMPLE_BYTES)
+    head.set(header, 0)
+    return head
+  }
+
+  async function sniffSectors(size: number, header: Uint8Array, sectors: Map<number, Uint8Array>) {
+    const reads: Array<[number, number]> = []
+    const detected = await sniffBytes(size, headOf(header), async (start, end) => {
+      reads.push([start, end])
+      const length = end - start + 1
+      const sector = start / 512 - 1
+      const bytes = sectors.get(sector)
+      if (length !== 512 || !Number.isInteger(sector) || !bytes) return new Uint8Array()
+      return bytes
+    })
+    return { detected, reads }
+  }
+
+  it('reads a Word and a PowerPoint directory that sit past the 256 KB sample', async () => {
+    const fatAt = 520
+    const firstDir = 530
+    const secondDir = 531
+    // Sector N occupies bytes [(N + 1) * 512, (N + 2) * 512). Both the FAT and the directory are past the sample.
+    const size = (secondDir + 2) * 512
+    expect((fatAt + 1) * 512).toBeGreaterThan(MIME_SAMPLE_BYTES)
+    const header = oleHeader({ fatCount: 5, firstDir, fats: [[4, fatAt]] })
+    const rootOnly = new Uint8Array(512)
+    writeEntry(rootOnly, 0, 'Root Entry', 5)
+    // The stream name is in the second directory sector, so the FAT chain has to be followed past the sample.
+    const sectors = new Map<number, Uint8Array>([
+      [fatAt, fatSector([[firstDir % 128, secondDir], [secondDir % 128, END]])],
+      [firstDir, rootOnly],
+      [secondDir, directorySector('WordDocument')],
+    ])
+
+    const word = await sniffSectors(size, header, sectors)
+    expect(word.detected).toBe(MSWORD)
+    expect(word.reads.length).toBeGreaterThan(0)
+    expect(word.reads.every(([start, end]) => start >= MIME_SAMPLE_BYTES && end - start + 1 === 512)).toBe(true)
+
+    const slides = new Map<number, Uint8Array>([
+      [fatAt, fatSector([[firstDir % 128, END]])],
+      [firstDir, directorySector('PowerPoint Document')],
+    ])
+    const ppt = await sniffSectors((firstDir + 2) * 512, header, slides)
+    expect(ppt.detected).toBe(MSPPT)
+    expect(sameKind(MSWORD, ppt.detected, headOf(header), true)).toBe(false)
+    expect(ppt.reads.every(([start]) => start >= MIME_SAMPLE_BYTES)).toBe(true)
+
+    const sheet = new Map<number, Uint8Array>([
+      [fatAt, fatSector([[firstDir % 128, END]])],
+      [firstDir, directorySector('Workbook')],
+    ])
+    const xls = await sniffSectors((firstDir + 2) * 512, header, sheet)
+    expect(xls.detected).toBeNull()
+    expect(sameKind(MSWORD, xls.detected, headOf(header), true)).toBe(false)
+  })
+
+  it('follows the DIFAT chain when the directory is past the 109 in-header FAT sectors', async () => {
+    const dir = 109 * 128
+    const fatAt = dir + 1
+    const difatAt = dir + 2
+    const size = (difatAt + 2) * 512
+    // Sector 109 * 128 is the first one whose FAT entry lives past the 109 in-header slots (a ~7 MB presentation).
+    expect(Math.floor(dir / 128)).toBe(109)
+    expect((difatAt + 1) * 512).toBeGreaterThan(MIME_SAMPLE_BYTES)
+    const header = oleHeader({ fatCount: 110, firstDir: dir, firstDifat: difatAt, difatCount: 1 })
+    const difat = new Uint8Array(512)
+    writeU32(difat, 0, fatAt)
+    writeU32(difat, 127 * 4, END)
+    const sectors = new Map<number, Uint8Array>([
+      [difatAt, difat],
+      [fatAt, fatSector([[dir % 128, END]])],
+      [dir, directorySector('PowerPoint Document')],
+    ])
+    const found = await sniffSectors(size, header, sectors)
+    expect(found.detected).toBe(MSPPT)
+    expect(found.reads.map(([start]) => start / 512 - 1).sort((a, b) => a - b)).toEqual([fatAt, difatAt, dir].sort((a, b) => a - b))
+    expect(found.reads.every(([start, end]) => start >= MIME_SAMPLE_BYTES && end - start + 1 === 512)).toBe(true)
+
+    const looped = new Uint8Array(difat)
+    writeU32(looped, 127 * 4, difatAt)
+    const farDir = (109 + 127) * 128
+    const looping = oleHeader({ fatCount: 110 + 127, firstDir: farDir, firstDifat: difatAt, difatCount: 4 })
+    const stuck = await sniffSectors((difatAt + 2) * 512, looping, new Map([[difatAt, looped]]))
+    expect(stuck.detected).toBeNull()
+    expect(stuck.reads.length).toBeLessThan(6)
+  })
+
+  it('rejects a malformed OLE file without reading the whole object', async () => {
+    const fatAt = 520
+    const dir = 530
+    const size = (dir + 2) * 512
+    const header = oleHeader({ fatCount: 5, firstDir: dir, fats: [[4, fatAt]] })
+    const missing = await sniffSectors(size, header, new Map([[fatAt, fatSector([[dir % 128, dir]])], [dir, directorySector('WordDocument')]]))
+    expect(missing.detected).toBeNull()
+    expect(missing.reads.length).toBeGreaterThan(0)
+    expect(missing.reads.every(([start, end]) => end - start + 1 === 512 && end < size)).toBe(true)
+
+    const thrown = await sniffBytes(size, headOf(header), async () => {
+      throw new Error('storage')
+    })
+    expect(thrown).toBeNull()
+
+    const short = await sniffBytes(size, headOf(header), async () => new Uint8Array(8))
+    expect(short).toBeNull()
+  })
+})
+
 describe('plain text', () => {
+  function cutAtSample(glyph: string, bytesInSample: number): { sample: Uint8Array; whole: Uint8Array } {
+    const glyphBytes = text(glyph)
+    const whole = new Uint8Array(MIME_SAMPLE_BYTES + glyphBytes.length - bytesInSample)
+    whole.fill(0x61)
+    whole.set(glyphBytes, MIME_SAMPLE_BYTES - bytesInSample)
+    return { sample: whole.subarray(0, MIME_SAMPLE_BYTES), whole }
+  }
+
   it('accepts UTF-8, including a BOM, and rejects binary renamed as text', () => {
     const note = text('Notes\nfor class\t1\r\n')
     expect(detectMimeType(note)).toBeNull()
@@ -269,6 +420,33 @@ describe('plain text', () => {
     expect(sameKind('text/plain', detectMimeType(PNG), PNG)).toBe(false)
     expect(sameKind('text/plain', detectMimeType(doc()), doc())).toBe(false)
     expect(sameKind('text/plain', detectMimeType(docx()), docx())).toBe(false)
+  })
+
+  it('accepts a Hindi or Telugu character cut by the sample boundary and rejects a bad tail', () => {
+    const hindi = cutAtSample('अ', 1)
+    const telugu = cutAtSample('అ', 2)
+    const emoji = cutAtSample('😀', 3)
+    expect(hindi.sample.length).toBe(MIME_SAMPLE_BYTES)
+    expect(hindi.whole.length).toBeGreaterThan(MIME_SAMPLE_BYTES)
+    expect(sameKind('text/plain', null, hindi.sample, true)).toBe(true)
+    expect(sameKind('text/plain', null, telugu.sample, true)).toBe(true)
+    expect(sameKind('text/plain', null, emoji.sample, true)).toBe(true)
+    expect(sameKind('text/plain', null, hindi.sample, false)).toBe(false)
+    expect(sameKind('text/plain', null, hindi.whole, false)).toBe(true)
+
+    const invalid = (last: number[]) => {
+      const sample = new Uint8Array(64)
+      sample.fill(0x61)
+      sample.set(last, sample.length - last.length)
+      return sample
+    }
+    expect(sameKind('text/plain', null, invalid([0xff]), true)).toBe(false)
+    expect(sameKind('text/plain', null, invalid([0xe0, 0x80]), true)).toBe(false)
+    expect(sameKind('text/plain', null, invalid([0x80]), true)).toBe(false)
+    expect(sameKind('text/plain', null, invalid([0xed, 0xa0]), true)).toBe(false)
+    const nul = hindi.sample.slice()
+    nul[10] = 0
+    expect(sameKind('text/plain', null, nul, true)).toBe(false)
   })
 
   it('still treats other text types and audio containers as it did', () => {

@@ -2,9 +2,11 @@
  * The real type of a file from its bytes (§7.2: uploads are validated by content, not by the file name). Only the types
  * LVN accepts are recognised; anything else is null.
  *
- * Office files need more than a fixed prefix. OLE directories sit in sectors just after the 512-byte header. A .docx
- * or .pptx is a zip: the part names live in the central directory at the end, not in the compressed bytes. Sniffing
- * reads that directory (or the OLE directory) and nothing else — no inflation — and stops on a cap or a bad header.
+ * Office files need more than a fixed prefix. A .doc or .ppt is an OLE compound file: the directory (and the FAT that
+ * points at it) often sits in the last sectors, past the leading sample, and a large file lists its FAT through the
+ * DIFAT chain. A .docx or .pptx is a zip: the part names live in the central directory at the end, not in the
+ * compressed bytes. Sniffing reads those sectors or that directory and nothing else — no inflation — and stops on a
+ * cap, a loop, or a bad header.
  */
 const ZIP_LOCAL = 0x04034b50
 const ZIP_CENTRAL = 0x02014b50
@@ -20,6 +22,13 @@ const MAX_ZIP_NAME = 1024
 const OLE_ENDOFCHAIN = 0xfffffffe
 const MAX_REGULAR_SECTOR = 0xfffffffa
 const MAX_OLE_DIRECTORY_SECTORS = 32
+/** The compound-file header lists this many FAT sectors. Anything further is in the DIFAT sector chain. */
+const HEADER_DIFAT_ENTRIES = 109
+/** A 50 MB file of 512-byte sectors needs about 800 FAT sectors. More than this is not a document we will walk. */
+const MAX_OLE_FAT_SECTORS = 1024
+const MAX_DIFAT_SECTORS = 16
+/** Directory sectors, the FAT sectors they touch, and the DIFAT sectors that locate those FAT sectors. */
+const MAX_OLE_SECTOR_READS = MAX_OLE_DIRECTORY_SECTORS * 2 + MAX_DIFAT_SECTORS
 
 const MSWORD = 'application/msword'
 const MSPPT = 'application/vnd.ms-powerpoint'
@@ -54,24 +63,28 @@ export function detectMimeType(b: Uint8Array): string | null {
 /**
  * Whether the bytes are what was declared. WebM and MP4 are containers: a recording made in the browser is audio/webm
  * whose bytes look like video/webm, and many .m4a files carry an MP4 brand. Plain text has no signature of its own:
- * it is accepted only when nothing else matched and the sample is UTF-8 without binary control bytes.
+ * it is accepted only when nothing else matched and the sample is UTF-8 without binary control bytes. `partial` means
+ * the sample is a prefix of a larger file, so a multibyte character cut at the last byte can still be text.
  */
-export function sameKind(declared: string, detected: string | null, sample: Uint8Array): boolean {
+export function sameKind(declared: string, detected: string | null, sample: Uint8Array, partial = false): boolean {
   if (declared === detected) return true
-  if (declared === 'text/plain') return detected === null && isPlainText(sample)
+  if (declared === 'text/plain') return detected === null && isPlainText(sample, partial)
   if (declared.startsWith('text/') && detected === null) return true
   return (declared === 'audio/webm' && detected === 'video/webm') || (declared === 'audio/mp4' && detected === 'video/mp4')
 }
 
 /**
  * UTF-8 text, a leading BOM allowed. NUL and the other C0/C1 controls (except tab, LF and CR) mean the sample is not
- * text, so a binary renamed to .txt does not pass. Invalid UTF-8 does not pass either.
+ * text, so a binary renamed to .txt does not pass. Invalid UTF-8 does not pass either. When `partial` is set, up to
+ * three trailing bytes are ignored if they are a valid incomplete UTF-8 sequence and nothing else is.
  */
-export function isPlainText(sample: Uint8Array): boolean {
+export function isPlainText(sample: Uint8Array, partial = false): boolean {
   if (sample.length === 0) return false
+  const bytes = partial ? withoutCutUtf8Tail(sample) : sample
+  if (!bytes || bytes.length === 0) return false
   let text: string
   try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(sample)
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   } catch {
     return false
   }
@@ -84,9 +97,51 @@ export function isPlainText(sample: Uint8Array): boolean {
 }
 
 /**
- * Classify an object that may be larger than `head`. Images, PDF, audio, video and OLE are decided from the leading
- * bytes. A zip that continues past `head` is decided from its central directory: `readRange` is asked only for the
- * tail (to find the end record) and, when that tail does not already hold it, the directory itself.
+ * A prefix of a larger file may end in the middle of a character. Keep the sample when that tail is a well-formed
+ * incomplete sequence of at most three bytes; reject any other tail.
+ */
+function withoutCutUtf8Tail(sample: Uint8Array): Uint8Array | null {
+  const end = sample.length
+  let continuations = 0
+  while (continuations < 3 && continuations < end && isUtf8Continuation(sample[end - 1 - continuations]!)) continuations++
+  const leadAt = end - 1 - continuations
+  if (leadAt < 0) return null
+  const lead = sample[leadAt]!
+  const expected = utf8SequenceLength(lead)
+  if (expected === null) return null
+  const have = continuations + 1
+  if (have === expected) return sample
+  if (have > expected || !validUtf8Prefix(lead, have > 1 ? sample[leadAt + 1]! : null)) return null
+  return sample.subarray(0, leadAt)
+}
+
+function isUtf8Continuation(byte: number): boolean {
+  return (byte & 0xc0) === 0x80
+}
+
+function utf8SequenceLength(lead: number): number | null {
+  if ((lead & 0x80) === 0) return 1
+  if ((lead & 0xe0) === 0xc0) return lead >= 0xc2 ? 2 : null
+  if ((lead & 0xf0) === 0xe0) return 3
+  if ((lead & 0xf8) === 0xf0 && lead <= 0xf4) return 4
+  return null
+}
+
+/** Overlongs and surrogate / out-of-range leads are not a character cut in half. */
+function validUtf8Prefix(lead: number, firstContinuation: number | null): boolean {
+  if (firstContinuation === null) return true
+  if (!isUtf8Continuation(firstContinuation)) return false
+  if (lead === 0xe0 && firstContinuation < 0xa0) return false
+  if (lead === 0xed && firstContinuation > 0x9f) return false
+  if (lead === 0xf0 && firstContinuation < 0x90) return false
+  if (lead === 0xf4 && firstContinuation > 0x8f) return false
+  return true
+}
+
+/**
+ * Classify an object that may be larger than `head`. Images, PDF, audio and video are decided from the leading bytes.
+ * A zip that continues past `head` is decided from its central directory, and an OLE file from the FAT and directory
+ * sectors the header points at. `readRange` is asked only for those pieces.
  */
 export async function sniffBytes(
   size: number,
@@ -95,7 +150,9 @@ export async function sniffBytes(
 ): Promise<string | null> {
   if (!Number.isInteger(size) || size < 0) return null
   const sample = head.length > size ? head.subarray(0, size) : head
-  if (sample.length >= size || !isZip(sample)) return detectMimeType(sample)
+  if (sample.length >= size) return detectMimeType(sample)
+  if (isOle(sample)) return sniffOle(size, sample, readRange)
+  if (!isZip(sample)) return detectMimeType(sample)
   const tailLen = Math.min(size, ZIP_TAIL_BYTES)
   const tailStart = size - tailLen
   const tail = await readRangeOrNull(readRange, tailStart, size - 1, tailLen)
@@ -270,51 +327,177 @@ function isOle(b: Uint8Array): boolean {
   return at(b, 0, 0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1)
 }
 
+type OleHeader = {
+  sectorSize: number
+  firstDir: number
+  fatCount: number
+  /** The 109 FAT-sector numbers stored in the header. Unused slots are free-sector markers, not sector 0. */
+  headerFat: number[]
+  firstDifat: number
+  difatCount: number
+}
+
+/** `ok` is the verdict. `need` is a sector that is inside the file but not loaded yet. */
+type OleVerdict = { ok: string | null } | { need: number }
+
 /**
  * OLE compound file. `WordDocument` is a .doc; `PowerPoint Document` is a .ppt. A workbook (or any other stream) is
  * not either, so declaring it as one fails the check. A truncated header, a sector past the buffer, or a directory
  * chain that loops is not a document.
  */
 function detectOle(b: Uint8Array): string | null {
-  if (b.length < 512) return null
+  const header = parseOleHeader(b)
+  if (!header) return null
+  const verdict = classifyOle(header, b.length, (sector) => {
+    const offset = sectorOffset(sector, header.sectorSize)
+    if (offset === null || offset + header.sectorSize > b.length) return null
+    return b.subarray(offset, offset + header.sectorSize)
+  })
+  return 'need' in verdict ? null : verdict.ok
+}
+
+/**
+ * The header is in `head`. FAT and directory sectors LibreOffice writes at the end of the file are read from
+ * `readRange`, following the FAT chain and, past the 109 in-header entries, the DIFAT chain.
+ */
+async function sniffOle(
+  size: number,
+  head: Uint8Array,
+  readRange: (start: number, endInclusive: number) => Promise<Uint8Array>,
+): Promise<string | null> {
+  const header = parseOleHeader(head)
+  if (!header) return null
+  const cache = new Map<number, Uint8Array>()
+  const getSector = (sector: number): Uint8Array | null => {
+    const cached = cache.get(sector)
+    if (cached) return cached
+    const offset = sectorOffset(sector, header.sectorSize)
+    if (offset === null || offset + header.sectorSize > head.length) return null
+    const slice = head.slice(offset, offset + header.sectorSize)
+    cache.set(sector, slice)
+    return slice
+  }
+  for (let reads = 0; reads <= MAX_OLE_SECTOR_READS; reads++) {
+    const verdict = classifyOle(header, size, getSector)
+    if (!('need' in verdict)) return verdict.ok
+    if (reads === MAX_OLE_SECTOR_READS) return null
+    const offset = sectorOffset(verdict.need, header.sectorSize)
+    if (offset === null || offset + header.sectorSize > size) return null
+    const bytes = await readRangeOrNull(readRange, offset, offset + header.sectorSize - 1, header.sectorSize)
+    if (!bytes) return null
+    cache.set(verdict.need, bytes.slice())
+  }
+  return null
+}
+
+function parseOleHeader(b: Uint8Array): OleHeader | null {
+  if (b.length < 512 || !isOle(b)) return null
   const major = readU16(b, 0x1a)
   const order = readU16(b, 0x1c)
   const sectorShift = readU16(b, 0x1e)
   const miniShift = readU16(b, 0x20)
+  const fatCount = readU32(b, 0x2c)
   const firstDir = readU32(b, 0x30)
+  const firstDifat = readU32(b, 0x44)
+  const difatCount = readU32(b, 0x48)
   if (order !== 0xfffe || miniShift !== 6 || firstDir === null || !isRegularSector(firstDir)) return null
   if (major === 3 && sectorShift !== 9) return null
   if (major === 4 && sectorShift !== 12) return null
-  if ((major !== 3 && major !== 4) || sectorShift === null) return null
+  if ((major !== 3 && major !== 4) || sectorShift === null || fatCount === null || firstDifat === null || difatCount === null) return null
   const sectorSize = 1 << sectorShift
-  const sectors: number[] = []
-  const seen = new Set<number>()
-  let sector = firstDir
-  while (sectors.length < MAX_OLE_DIRECTORY_SECTORS) {
-    if (seen.has(sector)) return null
-    seen.add(sector)
-    const offset = sectorOffset(sector, sectorSize)
-    if (offset === null || offset + sectorSize > b.length) return null
-    sectors.push(sector)
-    const next = fatEntry(b, sector, sectorSize)
-    if (next === null) return null
-    if (next === OLE_ENDOFCHAIN) break
-    if (!isRegularSector(next)) return null
-    sector = next
+  if (sectorSize !== 512 && sectorSize !== 4096) return null
+  if (fatCount < 1 || fatCount > MAX_OLE_FAT_SECTORS) return null
+  if (difatCount > 0 && !isRegularSector(firstDifat)) return null
+  const headerFat: number[] = []
+  for (let i = 0; i < HEADER_DIFAT_ENTRIES; i++) {
+    const sector = readU32(b, 0x4c + i * 4)
+    if (sector === null) return null
+    headerFat.push(sector)
   }
-  if (sectors.length === MAX_OLE_DIRECTORY_SECTORS && fatEntry(b, sectors[sectors.length - 1] ?? sector, sectorSize) !== OLE_ENDOFCHAIN) return null
+  return { sectorSize, firstDir, fatCount, headerFat, firstDifat, difatCount }
+}
+
+function classifyOle(header: OleHeader, fileSize: number, getSector: (sector: number) => Uint8Array | null): OleVerdict {
+  const take = (sector: number): Uint8Array | OleVerdict => {
+    if (!isRegularSector(sector) || !sectorFits(sector, header.sectorSize, fileSize)) return { ok: null }
+    const bytes = getSector(sector)
+    if (!bytes || bytes.length < header.sectorSize) return { need: sector }
+    return bytes.subarray(0, header.sectorSize)
+  }
+
+  const seen = new Set<number>()
+  let sector = header.firstDir
   let word = false
   let ppt = false
-  for (const dirSector of sectors) {
-    const offset = sectorOffset(dirSector, sectorSize)
-    if (offset === null) return null
-    const found = directoryNames(b.subarray(offset, offset + sectorSize))
-    if (found === null) return null
+  for (let i = 0; i < MAX_OLE_DIRECTORY_SECTORS; i++) {
+    if (!isRegularSector(sector) || seen.has(sector)) return { ok: null }
+    seen.add(sector)
+    const next = nextDirectorySector(header, sector, take)
+    if (typeof next !== 'number') return next
+    const loaded = take(sector)
+    if (!(loaded instanceof Uint8Array)) return loaded
+    const found = directoryNames(loaded)
+    if (found === null) return { ok: null }
     word = word || found.word
     ppt = ppt || found.ppt
+    if (next === OLE_ENDOFCHAIN) {
+      if (word === ppt) return { ok: null }
+      return { ok: word ? MSWORD : MSPPT }
+    }
+    if (!isRegularSector(next)) return { ok: null }
+    sector = next
   }
-  if (word === ppt) return null
-  return word ? MSWORD : MSPPT
+  return { ok: null }
+}
+
+/** The FAT entry for a directory sector. `{ need }` when that FAT (or a DIFAT sector that locates it) is not loaded. */
+function nextDirectorySector(
+  header: OleHeader,
+  sector: number,
+  take: (sector: number) => Uint8Array | OleVerdict,
+): number | OleVerdict {
+  const perSector = header.sectorSize >>> 2
+  if (perSector <= 1) return { ok: null }
+  const fatIndex = Math.floor(sector / perSector)
+  const within = sector % perSector
+  const located = fatSectorNumber(header, fatIndex, take)
+  if (typeof located !== 'number') return located
+  const fat = take(located)
+  if (!(fat instanceof Uint8Array)) return fat
+  const next = readU32(fat, within * 4)
+  if (next === null) return { ok: null }
+  return next
+}
+
+function fatSectorNumber(header: OleHeader, fatIndex: number, take: (sector: number) => Uint8Array | OleVerdict): number | OleVerdict {
+  if (!Number.isInteger(fatIndex) || fatIndex < 0 || fatIndex >= header.fatCount) return { ok: null }
+  if (fatIndex < HEADER_DIFAT_ENTRIES) {
+    const sector = header.headerFat[fatIndex]
+    if (sector === undefined || !isRegularSector(sector)) return { ok: null }
+    return sector
+  }
+  let remaining = fatIndex - HEADER_DIFAT_ENTRIES
+  let difat = header.firstDifat
+  const seen = new Set<number>()
+  const limit = Math.min(header.difatCount, MAX_DIFAT_SECTORS)
+  for (let i = 0; i < limit; i++) {
+    if (!isRegularSector(difat) || seen.has(difat)) return { ok: null }
+    seen.add(difat)
+    const loaded = take(difat)
+    if (!(loaded instanceof Uint8Array)) return loaded
+    const pointers = (header.sectorSize >>> 2) - 1
+    if (pointers < 1) return { ok: null }
+    if (remaining < pointers) {
+      const sector = readU32(loaded, remaining * 4)
+      if (sector === null || !isRegularSector(sector)) return { ok: null }
+      return sector
+    }
+    remaining -= pointers
+    const next = readU32(loaded, pointers * 4)
+    if (next === null || !isRegularSector(next)) return { ok: null }
+    difat = next
+  }
+  return { ok: null }
 }
 
 function isRegularSector(sector: number): boolean {
@@ -327,18 +510,9 @@ function sectorOffset(sector: number, sectorSize: number): number | null {
   return offset
 }
 
-/** The next sector in a chain, from the FAT linked in the header. Only the 109 in-header entries are followed. */
-function fatEntry(b: Uint8Array, sector: number, sectorSize: number): number | null {
-  const perSector = sectorSize >>> 2
-  if (perSector <= 0) return null
-  const fatIndex = Math.floor(sector / perSector)
-  const within = sector % perSector
-  if (fatIndex >= 109) return null
-  const fatSector = readU32(b, 0x4c + fatIndex * 4)
-  if (fatSector === null || !isRegularSector(fatSector)) return null
-  const base = sectorOffset(fatSector, sectorSize)
-  if (base === null) return null
-  return readU32(b, base + within * 4)
+function sectorFits(sector: number, sectorSize: number, fileSize: number): boolean {
+  const offset = sectorOffset(sector, sectorSize)
+  return offset !== null && fileSize >= offset + sectorSize
 }
 
 function directoryNames(sector: Uint8Array): { word: boolean; ppt: boolean } | null {

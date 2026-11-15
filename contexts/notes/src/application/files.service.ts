@@ -185,7 +185,7 @@ export class FilesService implements Files {
     }
     if (object.sizeBytes !== Number(file.sizeBytes)) await fail('The uploaded file is not the size that was declared.')
     const { detected, sample } = await this.sniff(file.bucket, file.storageKey, object.sizeBytes)
-    if (!sameKind(file.mimeType, detected, sample)) await fail('The file content does not match its type.')
+    if (!sameKind(file.mimeType, detected, sample, sample.length < object.sizeBytes)) await fail('The file content does not match its type.')
     if (this.config.scan.mode === 'remote') await this.assertPendingScans(ownerId)
 
     await this.db.fileObject.update({
@@ -281,7 +281,7 @@ export class FilesService implements Files {
     }
     if (object.sizeBytes !== Number(file.sizeBytes)) await fail('The uploaded file is not the size that was declared.')
     const { detected, sample } = await this.sniff(file.bucket, file.storageKey, object.sizeBytes)
-    if (!sameKind(file.mimeType, detected, sample)) await fail('The file content does not match its type.')
+    if (!sameKind(file.mimeType, detected, sample, sample.length < object.sizeBytes)) await fail('The file content does not match its type.')
 
     // READY, but not FileReady and not scanned: the media pipeline would write derivative copies of an identity
     // document, and a college ID card never enters it (ADR-0099, ADR-0102).
@@ -434,7 +434,7 @@ export class FilesService implements Files {
     return used._sum.sizeBytes ?? 0n
   }
 
-  /** Leading bytes, plus a zip's central directory when the object is larger than that sample. */
+  /** Leading bytes, plus a zip's central directory or an OLE file's FAT and directory when the object is larger. */
   private async sniff(bucket: string, key: string, sizeBytes: number): Promise<{ detected: string | null; sample: Uint8Array }> {
     const sampleLen = Math.min(sizeBytes, MIME_SAMPLE_BYTES)
     const sample = sampleLen > 0 ? await this.storage.firstBytes(bucket, key, sampleLen) : new Uint8Array()
