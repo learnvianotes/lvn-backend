@@ -17,7 +17,7 @@ describe('running release', () => {
   })
 
   it('reads RELEASE from the environment', () => {
-    expect(runningRelease({ RELEASE: FULL })).toBe('v0.5.0+d9d27b2d71f0')
-    expect(runningRelease({})).toBe('v0.5.0+dev')
+    expect(runningRelease({ RELEASE: FULL })).toBe('v0.6.0+d9d27b2d71f0')
+    expect(runningRelease({})).toBe('v0.6.0+dev')
   })
 })
