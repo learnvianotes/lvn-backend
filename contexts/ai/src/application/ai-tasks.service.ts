@@ -6,9 +6,11 @@ import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { LEARNING, LIVE, NOTE_AI, type Learning, type Live, type NoteAi, type NoteAiSource } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
+import { RateLimiter } from '@lvn-backend/redis'
 import { batches, batchText, isRepair, type TextChange } from '../domain/clean-up'
 import { LANGUAGE_NAMES, repairs, SOURCE_CHARS, TASKS, type AiLanguage, type TaskResult } from '../domain/tasks'
 import { MIN_SCRIPT_SHARE, pieces, scriptShare } from '../domain/translate'
+import { limitAiCalls } from './ai-calls'
 import { AiGateway } from './ai-gateway'
 import { MediaInput } from './media-input'
 import { fileOf, isRecording, MEDIA, NoteMaterial } from './note-material'
@@ -56,12 +58,11 @@ export class AiTasksService {
     private readonly media: MediaInput,
     private readonly material: NoteMaterial,
     @Inject(LEARNING) private readonly learning: Learning,
+    private readonly limiter: RateLimiter,
   ) {}
 
   async run(viewerId: string, input: RunTaskInput): Promise<ArtifactRow> {
     const def = TASKS[input.task]
-    const status = await this.gateway.status()
-    if (!status.available) throw Errors.unavailable(status.reason === 'BUDGET' ? 'AI is paused until next month: this month’s AI budget is used up.' : status.reason === 'PROVIDER_DOWN' ? 'AI is not answering right now. Try again in a minute.' : 'AI is not switched on here.')
     const source = await this.allowed(viewerId, input.noteId, input.task)
     if (def.editorsOnly && !source.canEdit) throw Errors.forbidden(def.kind === 'CHANGES' ? 'Only people who can edit the note clean it up.' : 'Quick notes are made from your own notes.')
     const cards = this.pick(source, input.cardIds ?? null, def)
@@ -69,6 +70,10 @@ export class AiTasksService {
     if (!cards.length) throw Errors.validation(def.codeOnly ? 'This note has no code to explain.' : def.kind === 'CHANGES' ? 'This note has no text to clean up.' : 'This note has nothing to work on yet: write something, or add photos, PDFs or a recording.', ['input', 'noteId'])
     // A note of only recordings is read from their transcripts (ADR-0085): one must be made first.
     if (def.input !== 'AUDIO' && cards.every(isRecording) && !(await this.material.transcripts(input.noteId, viewerId, cards)).size) throw Errors.validation('Transcribe the recording first: AI tasks work on what it says.', ['input', 'noteId'])
+    // Before the gateway. A note the person may not use does not spend this. The monthly budget stays in status().
+    await limitAiCalls(this.limiter, viewerId)
+    const status = await this.gateway.status()
+    if (!status.available) throw Errors.unavailable(status.reason === 'BUDGET' ? 'AI is paused until next month: this month’s AI budget is used up.' : status.reason === 'PROVIDER_DOWN' ? 'AI is not answering right now. Try again in a minute.' : 'AI is not switched on here.')
     await this.gateway.assertDailyRequests(viewerId)
     const { usedToday, limitToday } = await this.gateway.allowance(viewerId)
     if (limitToday !== null && usedToday >= limitToday) throw planLimitError(LimitKey.AI_TOKENS_DAILY)

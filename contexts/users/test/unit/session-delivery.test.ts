@@ -1,6 +1,7 @@
 import type { RequestContext } from '@lvn-backend/auth-guard'
 import type { IssuedSession } from '../../src/application/session.service'
-import { browserRequest, deliverSession, REFRESH_COOKIE, type RefreshCookieOptions } from '../../src/graphql/session-delivery'
+import { browserRequest, deliverSession, REFRESH_COOKIE, REFRESH_COOKIE_MAX_AGE_MS, refreshCookieOptions, type RefreshCookieOptions } from '../../src/graphql/session-delivery'
+import { SESSION_TTL_DAYS } from '../../src/domain/rules'
 
 const cookieOptions: RefreshCookieOptions = { httpOnly: true, secure: true, sameSite: 'lax', path: '/graphql' }
 const session: IssuedSession = {
@@ -44,7 +45,17 @@ describe('refresh token delivery', () => {
     const browser = ctx({ 'x-lvn-client': 'mobile', 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'cors' })
     const delivered = await deliverSession(browser.context, cookieOptions, users, session)
     expect(delivered.refreshToken).toBeNull()
-    expect(browser.set).toEqual([{ name: REFRESH_COOKIE, value: session.refreshToken, options: { ...cookieOptions, expires: session.refreshTokenExpiresAt } }])
+    expect(browser.set).toEqual([{ name: REFRESH_COOKIE, value: session.refreshToken, options: { ...cookieOptions, expires: session.refreshTokenExpiresAt, maxAge: REFRESH_COOKIE_MAX_AGE_MS } }])
+    expect(browser.set[0]?.options).not.toHaveProperty('domain')
+  })
+
+  it('keeps the cookie host-only for an https issuer and sets Max-Age to the session length', () => {
+    const https = refreshCookieOptions('https://api.learnvianotes.in')
+    expect(https).toEqual({ httpOnly: true, secure: true, sameSite: 'lax', path: '/graphql' })
+    expect(https).not.toHaveProperty('domain')
+    expect(refreshCookieOptions('http://192.168.1.20:4000').secure).toBe(false)
+    expect(REFRESH_COOKIE_MAX_AGE_MS).toBe(SESSION_TTL_DAYS * 24 * 60 * 60 * 1000)
+    expect(REFRESH_COOKIE).toBe('lvn_rt')
   })
 
   it('treats a request without the mobile header as a browser', async () => {

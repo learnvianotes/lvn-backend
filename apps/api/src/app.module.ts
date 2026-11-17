@@ -3,13 +3,14 @@ import { APP_INTERCEPTOR } from '@nestjs/core'
 import type { ApiConfig } from '@lvn-backend/config'
 import { AccessTokenVerifier, type RequestContext } from '@lvn-backend/auth-guard'
 import { EventBusModule } from '@lvn-backend/event-bus'
-import { graphqlModules, OPERATIONS_PER_MINUTE } from '@lvn-backend/graphql'
+import { graphqlModules } from '@lvn-backend/graphql'
 import { PrismaModule } from '@lvn-backend/prisma-base'
 import { QueueModule } from '@lvn-backend/queue'
 import { RateLimiter, RedisModule, SessionRevocations } from '@lvn-backend/redis'
 import { StorageModule } from '@lvn-backend/storage'
 import { contextModules, SUBGRAPHS, TOKEN_AUDIENCE } from './contexts'
 import { facades } from './facades'
+import { graphqlOperationRetryAfter } from './graphql/operation-rate'
 import { buildRequestContext } from './graphql/request-context'
 import { AdminAuditInterceptor } from './graphql/admin-audit'
 import { SuspendedRefusals } from './graphql/suspended-refusals'
@@ -48,16 +49,10 @@ export class AppModule {
           subgraphs: SUBGRAPHS,
           context: { inject: [SessionRevocations], useFactory: (revocations: SessionRevocations) => buildRequestContext(verifier, revocations) },
           introspection: config.APP_ENV === 'development',
-          // ADR-0090: each signed-in person's operations, counted in Redis across every API instance.
+          // ADR-0090: signed-in operations per person, anonymous operations per network. Fail open when Redis is down.
           rateLimit: {
             inject: [RateLimiter],
-            useFactory: (limiter: RateLimiter) => async (ctx: unknown) => {
-              const viewer = (ctx as RequestContext).viewer
-              if (!viewer) return null
-              // Redis down is not a reason to refuse everyone: the edge still stops floods.
-              const hit = await limiter.hit(`gql:${viewer.userId}`, { max: OPERATIONS_PER_MINUTE, windowSeconds: 60 }).catch(() => null)
-              return !hit || hit.allowed ? null : hit.retryAfter
-            },
+            useFactory: (limiter: RateLimiter) => (ctx: unknown) => graphqlOperationRetryAfter(limiter, ctx as RequestContext),
           },
         }),
       ],

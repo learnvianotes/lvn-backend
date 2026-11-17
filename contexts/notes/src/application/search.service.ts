@@ -4,6 +4,7 @@ import { metrics, SpanStatusCode, trace } from '@opentelemetry/api'
 import { Errors } from '@lvn-backend/errors'
 import { PEOPLE, PLACES, PLATFORM_SETTINGS, RESOURCE_SEARCH, type People, type Places, type PlatformSettings, type ResourceSearch } from '@lvn-backend/facades'
 import { PrismaService } from '@lvn-backend/prisma-base'
+import { RateLimiter } from '@lvn-backend/redis'
 import { visibleNotesWhere } from '../domain/note-access'
 import { NOTES_CONFIG, type NotesConfig } from '../notes.config'
 import type { NoteFilters } from './search-filters'
@@ -15,6 +16,17 @@ export { MATCH_END, MATCH_START, type SearchScope } from './search-providers'
 /** How often a fallback is logged while Typesense stays unreachable. */
 const FALLBACK_LOG_MS = 30_000
 const ALL_SCOPES: SearchScope[] = ['NOTES', 'PEOPLE', 'TOPICS', 'GROUPS', 'CLASSROOMS', 'RESOURCES']
+/** One search a minute, per signed-in person or per anonymous network. */
+export const SEARCH_PER_MINUTE = { max: 60, windowSeconds: 60 }
+
+/** `search:${viewerId}`, or `search:anon:${network}` when nobody is signed in. No address: nothing to key. */
+export async function limitSearch(limiter: RateLimiter, viewerId: string | null, network: string | null): Promise<void> {
+  const key = viewerId ? `search:${viewerId}` : network ? `search:anon:${network}` : null
+  if (!key) return
+  const hit = await limiter.hit(key, SEARCH_PER_MINUTE)
+  if (!hit.allowed) throw Errors.rateLimited(hit.retryAfter, `Too many searches. Try again in ${hit.retryAfter} seconds.`)
+}
+
 const tracer = trace.getTracer('lvn-notes')
 const duration = metrics.getMeter('lvn-notes').createHistogram('lvn.search.duration', { unit: 'ms', description: 'Time to answer a search, by provider (ADR-0057)' })
 
@@ -62,6 +74,7 @@ export class SearchService {
     @Inject(RESOURCE_SEARCH) private readonly resources: ResourceSearch,
     @Inject(SEMANTIC_SEARCH) private readonly semantic: SemanticSearch | null,
     @Inject(PLATFORM_SETTINGS) private readonly settings: PlatformSettings,
+    private readonly limiter: RateLimiter,
   ) {}
 
   /** Who answers this deployment's searches when all is well. */
@@ -70,14 +83,16 @@ export class SearchService {
   }
 
   /** One search, in a `search` span (never with its words) and timed by provider (ADR-0057). */
-  search(
+  async search(
     viewerId: string | null,
     query: string,
     scopes: SearchScope[] | null | undefined,
     first: number | null | undefined,
     filters: NoteFilters | null = null,
     after: string | null = null,
+    network: string | null = null,
   ): Promise<SearchResult> {
+    await limitSearch(this.limiter, viewerId, network)
     return tracer.startActiveSpan('search', async (span) => {
       const started = performance.now()
       const how = { provider: this.provider.name as string, fallback: false, hybrid: false }
