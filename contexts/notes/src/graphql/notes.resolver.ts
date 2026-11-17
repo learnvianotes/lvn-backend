@@ -3,6 +3,7 @@ import { Args, Context, Mutation, Parent, Query, ResolveField, Resolver, Resolve
 import { CurrentViewer, SignedInGuard, type RequestContext, type Viewer } from '@lvn-backend/auth-guard'
 import { withUserErrors, type UserError } from '@lvn-backend/errors'
 import { connection, requestLoader } from '@lvn-backend/graphql'
+import { clientNetwork } from '@lvn-backend/redis'
 import { notePermissions, type NoteAccessRow } from '../domain/note-access'
 import { AttachmentsService } from '../application/attachments.service'
 import { DraftsService, type CardOpResult } from '../application/drafts.service'
@@ -44,13 +45,15 @@ export class NotesResolver {
   // ── Queries ──────────────────────────────────────────────────────────────────────────────────────────────
 
   @Query('note')
-  async note(@Args() { id }: QueryNoteArgs, @CurrentViewer() viewer: Viewer | null): Promise<NoteParent | null> {
+  async note(@Args() { id }: QueryNoteArgs, @CurrentViewer() viewer: Viewer | null, @Context() ctx: RequestContext): Promise<NoteParent | null> {
     const opened = await this.notes.open(viewer?.userId ?? null, id)
+    await this.chargePublicRead(viewer, ctx, opened)
     return opened ? toNote(opened) : null
   }
 
   @Query('publicNotes')
-  async publicNotes(@Args() { first, after }: QueryPublicNotesArgs) {
+  async publicNotes(@Args() { first, after }: QueryPublicNotesArgs, @CurrentViewer() viewer: Viewer | null, @Context() ctx: RequestContext) {
+    if (!viewer) await this.notes.limitAnonymousPublicRead(clientNetwork(ctx.req.ip))
     const { rows, size } = await this.notes.publicList(first, after)
     return connection(rows, size, (n) => [n.publishedAt!.toISOString(), n.id], (n) => toNote({ note: n, access: 'READER', shareRole: null, actor: null }))
   }
@@ -67,7 +70,14 @@ export class NotesResolver {
   @ResolveReference()
   async resolveReference(reference: { id: string }, context: RequestContext): Promise<NoteParent | null> {
     const opened = await this.notes.open(context.viewer?.userId ?? null, reference.id)
+    await this.chargePublicRead(context.viewer, context, opened)
     return opened ? toNote(opened) : null
+  }
+
+  /** A public note read by someone who is not signed in, so they are not the owner. */
+  private async chargePublicRead(viewer: Viewer | null, ctx: RequestContext, opened: OpenedNote | null): Promise<void> {
+    if (viewer || !opened || opened.note.visibility !== 'PUBLIC' || opened.access === 'OWNER') return
+    await this.notes.limitAnonymousPublicRead(clientNetwork(ctx.req.ip))
   }
 
   // ── Fields ───────────────────────────────────────────────────────────────────────────────────────────────

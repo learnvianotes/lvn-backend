@@ -5,7 +5,9 @@ import { AppError, Errors, planLimitError } from '@lvn-backend/errors'
 import { DOUBTS, LEARNING, LIVE, NOTE_AI, NOTE_RETRIEVAL, type Doubts, type Learning, type Live, type NoteAi, type NoteRetrieval, type RetrievalScope } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
+import { RateLimiter } from '@lvn-backend/redis'
 import { ASK_CANDIDATES, citedSources, passagesOf, QUESTION_CHARS, rerank, sourcesBlock, type AnswerSource, type Passage } from '../domain/ask'
+import { limitAiCalls } from './ai-calls'
 import { AiGateway } from './ai-gateway'
 import { AI_TASKS_QUEUE } from './ai-tasks.service'
 import { NoteMaterial } from './note-material'
@@ -44,19 +46,26 @@ export class AskService {
     @Inject(LIVE) private readonly live: Live,
     @Inject(LEARNING) private readonly learning: Learning,
     private readonly material: NoteMaterial,
+    private readonly limiter: RateLimiter,
   ) {}
 
   async ask(viewerId: string, input: { question: string; scope: AskAiScope; noteId?: string | null }): Promise<AnswerRow> {
     const question = this.question(input.question)
     if (input.scope === AskAiScope.WORKSPACE) throw Errors.validation('Ask about a workspace from one of its doubts.', ['input', 'scope'])
-    await this.ready(viewerId)
     let noteId: string | null = null
+    let priv = false
     if (input.scope === AskAiScope.THIS_NOTE) {
       if (!input.noteId) throw Errors.validation('Which note?', ['input', 'noteId'])
       const source = await this.notes.source(viewerId, input.noteId)
       if (!source?.mayAskAi) throw Errors.notFound('Note not found.')
       noteId = input.noteId
-      await this.gateway.ensureRoutable(viewerId, 'ASK', source.visibility !== 'PUBLIC')
+      priv = source.visibility !== 'PUBLIC'
+    }
+    // Before the gateway. The monthly budget stays inside ready() and generate().
+    await limitAiCalls(this.limiter, viewerId)
+    await this.ready(viewerId)
+    if (input.scope === AskAiScope.THIS_NOTE) {
+      await this.gateway.ensureRoutable(viewerId, 'ASK', priv)
     } else {
       await this.gateway.ensureRoutable(viewerId, 'ASK', false)
       await this.gateway.ensureRoutable(viewerId, 'EMBED_QUERY', false)
@@ -68,11 +77,12 @@ export class AskService {
 
   /** Ask AI on a workspace doubt (ADR-0015): the doubt and its thread as the question, over the workspace's notes. */
   async askAboutDoubt(viewerId: string, doubtId: string): Promise<AnswerRow> {
+    const doubt = await this.doubts.forAi(viewerId, doubtId)
+    if (!doubt) throw Errors.notFound('Doubt not found.')
+    await limitAiCalls(this.limiter, viewerId)
     await this.ready(viewerId)
     await this.gateway.ensureRoutable(viewerId, 'ASK', false)
     await this.gateway.ensureRoutable(viewerId, 'EMBED_QUERY', false)
-    const doubt = await this.doubts.forAi(viewerId, doubtId)
-    if (!doubt) throw Errors.notFound('Doubt not found.')
     const question = `${doubt.title}\n\n${doubt.text}`.trim().slice(0, QUESTION_CHARS * 2)
     const answer = await this.queue({ askerId: viewerId, question, scope: AskAiScope.WORKSPACE, groupId: doubt.groupId, doubtId })
     await this.learning.record(viewerId, { type: LearningEventType.AI_REQUESTED, entityType: 'AI_ANSWER', entityId: answer.id, metadata: { task: 'ASK', scope: AskAiScope.WORKSPACE } })
