@@ -32,7 +32,7 @@
     "@lvn-backend/users": "workspace:*",
     "@lvn/contracts": "workspace:@learnvianotes/contracts@*",
     "@nestjs/apollo": "14.1.1",
-    "@nestjs/common": "^12.1.3",
+    "@nestjs/common": "^12.5.0",
     "@nestjs/core": "^12.1.3",
     "@nestjs/graphql": "14.0.3",
     "@nestjs/platform-express": "^12.1.3",
