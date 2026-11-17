@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-17
+
 ### Added
 
 - Registered accounts are added to the product email list and can turn those emails off. Platform admins can browse content that is not private, and see how many of each kind there are. [#93](https://github.com/learnvianotes/lvn-backend/pull/93)

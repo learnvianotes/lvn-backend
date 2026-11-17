@@ -4,7 +4,7 @@ const FULL = 'd9d27b2d71f0ab684a05d8062ba8147beb9ae62f'
 
 describe('running release', () => {
   it('reads the root package version', () => {
-    expect(appVersion()).toBe('0.6.0')
+    expect(appVersion()).toBe('0.7.0')
   })
 
   it('builds vX.Y.Z plus a 12-character SHA, and uses dev when RELEASE is unset', () => {
@@ -17,7 +17,7 @@ describe('running release', () => {
   })
 
   it('reads RELEASE from the environment', () => {
-    expect(runningRelease({ RELEASE: FULL })).toBe('v0.6.0+d9d27b2d71f0')
-    expect(runningRelease({})).toBe('v0.6.0+dev')
+    expect(runningRelease({ RELEASE: FULL })).toBe('v0.7.0+d9d27b2d71f0')
+    expect(runningRelease({})).toBe('v0.7.0+dev')
   })
 })
