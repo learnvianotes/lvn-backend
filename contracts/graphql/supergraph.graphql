@@ -282,6 +282,77 @@ input AddWeeklyTaskInput
   plan: String
 }
 
+type AdminActivityActionCount
+  @join__type(graph: USERS)
+{
+  action: String!
+  count: Int!
+}
+
+type AdminActivityConnection
+  @join__type(graph: USERS)
+{
+  entries: [AdminActivityEntry!]!
+
+  """Pass as cursor to read the next page. Null on the last page."""
+  nextCursor: String
+}
+
+type AdminActivityDayCount
+  @join__type(graph: USERS)
+{
+  """UTC midnight of that day."""
+  day: DateTime!
+  count: Int!
+}
+
+"""
+One append-only audit row. details has secrets redacted. There is no mutation that changes or deletes it.
+"""
+type AdminActivityEntry
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  actorId: UUID
+
+  """
+  The actor's email at the time. Null when the account had already been removed.
+  """
+  actorEmail: String
+  action: String!
+  targetType: String!
+  targetId: UUID
+  details: JSON
+  ip: String
+  userAgent: String
+  createdAt: DateTime!
+}
+
+input AdminActivityFilter
+  @join__type(graph: USERS)
+{
+  actorId: UUID
+
+  """Exact action name, such as settings.updated or mfa.verified."""
+  action: String
+  targetType: String
+  from: DateTime
+  to: DateTime
+}
+
+"""
+Counts for charts. from is inclusive and to is exclusive. Omit both for the last 30 days. At most 366 days.
+"""
+type AdminActivitySummary
+  @join__type(graph: USERS)
+{
+  from: DateTime!
+  to: DateTime!
+  total: Int!
+  byAction: [AdminActivityActionCount!]!
+  byDay: [AdminActivityDayCount!]!
+}
+
 """
 `from` is inclusive and `to` is exclusive, both aligned to a UTC minute. A refresh within that minute reuses the cached aggregate.
 """
@@ -770,6 +841,15 @@ type AdminQuizStarts
   starts: Int!
   byKind: [AdminQuizStartCount!]!
   hiddenSmallGroups: Int!
+}
+
+input AdminRecoverMfaInput
+  @join__type(graph: USERS)
+{
+  userId: UUID!
+
+  """Why this recovery is being made. Required."""
+  reason: String!
 }
 
 """
@@ -1948,6 +2028,18 @@ type AuthPayload
   including a normal sign-up and "an account already exists, sign in instead".
   """
   emailLinkPending: Boolean!
+
+  """
+  True when this session must finish a second factor before protected operations (an admin or staff role, or an
+  account that opted in). Sign-in still returns a session: use it for `startMfaChallenge` and `verifyMfaChallenge`.
+  False when nothing further is required, including a normal account.
+  """
+  mfaRequired: Boolean!
+
+  """
+  Factors this sign-in may use. Empty when mfaRequired is false. EMAIL_OTP is the one that sends a code today.
+  """
+  mfaFactors: [MfaFactorType!]!
 }
 
 """
@@ -3329,6 +3421,8 @@ enum ErrorCode
   AI_UNAVAILABLE_FOR_MINOR @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
   FEATURE_UNAVAILABLE_FOR_MINOR @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
   MINOR_PII_BLOCKED @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  MFA_REQUIRED @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  ADMIN_MFA_REQUIRED @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
 }
 
 type Exam
@@ -4362,6 +4456,72 @@ enum MetricsInterval
   WEEK @join__enumValue(graph: USERS)
 }
 
+type MfaChallengePayload
+  @join__type(graph: USERS)
+{
+  challengeId: UUID
+  factor: MfaFactorType
+  expiresAt: DateTime
+  userErrors: [UserError!]!
+}
+
+type MfaFactor
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  type: MfaFactorType!
+  status: MfaFactorStatus!
+  createdAt: DateTime!
+  lastUsedAt: DateTime
+}
+
+enum MfaFactorStatus
+  @join__type(graph: USERS)
+{
+  PENDING @join__enumValue(graph: USERS)
+  ACTIVE @join__enumValue(graph: USERS)
+  DISABLED @join__enumValue(graph: USERS)
+}
+
+enum MfaFactorType
+  @join__type(graph: USERS)
+{
+  """A 6-digit code emailed to the account address."""
+  EMAIL_OTP @join__enumValue(graph: USERS)
+
+  """
+  Reserved. startMfaChallenge refuses it until an authenticator app is built.
+  """
+  TOTP @join__enumValue(graph: USERS)
+
+  """Reserved. startMfaChallenge refuses it until a security key is built."""
+  WEBAUTHN @join__enumValue(graph: USERS)
+}
+
+"""
+Whether this signed-in session still needs a second factor. `satisfied` is true when nothing is required, or the
+code was accepted less than 12 hours ago. Calling this does not itself require MFA.
+"""
+type MfaStatus
+  @join__type(graph: USERS)
+{
+  required: Boolean!
+  satisfied: Boolean!
+  verifiedAt: DateTime
+  factors: [MfaFactor!]!
+  allowedFactors: [MfaFactorType!]!
+}
+
+"""
+A new access token after the code is accepted. The refresh token rotates with it.
+"""
+type MfaVerifyPayload
+  @join__type(graph: USERS)
+{
+  session: Session
+  userErrors: [UserError!]!
+}
+
 input ModerateContentInput
   @join__type(graph: CORE)
 {
@@ -4569,11 +4729,21 @@ type Mutation
   """Platform admins only, as every mutation below"""
   saveAiConnection(input: SaveAiConnectionInput!): AiConnectionPayload! @join__field(graph: AI)
 
-  """Routes through it then use the default connection"""
+  """Platform admins. Routes through it then use the default connection"""
   deleteAiConnection(input: AiConnectionIdInput!): AiSettingsPayload! @join__field(graph: AI)
+
+  """Platform admins. Which connection answers chat, and which one embeds"""
   setAiDefaults(input: SetAiDefaultsInput!): AiSettingsPayload! @join__field(graph: AI)
+
+  """
+  Platform admins. Asks the connection for one word, one embedding and its model list
+  """
   testAiConnection(input: AiConnectionIdInput!): AiConnectionTestPayload! @join__field(graph: AI)
+
+  """Platform admins. Points one AI task at a connection and model"""
   saveAiTaskRoute(input: SaveAiTaskRouteInput!): AiSettingsPayload! @join__field(graph: AI)
+
+  """Platform admins. The task uses the default connection again"""
   deleteAiTaskRoute(input: AiTaskRouteInput!): AiSettingsPayload! @join__field(graph: AI)
 
   """
@@ -4665,9 +4835,11 @@ type Mutation
 
   """Platform admins: creates a draft, or changes one"""
   saveContest(input: ContestInput!): AdminContestPayload! @join__field(graph: CORE)
+
+  """Platform admins: makes a draft visible for the window"""
   publishContest(input: ContestIdInput!): AdminContestPayload! @join__field(graph: CORE)
 
-  """Drafts only"""
+  """Platform admins. Drafts only"""
   deleteContest(input: ContestIdInput!): OkPayload! @join__field(graph: CORE)
 
   """
@@ -5095,6 +5267,28 @@ type Mutation
   Sends a new manage link to the stored parent address. Rate limited. Signed in.
   """
   resendGuardianManageLink: OkPayload! @join__field(graph: USERS)
+
+  """
+  Signed in. Sends a 6-digit code when factor is EMAIL_OTP. The code lasts 10 minutes, and five wrong attempts burn it.
+  Five sends an hour per account, plus a cap per network. TOTP and WEBAUTHN are reserved.
+  """
+  startMfaChallenge(factor: MfaFactorType!): MfaChallengePayload! @join__field(graph: USERS)
+
+  """
+  Signed in. Checks the code. On success the refresh session is marked verified and the new access token carries amr including otp.
+  """
+  verifyMfaChallenge(challengeId: UUID!, code: String!): MfaVerifyPayload! @join__field(graph: USERS)
+
+  """
+  Signed in. Asks for a second factor on later sign-ins, or stops asking. No screen calls this yet. The next sign-in or refresh applies it.
+  """
+  setMfaOptIn(optIn: Boolean!): OkPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins who have already passed MFA. Clears another account's unused codes and send limits, and lets that
+  account sign in without a code for 2 hours. You cannot recover yourself. Audited. There is no way to edit or delete the audit row.
+  """
+  adminRecoverMfa(input: AdminRecoverMfaInput!): OkPayload! @join__field(graph: USERS)
   updateProfile(input: UpdateProfileInput!): ProfilePayload! @join__field(graph: USERS)
 
   """Attach the old site's data to this account"""
@@ -6563,6 +6757,16 @@ type Query
   """
   adminVersionAdoption(from: DateTime, to: DateTime): AdminVersionAdoption! @join__field(graph: USERS)
 
+  """
+  Platform admins with a valid MFA. Audit rows, newest first. limit is 1 to 100, 50 when omitted.
+  """
+  adminActivity(filter: AdminActivityFilter, cursor: String, limit: Int): AdminActivityConnection! @join__field(graph: USERS)
+
+  """
+  Platform admins with a valid MFA. How many audit rows, per action and per UTC day.
+  """
+  adminActivitySummary(from: DateTime, to: DateTime): AdminActivitySummary! @join__field(graph: USERS)
+
   """Platform admins. Counts for the dashboard."""
   adminMetrics(from: DateTime, to: DateTime): AdminMetrics! @join__field(graph: USERS)
 
@@ -6667,6 +6871,11 @@ type Query
   Data exports already asked for on this account. A ready one includes a short-lived download link.
   """
   guardianDataExports(sessionToken: String!): GuardianExportsPayload! @join__field(graph: USERS)
+
+  """
+  Signed in. The second-factor state of this session. Does not require MFA.
+  """
+  mfaStatus: MfaStatus! @join__field(graph: USERS)
 
   """
   Active plans, cheapest first. Works signed out; `current` is then false on every plan.

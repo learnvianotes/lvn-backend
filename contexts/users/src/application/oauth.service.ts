@@ -12,9 +12,10 @@ import { GOOGLE_ID_TOKENS, type GoogleIdTokens, type ProviderIdentity } from './
 import { AccessGate } from './access-gate'
 import { AppSettingsService } from './app-settings.service'
 import { LegacyService } from './legacy.service'
-import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
+import { SessionService, type DeviceInfo, type FirstFactor, type IssuedSession } from './session.service'
 
 const NAMES = { GOOGLE: 'Google', GITHUB: 'GitHub', LINKEDIN: 'LinkedIn' } as const
+const amrFor = (provider: keyof typeof NAMES): FirstFactor => (provider === 'GOOGLE' ? 'google' : provider === 'GITHUB' ? 'github' : 'linkedin')
 
 /**
  * Sign-in with Google (Firebase ID token, ADR-0007), GitHub and LinkedIn (Authorization Code + PKCE, §7.1), and
@@ -91,7 +92,7 @@ export class OAuthService {
       if (linked.user.deletedAt) throw Errors.forbidden('This account was deleted.')
       if (isStudyPublisher({ id: linked.userId, email: linked.user.email })) throw Errors.forbidden('This account cannot sign in.')
       await this.access.assertAllowed(linked.user.email)
-      return this.sessions.start(linked.userId, device)
+      return this.sessions.start(linked.userId, device, amrFor(identity.provider))
     }
     if (!identity.email || !identity.emailVerified) {
       throw Errors.validation(`Your ${NAMES[identity.provider]} account has no verified email address. Verify one there, or sign up with email.`)
@@ -120,7 +121,7 @@ export class OAuthService {
       }
       // After the commit, so a rolled-back link does not sign the account out. The new session is started below.
       if (unproven) await this.sessions.revokeAll(existing.id)
-      return this.sessions.start(existing.id, device)
+      return this.sessions.start(existing.id, device, amrFor(identity.provider))
     }
 
     const id = newId()
@@ -137,6 +138,6 @@ export class OAuthService {
       throw e
     }
     await this.events.publish('UserRegistered', { userId: id }, { correlationId })
-    return this.sessions.start(id, device)
+    return this.sessions.start(id, device, amrFor(identity.provider))
   }
 }

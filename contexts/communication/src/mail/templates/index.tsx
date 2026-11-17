@@ -1,6 +1,6 @@
 import type { MailTemplate, MailTemplates } from '@lvn-backend/facades'
 import type { ReactElement } from 'react'
-import { AccountDeletion, ClassroomPost, DataExportReady, GuardianConsentConfirmed, GuardianManageLink, GuardianNotice, InstitutionalCode, LinkEmail, PasswordChanged, ResetPassword, VerifyEmail, WeeklyDigest, Welcome } from './emails'
+import { AccountDeletion, ClassroomPost, DataExportReady, GuardianConsentConfirmed, GuardianManageLink, GuardianNotice, InstitutionalCode, LinkEmail, MfaCode, PasswordChanged, ResetPassword, VerifyEmail, WeeklyDigest, Welcome } from './emails'
 
 export { MailContact } from './Layout'
 
@@ -13,6 +13,7 @@ export const TEMPLATES: { [T in MailTemplate]: Definition<T> } = {
   resetPassword: { subject: () => 'Reset your password', element: (d) => <ResetPassword {...d} /> },
   passwordChanged: { subject: () => 'Your password was changed', element: (d) => <PasswordChanged {...d} /> },
   institutionalCode: { subject: (d) => `${d.code} is your LearnViaNotes code`, element: (d) => <InstitutionalCode {...d} /> },
+  mfaCode: { subject: (d) => (d.admin ? 'Your LVN admin sign-in code' : 'Your LVN sign-in code'), element: (d) => <MfaCode {...d} /> },
   accountDeletion: { subject: (d) => `Your LearnViaNotes account will be deleted on ${d.deleteOn}`, element: (d) => <AccountDeletion {...d} /> },
   dataExportReady: { subject: () => 'Your LearnViaNotes data is ready', element: (d) => <DataExportReady {...d} /> },
   classroomPost: { subject: (d) => `${d.teacherName} posted in ${d.classroomName}`, element: (d) => <ClassroomPost {...d} /> },

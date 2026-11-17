@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Security
+
+- Platform admins and staff have to enter a one-time code from their email before they can use admin tools. The code lasts 10 minutes. The admin activity log shows who did what, and it cannot be edited or deleted.
+
 ## [0.6.0] - 2026-11-15
 
 ### Added

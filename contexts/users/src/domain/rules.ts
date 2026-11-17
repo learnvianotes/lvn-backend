@@ -44,6 +44,15 @@ export const LIMITS = {
   verifyEmailResend: { max: 3, windowSeconds: 60 * 60 },
   /** Emails that attach a password to an account that already exists (ADR-0100). */
   linkEmail: { max: 3, windowSeconds: 60 * 60 },
+  /** Sign-in codes emailed to one account. */
+  mfaSend: { max: 5, windowSeconds: 60 * 60 },
+  /**
+   * Sign-in codes from one network. High enough for several admins behind one address,
+   * low enough that one network cannot mail codes without a bound.
+   */
+  mfaSendPerNetwork: { max: 30, windowSeconds: 60 * 60 },
+  /** Code checks for one account. Wrong attempts are also capped on the challenge itself. */
+  mfaVerify: { max: 10, windowSeconds: 15 * 60 },
 } as const
 
 /** §7.1: at least 10 characters; the upper bound keeps hashing cheap for absurd inputs. */

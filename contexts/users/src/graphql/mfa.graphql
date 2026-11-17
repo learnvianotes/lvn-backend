@@ -1,0 +1,74 @@
+# Second factor (email OTP today; TOTP and WebAuthn are reserved).
+# The guard on admin operations is separate from this API: a session can call these mutations before it has finished MFA.
+
+enum MfaFactorType {
+  "A 6-digit code emailed to the account address."
+  EMAIL_OTP
+  "Reserved. startMfaChallenge refuses it until an authenticator app is built."
+  TOTP
+  "Reserved. startMfaChallenge refuses it until a security key is built."
+  WEBAUTHN
+}
+
+enum MfaFactorStatus { PENDING ACTIVE DISABLED }
+
+type MfaFactor {
+  id: UUID!
+  type: MfaFactorType!
+  status: MfaFactorStatus!
+  createdAt: DateTime!
+  lastUsedAt: DateTime
+}
+
+"""
+Whether this signed-in session still needs a second factor. `satisfied` is true when nothing is required, or the
+code was accepted less than 12 hours ago. Calling this does not itself require MFA.
+"""
+type MfaStatus {
+  required: Boolean!
+  satisfied: Boolean!
+  verifiedAt: DateTime
+  factors: [MfaFactor!]!
+  allowedFactors: [MfaFactorType!]!
+}
+
+type MfaChallengePayload {
+  challengeId: UUID
+  factor: MfaFactorType
+  expiresAt: DateTime
+  userErrors: [UserError!]!
+}
+
+"A new access token after the code is accepted. The refresh token rotates with it."
+type MfaVerifyPayload {
+  session: Session
+  userErrors: [UserError!]!
+}
+
+input AdminRecoverMfaInput {
+  userId: UUID!
+  "Why this recovery is being made. Required."
+  reason: String!
+}
+
+extend type Query {
+  "Signed in. The second-factor state of this session. Does not require MFA."
+  mfaStatus: MfaStatus!
+}
+
+extend type Mutation {
+  """
+  Signed in. Sends a 6-digit code when factor is EMAIL_OTP. The code lasts 10 minutes, and five wrong attempts burn it.
+  Five sends an hour per account, plus a cap per network. TOTP and WEBAUTHN are reserved.
+  """
+  startMfaChallenge(factor: MfaFactorType!): MfaChallengePayload!
+  "Signed in. Checks the code. On success the refresh session is marked verified and the new access token carries amr including otp."
+  verifyMfaChallenge(challengeId: UUID!, code: String!): MfaVerifyPayload!
+  "Signed in. Asks for a second factor on later sign-ins, or stops asking. No screen calls this yet. The next sign-in or refresh applies it."
+  setMfaOptIn(optIn: Boolean!): OkPayload!
+  """
+  Platform admins who have already passed MFA. Clears another account's unused codes and send limits, and lets that
+  account sign in without a code for 2 hours. You cannot recover yourself. Audited. There is no way to edit or delete the audit row.
+  """
+  adminRecoverMfa(input: AdminRecoverMfaInput!): OkPayload!
+}

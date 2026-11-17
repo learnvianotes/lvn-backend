@@ -1,6 +1,6 @@
 import { UseGuards } from '@nestjs/common'
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql'
-import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
+import { CurrentViewer, RequireMfa, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { AppError, ErrorCode, toUserError, withUserErrors, type UserError } from '@lvn-backend/errors'
 import { INVITE_ONLY_MESSAGE } from '../domain/access-allowlist'
 import { AccessAllowlistService } from '../application/access-allowlist.service'
@@ -42,24 +42,28 @@ export class AccessAllowlistResolver {
 
   @Query('adminAccessAllowlist')
   @UseGuards(SignedInGuard)
+  @RequireMfa()
   adminAccessAllowlist(@Args() { search }: QueryAdminAccessAllowlistArgs, @CurrentViewer() viewer: Viewer) {
     return this.allowlist.list(viewer.userId, search)
   }
 
   @Mutation('addAccessAllowlistEntry')
   @UseGuards(SignedInGuard)
+  @RequireMfa()
   addAccessAllowlistEntry(@Args() { input }: MutationAddAccessAllowlistEntryArgs, @CurrentViewer() viewer: Viewer): Promise<AccessAllowlistPayload> {
     return withUserErrors<AccessAllowlistPayload>(async () => ({ entry: await this.allowlist.add(viewer.userId, input) }), { entry: null })
   }
 
   @Mutation('updateAccessAllowlistEntry')
   @UseGuards(SignedInGuard)
+  @RequireMfa()
   updateAccessAllowlistEntry(@Args() { input }: MutationUpdateAccessAllowlistEntryArgs, @CurrentViewer() viewer: Viewer): Promise<AccessAllowlistPayload> {
     return withUserErrors<AccessAllowlistPayload>(async () => ({ entry: await this.allowlist.update(viewer.userId, input) }), { entry: null })
   }
 
   @Mutation('removeAccessAllowlistEntry')
   @UseGuards(SignedInGuard)
+  @RequireMfa()
   removeAccessAllowlistEntry(@Args() { id }: MutationRemoveAccessAllowlistEntryArgs, @CurrentViewer() viewer: Viewer): Promise<OkPayload> {
     return withUserErrors<OkPayload>(async () => {
       await this.allowlist.remove(viewer.userId, id)

@@ -315,7 +315,61 @@ input AdminDeleteUserInput {
   confirm: String!
 }
 
+input AdminActivityFilter {
+  actorId: UUID
+  "Exact action name, such as settings.updated or mfa.verified."
+  action: String
+  targetType: String
+  from: DateTime
+  to: DateTime
+}
+
+"One append-only audit row. details has secrets redacted. There is no mutation that changes or deletes it."
+type AdminActivityEntry {
+  id: UUID!
+  actorId: UUID
+  "The actor's email at the time. Null when the account had already been removed."
+  actorEmail: String
+  action: String!
+  targetType: String!
+  targetId: UUID
+  details: JSON
+  ip: String
+  userAgent: String
+  createdAt: DateTime!
+}
+
+type AdminActivityConnection {
+  entries: [AdminActivityEntry!]!
+  "Pass as cursor to read the next page. Null on the last page."
+  nextCursor: String
+}
+
+type AdminActivityActionCount {
+  action: String!
+  count: Int!
+}
+
+type AdminActivityDayCount {
+  "UTC midnight of that day."
+  day: DateTime!
+  count: Int!
+}
+
+"Counts for charts. from is inclusive and to is exclusive. Omit both for the last 30 days. At most 366 days."
+type AdminActivitySummary {
+  from: DateTime!
+  to: DateTime!
+  total: Int!
+  byAction: [AdminActivityActionCount!]!
+  byDay: [AdminActivityDayCount!]!
+}
+
 extend type Query {
+  "Platform admins with a valid MFA. Audit rows, newest first. limit is 1 to 100, 50 when omitted."
+  adminActivity(filter: AdminActivityFilter, cursor: String, limit: Int): AdminActivityConnection!
+  "Platform admins with a valid MFA. How many audit rows, per action and per UTC day."
+  adminActivitySummary(from: DateTime, to: DateTime): AdminActivitySummary!
   "Platform admins. Counts for the dashboard."
   adminMetrics(from: DateTime, to: DateTime): AdminMetrics!
   "Platform admins. Every application setting, with its type, description and validation."

@@ -195,6 +195,10 @@ model User {
   accountStatus           AccountStatus       @default(ACTIVE)
   /// Why the account is age-blocked, blocked, or suspended. Admins read it; it is not a public field.
   statusReason            String?
+  /// The person asked for a second factor on every new session. No screen sets this yet.
+  mfaOptIn                Boolean             @default(false)
+  /// Until this time, sign-in does not ask for a second factor. Set by an admin recovery or the owner CLI.
+  mfaExemptUntil          DateTime?           @db.Timestamptz(3)
   createdAt               DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt               DateTime            @updatedAt @db.Timestamptz(3)
 
@@ -207,6 +211,8 @@ model User {
   /// The parent email on the row is cleared at purge (ADR-0110).
   guardianConsents      GuardianConsent[]
   guardianLinks         GuardianLink[]
+  mfaFactors            UserMfaFactor[]
+  mfaChallenges         MfaChallenge[]
   firebaseInstallations FirebaseInstallation[]
   dataExports          DataExport[]
   memberships          Membership[]
@@ -297,6 +303,10 @@ model Session {
   /// Set when rotated (replacedById) or signed out / revoked
   revokedAt        DateTime? @db.Timestamptz(3)
   replacedById     String?   @db.Uuid
+  /// When this refresh session finished a second factor. Copied when the refresh token rotates. Cleared by sign-out.
+  mfaVerifiedAt    DateTime? @db.Timestamptz(3)
+  /// How this session was authenticated: pwd, google, github, linkedin, and otp after a code is accepted.
+  amr              String[]  @default([])
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -696,17 +706,82 @@ model LegacyImport {
 }
 
 /// §4.5: who changed roles, memberships, verification and moderation state — never content. Kept 7 years (§15.2).
+/// Append-only: a trigger rejects UPDATE and DELETE. There is no API that changes or removes a row.
 model AuditLog {
   id         String   @id @db.Uuid
   actorId    String?  @db.Uuid
+  /// The actor's email at the time, so the row still names them after the address changes.
+  actorEmail String?
   action     String
   targetType String
   targetId   String?  @db.Uuid
+  /// Before/after or other detail. Secrets are redacted before they are stored.
   metadata   Json?
+  ip         String?
+  userAgent  String?
   createdAt  DateTime @default(now()) @db.Timestamptz(3)
 
   @@index([targetType, targetId, createdAt])
   @@index([actorId, createdAt])
+  @@index([createdAt(sort: Desc)])
+  @@schema("users")
+}
+
+enum MfaFactorType {
+  EMAIL_OTP
+  /// Reserved. Not issued yet.
+  TOTP
+  /// Reserved. Not issued yet.
+  WEBAUTHN
+
+  @@schema("users")
+}
+
+enum MfaFactorStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+
+  @@schema("users")
+}
+
+/// A second factor enrolled for an account. Email OTP is created the first time a code is sent.
+model UserMfaFactor {
+  id         String          @id @db.Uuid
+  userId     String          @db.Uuid
+  type       MfaFactorType
+  status     MfaFactorStatus @default(ACTIVE)
+  createdAt  DateTime        @default(now()) @db.Timestamptz(3)
+  lastUsedAt DateTime?       @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId])
+  @@map("user_mfa_factors")
+  @@schema("users")
+}
+
+/// One emailed (or, later, authenticator) challenge. Only the HMAC of the code is stored. Single use.
+model MfaChallenge {
+  id              String        @id @db.Uuid
+  userId          String        @db.Uuid
+  factorType      MfaFactorType
+  /// sign_in today. Other purposes can reuse this store.
+  purpose         String
+  /// HMAC-SHA256 of `${id}:${code}` with CODE_HMAC_SECRET.
+  codeHash        Bytes
+  expiresAt       DateTime      @db.Timestamptz(3)
+  attempts        Int           @default(0)
+  usedAt          DateTime?     @db.Timestamptz(3)
+  /// The refresh-session family this challenge finishes.
+  sessionFamilyId String        @db.Uuid
+  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("mfa_challenges")
   @@schema("users")
 }
 

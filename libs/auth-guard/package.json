@@ -14,6 +14,7 @@
     "@lvn-backend/errors": "workspace:*",
     "@lvn/contracts": "workspace:@learnvianotes/contracts@*",
     "@nestjs/common": "^12.1.3",
+    "@nestjs/core": "^12.1.3",
     "@nestjs/graphql": "14.0.3",
     "reflect-metadata": "^0.2.2"
   }

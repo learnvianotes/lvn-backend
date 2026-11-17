@@ -9,7 +9,7 @@ import { SessionService } from '../application/session.service'
 import { UsersService } from '../application/users.service'
 import { TermsVersionProvider } from '../application/terms-version.provider'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
-import { deliverSession, deviceOf, REFRESH_COOKIE, refreshCookieOptions, type RefreshCookieOptions } from './session-delivery'
+import { deliverSession, deviceOf, MFA_NONE, mfaFields, REFRESH_COOKIE, refreshCookieOptions, type RefreshCookieOptions } from './session-delivery'
 import type {
   AuthPayload,
   MutationRefreshSessionArgs,
@@ -63,14 +63,18 @@ export class AuthResolver {
   signUp(@Args() { input }: MutationSignUpArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
     return withInviteError<AuthPayload>(async () => {
       const result = await this.auth.signUp(input, deviceOf(ctx), ctx.requestId, ctx.req.ip)
-      if (result.status === 'emailLinkPending') return { session: null, emailLinkPending: true }
-      return { session: await deliverSession(ctx, this.cookie, this.users, result.session), emailLinkPending: false }
-    }, { session: null, emailLinkPending: false })
+      if (result.status === 'emailLinkPending') return { session: null, emailLinkPending: true, ...MFA_NONE }
+      const session = result.session
+      return { session: await deliverSession(ctx, this.cookie, this.users, session), emailLinkPending: false, ...mfaFields(session) }
+    }, { session: null, emailLinkPending: false, ...MFA_NONE })
   }
 
   @Mutation('signIn')
   signIn(@Args() { input }: MutationSignInArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
-    return withInviteError<AuthPayload>(async () => ({ session: await deliverSession(ctx, this.cookie, this.users, await this.auth.signIn(input.email, input.password, deviceOf(ctx), ctx.req.ip)), emailLinkPending: false }), { session: null, emailLinkPending: false })
+    return withInviteError<AuthPayload>(async () => {
+      const issued = await this.auth.signIn(input.email, input.password, deviceOf(ctx), ctx.req.ip)
+      return { session: await deliverSession(ctx, this.cookie, this.users, issued), emailLinkPending: false, ...mfaFields(issued) }
+    }, { session: null, emailLinkPending: false, ...MFA_NONE })
   }
 
   @Mutation('refreshSession')
@@ -78,7 +82,8 @@ export class AuthResolver {
     const token = input.refreshToken ?? ctx.req.cookies?.[REFRESH_COOKIE]
     if (!token) throw Errors.unauthenticated('Your session has ended. Sign in again.')
     try {
-      return { session: await deliverSession(ctx, this.cookie, this.users, await this.sessions.refresh(token)), emailLinkPending: false, userErrors: [] }
+      const issued = await this.sessions.refresh(token)
+      return { session: await deliverSession(ctx, this.cookie, this.users, issued), emailLinkPending: false, ...mfaFields(issued), userErrors: [] }
     } catch (e) {
       if (!input.refreshToken) ctx.res.clearCookie(REFRESH_COOKIE, this.cookie)
       throw e
