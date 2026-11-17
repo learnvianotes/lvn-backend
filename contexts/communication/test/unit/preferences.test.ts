@@ -51,5 +51,6 @@ describe('unsubscribe tokens (ADR-0050)', () => {
     const forged = `${Buffer.from('01920000-0000-7000-8000-000000000002.DIGEST').toString('base64url')}.${sig}`
     expect(readUnsubscribeToken(secret, forged)).toBeNull()
     expect(readUnsubscribeToken(secret, 'nonsense')).toBeNull()
+    expect(readUnsubscribeToken(secret, unsubscribeToken(secret, '01920000-0000-7000-8000-000000000001', 'MARKETING'))).toEqual({ userId: '01920000-0000-7000-8000-000000000001', kind: 'MARKETING' })
   })
 })

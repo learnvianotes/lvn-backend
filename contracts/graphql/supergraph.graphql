@@ -428,6 +428,80 @@ type AdminAppVersionCount
   share: Float!
 }
 
+type AdminContentAuthor
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  handle: String!
+  email: String!
+}
+
+type AdminContentConnection
+  @join__type(graph: USERS)
+{
+  edges: [AdminContentEdge!]!
+  pageInfo: PageInfo!
+}
+
+type AdminContentCount
+  @join__type(graph: USERS)
+{
+  type: AdminContentType!
+  count: Int!
+}
+
+type AdminContentCounts
+  @join__type(graph: USERS)
+{
+  from: DateTime
+  to: DateTime
+  counts: [AdminContentCount!]!
+}
+
+type AdminContentEdge
+  @join__type(graph: USERS)
+{
+  cursor: String!
+  node: AdminContentItem!
+}
+
+input AdminContentFilter
+  @join__type(graph: USERS)
+{
+  type: AdminContentType
+  userId: UUID
+  handle: String
+  from: DateTime
+  to: DateTime
+  visibility: AdminContentVisibility
+}
+
+type AdminContentItem
+  @join__type(graph: USERS)
+{
+  """
+  A uuid for most kinds. A share is noteId:userId, noteId:groupId or noteId:classroomId.
+  """
+  id: String!
+  type: AdminContentType!
+
+  """Set when the item has a title. At most 200 characters."""
+  title: String
+
+  """The body, or the title when there is no body. At most 200 characters."""
+  excerpt: String
+  author: AdminContentAuthor!
+  visibility: AdminContentVisibility!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+
+  """
+  OK, PENDING_REVIEW, HIDDEN, REMOVED, PENDING, APPROVED, REJECTED, DRAFT or PUBLISHED. Null when this kind has none.
+  """
+  moderation: String
+  deepLink: String!
+}
+
 """
 Notes, the catalogue, and places. Deleted notes, groups and classes are left out.
 """
@@ -456,6 +530,38 @@ type AdminContentStats
   doubts: AdminDoubtStats!
   places: AdminPlaceCounts!
   sharing: AdminSharingCounts!
+}
+
+enum AdminContentType
+  @join__type(graph: USERS)
+{
+  NOTE @join__enumValue(graph: USERS)
+  COMMENT @join__enumValue(graph: USERS)
+  GROUP @join__enumValue(graph: USERS)
+  GROUP_POST @join__enumValue(graph: USERS)
+  CLASSROOM @join__enumValue(graph: USERS)
+  CLASSROOM_POST @join__enumValue(graph: USERS)
+  QUIZ @join__enumValue(graph: USERS)
+  DOUBT @join__enumValue(graph: USERS)
+  DOUBT_ANSWER @join__enumValue(graph: USERS)
+  SHARE @join__enumValue(graph: USERS)
+  UPLOAD @join__enumValue(graph: USERS)
+  RESOURCE @join__enumValue(graph: USERS)
+  HIGHLIGHT @join__enumValue(graph: USERS)
+  CONTEST @join__enumValue(graph: USERS)
+}
+
+"""
+How widely the item can be seen. PRIVATE is only used for a private group; private notes are not returned.
+"""
+enum AdminContentVisibility
+  @join__type(graph: USERS)
+{
+  PUBLIC @join__enumValue(graph: USERS)
+  SHARED @join__enumValue(graph: USERS)
+  UNLISTED @join__enumValue(graph: USERS)
+  PRIVATE @join__enumValue(graph: USERS)
+  MEMBERS @join__enumValue(graph: USERS)
 }
 
 """A contest as its writers see it"""
@@ -3398,6 +3504,7 @@ enum EmailKind
 {
   CLASSROOM_POST @join__enumValue(graph: COMMUNICATION)
   DIGEST @join__enumValue(graph: COMMUNICATION)
+  MARKETING @join__enumValue(graph: COMMUNICATION)
 }
 
 """Fixed error vocabulary (§6.2)"""
@@ -6006,6 +6113,9 @@ type NotificationSettings
   timeZone: String!
   weeklyDigest: Boolean!
 
+  """Product news. False unsubscribes this account from the audience."""
+  productEmails: Boolean!
+
   """The server can send push (it has FCM settings)"""
   pushAvailable: Boolean!
 
@@ -6711,6 +6821,16 @@ type Query
   Platform admins. Every allowlist entry, or those whose email or note contains `search`.
   """
   adminAccessAllowlist(search: String): [AccessAllowlistEntry!]! @join__field(graph: USERS)
+
+  """
+  Platform admins. One page of content that is not private. Every call writes an audit row with the filter.
+  """
+  adminContent(filter: AdminContentFilter, first: Int, after: String): AdminContentConnection! @join__field(graph: USERS)
+
+  """
+  Platform admins. How many of each kind were created in the window. The same private items are left out.
+  """
+  adminContentCounts(from: DateTime, to: DateTime): AdminContentCounts! @join__field(graph: USERS)
 
   """
   Platform admins. Sign-ups and verifications per DAY (when omitted) or WEEK. Omit from and to for the last 30 days. At most 366 days.
@@ -9121,6 +9241,7 @@ input UpdateNotificationSettingsInput
   quietEnd: String
   timeZone: String
   weeklyDigest: Boolean
+  productEmails: Boolean
 }
 
 input UpdatePageImageInput

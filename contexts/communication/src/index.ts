@@ -13,6 +13,8 @@ export { COMMS_PUSH_QUEUE, PushService, pushBody } from './push/push.service'
 export { DevicesService } from './push/devices.service'
 export { COMMS_EMAIL_QUEUE, EmailNotificationsService } from './email/email-notifications.service'
 export { unsubscribeToken, readUnsubscribeToken } from './email/unsubscribe'
+/** Product-email audience (Resend). Bound to the AUDIENCE facade by the composition roots. */
+export { AudienceService } from './audience/audience.service'
 export { inQuietHours, localTime } from './preferences/preferences.service'
 /** Live updates (ADR-0042): the endpoint's path, its schema and the close code for a refused token. */
 export { LIVE_PATH, LIVE_SDL, LIVE_FORBIDDEN } from './live/live-server'

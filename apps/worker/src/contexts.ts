@@ -1,9 +1,9 @@
 import type { DynamicModule } from '@nestjs/common'
 import { currentProcessEnv, type WorkerConfig } from '@lvn-backend/config'
 import { AiAdminStats, AiDailyLines, AiEmbeddings, AiExport, AiPageVision, AiPlanUsage, AiSkillsReader, AiModule, aiConfigFrom } from '@lvn-backend/ai'
-import { CommunicationModule, communicationConfigFrom, MailService, LiveNotifier } from '@lvn-backend/communication'
+import { AudienceService, CommunicationModule, communicationConfigFrom, MailService, LiveNotifier } from '@lvn-backend/communication'
 import { CoreAdminStats, CoreExport, CoreModule, CorePlanUsage, coreConfigFrom, LearningEventsService, ModerationService, PlacesService, ResourceSearchFacade, WorkspacesService } from '@lvn-backend/core'
-import { AI_ADMIN_STATS, AI_DATA_EXPORT, AI_PLAN_USAGE, AUDIT, CORE_ADMIN_STATS, CORE_DATA_EXPORT, CORE_PLAN_USAGE, LEARNING, DOUBTS, EMBEDDINGS, ENTITLEMENTS, FacadesModule, FILES, LIVE, MAILER, MODERATION, NOTE_ACCESS, NOTE_AI, NOTES_ADMIN_STATS, NOTES_PLAN_USAGE, NOTE_RETRIEVAL, PAGE_VISION, PLACES, PLATFORM_SETTINGS, SKILLS_READER, DAILY_LINES, RESOURCE_SEARCH, NOTE_MODERATION, NOTES_DATA_EXPORT, PEOPLE, POLICY, TOPICS } from '@lvn-backend/facades'
+import { AI_ADMIN_STATS, AI_DATA_EXPORT, AI_PLAN_USAGE, AUDIENCE, AUDIT, CORE_ADMIN_STATS, CORE_DATA_EXPORT, CORE_PLAN_USAGE, LEARNING, DOUBTS, EMBEDDINGS, ENTITLEMENTS, FacadesModule, FILES, LIVE, MAILER, MODERATION, NOTE_ACCESS, NOTE_AI, NOTES_ADMIN_STATS, NOTES_PLAN_USAGE, NOTE_RETRIEVAL, PAGE_VISION, PLACES, PLATFORM_SETTINGS, SKILLS_READER, DAILY_LINES, RESOURCE_SEARCH, NOTE_MODERATION, NOTES_DATA_EXPORT, PEOPLE, POLICY, TOPICS } from '@lvn-backend/facades'
 import { FilesService, NoteAccessFacade, NoteAiFacade, NotesAdminStats, NotesPlanUsage, TopicsFacade, NoteRetrievalFacade, NoteModerationService, NotesExport, NotesModule, notesConfigFrom } from '@lvn-backend/notes'
 import { AuditService, EntitlementService, PlatformSettingsStore, PolicyService, UsersModule, usersConfigFrom, UsersService } from '@lvn-backend/users'
 
@@ -25,6 +25,7 @@ export function contextModules(config: WorkerConfig): DynamicModule[] {
 export const facades = () =>
   FacadesModule.bind([
     [MAILER, MailService],
+    [AUDIENCE, AudienceService],
     [FILES, FilesService],
     [POLICY, PolicyService],
     [ENTITLEMENTS, EntitlementService],

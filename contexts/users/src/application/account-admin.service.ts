@@ -8,6 +8,7 @@ import { enforcedMinimumAge } from '../domain/guardian-consent'
 import { AGE_BLOCK_REASON, ageOf, ageSchema, dateOfBirthSchema, displayNameSchema, emailSchema, isBelowMinimumAge, type AgeFacts } from '../domain/rules'
 import { AGE_FIELDS } from './age'
 import { AccountDeletionService } from './account-deletion.service'
+import { AudienceSyncService } from './audience-sync.service'
 import { AuditService } from './audit.service'
 import { parseField } from './input'
 import { PlatformSettingsStore } from './platform-settings.store'
@@ -72,6 +73,7 @@ export class AccountAdminService {
     private readonly sessions: SessionService,
     private readonly audit: AuditService,
     private readonly deletion: AccountDeletionService,
+    private readonly audience?: AudienceSyncService,
   ) {}
 
   async list(actorId: string, status: AdminUserStatusFilter, search: string | null | undefined, first: number | null | undefined): Promise<{ users: ManagedUser[]; total: number }> {
@@ -92,6 +94,7 @@ export class AccountAdminService {
     await this.requireAdmin(actorId)
     const reason = this.reason(input.reason, 'reason')
     const user = await this.live(input.userId)
+    const previousEmail = user.email
     const data: Prisma.UserUpdateInput = {}
     const fields: string[] = []
     if (input.displayName != null) {
@@ -144,6 +147,9 @@ export class AccountAdminService {
       throw e
     }
     if (data.accountStatus === 'AGE_BLOCKED' && user.accountStatus !== 'AGE_BLOCKED') await this.sessions.revokeAll(user.id)
+    if (fields.includes('email') && typeof data.email === 'string' && data.email.toLowerCase() !== previousEmail.toLowerCase()) {
+      await this.audience?.scheduleEmailChange(user.id, previousEmail)
+    }
     await this.audit.record({
       actorId,
       action: 'account.admin.updated',

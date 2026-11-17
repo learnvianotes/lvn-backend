@@ -305,11 +305,12 @@ describe('AccountDeletionService.adminErase', () => {
     const revoked: string[] = []
     let anonymised: Record<string, unknown> | null = null
     const purged: string[] = []
+    const removed: string[] = []
     const rest = new Proxy({}, { get: () => async () => ({}) })
     const db = {
       accountTombstone: { create: async ({ data }: { data: Record<string, unknown> }) => void tombstones.push(data) },
       user: {
-        findUniqueOrThrow: async () => ({ avatarFileId: 'avatar-1' }),
+        findUniqueOrThrow: async () => ({ avatarFileId: 'avatar-1', email: 'asha@example.com' }),
         update: async ({ data }: { data: Record<string, unknown> }) => {
           anonymised = data
         },
@@ -335,6 +336,9 @@ describe('AccountDeletionService.adminErase', () => {
       {} as never,
       { publish: async (...args: unknown[]) => void published.push(args) } as never,
       {} as never,
+      undefined,
+      undefined,
+      { scheduleRemoval: async (email: string) => void removed.push(email) } as never,
     )
     const hash = 'abc123'
     await service.adminErase('user-1', 'admin-1', 'User asked', hash)
@@ -350,5 +354,6 @@ describe('AccountDeletionService.adminErase', () => {
     expect(audits[0]).toMatchObject({ actorId: 'admin-1', metadata: { reason: 'User asked', emailHash: hash } })
     expect(JSON.stringify(audits)).not.toContain('@example.com')
     expect(published).toEqual([['UserDeleted', { userId: 'user-1' }]])
+    expect(removed).toEqual(['asha@example.com'])
   })
 })

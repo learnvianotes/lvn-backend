@@ -5,6 +5,7 @@ import { AccessAllowlistService } from './application/access-allowlist.service'
 import { AccessGate } from './application/access-gate'
 import { AdminService } from './application/admin.service'
 import { AdminMetricsService } from './application/admin-metrics.service'
+import { AdminContentService } from './application/admin-content.service'
 import { AdminUsageMetricsService } from './application/admin-usage-metrics.service'
 import { DailyMetricsService } from './application/daily-metrics.service'
 import { AppSettingsService } from './application/app-settings.service'
@@ -39,6 +40,7 @@ import { UsersService } from './application/users.service'
 import { AnalyticsService, BackendErrorSink, SentrySubjectBinding } from './application/analytics.service'
 import { IdCardCheckService } from './application/id-card-check.service'
 import { VerificationService } from './application/verification.service'
+import { AudienceSyncService } from './application/audience-sync.service'
 import { WelcomeEmailService } from './application/welcome-email.service'
 import { AuthResolver } from './graphql/auth.resolver'
 import { ProfileResolver } from './graphql/profile.resolver'
@@ -66,6 +68,7 @@ import { MfaService } from './application/mfa.service'
 import { AdminActivityResolver } from './graphql/admin-activity.resolver'
 import { AdminDashboardResolver } from './graphql/admin.resolver'
 import { MfaResolver } from './graphql/mfa.resolver'
+import { AdminContentResolver } from './graphql/admin-content.resolver'
 import { AdminUsageMetricsResolver } from './graphql/admin-usage-metrics.resolver'
 import { PlansResolver } from './graphql/plans.resolver'
 
@@ -99,6 +102,7 @@ export class UsersModule {
         OAuthService,
         RegistrationService,
         WelcomeEmailService,
+        AudienceSyncService,
         InstitutionalEmailService,
         PolicyService,
         EntitlementService,
@@ -116,6 +120,7 @@ export class UsersModule {
         AppSettingsService,
         AdminMetricsService,
         AdminUsageMetricsService,
+        AdminContentService,
         DailyMetricsService,
         PlanAdminService,
         PublicPlansService,
@@ -140,6 +145,7 @@ export class UsersModule {
         AdminActivityResolver,
         AdminUsageMetricsResolver,
         MfaResolver,
+        AdminContentResolver,
         PlansResolver,
         LegacyService,
         SocialService,
@@ -165,7 +171,7 @@ export class UsersModule {
         AnalyticsResolver,
         AnalyticsOptOutResolver,
       ],
-      exports: [PolicyService, EntitlementService, UsersMaintenance, DataExportService, SkillsImportService, AccountDeletionService, IdCardCheckService, WelcomeEmailService, UsersService, PlatformSettingsStore],
+      exports: [PolicyService, EntitlementService, UsersMaintenance, DataExportService, SkillsImportService, AccountDeletionService, IdCardCheckService, WelcomeEmailService, AudienceSyncService, UsersService, PlatformSettingsStore],
     }
   }
 }

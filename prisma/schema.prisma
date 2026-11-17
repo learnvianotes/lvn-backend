@@ -175,6 +175,8 @@ model User {
   registrationCompletedAt DateTime?           @db.Timestamptz(3)
   /// Claimed when the one welcome email goes out. A retry, a profile edit or another sign-in does not send a second one.
   welcomeEmailSentAt      DateTime?           @db.Timestamptz(3)
+  /// Set when this account was last upserted into the product-email audience. Null until that succeeds.
+  audienceSyncedAt        DateTime?           @db.Timestamptz(3)
   /// Verified by institutional email, a teacher or platform admins (ADR-0019)
   verifiedAt              DateTime?           @db.Timestamptz(3)
   verificationMethod      VerificationMethod?
@@ -3427,6 +3429,8 @@ model NotificationSettings {
   quietEnd     String    @default("07:00")
   timeZone     String    @default("Asia/Kolkata")
   weeklyDigest Boolean   @default(true)
+  /// Product news. False means the audience contact is unsubscribed. No row, or true, means they receive it.
+  productEmails Boolean  @default(true)
   lastDigestAt DateTime? @db.Timestamptz(3)
 
   @@schema("comms")

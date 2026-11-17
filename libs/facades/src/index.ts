@@ -1,5 +1,6 @@
 // Interfaces through which contexts call each other in-process (spec §6.1, §6.5 step 5). Only tokens and types live
 // here; each implementation belongs to the owning context and is bound by the composition roots.
+export { AUDIENCE, type Audience, type AudienceContact } from './audience'
 export { MAILER, type Mailer, type MailOptions, type MailTemplate, type MailTemplates } from './mail'
 export { POLICY, type Policy } from './policy'
 export { ENTITLEMENTS, type Entitlements } from './entitlements'

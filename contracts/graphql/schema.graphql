@@ -341,6 +341,67 @@ type AdminAppVersionCount {
   users: Int!
 }
 
+type AdminContentAuthor {
+  email: String!
+  handle: String!
+  id: UUID!
+}
+
+type AdminContentConnection {
+  edges: [AdminContentEdge!]!
+  pageInfo: PageInfo!
+}
+
+type AdminContentCount {
+  count: Int!
+  type: AdminContentType!
+}
+
+type AdminContentCounts {
+  counts: [AdminContentCount!]!
+  from: DateTime
+  to: DateTime
+}
+
+type AdminContentEdge {
+  cursor: String!
+  node: AdminContentItem!
+}
+
+input AdminContentFilter {
+  from: DateTime
+  handle: String
+  to: DateTime
+  type: AdminContentType
+  userId: UUID
+  visibility: AdminContentVisibility
+}
+
+type AdminContentItem {
+  author: AdminContentAuthor!
+  createdAt: DateTime!
+  deepLink: String!
+
+  """The body, or the title when there is no body. At most 200 characters."""
+  excerpt: String
+
+  """
+  A uuid for most kinds. A share is noteId:userId, noteId:groupId or noteId:classroomId.
+  """
+  id: String!
+
+  """
+  OK, PENDING_REVIEW, HIDDEN, REMOVED, PENDING, APPROVED, REJECTED, DRAFT or PUBLISHED. Null when this kind has none.
+  """
+  moderation: String
+
+  """Set when the item has a title. At most 200 characters."""
+  title: String
+  type: AdminContentType!
+  updatedAt: DateTime!
+  visibility: AdminContentVisibility!
+}
+
 """
 Notes, the catalogue, and places. Deleted notes, groups and classes are left out.
 """
@@ -365,6 +426,34 @@ type AdminContentStats {
   scans: AdminScanCounts!
   sharing: AdminSharingCounts!
   uploads: AdminUploadStats!
+}
+
+enum AdminContentType {
+  CLASSROOM
+  CLASSROOM_POST
+  COMMENT
+  CONTEST
+  DOUBT
+  DOUBT_ANSWER
+  GROUP
+  GROUP_POST
+  HIGHLIGHT
+  NOTE
+  QUIZ
+  RESOURCE
+  SHARE
+  UPLOAD
+}
+
+"""
+How widely the item can be seen. PRIVATE is only used for a private group; private notes are not returned.
+"""
+enum AdminContentVisibility {
+  MEMBERS
+  PRIVATE
+  PUBLIC
+  SHARED
+  UNLISTED
 }
 
 """A contest as its writers see it"""
@@ -2828,6 +2917,7 @@ input EditGroupPostInput {
 enum EmailKind {
   CLASSROOM_POST
   DIGEST
+  MARKETING
 }
 
 """Fixed error vocabulary (§6.2)"""
@@ -5095,6 +5185,9 @@ type NotificationSettings {
   """Phones registered for push"""
   devices: Int!
 
+  """Product news. False unsubscribes this account from the audience."""
+  productEmails: Boolean!
+
   """The server can send push (it has FCM settings)"""
   pushAvailable: Boolean!
   quietEnd: String!
@@ -5460,6 +5553,16 @@ type Query {
   Platform admins with a valid MFA. How many audit rows, per action and per UTC day.
   """
   adminActivitySummary(from: DateTime, to: DateTime): AdminActivitySummary!
+
+  """
+  Platform admins. One page of content that is not private. Every call writes an audit row with the filter.
+  """
+  adminContent(after: String, filter: AdminContentFilter, first: Int): AdminContentConnection!
+
+  """
+  Platform admins. How many of each kind were created in the window. The same private items are left out.
+  """
+  adminContentCounts(from: DateTime, to: DateTime): AdminContentCounts!
 
   """
   Platform admins. Notes, uploads, scans, doubts, places and sharing created in the window. At most 366 days.
@@ -7734,6 +7837,7 @@ type UpdateNoteDraftPayload {
 
 input UpdateNotificationSettingsInput {
   categories: [CategoryPreferenceInput!]
+  productEmails: Boolean
   quietEnd: String
   quietStart: String
   timeZone: String
