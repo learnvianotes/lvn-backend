@@ -40,6 +40,26 @@ const yearsAgo = (years: number) => {
 
 type SignUpResult = { signUp: { session: { accessToken: string; refreshToken: string | null; user: { id: string; email: string; emailVerified: boolean; registrationComplete: boolean; verified: boolean; handle: string } } | null; userErrors: { field: string[] | null; message: string; code: string }[] } }
 
+/** 30 days, SESSION_TTL_DAYS. Express sends it as Max-Age in seconds. */
+const REFRESH_MAX_AGE = 30 * 24 * 60 * 60
+
+const refreshSetCookie = (res: request.Response): string => {
+  const cookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []).find((c) => c.startsWith('lvn_rt='))
+  expect(cookie).toBeDefined()
+  return cookie!
+}
+
+/** Host-only lvn_rt: HttpOnly, SameSite=Lax, Path=/graphql, Max-Age, and no Domain attribute. */
+const expectRefreshCookie = (cookie: string, secure: boolean) => {
+  expect(cookie).toMatch(/HttpOnly/)
+  expect(cookie).toMatch(/SameSite=Lax/)
+  expect(cookie).toMatch(/Path=\/graphql/)
+  expect(cookie).toMatch(new RegExp(`Max-Age=${REFRESH_MAX_AGE}\\b`))
+  expect(cookie.split(';').some((part) => part.trim().toLowerCase().startsWith('domain='))).toBe(false)
+  if (secure) expect(cookie).toMatch(/;\s*Secure\b/)
+  else expect(cookie).not.toMatch(/Secure/)
+}
+
 describe('auth', () => {
   let t: TestApp
   let mail: Mailbox
@@ -85,23 +105,17 @@ describe('auth', () => {
       expect(again.data!.verifyEmail).toEqual({ ok: false, userErrors: [{ code: 'VALIDATION' }] })
     })
 
-    it('sets an HttpOnly, SameSite=Lax refresh cookie scoped to /graphql for the web, not Secure on a plain-HTTP API', async () => {
+    it('sets an HttpOnly, SameSite=Lax refresh cookie scoped to /graphql for the web, not Secure on a plain-HTTP API, and never a Domain', async () => {
       // JWT_ISSUER (the API's public origin) is http:// here: browsers would drop a Secure cookie from it.
       const res = await http().post('/graphql').send({ query: SIGN_UP, variables: { input: signUpInput() } })
-      const cookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []).find((c) => c.startsWith('lvn_rt='))!
-      expect(cookie).toMatch(/HttpOnly/)
-      expect(cookie).not.toMatch(/Secure/)
-      expect(cookie).toMatch(/SameSite=Lax/)
-      expect(cookie).toMatch(/Path=\/graphql/)
+      expectRefreshCookie(refreshSetCookie(res), false)
     })
 
-    it('makes the refresh cookie Secure when the API is served over HTTPS', async () => {
+    it('makes the refresh cookie Secure when the API is served over HTTPS, still with no Domain', async () => {
       const https = await createTestApp({ JWT_ISSUER: 'https://api.example.test' })
       try {
         const res = await request(https.app.getHttpServer()).post('/graphql').send({ query: SIGN_UP, variables: { input: signUpInput() } })
-        const cookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []).find((c) => c.startsWith('lvn_rt='))!
-        expect(cookie).toMatch(/HttpOnly/)
-        expect(cookie).toMatch(/; Secure/)
+        expectRefreshCookie(refreshSetCookie(res), true)
       } finally {
         await https.close()
       }
@@ -254,6 +268,15 @@ describe('auth', () => {
       expect(wrong.data!.signIn.userErrors[0]).toMatchObject({ code: 'VALIDATION', message: 'Email or password is incorrect.' })
     })
 
+    it('sets the same host-only refresh cookie on sign-in', async () => {
+      const input = signUpInput()
+      await http().post('/graphql').send({ query: SIGN_UP, variables: { input } })
+      const res = await http().post('/graphql').send({ query: SIGN_IN, variables: { input: { email: input.email, password: input.password } } })
+      expect(res.body.data.signIn.session.accessToken).toBeTruthy()
+      expect(res.body.data.signIn.session.refreshToken).toBeNull()
+      expectRefreshCookie(refreshSetCookie(res), false)
+    })
+
     it('allows 5 attempts per account per 15 minutes (§7.1)', async () => {
       const input = signUpInput()
       await t.gql(SIGN_UP, { input })
@@ -315,6 +338,19 @@ describe('auth', () => {
 
     it('requires a session to sign out', async () => {
       expect((await t.gql('mutation { signOut { ok } }')).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
+    })
+
+    it('clears the refresh cookie on sign-out with the same Path and no Domain', async () => {
+      const signUp = await http().post('/graphql').send({ query: SIGN_UP, variables: { input: signUpInput() } })
+      const set = refreshSetCookie(signUp)
+      expectRefreshCookie(set, false)
+      const access = signUp.body.data.signUp.session.accessToken as string
+      const out = await http().post('/graphql').set('cookie', set.split(';')[0]!).set('authorization', `Bearer ${access}`).send({ query: 'mutation { signOut { ok } }' })
+      expect(out.body.data.signOut.ok).toBe(true)
+      const cleared = refreshSetCookie(out)
+      expect(cleared).toMatch(/^lvn_rt=;/)
+      expect(cleared).toMatch(/Path=\/graphql/)
+      expect(cleared.split(';').some((part) => part.trim().toLowerCase().startsWith('domain='))).toBe(false)
     })
   })
 

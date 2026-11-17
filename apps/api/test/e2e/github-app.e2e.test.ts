@@ -140,4 +140,31 @@ describe('GitHub App repository activity', () => {
     expect(await db.repositoryEvent.count({ where: { groupId } })).toBe(0)
     expect(await db.gitHubInstallation.count({ where: { id: '42' } })).toBe(0)
   })
+
+  it('allows 60 signed deliveries a minute from one address, then 429 with Retry-After, and still requires the signature', async () => {
+    const body = JSON.stringify({ zen: 'rate-limit' })
+    const signature = `sha256=${createHmac('sha256', SECRET).update(body).digest('hex')}`
+    const send = (ip: string, sig = signature) =>
+      request(t.app.getHttpServer())
+        .post('/webhooks/github')
+        .set('content-type', 'application/json')
+        .set('x-forwarded-for', ip)
+        .set('x-github-event', 'ping')
+        .set('x-github-delivery', randomUUID())
+        .set('x-hub-signature-256', sig)
+        .send(body)
+    const ip = '203.0.113.60'
+    for (let sent = 0; sent < 60; sent += 20) {
+      const answers = await Promise.all(Array.from({ length: 20 }, () => send(ip)))
+      expect(answers.every((a) => a.status === 202)).toBe(true)
+    }
+    const before = await db.gitHubDelivery.count()
+    const refused = await send(ip)
+    expect(refused.status).toBe(429)
+    expect(Number(refused.headers['retry-after'])).toBeGreaterThan(0)
+    expect(refused.body.error).toMatch(/webhook/)
+    expect(await db.gitHubDelivery.count()).toBe(before)
+    expect((await send(ip, 'sha256=00')).status).toBe(401)
+    expect((await send('198.51.100.60')).status).toBe(202)
+  }, 60_000)
 })

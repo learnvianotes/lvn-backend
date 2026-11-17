@@ -1,6 +1,6 @@
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import request from 'supertest'
-import { MAX_COMPLEXITY, MAX_DEPTH, OPERATIONS_PER_MINUTE } from '@lvn-backend/graphql'
+import { ANONYMOUS_OPERATIONS_PER_MINUTE, MAX_COMPLEXITY, MAX_DEPTH, OPERATIONS_PER_MINUTE } from '@lvn-backend/graphql'
 import { createTestApp, type TestApp } from '../support/app'
 import { seedActors, type Actors } from './support/actors'
 import { seedUser, tokenFor } from '../support/seed'
@@ -73,6 +73,27 @@ describe('security: abuse', () => {
       expect(refused.body.errors[0].extensions).toMatchObject({ code: 'RATE_LIMITED' })
       // Everyone else carries on.
       expect((await t.gql<{ viewer: { id: string } }>('{ viewer { id } }', {}, actors.a.token)).data?.viewer).toBeTruthy()
+    }, 60_000)
+
+    it(`lets one anonymous network send ${ANONYMOUS_OPERATIONS_PER_MINUTE} operations a minute, then answers 429, and another network carries on`, async () => {
+      const ask = (ip: string) => from(ip, '{ termsVersion }', {})
+      const network = '203.0.113.120'
+      for (let sent = 0; sent < ANONYMOUS_OPERATIONS_PER_MINUTE; sent += 40) {
+        const answers = await Promise.all(Array.from({ length: Math.min(40, ANONYMOUS_OPERATIONS_PER_MINUTE - sent) }, () => ask(network)))
+        expect(answers.every((a) => a.status === 200 && a.body.data?.termsVersion)).toBe(true)
+      }
+      const refused = await ask(network)
+      expect(refused.status).toBe(429)
+      expect(Number(refused.headers['retry-after'])).toBeGreaterThan(0)
+      expect(refused.body.errors[0].extensions).toMatchObject({ code: 'RATE_LIMITED' })
+      expect(refused.body.errors[0].message).toMatch(/Try again in \d+ seconds/)
+      const other = await ask('203.0.113.121')
+      expect(other.status).toBe(200)
+      expect(other.body.data.termsVersion).toBeTruthy()
+      // A signed-in person on the exhausted address is still on the per-person cap.
+      const signedIn = await from(network, '{ viewer { id } }', {}, { authorization: `Bearer ${actors.a.token}` })
+      expect(signedIn.status).toBe(200)
+      expect(signedIn.body.data.viewer.id).toBeTruthy()
     }, 60_000)
 
     it('answers a subscription sent over HTTP with 400, not a failure (found by ZAP, Phase 9)', async () => {

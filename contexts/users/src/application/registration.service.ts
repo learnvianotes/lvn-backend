@@ -48,7 +48,7 @@ export class RegistrationService {
     private readonly guardians?: GuardianNoticeService,
   ) {}
 
-  async complete(userId: string, input: RegistrationDetails): Promise<void> {
+  async complete(userId: string, input: RegistrationDetails, ip?: string): Promise<void> {
     const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, select: { registrationCompletedAt: true, email: true } })
     if (user.registrationCompletedAt) throw Errors.conflict('Your registration is already complete.')
     const displayName = parseField(displayNameSchema, input.displayName, 'displayName')
@@ -89,6 +89,6 @@ export class RegistrationService {
     if (parentEmail) await this.guardians?.notify(userId)
     // A name and an age: people search may now find them, once past the consent age (ADR-0055).
     await this.events.publish('PersonChanged', { userId })
-    if (input.institutionalEmail) await this.institutional.start(userId, input.institutionalEmail)
+    if (input.institutionalEmail) await this.institutional.start(userId, input.institutionalEmail, ['input', 'institutionalEmail'], ip)
   }
 }

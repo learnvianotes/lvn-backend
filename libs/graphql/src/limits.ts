@@ -52,14 +52,20 @@ const refuse = (message: string) => new GraphQLError(message, { extensions: { co
 export const OPERATIONS_PER_MINUTE = 600
 
 /**
+ * Operations one anonymous network may send a minute. A campus NAT shares an address, so this stays above a classroom
+ * of public reads and below an unbounded script. Signed-in traffic uses OPERATIONS_PER_MINUTE instead, per person.
+ */
+export const ANONYMOUS_OPERATIONS_PER_MINUTE = 120
+
+/**
  * Says whether a request may run: null when it may, else the seconds until it may (§17.1, ADR-0090). Given by the app,
- * which keeps the counts (Redis).
+ * which keeps the counts (Redis). The app fails open when Redis is down: a Redis outage must not refuse everyone.
  */
 export type RateCheck = (contextValue: unknown) => Promise<number | null>
 
 /**
- * Refuses a signed-in person's operations past OPERATIONS_PER_MINUTE with RATE_LIMITED, HTTP 429 and Retry-After,
- * before any resolver runs. Floods by address are the edge's to stop (AWS WAF), as one address may be a whole campus.
+ * Refuses operations past the signed-in or anonymous cap with RATE_LIMITED, HTTP 429 and Retry-After, before any
+ * resolver runs. The check fails open when Redis is down (it returns null). Address floods are still the edge's job.
  */
 export function rateLimitPlugin(check: RateCheck): ApolloServerPlugin {
   return {

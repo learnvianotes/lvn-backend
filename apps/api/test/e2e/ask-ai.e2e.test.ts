@@ -23,6 +23,7 @@ describe('Ask AI', () => {
   let asha: Person
   let ravi: Person
   let dev: Person
+  let late: Person
   const notes: Record<string, string> = {}
   const cards: Record<string, string> = {}
   const ERRORS = 'userErrors { field message code }'
@@ -76,6 +77,7 @@ describe('Ask AI', () => {
     asha = await person('Asha')
     ravi = await person('Ravi')
     dev = await person('Dev')
+    late = await person('Late')
     await write(asha, 'draft', 'Heaps', 'A min-heap keeps the smallest item on top, at the root.', null)
     await write(asha, 'graphs', 'Graphs', 'Dijkstra finds shortest paths with a priority queue of distances.', 'PUBLIC')
     await write(asha, 'plan', 'Exam plan', 'My exam plan: revise heaps and graphs on Friday. SECRETPLAN', 'PRIVATE')
@@ -185,7 +187,7 @@ describe('Ask AI', () => {
 
   it('says why an answer failed, in words for the asker', async () => {
     ollama.answer = () => ({ status: 500 })
-    const failed = await done(ravi, { question: 'How do I find shortest paths in a graph?', scope: 'PUBLIC' })
+    const failed = await done(late, { question: 'How do I find shortest paths in a graph?', scope: 'PUBLIC' })
     expect(failed).toMatchObject({ status: 'FAILED', error: 'AI is not answering right now. Try again in a minute.' })
     ollama.answer = (req) => req.messages.at(-1)!.content.slice(0, 40)
   })
@@ -212,7 +214,7 @@ describe('Ask AI', () => {
   it('says AI is off, as a payload error, where it is not switched on', async () => {
     const off = await createTestApp({}, { resetDatabase: false })
     try {
-      const res = await off.gql<{ askAi: { userErrors: { code: string }[] } }>(`mutation { askAi(input: { question: "What is a heap?", scope: PUBLIC }) { answer { id } ${ERRORS} } }`, {}, ravi.token)
+      const res = await off.gql<{ askAi: { userErrors: { code: string }[] } }>(`mutation { askAi(input: { question: "What is a heap?", scope: PUBLIC }) { answer { id } ${ERRORS} } }`, {}, late.token)
       expect(res.data!.askAi.userErrors[0]!.code).toBe('UNAVAILABLE')
       // Nothing is embedded, and nothing fails, without AI.
       expect(await off.app.get(NoteChunks).embedNote(notes.graphs!)).toBe('off')

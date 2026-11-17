@@ -74,18 +74,18 @@ export class RegistrationResolver {
 
   @Mutation('completeRegistration')
   @UseGuards(SignedInGuard)
-  completeRegistration(@Args() { input }: MutationCompleteRegistrationArgs, @CurrentViewer() viewer: Viewer): Promise<OkPayload> {
+  completeRegistration(@Args() { input }: MutationCompleteRegistrationArgs, @CurrentViewer() viewer: Viewer, @Context() ctx: RequestContext): Promise<OkPayload> {
     return withUserErrors<OkPayload>(async () => {
-      await this.registration.complete(viewer.userId, input)
+      await this.registration.complete(viewer.userId, input, ctx.req.ip)
       return { ok: true }
     }, { ok: false })
   }
 
   @Mutation('setInstitutionalEmail')
   @UseGuards(SignedInGuard)
-  setInstitutionalEmail(@Args() { input }: MutationSetInstitutionalEmailArgs, @CurrentViewer() viewer: Viewer): Promise<OkPayload> {
+  setInstitutionalEmail(@Args() { input }: MutationSetInstitutionalEmailArgs, @CurrentViewer() viewer: Viewer, @Context() ctx: RequestContext): Promise<OkPayload> {
     return withUserErrors<OkPayload>(async () => {
-      await this.institutional.start(viewer.userId, input.email, ['input', 'email'])
+      await this.institutional.start(viewer.userId, input.email, ['input', 'email'], ctx.req.ip)
       return { ok: true }
     }, { ok: false })
   }
@@ -101,9 +101,9 @@ export class RegistrationResolver {
 
   @Mutation('resendInstitutionalEmailCode')
   @UseGuards(SignedInGuard)
-  resendInstitutionalEmailCode(@CurrentViewer() viewer: Viewer): Promise<OkPayload> {
+  resendInstitutionalEmailCode(@CurrentViewer() viewer: Viewer, @Context() ctx: RequestContext): Promise<OkPayload> {
     return withUserErrors<OkPayload>(async () => {
-      await this.institutional.resend(viewer.userId)
+      await this.institutional.resend(viewer.userId, ctx.req.ip)
       return { ok: true }
     }, { ok: false })
   }

@@ -52,6 +52,10 @@ describe('security: AI artifacts are stored apart from the notes (Phase 5 exit)'
     const cards = await db.card.findMany({ where: { noteId }, orderBy: { id: 'asc' }, select: { id: true, type: true, position: true, revision: true, content: true, deletedAt: true } })
     return { note, versions: versions.map((v) => ({ id: v.id, number: v.number, title: v.title, cards: v.cards })), cards }
   }
+  const person = async (name: string) => {
+    const u = await seedUser(t.app, { verified: true, displayName: name })
+    return { id: u.id, token: tokenFor(t.config, u.id) }
+  }
   const run = async (who: Person, task: string, extra: object = {}) => {
     const res = await t.gql<{ runAiTask: { artifact: { id: string } | null; userErrors: { message: string }[] } }>(`mutation ($input: RunAiTaskInput!) { runAiTask(input: $input) { artifact { id } ${ERRORS} } }`, { input: { noteId, task, ...extra } }, who.token)
     return res.data?.runAiTask.artifact?.id ?? null
@@ -63,10 +67,6 @@ describe('security: AI artifacts are stored apart from the notes (Phase 5 exit)'
     t = await createTestApp({ AI_PROVIDER: 'ollama', OLLAMA_URL: ollama.url, AI_CHAT_MODEL: 'gemma4', AI_EMBED_MODEL: 'embeddinggemma' })
     db = t.app.get(PrismaService)
     bus = t.app.get(InProcessEventBus)
-    const person = async (name: string) => {
-      const u = await seedUser(t.app, { verified: true, displayName: name })
-      return { id: u.id, token: tokenFor(t.config, u.id) }
-    }
     owner = await person('Asha')
     reader = await person('Ravi')
     const created = await t.gql<{ createNote: { note: { id: string } } }>(`mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id } ${ERRORS} } }`, {
@@ -97,12 +97,22 @@ describe('security: AI artifacts are stored apart from the notes (Phase 5 exit)'
     const ask = t.app.get(AskService)
 
     // Every task the API offers, but transcription (it needs a recording; ADR-0062's e2e covers it).
+    // Five AI calls a minute per person: the owner runs the editor-only tasks and a few more, and other readers run the rest.
     const all = Object.values(AiTaskType).filter((task) => task !== 'TRANSCRIBE')
+    const pinned = ['QUICK_NOTE', 'CLEAN_UP', 'QUIZ']
+    const ownerTasks = [...pinned, ...all.filter((task) => !pinned.includes(task))].slice(0, 5)
+    const ownerSet = new Set(ownerTasks)
+    const rest = all.filter((task) => !ownerSet.has(task))
     const ids: string[] = []
-    for (const task of all) {
-      const id = await run(owner, task, task === 'TRANSLATE' ? { language: 'HINDI' } : {})
+    const queue = async (who: Person, task: string) => {
+      const id = await run(who, task, task === 'TRANSLATE' ? { language: 'HINDI' } : {})
       expect({ task, queued: !!id }).toEqual({ task, queued: true })
       ids.push(id!)
+    }
+    for (const task of ownerTasks) await queue(owner, task)
+    for (let i = 0; i < rest.length; i += 4) {
+      const who = await person(`Reader ${i}`)
+      for (const task of rest.slice(i, i + 4)) await queue(who, task)
     }
     // A reader runs what readers may run, on the published version.
     for (const task of ['SUMMARIZE', 'FLASHCARDS', 'QUIZ', 'EXPLAIN_CODE']) ids.push((await run(reader, task))!)

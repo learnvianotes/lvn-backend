@@ -97,7 +97,7 @@ describe('learning history', () => {
       event({ type: 'TOPIC_COMPLETED', entityType: 'CORE_TOPIC', entityId: 'dsa-basics/arrays', topicKeys: ['core:dsa-basics/arrays'], metadata: { done: true } }),
       event({ type: 'PROBLEM_MARKED', entityType: 'CORE_PROBLEM', entityId: 'two-sum', metadata: { subjectId: 'dsa-basics', mark: 'SOLVED' } }),
     ])
-    const done = await eventually(async () => (await progress()).data!.coreProgress, (p) => p.topics.length > 0 && p.problems.length > 0)
+    const done = await eventually(async () => (await progress()).data!.coreProgress, (p) => p.topics.some((t) => t.completed && t.secondsStudied === 120) && p.problems.some((x) => x.mark === 'SOLVED'))
     expect(done.topics).toEqual([{ topicKey: 'dsa-basics/arrays', completed: true, secondsStudied: 120 }])
     expect(done.problems).toEqual([{ problemId: 'two-sum', mark: 'SOLVED' }])
     await track(me.token, [event({ type: 'PROBLEM_MARKED', entityType: 'CORE_PROBLEM', entityId: 'two-sum', metadata: { subjectId: 'dsa-basics', mark: 'NONE' } })])

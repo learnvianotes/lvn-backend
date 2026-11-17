@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Security
+
+- The sign-in cookie stays on the API host only, so it is not sent to other learnvianotes.in sites, and it expires with the session. Sign-up, password reset, anonymous requests, AI, search, public note reads, webhooks and college-email codes each have their own limit. [#91](https://github.com/learnvianotes/lvn-backend/pull/91)
+
 ## [0.6.0] - 2026-11-15
 
 ### Added
