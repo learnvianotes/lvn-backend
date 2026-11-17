@@ -1,6 +1,6 @@
 import { UseGuards } from '@nestjs/common'
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql'
-import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
+import { CurrentViewer, RequireMfa, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { withUserErrors, type UserError } from '@lvn-backend/errors'
 import { AiReportsService, type ReportInput } from '../application/ai-reports.service'
 
@@ -12,12 +12,14 @@ export class AiReportsResolver {
 
   @Query('aiReports')
   @UseGuards(SignedInGuard)
+  @RequireMfa()
   aiReports(@Args('status') status: 'OPEN' | 'RESOLVED' | 'DISMISSED' | null, @Args('first') first: number | null, @CurrentViewer() viewer: Viewer) {
     return this.reports.list(viewer.userId, { status, first })
   }
 
   @Query('aiReport')
   @UseGuards(SignedInGuard)
+  @RequireMfa()
   aiReport(@Args('id') id: string, @CurrentViewer() viewer: Viewer) {
     return this.reports.get(viewer.userId, id)
   }
@@ -30,12 +32,14 @@ export class AiReportsResolver {
 
   @Mutation('resolveAiReport')
   @UseGuards(SignedInGuard)
+  @RequireMfa()
   resolveAiReport(@Args('id') id: string, @CurrentViewer() viewer: Viewer) {
     return withUserErrors<{ report: ReportRow | null; userErrors: UserError[] }>(async () => ({ report: await this.reports.resolve(viewer.userId, id) }), { report: null })
   }
 
   @Mutation('dismissAiReport')
   @UseGuards(SignedInGuard)
+  @RequireMfa()
   dismissAiReport(@Args('id') id: string, @CurrentViewer() viewer: Viewer) {
     return withUserErrors<{ report: ReportRow | null; userErrors: UserError[] }>(async () => ({ report: await this.reports.dismiss(viewer.userId, id) }), { report: null })
   }

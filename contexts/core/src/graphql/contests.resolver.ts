@@ -1,6 +1,6 @@
 import { UseGuards } from '@nestjs/common'
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql'
-import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
+import { CurrentViewer, RequireMfa, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { withUserErrors, type UserError } from '@lvn-backend/errors'
 import { ContestsService, type ContestInput, type ContestView } from '../application/contests.service'
 
@@ -35,6 +35,7 @@ export class ContestsResolver {
 
   @Query('adminContests')
   @UseGuards(SignedInGuard)
+  @RequireMfa()
   async adminContests(@CurrentViewer() viewer: Viewer) {
     return (await this.contests.adminList(viewer.userId)).map(admin)
   }
@@ -69,6 +70,7 @@ export class ContestsResolver {
 
   @Mutation('saveContest')
   @UseGuards(SignedInGuard)
+  @RequireMfa()
   save(@Args('input') i: Parameters<typeof input>[0] & { id?: string | null }, @CurrentViewer() viewer: Viewer) {
     return withUserErrors<AdminPayload>(
       async () => {
@@ -81,12 +83,14 @@ export class ContestsResolver {
 
   @Mutation('publishContest')
   @UseGuards(SignedInGuard)
+  @RequireMfa()
   publish(@Args('input') i: { id: string }, @CurrentViewer() viewer: Viewer) {
     return withUserErrors<AdminPayload>(async () => (await this.contests.publish(viewer.userId, i.id), { contest: await this.adminOne(viewer.userId, i.id) }), { contest: null })
   }
 
   @Mutation('deleteContest')
   @UseGuards(SignedInGuard)
+  @RequireMfa()
   remove(@Args('input') i: { id: string }, @CurrentViewer() viewer: Viewer) {
     return withUserErrors<Ok>(async () => (await this.contests.remove(viewer.userId, i.id), { ok: true }), { ok: false })
   }

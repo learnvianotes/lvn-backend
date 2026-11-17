@@ -1,11 +1,12 @@
 import { UseGuards } from '@nestjs/common'
 import { Args, Query, Resolver } from '@nestjs/graphql'
-import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
+import { CurrentViewer, RequireMfa, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { AdminContentService, type AdminContentFilter } from '../application/admin-content.service'
 
 /** Platform-admin content browser. Private items are excluded in AdminContentService, and every browse is audited. */
 @Resolver()
 @UseGuards(SignedInGuard)
+@RequireMfa()
 export class AdminContentResolver {
   constructor(private readonly content: AdminContentService) {}
 

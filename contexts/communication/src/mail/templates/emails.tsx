@@ -71,6 +71,17 @@ export function DataExportReady({ displayName, link, expiresOn }: MailTemplates[
   )
 }
 
+export function MfaCode({ displayName, code, expiresInMinutes, ip, requestedAt, admin }: MailTemplates['mfaCode']) {
+  return (
+    <Layout preview={admin ? 'Your LVN admin sign-in code' : 'Your LVN sign-in code'}>
+      <Heading as="h1" style={heading}>{admin ? 'Your admin sign-in code' : 'Your sign-in code'}</Heading>
+      <Text style={paragraph}>Hi {displayName}, enter this code to finish signing in{admin ? ' to the admin tools' : ''}:</Text>
+      <Text style={{ fontSize: 32, fontWeight: 800, letterSpacing: 8, margin: '8px 0 16px' }}>{code}</Text>
+      <Text style={muted}>It expires in {expiresInMinutes} minutes and works once. Requested at {requestedAt} from {ip}. If this was not you, you can ignore this email.</Text>
+    </Layout>
+  )
+}
+
 export function InstitutionalCode({ displayName, code, expiresInMinutes }: MailTemplates['institutionalCode']) {
   return (
     <Layout preview={`Your LearnViaNotes code is ${code}`}>

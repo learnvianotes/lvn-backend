@@ -1,6 +1,6 @@
 import { UseGuards } from '@nestjs/common'
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql'
-import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
+import { CurrentViewer, RequireMfa, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { withUserErrors } from '@lvn-backend/errors'
 import { AccountAdminService } from '../application/account-admin.service'
 import { AdminMetricsService } from '../application/admin-metrics.service'
@@ -32,6 +32,7 @@ import type {
 /** Platform-admin dashboard (ADR-0101). */
 @Resolver()
 @UseGuards(SignedInGuard)
+@RequireMfa()
 export class AdminDashboardResolver {
   constructor(
     private readonly metrics: AdminMetricsService,

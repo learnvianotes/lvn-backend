@@ -4,6 +4,7 @@ import { Action, can } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { Queues } from '@lvn-backend/queue'
+import { RateLimiter } from '@lvn-backend/redis'
 import { CORE_CONFIG, type CoreConfig } from '../core.config'
 import { GroupsService } from './groups.service'
 
@@ -11,6 +12,8 @@ export const CORE_GITHUB_QUEUE = 'core.github'
 const STATE_TTL_MS = 3_600_000
 const KEEP_DELIVERIES_DAYS = 30
 const COMMITS_PER_PUSH = 20
+/** Deliveries of one webhook path from one address, a minute. The signature is still required. */
+const WEBHOOK_PER_MINUTE = { max: 60, windowSeconds: 60 }
 
 type App = NonNullable<CoreConfig['githubApp']>
 type Payload = Record<string, unknown>
@@ -34,6 +37,7 @@ export class GitHubAppService {
     private readonly groups: GroupsService,
     private readonly queues: Queues,
     @Inject(CORE_CONFIG) private readonly config: CoreConfig,
+    private readonly limiter: RateLimiter,
   ) {}
 
   configured(): boolean {
@@ -75,8 +79,8 @@ export class GitHubAppService {
 
   // ── Deliveries ──
 
-  /** A webhook delivery: checked by its signature, stored once, handled by the worker. */
-  async receive(headers: Record<string, string | string[] | undefined>, body: Buffer | undefined): Promise<'accepted' | 'duplicate'> {
+  /** A webhook delivery: checked by its signature, then rate-limited, stored once and handled by the worker. */
+  async receive(headers: Record<string, string | string[] | undefined>, body: Buffer | undefined, ip?: string, path = '/webhooks/github'): Promise<'accepted' | 'duplicate'> {
     const app = this.config.githubApp
     if (!app) throw Errors.notFound('Not found.')
     const header = (name: string) => {
@@ -90,6 +94,8 @@ export class GitHubAppService {
     const a = Buffer.from(signature)
     const b = Buffer.from(expected)
     if (!body || a.length !== b.length || !timingSafeEqual(a, b)) throw Errors.unauthenticated('The signature does not match.')
+    // After the signature, before the delivery row and the queue. A bad signature does not spend the cap.
+    await this.limitDelivery(path, ip)
     const id = header('x-github-delivery')
     const event = header('x-github-event')
     if (!id || !event) throw Errors.validation('A delivery needs its id and event.', ['headers'])
@@ -107,6 +113,12 @@ export class GitHubAppService {
     }
     await this.queues.queue(CORE_GITHUB_QUEUE).add('handle', { deliveryId: id }, { jobId: `delivery.${id}` })
     return 'accepted'
+  }
+
+  /** `hook:${path}:${ip}` at 60 a minute. No address shares one bucket only with other address-less calls. */
+  private async limitDelivery(path: string, ip: string | undefined): Promise<void> {
+    const hit = await this.limiter.hit(`hook:${path}:${ip && ip.length > 0 ? ip : 'unknown'}`, WEBHOOK_PER_MINUTE)
+    if (!hit.allowed) throw Errors.rateLimited(hit.retryAfter, `Too many webhook deliveries. Try again in ${hit.retryAfter} seconds.`)
   }
 
   /** The worker's job: a delivery into repository events, or an installation's end. */

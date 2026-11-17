@@ -173,7 +173,8 @@ extend type Mutation {
   setContestBands(input: SetContestBandsInput!): ContestSettingsPayload!
   "Platform admins: creates a draft, or changes one"
   saveContest(input: ContestInput!): AdminContestPayload!
+  "Platform admins: makes a draft visible for the window"
   publishContest(input: ContestIdInput!): AdminContestPayload!
-  "Drafts only"
+  "Platform admins. Drafts only"
   deleteContest(input: ContestIdInput!): OkPayload!
 }

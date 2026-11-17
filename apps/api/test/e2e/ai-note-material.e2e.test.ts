@@ -22,6 +22,8 @@ describe('AI reads a note’s photos, PDFs and recordings', () => {
   let ask: AskService
   let dir: string
   let owner: { id: string; token: string }
+  let roster: { id: string; token: string }[]
+  let rosterAt = 0
   let place = 0
   const ERRORS = 'userErrors { field message code }'
   /** One answer every structured task accepts (extra fields are dropped); words for a recording or a question. */
@@ -52,8 +54,16 @@ describe('AI reads a note’s photos, PDFs and recordings', () => {
     t = await createTestApp({ AI_PROVIDER: 'ollama', OLLAMA_URL: ollama.url, AI_CHAT_MODEL: 'gemma4', AI_EMBED_MODEL: 'embeddinggemma' })
     tasks = t.app.get(AiTasksService)
     ask = t.app.get(AskService)
-    const s = await seedUser(t.app, { verified: true, displayName: 'Asha' })
-    owner = { id: s.id, token: tokenFor(t.config, s.id) }
+    roster = []
+    for (const name of ['Asha', 'Ravi', 'Meera', 'Dev']) {
+      const s = await seedUser(t.app, { verified: true, displayName: name })
+      roster.push({ id: s.id, token: tokenFor(t.config, s.id) })
+    }
+    owner = roster[0]!
+  })
+
+  beforeEach(() => {
+    owner = roster[rosterAt++]!
   })
 
   afterAll(async () => {

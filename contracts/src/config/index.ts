@@ -11,6 +11,11 @@ import { z } from 'zod'
 export const AppEnv = z.enum(['development', 'sandbox', 'production'])
 export type AppEnv = z.infer<typeof AppEnv>
 
+/** `ADMIN_MFA_REQUIRED` when set; otherwise on only in production. */
+export function adminMfaEnforced(appEnv: AppEnv, flag: boolean | undefined): boolean {
+  return flag ?? appEnv === 'production'
+}
+
 const port = z.coerce.number().int().min(1).max(65535)
 /** An http(s) URL — `host:port` alone would parse as a URL with the host as its scheme. */
 const httpUrl = z.url().refine((u) => /^https?:\/\//.test(u), 'must be an http(s) URL')
@@ -111,8 +116,23 @@ const auth = z.object({
     .transform((s) => s.split(',').map((o) => o.trim()).filter(Boolean)),
   /** lvn-web origin, for links in emails (verify, reset) and OAuth redirects. */
   WEB_URL: z.url(),
-  /** Secret for HMAC-hashing short codes (institutional email codes), so a database leak does not reveal them. */
+  /** Secret for HMAC-hashing short codes (institutional email codes and sign-in codes), so a database leak does not reveal them. */
   CODE_HMAC_SECRET: z.string().min(32),
+  /**
+   * When true, roles in `MFA_ENFORCED_ROLES` must pass a second factor before admin operations.
+   * Unset means on in production and off in development and sandbox, so local runs and the e2e suite stay usable
+   * unless a test sets it. An account that opted in still needs the second factor either way.
+   */
+  ADMIN_MFA_REQUIRED: flag.optional(),
+  /**
+   * Comma-separated global roles that must pass MFA when `ADMIN_MFA_REQUIRED` is on.
+   * `PLATFORM_ADMIN` is a platform admin. `MANAGER` is platform staff (verification review).
+   */
+  MFA_ENFORCED_ROLES: z
+    .string()
+    .default('PLATFORM_ADMIN,MANAGER')
+    .transform((s) => [...new Set(s.split(',').map((r) => r.trim()).filter(Boolean))])
+    .refine((roles) => roles.length > 0 && roles.every((r) => r === 'STUDENT' || r === 'TEACHER' || r === 'MANAGER' || r === 'PLATFORM_ADMIN'), 'Use STUDENT, TEACHER, MANAGER or PLATFORM_ADMIN'),
   /**
    * Push through FCM HTTP v1 (ADR-0021, ADR-0050): the API origin (https://fcm.googleapis.com), Google's OAuth token
    * endpoint (https://oauth2.googleapis.com/token) and the Firebase service account's JSON key. Push is off unless all

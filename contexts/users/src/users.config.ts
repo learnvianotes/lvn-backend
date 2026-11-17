@@ -1,4 +1,4 @@
-import type { ApiConfig } from '@lvn/contracts/config'
+import { adminMfaEnforced, type ApiConfig } from '@lvn/contracts/config'
 import { TOKEN_AUDIENCE } from '@lvn-backend/auth-guard'
 
 /** What the users context needs from the API configuration; apps/api maps ApiConfig onto it. */
@@ -11,6 +11,8 @@ export interface UsersConfig {
   digitalConsentAge: number
   /** Address shown when someone must contact support. SUPPORT_EMAIL, or support@learnvianotes.in when unset. */
   supportEmail: string
+  /** Second-factor policy. `enforced` is ADMIN_MFA_REQUIRED, defaulting on in production. */
+  mfa: { enforced: boolean; roles: readonly string[] }
   passwordBreachApiUrl?: string
   firebaseProjectId?: string
   github?: { clientId: string; clientSecret: string; oauthUrl: string; apiUrl: string }
@@ -60,6 +62,7 @@ export function usersConfigFrom(c: ApiConfig): UsersConfig {
     codeHmacSecret: c.CODE_HMAC_SECRET,
     digitalConsentAge: c.DIGITAL_CONSENT_AGE,
     supportEmail: c.SUPPORT_EMAIL,
+    mfa: { enforced: adminMfaEnforced(c.APP_ENV, c.ADMIN_MFA_REQUIRED), roles: c.MFA_ENFORCED_ROLES },
     passwordBreachApiUrl: c.PASSWORD_BREACH_API_URL,
     firebaseProjectId: c.FIREBASE_PROJECT_ID,
     github:

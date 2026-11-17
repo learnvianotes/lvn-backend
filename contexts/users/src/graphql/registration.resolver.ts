@@ -1,6 +1,6 @@
 import { Inject, UseGuards } from '@nestjs/common'
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql'
-import { CurrentViewer, SignedInGuard, type RequestContext, type Viewer } from '@lvn-backend/auth-guard'
+import { CurrentViewer, RequireMfa, SignedInGuard, type RequestContext, type Viewer } from '@lvn-backend/auth-guard'
 import { withUserErrors } from '@lvn-backend/errors'
 import { AdminService } from '../application/admin.service'
 import { InstitutionalEmailService } from '../application/institutional-email.service'
@@ -8,7 +8,7 @@ import { OAuthService } from '../application/oauth.service'
 import { RegistrationService } from '../application/registration.service'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { withInviteError } from './access.resolver'
-import { deliverSession, deviceOf, refreshCookieOptions, type RefreshCookieOptions } from './session-delivery'
+import { deliverSession, deviceOf, MFA_NONE, mfaFields, refreshCookieOptions, type RefreshCookieOptions } from './session-delivery'
 import { UsersService } from '../application/users.service'
 import type {
   AuthPayload,
@@ -46,46 +46,48 @@ export class RegistrationResolver {
 
   @Query('authSettings')
   @UseGuards(SignedInGuard)
+  @RequireMfa()
   authSettings(@CurrentViewer() viewer: Viewer): Promise<AuthSettings> {
     return this.admin.authSettings(viewer.userId)
   }
 
   @Mutation('setGoogleSignInEnabled')
   @UseGuards(SignedInGuard)
+  @RequireMfa()
   setGoogleSignInEnabled(@Args() { input }: MutationSetGoogleSignInEnabledArgs, @CurrentViewer() viewer: Viewer): Promise<AuthSettingsPayload> {
     return withUserErrors<AuthSettingsPayload>(async () => ({ settings: await this.admin.setGoogleSignInEnabled(viewer.userId, input.enabled) }), { settings: null })
   }
 
   @Mutation('signInWithGoogle')
   signInWithGoogle(@Args() { input }: MutationSignInWithGoogleArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
-    return withInviteError<AuthPayload>(async () => ({
-      session: await deliverSession(ctx, this.cookie, this.users, await this.oauth.signInWithGoogle(input.idToken, deviceOf(ctx), ctx.requestId)),
-      emailLinkPending: false,
-    }), { session: null, emailLinkPending: false })
+    return withInviteError<AuthPayload>(async () => {
+      const issued = await this.oauth.signInWithGoogle(input.idToken, deviceOf(ctx), ctx.requestId)
+      return { session: await deliverSession(ctx, this.cookie, this.users, issued), emailLinkPending: false, ...mfaFields(issued) }
+    }, { session: null, emailLinkPending: false, ...MFA_NONE })
   }
 
   @Mutation('oauthExchange')
   oauthExchange(@Args() { input }: MutationOauthExchangeArgs, @Context() ctx: RequestContext): Promise<AuthPayload> {
-    return withInviteError<AuthPayload>(async () => ({
-      session: await deliverSession(ctx, this.cookie, this.users, await this.oauth.exchange(input.provider, input, deviceOf(ctx), ctx.requestId)),
-      emailLinkPending: false,
-    }), { session: null, emailLinkPending: false })
+    return withInviteError<AuthPayload>(async () => {
+      const issued = await this.oauth.exchange(input.provider, input, deviceOf(ctx), ctx.requestId)
+      return { session: await deliverSession(ctx, this.cookie, this.users, issued), emailLinkPending: false, ...mfaFields(issued) }
+    }, { session: null, emailLinkPending: false, ...MFA_NONE })
   }
 
   @Mutation('completeRegistration')
   @UseGuards(SignedInGuard)
-  completeRegistration(@Args() { input }: MutationCompleteRegistrationArgs, @CurrentViewer() viewer: Viewer): Promise<OkPayload> {
+  completeRegistration(@Args() { input }: MutationCompleteRegistrationArgs, @CurrentViewer() viewer: Viewer, @Context() ctx: RequestContext): Promise<OkPayload> {
     return withUserErrors<OkPayload>(async () => {
-      await this.registration.complete(viewer.userId, input)
+      await this.registration.complete(viewer.userId, input, ctx.req.ip)
       return { ok: true }
     }, { ok: false })
   }
 
   @Mutation('setInstitutionalEmail')
   @UseGuards(SignedInGuard)
-  setInstitutionalEmail(@Args() { input }: MutationSetInstitutionalEmailArgs, @CurrentViewer() viewer: Viewer): Promise<OkPayload> {
+  setInstitutionalEmail(@Args() { input }: MutationSetInstitutionalEmailArgs, @CurrentViewer() viewer: Viewer, @Context() ctx: RequestContext): Promise<OkPayload> {
     return withUserErrors<OkPayload>(async () => {
-      await this.institutional.start(viewer.userId, input.email, ['input', 'email'])
+      await this.institutional.start(viewer.userId, input.email, ['input', 'email'], ctx.req.ip)
       return { ok: true }
     }, { ok: false })
   }
@@ -101,9 +103,9 @@ export class RegistrationResolver {
 
   @Mutation('resendInstitutionalEmailCode')
   @UseGuards(SignedInGuard)
-  resendInstitutionalEmailCode(@CurrentViewer() viewer: Viewer): Promise<OkPayload> {
+  resendInstitutionalEmailCode(@CurrentViewer() viewer: Viewer, @Context() ctx: RequestContext): Promise<OkPayload> {
     return withUserErrors<OkPayload>(async () => {
-      await this.institutional.resend(viewer.userId)
+      await this.institutional.resend(viewer.userId, ctx.req.ip)
       return { ok: true }
     }, { ok: false })
   }

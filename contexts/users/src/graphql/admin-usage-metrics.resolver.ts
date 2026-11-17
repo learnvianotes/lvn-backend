@@ -1,6 +1,6 @@
 import { UseGuards } from '@nestjs/common'
 import { Args, Query, Resolver } from '@nestjs/graphql'
-import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
+import { CurrentViewer, RequireMfa, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { AdminUsageMetricsService } from '../application/admin-usage-metrics.service'
 import type {
   AdminContentStats,
@@ -26,6 +26,7 @@ import type {
 /** Usage metrics for the platform-admin dashboard (ADR-0105, ADR-0106, ADR-0107). Aggregates only; small groups are left out. */
 @Resolver()
 @UseGuards(SignedInGuard)
+@RequireMfa()
 export class AdminUsageMetricsResolver {
   constructor(private readonly metrics: AdminUsageMetricsService) {}
 

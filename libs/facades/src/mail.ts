@@ -15,6 +15,8 @@ export interface MailTemplates {
   passwordChanged: { displayName: string }
   /** 6-digit code for a college or organisation email (ADR-0017) */
   institutionalCode: { displayName: string; code: string; expiresInMinutes: number }
+  /** 6-digit sign-in code. `admin` chooses the subject used for platform admins and staff. */
+  mfaCode: { displayName: string; code: string; expiresInMinutes: number; ip: string; requestedAt: string; admin: boolean }
   /** ADR-0088: the account will be deleted on deleteOn unless the person signs in and cancels */
   accountDeletion: { displayName: string; deleteOn: string; link: string }
   /** ADR-0018: the data export is ready to download, until expiresOn */

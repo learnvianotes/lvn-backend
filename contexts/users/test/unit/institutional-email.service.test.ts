@@ -1,5 +1,5 @@
 import { ErrorCode, type AppError } from '@lvn-backend/errors'
-import { CODE_TTL_MINUTES, InstitutionalEmailService, MAX_CODE_ATTEMPTS } from '../../src/application/institutional-email.service'
+import { CODE_TTL_MINUTES, CODES_PER_NETWORK_PER_HOUR, InstitutionalEmailService, MAX_CODE_ATTEMPTS } from '../../src/application/institutional-email.service'
 
 const USER = 'user-1'
 const HOUR_MS = 60 * 60 * 1000
@@ -393,5 +393,25 @@ describe('InstitutionalEmailService', () => {
     expect(h.events).toEqual([])
     expect(h.emails[0]!.verifiedAt).toBeInstanceOf(Date)
     expect(await h.service.statusOf(USER)).toEqual({ email: 'person@widgets.io', status: 'PENDING_REVIEW', institution: null })
+  })
+
+  it('allows 30 codes an hour from one network, then refuses, and another network still sends', async () => {
+    const h = harness()
+    for (let i = 0; i < CODES_PER_NETWORK_PER_HOUR.max; i++) {
+      await h.service.start(`user-${i}`, `person${i}@net-cap.edu`, ['input', 'institutionalEmail'], '203.0.113.30')
+    }
+    const blocked = await rejection(() => h.service.start('user-blocked', 'blocked@net-cap.edu', ['input', 'institutionalEmail'], '203.0.113.30'))
+    expect(blocked).toMatchObject({ code: ErrorCode.RATE_LIMITED })
+    expect(blocked.message).toMatch(/from your network/)
+    expect(blocked.retryAfter).toBeGreaterThan(0)
+    const before = h.sent.length
+    await h.service.start('user-other', 'other@net-cap.edu', ['input', 'institutionalEmail'], '198.51.100.30')
+    expect(h.sent.length).toBe(before + 1)
+    expect(h.limiterCalls.filter((call) => call.key.startsWith('instcode-net:'))).toEqual(
+      expect.arrayContaining([
+        { key: 'instcode-net:203.0.113.30', limit: CODES_PER_NETWORK_PER_HOUR },
+        { key: 'instcode-net:198.51.100.30', limit: CODES_PER_NETWORK_PER_HOUR },
+      ]),
+    )
   })
 })

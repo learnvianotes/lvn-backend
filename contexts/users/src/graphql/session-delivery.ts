@@ -1,10 +1,14 @@
 import type { RequestContext } from '@lvn-backend/auth-guard'
 import type { DeviceInfo, IssuedSession } from '../application/session.service'
 import type { UsersService } from '../application/users.service'
+import { SESSION_TTL_DAYS } from '../domain/rules'
 import type { Session } from './schema.types'
 
 /** The web client's refresh token: HttpOnly, SameSite=Lax, only ever sent to /graphql (§7.1). */
 export const REFRESH_COOKIE = 'lvn_rt'
+
+/** Express `maxAge` is milliseconds. The Set-Cookie Max-Age is this many seconds, the same length as the session. */
+export const REFRESH_COOKIE_MAX_AGE_MS = SESSION_TTL_DAYS * 24 * 60 * 60 * 1000
 
 export interface RefreshCookieOptions {
   httpOnly: true
@@ -20,7 +24,11 @@ export interface RefreshCookieOptions {
  *
  * SameSite=Lax still sends the cookie on a credentialed POST from https://app.learnvianotes.in to
  * https://api.learnvianotes.in/graphql: the two hosts share the registrable domain learnvianotes.in, so the request
- * is same-site. The cookie stays host-only (no Domain attribute), set by the API host and sent only back to it.
+ * is same-site.
+ *
+ * Domain must never be set. A Domain of `.learnvianotes.in` would send this cookie to every subdomain. The cookie
+ * stays host-only: set by the API host and sent only back to it. The name stays `lvn_rt`, not `__Host-`, because
+ * that prefix requires Path=/.
  */
 export const refreshCookieOptions = (apiOrigin: string): RefreshCookieOptions => ({
   httpOnly: true,
@@ -32,6 +40,13 @@ export const refreshCookieOptions = (apiOrigin: string): RefreshCookieOptions =>
 const header = (ctx: RequestContext, name: string): string | undefined => {
   const v = ctx.req.headers[name]
   return Array.isArray(v) ? v[0] : v
+}
+
+/** Address and browser string for the audit log and the sign-in code email. */
+export function requestMeta(ctx: RequestContext): { ip: string; userAgent: string | null } {
+  const raw = ctx.req.ip ?? ''
+  const ip = raw.startsWith('::ffff:') ? raw.slice('::ffff:'.length) : raw
+  return { ip: ip || 'unknown', userAgent: header(ctx, 'user-agent')?.slice(0, 200) ?? null }
 }
 
 /** Mobile identifies itself (X-LVN-Client: mobile); everyone else is treated as a browser and gets the cookie. */
@@ -48,10 +63,17 @@ export const deviceOf = (ctx: RequestContext): DeviceInfo => ({
 export const browserRequest = (ctx: RequestContext): boolean =>
   header(ctx, 'sec-fetch-site') !== undefined || header(ctx, 'sec-fetch-mode') !== undefined || header(ctx, 'sec-fetch-dest') !== undefined
 
+/** Fields every AuthPayload returns, including a failure that has no session. */
+export const MFA_NONE = { mfaRequired: false, mfaFactors: [] as IssuedSession['mfaFactors'] }
+
+export const mfaFields = (s: IssuedSession) => ({ mfaRequired: s.mfaRequired, mfaFactors: s.mfaFactors })
+
 /** Session payload: the refresh token goes in the body for a native client and in the cookie for a browser. */
 export async function deliverSession(ctx: RequestContext, cookie: RefreshCookieOptions, users: UsersService, s: IssuedSession): Promise<Session> {
   const native = deviceOf(ctx).client === 'mobile' && !browserRequest(ctx)
-  if (!native) ctx.res.cookie(REFRESH_COOKIE, s.refreshToken, { ...cookie, expires: s.refreshTokenExpiresAt })
+  // Domain must never be set on this cookie. maxAge sits beside expires; clearCookie does not receive maxAge,
+  // because a Max-Age would override the past Expires that removes the cookie.
+  if (!native) ctx.res.cookie(REFRESH_COOKIE, s.refreshToken, { ...cookie, expires: s.refreshTokenExpiresAt, maxAge: REFRESH_COOKIE_MAX_AGE_MS })
   const user = await users.viewerProfile(s.userId)
   return { accessToken: s.accessToken, accessTokenExpiresAt: s.accessTokenExpiresAt, refreshToken: native ? s.refreshToken : null, user: user! }
 }

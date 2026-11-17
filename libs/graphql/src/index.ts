@@ -1,7 +1,7 @@
 export { SubgraphRegistry } from './subgraph-registry'
 export { composeSupergraph } from './compose'
 export { formatError, toGraphQLError } from './errors'
-export { isIntrospectionOnly, limitsPlugin, queryDepth, rateLimitPlugin, MAX_DEPTH, MAX_COMPLEXITY, OPERATIONS_PER_MINUTE, type RateCheck } from './limits'
+export { isIntrospectionOnly, limitsPlugin, queryDepth, rateLimitPlugin, MAX_DEPTH, MAX_COMPLEXITY, OPERATIONS_PER_MINUTE, ANONYMOUS_OPERATIONS_PER_MINUTE, type RateCheck } from './limits'
 export { DateTimeScalar, UuidScalar } from './scalars'
 export { GraphqlCommonModule, graphqlModules, SUBGRAPH_PATH_PREFIX, type GraphqlOptions, type RequestContextFactory, type SubgraphDefinition } from './modules'
 export { JsonScalar } from './json'

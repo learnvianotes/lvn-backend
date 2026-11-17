@@ -16,6 +16,27 @@ const NOW = 1_800_000_000
 const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url')
 
 describe('access tokens', () => {
+  it('carries amr and a fresh mfa timestamp, and omits them when they are absent', () => {
+    const verified = signer.sign({ ...subject, roles: ['PLATFORM_ADMIN'], amr: ['pwd', 'otp'], mfa: true, mfaAt: NOW - 30, mfaReq: true }, NOW)
+    expect(verifier.verify(verified.token, NOW)).toMatchObject({
+      ok: true,
+      claims: { amr: ['pwd', 'otp'], mfa: true, mfaAt: NOW - 30, mfaReq: true, roles: ['PLATFORM_ADMIN'] },
+    })
+    const plain = verifier.verify(signer.sign(subject, NOW).token, NOW)
+    expect(plain.ok && plain.claims.mfa).toBeUndefined()
+    expect(plain.ok && plain.claims.amr).toBeUndefined()
+  })
+
+  it('rejects an mfa flag with no timestamp', () => {
+    const { token } = signer.sign(subject, NOW)
+    const [h, payload, s] = token.split('.')
+    const claims = JSON.parse(Buffer.from(payload!, 'base64url').toString('utf8'))
+    const forged = `${h}.${b64({ ...claims, mfa: true })}.${s}`
+    expect(verifier.verify(forged, NOW)).toEqual({ ok: false, reason: 'signature' })
+    const resigned = signer.sign({ ...subject, mfa: true }, NOW)
+    expect(verifier.verify(resigned.token, NOW)).toEqual({ ok: false, reason: 'claims' })
+  })
+
   it('round-trips sub, sid and roles for 15 minutes', () => {
     const { token, expiresAt } = signer.sign(subject, NOW)
     const result = verifier.verify(token, NOW + 60)

@@ -69,7 +69,7 @@ describe('AI provider settings', () => {
     const db = app.app.get(PrismaService)
     expect((await db.aiConnection.findUniqueOrThrow({ where: { id: connection.id } })).apiKeyCipher).not.toContain('very-secret')
     const audit = await db.auditLog.findMany({ where: { targetId: connection.id } })
-    expect(audit.map((a) => a.action)).toEqual(['ai.connection.saved', 'ai.connection.saved'])
+    expect(audit.map((a) => a.action)).toEqual(['ai.connection.saved', 'ai.connection.saved', 'admin.mutation.saveAiConnection'])
     expect(JSON.stringify(audit)).not.toContain('very-secret')
     // Claude makes no embeddings.
     const embed = await save(app, admin, { id: connection.id, kind: 'ANTHROPIC', label: 'Claude', baseUrl: claude.url, mayReceivePrivate: false, enabled: true, chatModel: 'claude-test', embedModel: 'x' })

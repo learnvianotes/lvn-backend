@@ -31,6 +31,25 @@ const unique = (prefix: string) => `${prefix}${Date.now().toString(36)}${seq++}`
 const terms = '2026-11-12'
 
 type Payload<K extends string> = Record<K, { emailLinkPending?: boolean; session: { accessToken: string; user: Record<string, unknown> } | null; userErrors: { field: string[] | null; message: string; code: string }[] }>
+
+/** 30 days, SESSION_TTL_DAYS, as the Set-Cookie Max-Age in seconds. */
+const REFRESH_MAX_AGE = 30 * 24 * 60 * 60
+
+const refreshSetCookie = (res: request.Response): string => {
+  const cookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []).find((c) => c.startsWith('lvn_rt='))
+  expect(cookie).toBeDefined()
+  return cookie!
+}
+
+const expectRefreshCookie = (cookie: string, secure: boolean) => {
+  expect(cookie).toMatch(/HttpOnly/)
+  expect(cookie).toMatch(/SameSite=Lax/)
+  expect(cookie).toMatch(/Path=\/graphql/)
+  expect(cookie).toMatch(new RegExp(`Max-Age=${REFRESH_MAX_AGE}\\b`))
+  expect(cookie.split(';').some((part) => part.trim().toLowerCase().startsWith('domain='))).toBe(false)
+  if (secure) expect(cookie).toMatch(/;\s*Secure\b/)
+  else expect(cookie).not.toMatch(/Secure/)
+}
 type Ok<K extends string> = Record<K, { ok: boolean; userErrors: { field: string[] | null; message: string; code: string }[] }>
 
 describe('provider sign-in and registration', () => {
@@ -67,6 +86,21 @@ describe('provider sign-in and registration', () => {
   })
 
   describe('Google (ADR-0007)', () => {
+    it('sets a host-only refresh cookie on Google sign-up, Secure only when the API is HTTPS', async () => {
+      const email = `${unique('cookie')}@gmail.com`
+      const res = await request(t.app.getHttpServer()).post('/graphql').send({ query: GOOGLE, variables: { t: `google:${unique('uid')}:${email}:Cookie One` } })
+      expect(res.body.data.signInWithGoogle.session.user.email).toBe(email)
+      expectRefreshCookie(refreshSetCookie(res), false)
+
+      const https = await createTestApp({ JWT_ISSUER: 'https://api.example.test', FIREBASE_PROJECT_ID: 'lvn-test' })
+      try {
+        const secure = await request(https.app.getHttpServer()).post('/graphql').send({ query: GOOGLE, variables: { t: `google:${unique('uid')}:${unique('secure')}@gmail.com:Cookie Two` } })
+        expectRefreshCookie(refreshSetCookie(secure), true)
+      } finally {
+        await https.close()
+      }
+    })
+
     it('creates an account that owes its registration details, then completes it once', async () => {
       const email = `${unique('g')}@gmail.com`
       const res = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${unique('uid')}:${email}:Meera Iyer` })
@@ -308,6 +342,14 @@ describe('provider sign-in and registration', () => {
 
   describe('GitHub and LinkedIn (Authorization Code + PKCE)', () => {
     const githubUser = (email: string, verified = true) => ({ id: String(Math.floor(Math.random() * 1e9)), name: 'Kiran Rao', emails: [{ email, primary: true, verified }] })
+
+    it('sets the same host-only refresh cookie when a GitHub sign-up creates the account', async () => {
+      const email = `${unique('ghcookie')}@example.com`
+      stub.issue('code-cookie', { user: githubUser(email), codeVerifier: VERIFIER, redirectUri: REDIRECT })
+      const res = await request(t.app.getHttpServer()).post('/graphql').send({ query: EXCHANGE, variables: { input: { provider: 'GITHUB', code: 'code-cookie', codeVerifier: VERIFIER, redirectUri: REDIRECT } } })
+      expect(res.body.data.oauthExchange.session.user.email).toBe(email)
+      expectRefreshCookie(refreshSetCookie(res), false)
+    })
 
     it('signs in with a GitHub code and its verifier, and again into the same account', async () => {
       const user = githubUser(`${unique('gh')}@example.com`)

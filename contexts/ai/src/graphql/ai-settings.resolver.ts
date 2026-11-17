@@ -1,6 +1,6 @@
 import { UseGuards } from '@nestjs/common'
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql'
-import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
+import { CurrentViewer, RequireMfa, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { withUserErrors, type UserError } from '@lvn-backend/errors'
 import { AiSettingsService, type ConnectionInput, type RouteInput } from '../application/ai-settings.service'
 
@@ -9,6 +9,7 @@ type Settings = Awaited<ReturnType<AiSettingsService['settings']>>
 /** The AI providers page (ADR-0065): platform admins only, checked in AiSettingsService. */
 @Resolver()
 @UseGuards(SignedInGuard)
+@RequireMfa()
 export class AiSettingsResolver {
   constructor(private readonly settings: AiSettingsService) {}
 

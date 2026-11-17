@@ -10,6 +10,9 @@ import { RateLimiter } from '@lvn-backend/redis'
 import { noteAccess, type NoteAccess, type NoteAccessRow, type ReachFacts, visibleNotesWhere } from '../domain/note-access'
 import { OrganiseService } from './organise.service'
 
+/** Anonymous public-note reads from one network, a minute. Keyed `notes:read`. */
+export const ANONYMOUS_NOTE_READS_PER_MINUTE = { max: 120, windowSeconds: 60 }
+
 export type NoteRow = Prisma.NoteGetPayload<object>
 
 /** A note as one viewer sees it: the row, their access, their share role and who they are. */
@@ -80,6 +83,16 @@ export class NotesService {
     const actor = await this.policy.actor(viewerId)
     if (!actor) throw Errors.unauthenticated()
     return actor
+  }
+
+  /**
+   * An anonymous read of notes that are public (the reader is not the owner). No address: nothing to key.
+   * Signed-in reads are not counted here.
+   */
+  async limitAnonymousPublicRead(network: string | null): Promise<void> {
+    if (!network) return
+    const hit = await this.limiter.hit(`notes:read:${network}`, ANONYMOUS_NOTE_READS_PER_MINUTE)
+    if (!hit.allowed) throw Errors.rateLimited(hit.retryAfter, `Too many note reads from your network. Try again in ${hit.retryAfter} seconds.`)
   }
 
   /** The note as the viewer may see it, or null when they may not see it at all. */
