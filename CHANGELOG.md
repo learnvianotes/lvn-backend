@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- Platform admins and staff have to enter a one-time code from their email before they can use admin tools. The code lasts 10 minutes. The admin activity log shows who did what, and it cannot be edited or deleted. [#92](https://github.com/learnvianotes/lvn-backend/pull/92)
 - The sign-in cookie stays on the API host only, so it is not sent to other learnvianotes.in sites, and it expires with the session. Sign-up, password reset, anonymous requests, AI, search, public note reads, webhooks and college-email codes each have their own limit. [#91](https://github.com/learnvianotes/lvn-backend/pull/91)
 
 ## [0.6.0] - 2026-11-15

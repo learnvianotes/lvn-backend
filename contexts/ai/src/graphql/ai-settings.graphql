@@ -224,10 +224,14 @@ extend type Query {
 extend type Mutation {
   "Platform admins only, as every mutation below"
   saveAiConnection(input: SaveAiConnectionInput!): AiConnectionPayload!
-  "Routes through it then use the default connection"
+  "Platform admins. Routes through it then use the default connection"
   deleteAiConnection(input: AiConnectionIdInput!): AiSettingsPayload!
+  "Platform admins. Which connection answers chat, and which one embeds"
   setAiDefaults(input: SetAiDefaultsInput!): AiSettingsPayload!
+  "Platform admins. Asks the connection for one word, one embedding and its model list"
   testAiConnection(input: AiConnectionIdInput!): AiConnectionTestPayload!
+  "Platform admins. Points one AI task at a connection and model"
   saveAiTaskRoute(input: SaveAiTaskRouteInput!): AiSettingsPayload!
+  "Platform admins. The task uses the default connection again"
   deleteAiTaskRoute(input: AiTaskRouteInput!): AiSettingsPayload!
 }

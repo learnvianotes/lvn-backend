@@ -1,7 +1,7 @@
 # Sign-in and sessions (spec §7, ADR-0007, ADR-0017).
 
 "Fixed error vocabulary (§6.2)"
-enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL UNAVAILABLE UNDER_MINIMUM_AGE AGE_RESTRICTED AI_UNAVAILABLE_FOR_MINOR FEATURE_UNAVAILABLE_FOR_MINOR MINOR_PII_BLOCKED }
+enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL UNAVAILABLE UNDER_MINIMUM_AGE AGE_RESTRICTED AI_UNAVAILABLE_FOR_MINOR FEATURE_UNAVAILABLE_FOR_MINOR MINOR_PII_BLOCKED MFA_REQUIRED ADMIN_MFA_REQUIRED }
 
 "An expected failure of a mutation; `field` is the dotted input path, e.g. [\"input\", \"email\"]"
 type UserError @shareable {
@@ -46,6 +46,14 @@ type AuthPayload {
   including a normal sign-up and "an account already exists, sign in instead".
   """
   emailLinkPending: Boolean!
+  """
+  True when this session must finish a second factor before protected operations (an admin or staff role, or an
+  account that opted in). Sign-in still returns a session: use it for `startMfaChallenge` and `verifyMfaChallenge`.
+  False when nothing further is required, including a normal account.
+  """
+  mfaRequired: Boolean!
+  "Factors this sign-in may use. Empty when mfaRequired is false. EMAIL_OTP is the one that sends a code today."
+  mfaFactors: [MfaFactorType!]!
 }
 
 """

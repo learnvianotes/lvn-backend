@@ -1,4 +1,5 @@
 import { Module, type DynamicModule } from '@nestjs/common'
+import { MfaGuardModule } from '@lvn-backend/auth-guard'
 import { JsonScalar } from '@lvn-backend/graphql'
 import { AccessAllowlistService } from './application/access-allowlist.service'
 import { AccessGate } from './application/access-gate'
@@ -60,7 +61,11 @@ import { AccountResolver } from './graphql/account.resolver'
 import { GuardianResolver } from './graphql/guardian.resolver'
 import { AccessAllowlistResolver } from './graphql/access.resolver'
 import { AnalyticsOptOutResolver, AnalyticsResolver } from './graphql/analytics.resolver'
+import { AdminActivityService } from './application/admin-activity.service'
+import { MfaService } from './application/mfa.service'
+import { AdminActivityResolver } from './graphql/admin-activity.resolver'
 import { AdminDashboardResolver } from './graphql/admin.resolver'
+import { MfaResolver } from './graphql/mfa.resolver'
 import { AdminUsageMetricsResolver } from './graphql/admin-usage-metrics.resolver'
 import { PlansResolver } from './graphql/plans.resolver'
 
@@ -79,6 +84,7 @@ export class UsersModule {
   static forRoot(config: UsersConfig): DynamicModule {
     return {
       module: UsersModule,
+      imports: [MfaGuardModule.forRoot(config.mfa)],
       providers: [
         { provide: USERS_CONFIG, useValue: config },
         JsonScalar,
@@ -114,6 +120,8 @@ export class UsersModule {
         PlanAdminService,
         PublicPlansService,
         AdminService,
+        AdminActivityService,
+        MfaService,
         UsersMaintenance,
         ProfileService,
         ConsentService,
@@ -129,7 +137,9 @@ export class UsersModule {
         GuardianResolver,
         AccessAllowlistResolver,
         AdminDashboardResolver,
+        AdminActivityResolver,
         AdminUsageMetricsResolver,
+        MfaResolver,
         PlansResolver,
         LegacyService,
         SocialService,

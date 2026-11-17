@@ -47,7 +47,7 @@ describe('GraphQL operation caps', () => {
 
   it('keeps signed-in operations at 600 a minute per person, not per address', async () => {
     const limiter = countingLimiter()
-    const viewer = { userId: 'user-1', sessionId: 's', roles: [] as never }
+    const viewer = { userId: 'user-1', sessionId: 's', roles: [] as never, amr: [], mfa: false, mfaAt: null, mfaReq: false, mfaExempt: false }
     for (let i = 0; i < OPERATIONS_PER_MINUTE; i++) {
       expect(await graphqlOperationRetryAfter(limiter, ctx({ viewer, req: { headers: {}, ip: `203.0.113.${i % 200}` } }))).toBeNull()
     }
@@ -58,7 +58,7 @@ describe('GraphQL operation caps', () => {
   it('fails open when Redis is down', async () => {
     const limiter = { hit: async () => { throw new Error('redis down') } }
     expect(await graphqlOperationRetryAfter(limiter, ctx())).toBeNull()
-    expect(await graphqlOperationRetryAfter(limiter, ctx({ viewer: { userId: 'user-1', sessionId: 's', roles: [] } }))).toBeNull()
+    expect(await graphqlOperationRetryAfter(limiter, ctx({ viewer: { userId: 'user-1', sessionId: 's', roles: [], amr: [], mfa: false, mfaAt: null, mfaReq: false, mfaExempt: false } }))).toBeNull()
     expect(await graphqlOperationRetryAfter(countingLimiter(), ctx({ req: { headers: {} } }))).toBeNull()
   })
 })

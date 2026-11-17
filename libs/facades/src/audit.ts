@@ -4,13 +4,19 @@
  */
 export const AUDIT = Symbol('AUDIT')
 
+export type AuditJson = string | number | boolean | null | AuditJson[] | { [key: string]: AuditJson | undefined }
+
 export interface AuditEntry {
   actorId: string | null
+  /** The actor's email at the time. Filled from the account when omitted. */
+  actorEmail?: string | null
   /** e.g. note.visibility, note.share, note.unshare */
   action: string
   targetType: string
   targetId?: string | null
-  metadata?: Record<string, string | number | boolean | null>
+  metadata?: { [key: string]: AuditJson | undefined }
+  ip?: string | null
+  userAgent?: string | null
 }
 
 export interface Audit {

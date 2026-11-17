@@ -47,6 +47,56 @@ export interface AddExternalIdentityInput {
   value: string
 }
 
+export interface AdminActivityActionCount {
+  action: string
+  count: number
+}
+
+export interface AdminActivityConnection {
+  entries: Array<AdminActivityEntry>
+  /** Pass as cursor to read the next page. Null on the last page. */
+  nextCursor: string | null
+}
+
+export interface AdminActivityDayCount {
+  /** UTC midnight of that day. */
+  day: Date
+  count: number
+}
+
+/** One append-only audit row. details has secrets redacted. There is no mutation that changes or deletes it. */
+export interface AdminActivityEntry {
+  id: string
+  actorId: string | null
+  /** The actor's email at the time. Null when the account had already been removed. */
+  actorEmail: string | null
+  action: string
+  targetType: string
+  targetId: string | null
+  details: unknown | null
+  ip: string | null
+  userAgent: string | null
+  createdAt: Date
+}
+
+export interface AdminActivityFilter {
+  actorId?: string | null
+  /** Exact action name, such as settings.updated or mfa.verified. */
+  action?: string | null
+  targetType?: string | null
+  from?: Date | null
+  to?: Date | null
+}
+
+/** Counts for charts. from is inclusive and to is exclusive. Omit both for the last 30 days. At most 366 days. */
+export interface AdminActivitySummary {
+  from: Date
+  to: Date
+  total: number
+  byAction: Array<AdminActivityActionCount>
+  byDay: Array<AdminActivityDayCount>
+}
+
 /** `from` is inclusive and `to` is exclusive, both aligned to a UTC minute. A refresh within that minute reuses the cached aggregate. */
 export interface AdminAiMetrics {
   from: Date
@@ -362,6 +412,12 @@ export interface AdminQuizStarts {
   starts: number
   byKind: Array<AdminQuizStartCount>
   hiddenSmallGroups: number
+}
+
+export interface AdminRecoverMfaInput {
+  userId: string
+  /** Why this recovery is being made. Required. */
+  reason: string
 }
 
 /** Weekly retention, oldest cohort first, the last one this week. Past weeks come from the nightly rollup, this week is
@@ -681,6 +737,12 @@ export interface AuthPayload {
    * session is returned, and signIn with the new password fails until the link is used. False for every other result,
    * including a normal sign-up and "an account already exists, sign in instead". */
   emailLinkPending: boolean
+  /** True when this session must finish a second factor before protected operations (an admin or staff role, or an
+   * account that opted in). Sign-in still returns a session: use it for `startMfaChallenge` and `verifyMfaChallenge`.
+   * False when nothing further is required, including a normal account. */
+  mfaRequired: boolean
+  /** Factors this sign-in may use. Empty when mfaRequired is false. EMAIL_OTP is the one that sends a code today. */
+  mfaFactors: Array<MfaFactorType>
 }
 
 /** Whether Google sign-in can run. The Firebase project id is an environment variable; the switch is AppSetting google_sign_in (ADR-0100). */
@@ -799,7 +861,7 @@ export interface DomainReview {
 export type DomainReviewStatus = 'ACADEMIC_QUEUED' | 'NEEDS_REVIEW' | 'APPROVED' | 'REJECTED'
 
 /** Fixed error vocabulary (§6.2) */
-export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED' | 'AI_UNAVAILABLE_FOR_MINOR' | 'FEATURE_UNAVAILABLE_FOR_MINOR' | 'MINOR_PII_BLOCKED'
+export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED' | 'AI_UNAVAILABLE_FOR_MINOR' | 'FEATURE_UNAVAILABLE_FOR_MINOR' | 'MINOR_PII_BLOCKED' | 'MFA_REQUIRED' | 'ADMIN_MFA_REQUIRED'
 
 /** A public identifier a teacher claims, and how to prove it is theirs (ADR-0077) */
 export interface ExternalIdentity {
@@ -934,6 +996,41 @@ export type LimitKey = 'STORAGE_BYTES' | 'AI_TOKENS_DAILY' | 'PDF_PAGES_MONTHLY'
 /** How a series is grouped. WEEK starts on Monday (ISO); the first week starts on the window's first day and can be shorter. */
 export type MetricsInterval = 'DAY' | 'WEEK'
 
+export interface MfaChallengePayload {
+  challengeId: string | null
+  factor: MfaFactorType | null
+  expiresAt: Date | null
+  userErrors: Array<UserError>
+}
+
+export interface MfaFactor {
+  id: string
+  type: MfaFactorType
+  status: MfaFactorStatus
+  createdAt: Date
+  lastUsedAt: Date | null
+}
+
+export type MfaFactorStatus = 'PENDING' | 'ACTIVE' | 'DISABLED'
+
+export type MfaFactorType = 'EMAIL_OTP' | 'TOTP' | 'WEBAUTHN'
+
+/** Whether this signed-in session still needs a second factor. `satisfied` is true when nothing is required, or the
+ * code was accepted less than 12 hours ago. Calling this does not itself require MFA. */
+export interface MfaStatus {
+  required: boolean
+  satisfied: boolean
+  verifiedAt: Date | null
+  factors: Array<MfaFactor>
+  allowedFactors: Array<MfaFactorType>
+}
+
+/** A new access token after the code is accepted. The refresh token rotates with it. */
+export interface MfaVerifyPayload {
+  session: Session | null
+  userErrors: Array<UserError>
+}
+
 export interface MutationSignUpArgs {
   input: SignUpInput
 }
@@ -1058,6 +1155,23 @@ export interface MutationGuardianDeleteAccountArgs {
 export interface MutationGuardianSetSocialEnabledArgs {
   sessionToken: string
   enabled: boolean
+}
+
+export interface MutationStartMfaChallengeArgs {
+  factor: MfaFactorType
+}
+
+export interface MutationVerifyMfaChallengeArgs {
+  challengeId: string
+  code: string
+}
+
+export interface MutationSetMfaOptInArgs {
+  optIn: boolean
+}
+
+export interface MutationAdminRecoverMfaArgs {
+  input: AdminRecoverMfaInput
 }
 
 export interface MutationUpdateProfileArgs {
@@ -1336,6 +1450,17 @@ export interface QueryAdminSearchQualityArgs {
 }
 
 export interface QueryAdminVersionAdoptionArgs {
+  from?: Date | null
+  to?: Date | null
+}
+
+export interface QueryAdminActivityArgs {
+  filter?: AdminActivityFilter | null
+  cursor?: string | null
+  limit?: number | null
+}
+
+export interface QueryAdminActivitySummaryArgs {
   from?: Date | null
   to?: Date | null
 }

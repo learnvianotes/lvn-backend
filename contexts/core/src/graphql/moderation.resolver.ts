@@ -1,6 +1,6 @@
 import { UseGuards } from '@nestjs/common'
 import { Args, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql'
-import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
+import { CurrentViewer, RequireMfa, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { withUserErrors } from '@lvn-backend/errors'
 import { decodeCursor, encodeCursor, pageSize } from '@lvn-backend/graphql'
 import { GroupsService } from '../application/groups.service'
@@ -20,6 +20,7 @@ export class ModerationResolver {
   ) {}
 
   @Query('moderationQueue')
+  @RequireMfa()
   async moderationQueue(@Args() { first, after, scope }: QueryModerationQueueArgs, @CurrentViewer() viewer: Viewer) {
     const size = pageSize(first)
     const offset = Number(decodeCursor(after, 1)?.[0] ?? 0)
@@ -37,6 +38,7 @@ export class ModerationResolver {
   }
 
   @Mutation('moderateContent')
+  @RequireMfa()
   moderateContent(@Args() { input }: MutationModerateContentArgs, @CurrentViewer() viewer: Viewer): Promise<OkPayload> {
     return withUserErrors<OkPayload>(async () => {
       await this.moderation.decide(viewer.userId, input)

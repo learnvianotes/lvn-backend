@@ -12,6 +12,7 @@ import { contextModules, SUBGRAPHS, TOKEN_AUDIENCE } from './contexts'
 import { facades } from './facades'
 import { graphqlOperationRetryAfter } from './graphql/operation-rate'
 import { buildRequestContext } from './graphql/request-context'
+import { AdminAuditInterceptor } from './graphql/admin-audit'
 import { SuspendedRefusals } from './graphql/suspended-refusals'
 import { GitHubWebhookController } from '@lvn-backend/core'
 import { HealthController } from './health/health.controller'
@@ -60,6 +61,7 @@ export class AppModule {
       // A suspended person's refused change says why (ADR-0053).
       providers: [
         { provide: APP_INTERCEPTOR, useClass: SuspendedRefusals },
+        { provide: APP_INTERCEPTOR, useClass: AdminAuditInterceptor },
         { provide: AccessTokenVerifier, useValue: verifier },
         { provide: SENTRY_DSN, useValue: config.SENTRY_DSN },
       ],

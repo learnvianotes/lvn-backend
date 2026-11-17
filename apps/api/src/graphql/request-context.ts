@@ -15,7 +15,16 @@ export function viewerFromRequest(req: Req, verifier: AccessTokenVerifier): View
   if (!value?.startsWith('Bearer ')) return null
   const result = verifier.verify(value.slice(7).trim())
   if (!result.ok) return null
-  return { userId: result.claims.sub, sessionId: result.claims.sid, roles: result.claims.roles }
+  return {
+    userId: result.claims.sub,
+    sessionId: result.claims.sid,
+    roles: result.claims.roles,
+    amr: result.claims.amr ?? [],
+    mfa: result.claims.mfa === true,
+    mfaAt: typeof result.claims.mfaAt === 'number' ? result.claims.mfaAt : null,
+    mfaReq: result.claims.mfaReq === true,
+    mfaExempt: result.claims.mfaExempt === true,
+  }
 }
 
 /** The id the access log gave this request (from X-Request-Id when well-formed, §7.2), so both name it the same. */

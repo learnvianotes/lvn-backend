@@ -1,6 +1,6 @@
 import { UseGuards } from '@nestjs/common'
 import { Args, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql'
-import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
+import { CurrentViewer, RequireMfa, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { withUserErrors } from '@lvn-backend/errors'
 import { AdminService } from '../application/admin.service'
 import { AdminUsageMetricsService } from '../application/admin-usage-metrics.service'
@@ -18,26 +18,31 @@ export class AnalyticsResolver {
   ) {}
 
   @Query('adminErrors')
+  @RequireMfa()
   adminErrors(@Args('since') since: Date | null, @CurrentViewer() viewer: Viewer) {
     return this.analytics.errorGroups(viewer.userId, since)
   }
 
   @Query('adminUsage')
+  @RequireMfa()
   adminUsage(@Args('from') from: Date | null, @Args('to') to: Date | null, @CurrentViewer() viewer: Viewer) {
     return this.analytics.usage(viewer.userId, from, to)
   }
 
   @Query('adminUserActivity')
+  @RequireMfa()
   adminUserActivity(@Args('userId') userId: string, @Args('first') first: number | null, @CurrentViewer() viewer: Viewer) {
     return this.analytics.userActivity(viewer.userId, userId, first ?? 50)
   }
 
   @Query('adminFunnel')
+  @RequireMfa()
   adminFunnel(@Args('steps') steps: string[], @Args('since') since: Date | null, @CurrentViewer() viewer: Viewer) {
     return this.usageMetrics.funnel(viewer.userId, steps, since)
   }
 
   @Query('usersByIds')
+  @RequireMfa()
   usersByIds(@Args('ids') ids: string[], @CurrentViewer() viewer: Viewer) {
     return this.admin.usersByIds(viewer.userId, ids)
   }

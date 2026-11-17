@@ -98,6 +98,10 @@ export const ErrorCode = {
   FEATURE_UNAVAILABLE_FOR_MINOR: 'FEATURE_UNAVAILABLE_FOR_MINOR',
   /** A minor's post or message contained a phone, email, street address or social handle, and the filter is set to block. */
   MINOR_PII_BLOCKED: 'MINOR_PII_BLOCKED',
+  /** This session still needs a second factor. `startMfaChallenge` then `verifyMfaChallenge`. */
+  MFA_REQUIRED: 'MFA_REQUIRED',
+  /** An admin or staff session still needs the emailed code before an admin operation. */
+  ADMIN_MFA_REQUIRED: 'ADMIN_MFA_REQUIRED',
 } as const
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode]
 

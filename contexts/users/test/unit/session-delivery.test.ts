@@ -10,6 +10,8 @@ const session: IssuedSession = {
   accessTokenExpiresAt: new Date('2026-11-07T00:15:00Z'),
   refreshToken: 'refresh-token-value',
   refreshTokenExpiresAt: new Date('2026-12-07T00:00:00Z'),
+  mfaRequired: false,
+  mfaFactors: [],
 }
 
 function ctx(headers: Record<string, string>): { context: RequestContext; set: { name: string; value: string; options: object }[] } {
