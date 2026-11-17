@@ -75,6 +75,11 @@ const mail = z.object({
   MAIL_TRANSPORT: z.enum(['smtp', 'resend', 'ses']),
   SMTP_URL: z.url().optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
+  /**
+   * Resend audience for product email (the General audience in production). Optional: without it, registration
+   * still completes and the audience job does nothing. Not required for MAIL_TRANSPORT=resend.
+   */
+  RESEND_AUDIENCE_ID: z.string().uuid().optional(),
   /** Region of the SES identity that MAIL_FROM uses. */
   SES_REGION: z.string().min(1).optional(),
 })

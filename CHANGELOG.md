@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Registered accounts are added to the product email list and can turn those emails off. Platform admins can browse content that is not private, and see how many of each kind there are.
+
 ## [0.6.0] - 2026-11-15
 
 ### Added

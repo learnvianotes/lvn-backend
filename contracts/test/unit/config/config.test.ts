@@ -59,6 +59,8 @@ describe('apiConfigSchema (Phase 1)', () => {
     expect(() => loadConfig(apiConfigSchema, { ...valid, SMTP_URL: undefined })).toThrow(/SMTP_URL/)
     expect(() => loadConfig(apiConfigSchema, { ...valid, MAIL_TRANSPORT: 'resend' })).toThrow(/RESEND_API_KEY/)
     expect(loadConfig(apiConfigSchema, { ...valid, MAIL_TRANSPORT: 'resend', RESEND_API_KEY: 're_123' }).MAIL_TRANSPORT).toBe('resend')
+    expect(loadConfig(apiConfigSchema, { ...valid, RESEND_AUDIENCE_ID: 'd110d285-117b-4c6f-8e0f-ede15540ca7f' }).RESEND_AUDIENCE_ID).toBe('d110d285-117b-4c6f-8e0f-ede15540ca7f')
+    expect(() => loadConfig(apiConfigSchema, { ...valid, RESEND_AUDIENCE_ID: 'general' })).toThrow(/RESEND_AUDIENCE_ID/)
   })
 
   it('sends through SES with the task role, needing only the region', () => {

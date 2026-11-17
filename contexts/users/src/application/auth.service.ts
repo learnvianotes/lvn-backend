@@ -32,6 +32,7 @@ import { SupportContact } from './support-contact'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
 import { TermsVersionProvider } from './terms-version.provider'
 import { GuardianNoticeService } from './guardian-notice.service'
+import { AudienceSyncService } from './audience-sync.service'
 import { WelcomeEmailService } from './welcome-email.service'
 
 export interface SignUpInput {
@@ -79,6 +80,7 @@ export class AuthService {
     private readonly terms: TermsVersionProvider,
     private readonly welcome: WelcomeEmailService,
     private readonly guardians?: GuardianNoticeService,
+    private readonly audience?: AudienceSyncService,
   ) {}
 
   async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string, ip?: string): Promise<SignUpResult> {
@@ -164,6 +166,7 @@ export class AuthService {
 
     // After the account is stored. A mail or Redis failure here does not undo it, and does not fail sign-up.
     await this.welcome.schedule(id)
+    await this.audience?.schedule(id)
     if (parentEmail) await this.guardians?.notify(id)
     await this.sendEmailVerification(id, email, displayName)
     if (input.institutionalEmail) await this.institutional.start(id, input.institutionalEmail)

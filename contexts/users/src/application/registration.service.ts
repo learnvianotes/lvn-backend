@@ -14,6 +14,7 @@ import { InstitutionalEmailService } from './institutional-email.service'
 import { parseField } from './input'
 import { TermsVersionProvider } from './terms-version.provider'
 import { GuardianNoticeService } from './guardian-notice.service'
+import { AudienceSyncService } from './audience-sync.service'
 import { WelcomeEmailService } from './welcome-email.service'
 
 export interface RegistrationDetails {
@@ -46,6 +47,7 @@ export class RegistrationService {
     private readonly terms: TermsVersionProvider,
     private readonly welcome: WelcomeEmailService,
     private readonly guardians?: GuardianNoticeService,
+    private readonly audience?: AudienceSyncService,
   ) {}
 
   async complete(userId: string, input: RegistrationDetails): Promise<void> {
@@ -86,6 +88,7 @@ export class RegistrationService {
     ])
     // After the profile is stored. A mail or Redis failure here does not undo it, and does not fail registration.
     await this.welcome.schedule(userId)
+    await this.audience?.schedule(userId)
     if (parentEmail) await this.guardians?.notify(userId)
     // A name and an age: people search may now find them, once past the consent age (ADR-0055).
     await this.events.publish('PersonChanged', { userId })

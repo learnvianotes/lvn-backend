@@ -51,6 +51,7 @@ function harness(initial: Row = row(), minimum = 18) {
   const revoked: string[] = []
   const erased: unknown[][] = []
   const queries: unknown[] = []
+  const audience: { userId: string; previousEmail: string }[] = []
   const db = {
     user: {
       findUnique: async () => ({ ...current }),
@@ -75,6 +76,7 @@ function harness(initial: Row = row(), minimum = 18) {
     { revokeAll: async (id: string) => void revoked.push(id) } as never,
     { record: async (entry: { action: string; metadata?: Record<string, unknown> }) => void audits.push(entry) } as never,
     { adminErase: async (...args: unknown[]) => void erased.push(args) } as never,
+    { scheduleEmailChange: async (userId: string, previousEmail: string) => void audience.push({ userId, previousEmail }) } as never,
   )
   return {
     service,
@@ -82,6 +84,7 @@ function harness(initial: Row = row(), minimum = 18) {
     revoked,
     erased,
     queries,
+    audience,
     current: () => current,
     failEmail: () => {
       db.user.update = async () => {
@@ -162,6 +165,7 @@ describe('AccountAdminService', () => {
     expect(h.revoked).toEqual([])
     expect(h.audits[0]!.metadata).toMatchObject({ ageUnblocked: true, fields: ['email', 'dateOfBirth'] })
     expect(JSON.stringify(h.audits)).not.toContain('asha.rao@example.com')
+    expect(h.audience).toEqual([{ userId: USER, previousEmail: 'asha@example.com' }])
   })
 
   it('does not clear a block or a suspension just because the date of birth passes', async () => {

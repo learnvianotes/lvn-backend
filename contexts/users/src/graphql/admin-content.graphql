@@ -1,0 +1,88 @@
+# Platform-admin content browser. Private notes, private shares, files and highlights on private notes,
+# and college ID cards are excluded by the query. Takedown stays on moderateContent.
+
+enum AdminContentType {
+  NOTE
+  COMMENT
+  GROUP
+  GROUP_POST
+  CLASSROOM
+  CLASSROOM_POST
+  QUIZ
+  DOUBT
+  DOUBT_ANSWER
+  SHARE
+  UPLOAD
+  RESOURCE
+  HIGHLIGHT
+  CONTEST
+}
+
+"How widely the item can be seen. PRIVATE is only used for a private group; private notes are not returned."
+enum AdminContentVisibility {
+  PUBLIC
+  SHARED
+  UNLISTED
+  PRIVATE
+  MEMBERS
+}
+
+type AdminContentAuthor {
+  id: UUID!
+  handle: String!
+  email: String!
+}
+
+type AdminContentItem {
+  "A uuid for most kinds. A share is noteId:userId, noteId:groupId or noteId:classroomId."
+  id: String!
+  type: AdminContentType!
+  "Set when the item has a title. At most 200 characters."
+  title: String
+  "The body, or the title when there is no body. At most 200 characters."
+  excerpt: String
+  author: AdminContentAuthor!
+  visibility: AdminContentVisibility!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  "OK, PENDING_REVIEW, HIDDEN, REMOVED, PENDING, APPROVED, REJECTED, DRAFT or PUBLISHED. Null when this kind has none."
+  moderation: String
+  deepLink: String!
+}
+
+type AdminContentEdge {
+  cursor: String!
+  node: AdminContentItem!
+}
+
+type AdminContentConnection {
+  edges: [AdminContentEdge!]!
+  pageInfo: PageInfo!
+}
+
+input AdminContentFilter {
+  type: AdminContentType
+  userId: UUID
+  handle: String
+  from: DateTime
+  to: DateTime
+  visibility: AdminContentVisibility
+}
+
+type AdminContentCount {
+  type: AdminContentType!
+  count: Int!
+}
+
+type AdminContentCounts {
+  from: DateTime
+  to: DateTime
+  counts: [AdminContentCount!]!
+}
+
+extend type Query {
+  "Platform admins. One page of content that is not private. Every call writes an audit row with the filter."
+  adminContent(filter: AdminContentFilter, first: Int, after: String): AdminContentConnection!
+  "Platform admins. How many of each kind were created in the window. The same private items are left out."
+  adminContentCounts(from: DateTime, to: DateTime): AdminContentCounts!
+}

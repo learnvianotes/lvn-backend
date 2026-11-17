@@ -6,6 +6,7 @@ import { newId, PrismaService } from '@lvn-backend/prisma-base'
 import { GUARDIAN_CONSENT_UNDER } from '../domain/guardian-consent'
 import { ageOf, type AgeFacts } from '../domain/rules'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { AudienceSyncService } from './audience-sync.service'
 import { AuditService } from './audit.service'
 import { MinorPurgeService } from './minor-purge.service'
 import { PasswordService } from './password.service'
@@ -52,6 +53,7 @@ export class AccountDeletionService {
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
     private readonly settings?: PlatformSettingsStore,
     private readonly minorPurge?: MinorPurgeService,
+    private readonly audience?: AudienceSyncService,
   ) {}
 
   /** The date a request already stored will be purged, using the minor window when the account is still under 18. */
@@ -131,7 +133,8 @@ export class AccountDeletionService {
   /** The users context's part: every row about the person goes; the user row stays as "Deleted user". */
   private async erase(userId: string, now: Date): Promise<void> {
     await this.sessions.revokeAll(userId)
-    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, select: { avatarFileId: true, dateOfBirth: true, declaredAge: true, ageDeclaredAt: true } })
+    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId }, select: { avatarFileId: true, email: true, dateOfBirth: true, declaredAge: true, ageDeclaredAt: true } })
+    const email = user.email
     // Before the provider rows go: the purge needs the Firebase uid. Adults keep the previous erase.
     if (this.minorPurge && isMinor(user)) await this.minorPurge.purge(userId)
     const [exports, verifications] = await Promise.all([
@@ -192,6 +195,7 @@ export class AccountDeletionService {
       }),
     ])
     await this.audit.record({ actorId: null, action: 'account.deleted', targetType: 'USER', targetId: userId })
+    if (email) await this.audience?.scheduleRemoval(email)
   }
 
   /**

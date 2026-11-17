@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import type { NotificationCategory } from '@lvn/contracts/notifications'
 import { Errors } from '@lvn-backend/errors'
 import { PrismaService } from '@lvn-backend/prisma-base'
+import type { EmailKind } from '../email/unsubscribe'
 
 /** The categories a person can set today; categories of later phases join when they ship (ADR-0050). */
 export const SETTABLE: NotificationCategory[] = ['SHARE', 'COMMENT', 'FOLLOW', 'CONNECTION', 'JOIN_REQUEST', 'JOIN_DECISION', 'CLASSROOM_INVITE', 'CLASSROOM_POST', 'QUIZ_PUBLISHED', 'MENTOR_INVITE', 'DOUBT', 'MENTION', 'VERIFICATION', 'DATA_EXPORT', 'NOTES_IMPORT', 'REVISION_REMINDER', 'RHYTHM_BUDDY', 'RESOURCE']
@@ -18,6 +19,8 @@ export interface Settings {
   quietEnd: string
   timeZone: string
   weeklyDigest: boolean
+  /** Product news. True unless the person turned it off. */
+  productEmails: boolean
   categories: { category: NotificationCategory; push: boolean; email: boolean | null }[]
 }
 
@@ -59,16 +62,17 @@ export class PreferencesService {
       quietEnd: row?.quietEnd ?? DEFAULTS.quietEnd,
       timeZone: row?.timeZone ?? DEFAULTS.timeZone,
       weeklyDigest: row?.weeklyDigest ?? DEFAULTS.weeklyDigest,
+      productEmails: row?.productEmails ?? true,
       categories: SETTABLE.map((category) => ({ category, push: pref.get(category)?.push ?? true, email: EMAILED.has(category) ? (pref.get(category)?.email ?? true) : null })),
     }
   }
 
-  async update(userId: string, input: { categories?: { category: NotificationCategory; push?: boolean | null; email?: boolean | null }[] | null; quietStart?: string | null; quietEnd?: string | null; timeZone?: string | null; weeklyDigest?: boolean | null }): Promise<Settings> {
+  async update(userId: string, input: { categories?: { category: NotificationCategory; push?: boolean | null; email?: boolean | null }[] | null; quietStart?: string | null; quietEnd?: string | null; timeZone?: string | null; weeklyDigest?: boolean | null; productEmails?: boolean | null }): Promise<Settings> {
     for (const [field, v] of [['quietStart', input.quietStart], ['quietEnd', input.quietEnd]] as const) {
       if (v != null && !HHMM.test(v)) throw Errors.validation('Use a time like 22:00.', ['input', field])
     }
     if (input.timeZone != null && !validZone(input.timeZone)) throw Errors.validation('Choose a time zone from the list.', ['input', 'timeZone'])
-    const settings = { ...(input.quietStart != null ? { quietStart: input.quietStart } : {}), ...(input.quietEnd != null ? { quietEnd: input.quietEnd } : {}), ...(input.timeZone != null ? { timeZone: input.timeZone } : {}), ...(input.weeklyDigest != null ? { weeklyDigest: input.weeklyDigest } : {}) }
+    const settings = { ...(input.quietStart != null ? { quietStart: input.quietStart } : {}), ...(input.quietEnd != null ? { quietEnd: input.quietEnd } : {}), ...(input.timeZone != null ? { timeZone: input.timeZone } : {}), ...(input.weeklyDigest != null ? { weeklyDigest: input.weeklyDigest } : {}), ...(input.productEmails != null ? { productEmails: input.productEmails } : {}) }
     if (Object.keys(settings).length) await this.db.notificationSettings.upsert({ where: { userId }, create: { userId, ...settings }, update: settings })
     for (const c of input.categories ?? []) {
       if (!SETTABLE.includes(c.category)) throw Errors.validation('That kind of notification cannot be set yet.', ['input', 'categories'])
@@ -87,14 +91,16 @@ export class PreferencesService {
     return !inQuietHours(localTime(at, tz), row?.quietStart ?? DEFAULTS.quietStart, row?.quietEnd ?? DEFAULTS.quietEnd)
   }
 
-  async emailAllowed(userId: string, kind: 'CLASSROOM_POST' | 'DIGEST'): Promise<boolean> {
+  async emailAllowed(userId: string, kind: EmailKind): Promise<boolean> {
     if (kind === 'DIGEST') return (await this.db.notificationSettings.findUnique({ where: { userId } }))?.weeklyDigest ?? DEFAULTS.weeklyDigest
+    if (kind === 'MARKETING') return (await this.db.notificationSettings.findUnique({ where: { userId } }))?.productEmails ?? true
     return (await this.db.notificationPreference.findUnique({ where: { userId_category: { userId, category: kind } } }))?.email ?? true
   }
 
-  /** One-click unsubscribe (ADR-0050): turns off one kind of email. */
-  async stopEmail(userId: string, kind: 'CLASSROOM_POST' | 'DIGEST'): Promise<void> {
+  /** One-click unsubscribe (ADR-0050): turns off one kind of email. MARKETING is product news. */
+  async stopEmail(userId: string, kind: EmailKind): Promise<void> {
     if (kind === 'DIGEST') await this.db.notificationSettings.upsert({ where: { userId }, create: { userId, weeklyDigest: false }, update: { weeklyDigest: false } })
+    else if (kind === 'MARKETING') await this.db.notificationSettings.upsert({ where: { userId }, create: { userId, productEmails: false }, update: { productEmails: false } })
     else await this.db.notificationPreference.upsert({ where: { userId_category: { userId, category: kind } }, create: { userId, category: kind, email: false }, update: { email: false } })
   }
 }

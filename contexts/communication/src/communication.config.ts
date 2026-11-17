@@ -7,6 +7,8 @@ export interface CommunicationConfig {
   mailTransport: 'smtp' | 'resend' | 'ses'
   smtpUrl?: string
   resendApiKey?: string
+  /** Product-email audience. Unset leaves audience sync off. */
+  audienceId?: string
   sesRegion?: string
   /** Live updates check access tokens themselves (ADR-0042) */
   jwtPublicKey: string
@@ -31,6 +33,7 @@ export const communicationConfigFrom = (c: ApiConfig): CommunicationConfig => ({
   mailTransport: c.MAIL_TRANSPORT,
   smtpUrl: c.SMTP_URL,
   resendApiKey: c.RESEND_API_KEY,
+  audienceId: c.RESEND_AUDIENCE_ID,
   sesRegion: c.SES_REGION,
   jwtPublicKey: c.JWT_PUBLIC_KEY,
   jwtIssuer: c.JWT_ISSUER,

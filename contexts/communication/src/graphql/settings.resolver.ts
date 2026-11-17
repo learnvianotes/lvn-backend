@@ -3,6 +3,7 @@ import { Args, Mutation, Query, Resolver } from '@nestjs/graphql'
 import type { NotificationCategory } from '@lvn/contracts/notifications'
 import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { Errors, withUserErrors, type UserError } from '@lvn-backend/errors'
+import { AudienceService } from '../audience/audience.service'
 import { COMMUNICATION_CONFIG, type CommunicationConfig } from '../communication.config'
 import { readUnsubscribeToken, type EmailKind } from '../email/unsubscribe'
 import { PreferencesService, type Settings } from '../preferences/preferences.service'
@@ -19,6 +20,7 @@ export class SettingsResolver {
     private readonly devices: DevicesService,
     private readonly push: PushService,
     @Inject(COMMUNICATION_CONFIG) private readonly config: CommunicationConfig,
+    private readonly audience: AudienceService,
   ) {}
 
   private async full(userId: string, settings: Settings) {
@@ -33,8 +35,12 @@ export class SettingsResolver {
 
   @Mutation('updateNotificationSettings')
   @UseGuards(SignedInGuard)
-  updateNotificationSettings(@Args('input') input: { categories?: { category: NotificationCategory; push?: boolean | null; email?: boolean | null }[] | null; quietStart?: string | null; quietEnd?: string | null; timeZone?: string | null; weeklyDigest?: boolean | null }, @CurrentViewer() viewer: Viewer): Promise<SettingsPayload> {
-    return withUserErrors<SettingsPayload>(async () => ({ settings: await this.full(viewer.userId, await this.preferences.update(viewer.userId, input)) }), { settings: null })
+  updateNotificationSettings(@Args('input') input: { categories?: { category: NotificationCategory; push?: boolean | null; email?: boolean | null }[] | null; quietStart?: string | null; quietEnd?: string | null; timeZone?: string | null; weeklyDigest?: boolean | null; productEmails?: boolean | null }, @CurrentViewer() viewer: Viewer): Promise<SettingsPayload> {
+    return withUserErrors<SettingsPayload>(async () => {
+      const settings = await this.preferences.update(viewer.userId, input)
+      if (input.productEmails != null) await this.audience.applyProductEmails(viewer.userId, input.productEmails)
+      return { settings: await this.full(viewer.userId, settings) }
+    }, { settings: null })
   }
 
   @Mutation('registerDevice')
@@ -56,6 +62,7 @@ export class SettingsResolver {
       const read = readUnsubscribeToken(this.config.hmacSecret, input.token.trim())
       if (!read) throw Errors.validation('This unsubscribe link is not valid. Change your email settings from your account instead.', ['input', 'token'])
       await this.preferences.stopEmail(read.userId, read.kind)
+      if (read.kind === 'MARKETING') await this.audience.applyProductEmails(read.userId, false)
       return { kind: read.kind }
     }, { kind: null })
   }

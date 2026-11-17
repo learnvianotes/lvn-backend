@@ -100,7 +100,8 @@ never listed with values; sandbox and production read them from AWS Secrets Mana
 | `MAIL_REPLY_TO` | api, worker | no | `support@learnvianotes.in` | Reply-To on transactional mail, and the address in the email footer. The public support inbox |
 | `MAIL_TRANSPORT` | api, worker | yes | — | `smtp` (Mailpit locally), `resend` (Lightsail, ADR-0096) or `ses` (kept in the code; its AWS deployment was retired) |
 | `SMTP_URL` | api, worker | when `smtp` | — | `smtp://localhost:51025` for Mailpit |
-| `RESEND_API_KEY` | api, worker | when `resend` (secret) | — | Resend API key |
+| `RESEND_API_KEY` | api, worker | when `resend` (secret) | — | Resend API key. Also used to add and update audience contacts when `RESEND_AUDIENCE_ID` is set |
+| `RESEND_AUDIENCE_ID` | api, worker | no | — | Resend audience for product email. Production uses the existing General audience `d110d285-117b-4c6f-8e0f-ede15540ca7f`. Unset, the audience job does nothing and registration still completes. Not required for sending mail |
 | `SES_REGION` | api, worker | when `ses` | — | Region of the SES identity `MAIL_FROM` uses |
 | `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | api | yes (secret) | — | RS256 key pair for access tokens (§7.1), PEM with `\n` escapes; `pnpm keys:dev` writes a pair to `.env.local` |
 | `JWT_ISSUER` | api | yes | — | The API's public origin, the `iss` of new access tokens. Production: `https://api.learnvianotes.in`. `https://` makes the web refresh cookie `Secure`, so a development API reached at the machine's LAN/VPN address over HTTP still keeps browser sessions. Changing it rejects tokens that still carry the previous issuer until they expire (15 minutes); set `JWT_EXTRA_ISSUERS` for that window. Refresh tokens are opaque and are not affected |

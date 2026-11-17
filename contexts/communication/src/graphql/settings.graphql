@@ -1,7 +1,7 @@
 # Push, email and their preferences (ADR-0021, ADR-0050).
 
 enum DevicePlatform { ANDROID IOS }
-enum EmailKind { CLASSROOM_POST DIGEST }
+enum EmailKind { CLASSROOM_POST DIGEST MARKETING }
 
 type OkPayload @shareable {
   ok: Boolean!
@@ -23,6 +23,8 @@ type NotificationSettings {
   "An IANA time zone, e.g. Asia/Kolkata"
   timeZone: String!
   weeklyDigest: Boolean!
+  "Product news. False unsubscribes this account from the audience."
+  productEmails: Boolean!
   "The server can send push (it has FCM settings)"
   pushAvailable: Boolean!
   "Phones registered for push"
@@ -41,6 +43,7 @@ input UpdateNotificationSettingsInput {
   quietEnd: String
   timeZone: String
   weeklyDigest: Boolean
+  productEmails: Boolean
 }
 
 type NotificationSettingsPayload {

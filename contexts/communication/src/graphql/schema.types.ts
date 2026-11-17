@@ -20,7 +20,7 @@ export interface Classroom {
 
 export type DevicePlatform = 'ANDROID' | 'IOS'
 
-export type EmailKind = 'CLASSROOM_POST' | 'DIGEST'
+export type EmailKind = 'CLASSROOM_POST' | 'DIGEST' | 'MARKETING'
 
 export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED' | 'AI_UNAVAILABLE_FOR_MINOR' | 'FEATURE_UNAVAILABLE_FOR_MINOR' | 'MINOR_PII_BLOCKED'
 
@@ -107,6 +107,8 @@ export interface NotificationSettings {
   /** An IANA time zone, e.g. Asia/Kolkata */
   timeZone: string
   weeklyDigest: boolean
+  /** Product news. False unsubscribes this account from the audience. */
+  productEmails: boolean
   /** The server can send push (it has FCM settings) */
   pushAvailable: boolean
   /** Phones registered for push */
@@ -160,6 +162,7 @@ export interface UpdateNotificationSettingsInput {
   quietEnd?: string | null
   timeZone?: string | null
   weeklyDigest?: boolean | null
+  productEmails?: boolean | null
 }
 
 /** A person, owned by the users subgraph */

@@ -100,6 +100,59 @@ export interface AdminAppVersionCount {
   share: number
 }
 
+export interface AdminContentAuthor {
+  id: string
+  handle: string
+  email: string
+}
+
+export interface AdminContentConnection {
+  edges: Array<AdminContentEdge>
+  pageInfo: PageInfo
+}
+
+export interface AdminContentCount {
+  type: AdminContentType
+  count: number
+}
+
+export interface AdminContentCounts {
+  from: Date | null
+  to: Date | null
+  counts: Array<AdminContentCount>
+}
+
+export interface AdminContentEdge {
+  cursor: string
+  node: AdminContentItem
+}
+
+export interface AdminContentFilter {
+  type?: AdminContentType | null
+  userId?: string | null
+  handle?: string | null
+  from?: Date | null
+  to?: Date | null
+  visibility?: AdminContentVisibility | null
+}
+
+export interface AdminContentItem {
+  /** A uuid for most kinds. A share is noteId:userId, noteId:groupId or noteId:classroomId. */
+  id: string
+  type: AdminContentType
+  /** Set when the item has a title. At most 200 characters. */
+  title: string | null
+  /** The body, or the title when there is no body. At most 200 characters. */
+  excerpt: string | null
+  author: AdminContentAuthor
+  visibility: AdminContentVisibility
+  createdAt: Date
+  updatedAt: Date
+  /** OK, PENDING_REVIEW, HIDDEN, REMOVED, PENDING, APPROVED, REJECTED, DRAFT or PUBLISHED. Null when this kind has none. */
+  moderation: string | null
+  deepLink: string
+}
+
 /** Notes, the catalogue, and places. Deleted notes, groups and classes are left out. */
 export interface AdminContentMetrics {
   notes: number
@@ -121,6 +174,11 @@ export interface AdminContentStats {
   places: AdminPlaceCounts
   sharing: AdminSharingCounts
 }
+
+export type AdminContentType = 'NOTE' | 'COMMENT' | 'GROUP' | 'GROUP_POST' | 'CLASSROOM' | 'CLASSROOM_POST' | 'QUIZ' | 'DOUBT' | 'DOUBT_ANSWER' | 'SHARE' | 'UPLOAD' | 'RESOURCE' | 'HIGHLIGHT' | 'CONTEST'
+
+/** How widely the item can be seen. PRIVATE is only used for a private group; private notes are not returned. */
+export type AdminContentVisibility = 'PUBLIC' | 'SHARED' | 'UNLISTED' | 'PRIVATE' | 'MEMBERS'
 
 export interface AdminDeleteUserInput {
   userId: string
@@ -1289,6 +1347,17 @@ export interface PublicPlan {
 
 export interface QueryAdminAccessAllowlistArgs {
   search?: string | null
+}
+
+export interface QueryAdminContentArgs {
+  filter?: AdminContentFilter | null
+  first?: number | null
+  after?: string | null
+}
+
+export interface QueryAdminContentCountsArgs {
+  from?: Date | null
+  to?: Date | null
 }
 
 export interface QueryAdminGrowthArgs {

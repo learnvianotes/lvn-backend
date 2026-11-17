@@ -3,6 +3,7 @@ import { JsonScalar } from '@lvn-backend/graphql'
 import { COMMUNICATION_CONFIG, type CommunicationConfig } from './communication.config'
 import { NotificationsResolver } from './graphql/notifications.resolver'
 import { SettingsResolver } from './graphql/settings.resolver'
+import { AudienceService } from './audience/audience.service'
 import { EmailNotificationsService } from './email/email-notifications.service'
 import { PreferencesService } from './preferences/preferences.service'
 import { DevicesService } from './push/devices.service'
@@ -46,11 +47,12 @@ export class CommunicationModule {
         DevicesService,
         PushService,
         EmailNotificationsService,
+        AudienceService,
         SettingsResolver,
         JsonScalar,
         ...(options.serveLive ? [LiveServer] : []),
       ],
-      exports: [MailService, NotificationService, LiveHub, LiveNotifier, PushService, DevicesService, EmailNotificationsService],
+      exports: [MailService, NotificationService, LiveHub, LiveNotifier, PushService, DevicesService, EmailNotificationsService, AudienceService],
     }
   }
 }
