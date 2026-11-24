@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-25
+
 ### Added
 
 - Sign in with a 6-digit code sent to your email, or with a passkey (your phone or laptop screen lock), with no password needed. Codes last 10 minutes, work once and stop after five wrong tries; passkeys keep only a public key on our side. [#96](https://github.com/learnvianotes/lvn-backend/pull/96)
