@@ -14,7 +14,7 @@ overrides:
   '@apollo/subgraph': 2.15.1
   '@apollo/federation-internals': 2.14.4
   # @types/ssh2@1 still asks for @types/node 18. One Node type package for the whole workspace.
-  '@types/node': 26.6.5
+  '@types/node': 26.6.6
   # Patched releases of what pnpm audit flags high (CI's audit job): GraphQL Tools under @nestjs/graphql and mysql2
   # under the Prisma CLI. body-parser, multer and undici are the highs left after the Nest 12 / Apollo bump.
   '@graphql-tools/utils': ^12.0.1
@@ -22,9 +22,14 @@ overrides:
   body-parser: ^2.4.0
   multer: ^2.5.0
   undici: ^8.12.2
+  # @prisma/config 7.10 pins effect 3.20.0 (high: fixed in 3.22.1) and @prisma/dev reaches fast-uri < 3.1.9.
+  # Same majors, patched releases. Drop both when Prisma's own pins move past them.
+  effect: ^3.22.1
+  fast-uri: ^3.1.9
 
-auditConfig:
-  ignoreGhsas:
-    # deepmerge-ts 7 inside @prisma/config (Prisma 7.10 pins it; the fix is in 8): stack exhaustion on deeply nested
-    # input. It merges only our own prisma.config.ts in the CLI, never request data. Drop when Prisma moves to 8.
-    - GHSA-ggr8-5vv4-36mx
+# OpenTelemetry 0.301 / 3.x needs @opentelemetry/api 1.10. @apollo/gateway 2.14 still bundles OpenTelemetry 1.30, whose
+# packages cap the api peer below 1.10. The api is backward compatible within 1.x, and traces and metrics (gateway's
+# GraphQL spans included) were checked against an OTLP collector on 2026-11-24. Drop when Gateway moves to OTel 2+.
+peerDependencyRules:
+  allowedVersions:
+    '@opentelemetry/api': '1.10'
