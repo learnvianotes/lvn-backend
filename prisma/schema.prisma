@@ -215,6 +215,8 @@ model User {
   guardianLinks         GuardianLink[]
   mfaFactors            UserMfaFactor[]
   mfaChallenges         MfaChallenge[]
+  signInCodes           SignInCode[]
+  passkeys              PasskeyCredential[]
   firebaseInstallations FirebaseInstallation[]
   dataExports          DataExport[]
   memberships          Membership[]
@@ -784,6 +786,48 @@ model MfaChallenge {
 
   @@index([userId, createdAt])
   @@map("mfa_challenges")
+  @@schema("users")
+}
+
+/// A 6-digit code emailed to sign in without a password (ADR-0115). Single use, ten minutes, five tries.
+model SignInCode {
+  id        String    @id @db.Uuid
+  userId    String    @db.Uuid
+  /// HMAC-SHA256 of `${id}:${code}` with CODE_HMAC_SECRET. The code itself is never stored.
+  codeHash  Bytes
+  expiresAt DateTime  @db.Timestamptz(3)
+  attempts  Int       @default(0)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("sign_in_codes")
+  @@schema("users")
+}
+
+/// A passkey (WebAuthn credential) that signs in without a password (ADR-0115). Only the public key is kept.
+model PasskeyCredential {
+  id           String    @id @db.Uuid
+  userId       String    @db.Uuid
+  /// The authenticator's credential id (raw bytes).
+  credentialId Bytes     @unique
+  /// COSE public key from the attestation.
+  publicKey    Bytes
+  /// Signature counter; a lower value than stored means a cloned authenticator and is refused.
+  counter      BigInt    @default(0)
+  transports   String[]
+  /// A name the person gives it, e.g. "Pixel 8" or "MacBook". Defaults from the browser.
+  name         String
+  backedUp     Boolean   @default(false)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  lastUsedAt   DateTime? @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("passkey_credentials")
   @@schema("users")
 }
 

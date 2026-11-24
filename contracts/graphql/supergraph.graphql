@@ -3696,6 +3696,25 @@ enum FilePurpose
   PAGE_IMAGE @join__enumValue(graph: NOTES)
 }
 
+input FinishPasskeyRegistrationInput
+  @join__type(graph: USERS)
+{
+  """RegistrationResponseJSON from the browser, as a JSON string"""
+  responseJson: String!
+
+  """Defaults to "Passkey". At most 60 characters."""
+  name: String
+}
+
+input FinishPasskeySignInInput
+  @join__type(graph: USERS)
+{
+  attemptId: String!
+
+  """AuthenticationResponseJSON from the browser, as a JSON string"""
+  responseJson: String!
+}
+
 type FocusSession
   @join__type(graph: CORE)
 {
@@ -5423,6 +5442,30 @@ type Mutation
   setInstitutionalEmail(input: SetInstitutionalEmailInput!): OkPayload! @join__field(graph: USERS)
   verifyInstitutionalEmail(input: VerifyInstitutionalEmailInput!): OkPayload! @join__field(graph: USERS)
   resendInstitutionalEmailCode: OkPayload! @join__field(graph: USERS)
+
+  """
+  Emails a 6-digit sign-in code when an account has this address. Always ok, so it never tells who has an account.
+  """
+  requestSignInCode(input: RequestSignInCodeInput!): OkPayload! @join__field(graph: USERS)
+
+  """
+  Signs in with the emailed code. Five wrong tries end the code; ask for a new one.
+  """
+  signInWithCode(input: SignInWithCodeInput!): AuthPayload! @join__field(graph: USERS)
+
+  """
+  Starts a passkey sign-in. No email: the browser offers the passkeys it has for this site.
+  """
+  startPasskeySignIn: PasskeySignInStart! @join__field(graph: USERS)
+  finishPasskeySignIn(input: FinishPasskeySignInInput!): AuthPayload! @join__field(graph: USERS)
+
+  """Signed in. Starts adding a passkey for this device."""
+  startPasskeyRegistration: PasskeyRegistrationStart! @join__field(graph: USERS)
+
+  """Signed in. Saves the passkey the browser made."""
+  finishPasskeyRegistration(input: FinishPasskeyRegistrationInput!): PasskeyPayload! @join__field(graph: USERS)
+  renamePasskey(input: RenamePasskeyInput!): PasskeyPayload! @join__field(graph: USERS)
+  removePasskey(id: UUID!): OkPayload! @join__field(graph: USERS)
   followUser(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
   unfollowUser(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
 
@@ -6185,6 +6228,50 @@ type PageInfo
 {
   hasNextPage: Boolean!
   endCursor: String
+}
+
+type Passkey
+  @join__type(graph: USERS)
+{
+  id: UUID!
+
+  """
+  What the person calls the device, e.g. "Pixel 8"
+  """
+  name: String!
+  createdAt: DateTime!
+  lastUsedAt: DateTime
+
+  """
+  Synced to the person's cloud account (iCloud Keychain, Google Password Manager), so it survives a lost phone.
+  """
+  backedUp: Boolean!
+}
+
+type PasskeyPayload
+  @join__type(graph: USERS)
+{
+  passkey: Passkey
+  userErrors: [UserError!]!
+}
+
+type PasskeyRegistrationStart
+  @join__type(graph: USERS)
+{
+  """PublicKeyCredentialCreationOptionsJSON, as a JSON string"""
+  optionsJson: String!
+}
+
+"""
+Options for navigator.credentials.get, and the id that names this attempt. Five minutes, one use.
+"""
+type PasskeySignInStart
+  @join__type(graph: USERS)
+{
+  attemptId: String!
+
+  """PublicKeyCredentialRequestOptionsJSON, as a JSON string"""
+  optionsJson: String!
 }
 
 input PauseRhythmInput
@@ -7013,6 +7100,9 @@ type Query
   """
   authSettings: AuthSettings! @join__field(graph: USERS)
 
+  """Signed in. This account's passkeys, oldest first."""
+  myPasskeys: [Passkey!]! @join__field(graph: USERS)
+
   """
   A person by handle (with or without @) or by id; null when there is none, or when they have no public profile (restricted minors, ADR-0043)
   """
@@ -7343,6 +7433,13 @@ type RemovedGroup
   canAppeal: Boolean!
 }
 
+input RenamePasskeyInput
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  name: String!
+}
+
 input RenameTagInput
   @join__type(graph: NOTES)
 {
@@ -7476,6 +7573,12 @@ input RequestDocumentVerificationInput
 }
 
 input RequestPasswordResetInput
+  @join__type(graph: USERS)
+{
+  email: String!
+}
+
+input RequestSignInCodeInput
   @join__type(graph: USERS)
 {
   email: String!
@@ -8472,8 +8575,31 @@ type SignInOptions
   False when FIREBASE_PROJECT_ID is unset, or a platform admin has turned Google sign-in off
   """
   google: Boolean!
-  github: Boolean!
-  linkedin: Boolean!
+
+  """Retired (ADR-0115). Always false."""
+  github: Boolean! @deprecated(reason: "GitHub sign-in is retired. Always false.")
+
+  """Retired (ADR-0115). Always false."""
+  linkedin: Boolean! @deprecated(reason: "LinkedIn sign-in is retired. Always false.")
+
+  """
+  A 6-digit code emailed to the account (requestSignInCode, signInWithCode).
+  """
+  emailCode: Boolean!
+
+  """
+  Passkeys (startPasskeySignIn, finishPasskeySignIn), where the device supports them.
+  """
+  passkey: Boolean!
+}
+
+input SignInWithCodeInput
+  @join__type(graph: USERS)
+{
+  email: String!
+
+  """The 6 digits from the email. Spaces are ignored."""
+  code: String!
 }
 
 """

@@ -10,12 +10,15 @@ type Hit = Pick<RateLimiter, 'hit'>
  * Signed-in callers are `gql:${userId}` at OPERATIONS_PER_MINUTE. Anonymous callers are `gql-ip:${network}` at
  * ANONYMOUS_OPERATIONS_PER_MINUTE (one IPv4, or an IPv6 /64). No address: nothing to key, so the other caps still apply.
  *
+ * A signed-in caller's refusal is also a strike (`onRefused`, ADR-0116).
+ *
  * Fail open when Redis is down. A Redis outage must not refuse everyone; the edge still stops floods.
  */
-export async function graphqlOperationRetryAfter(limiter: Hit, ctx: RequestContext): Promise<number | null> {
+export async function graphqlOperationRetryAfter(limiter: Hit, ctx: RequestContext, onRefused?: (ctx: RequestContext) => Promise<void>): Promise<number | null> {
   try {
     if (ctx.viewer) {
       const hit = await limiter.hit(`gql:${ctx.viewer.userId}`, { max: OPERATIONS_PER_MINUTE, windowSeconds: 60 })
+      if (!hit.allowed && onRefused) await onRefused(ctx).catch(() => undefined)
       return hit.allowed ? null : hit.retryAfter
     }
     const network = clientNetwork(ctx.req.ip)

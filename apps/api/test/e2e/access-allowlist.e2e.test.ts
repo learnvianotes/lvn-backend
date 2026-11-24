@@ -252,31 +252,18 @@ describe('beta access allowlist', () => {
     expect(again.data!.signInWithGoogle.userErrors).toEqual([{ code: 'FORBIDDEN', field: ['email'], message: INVITE }])
   })
 
-  it('blocks GitHub and LinkedIn the same way, including linking', async () => {
+  it('refuses GitHub and LinkedIn sign-in, which are retired (ADR-0115), even for an allowed email', async () => {
     await enable(true)
     const githubEmail = emailOf('gh')
-    const code = `code-${githubEmail}`
-    stub.issue(code, { user: { id: '4242', name: 'Gh User', emails: [{ email: githubEmail, primary: true, verified: true }] }, codeVerifier: VERIFIER, redirectUri: REDIRECT })
-    const denied = await t.gql<{ oauthExchange: { session: null; userErrors: Err[] } }>(EXCHANGE, { input: { provider: 'GITHUB', code, codeVerifier: VERIFIER, redirectUri: REDIRECT } })
-    expect(denied.data!.oauthExchange.userErrors).toEqual([{ code: 'FORBIDDEN', field: ['email'], message: INVITE }])
-
     await allow(githubEmail, 'STUDENT')
-    const code2 = `code2-${githubEmail}`
-    stub.issue(code2, { user: { id: '4242', name: 'Gh User', emails: [{ email: githubEmail, primary: true, verified: true }] }, codeVerifier: VERIFIER, redirectUri: REDIRECT })
-    const created = await t.gql<{ oauthExchange: { session: { user: { email: string } } | null; userErrors: Err[] } }>(EXCHANGE, { input: { provider: 'GITHUB', code: code2, codeVerifier: VERIFIER, redirectUri: REDIRECT } })
-    expect(created.data!.oauthExchange.userErrors).toEqual([])
-    expect(created.data!.oauthExchange.session!.user.email).toBe(githubEmail)
-
-    const li = emailOf('li')
-    await allow(li, 'STUDENT')
-    const liAccount = await t.gql<{ signUp: { session: { user: { id: string } } } }>(SIGN_UP, { input: signUpInput(li) })
-    await db.user.update({ where: { id: liAccount.data!.signUp.session.user.id }, data: { emailVerifiedAt: new Date() } })
-    const liCode = `li-${li}`
-    stub.issue(liCode, { user: { id: 'li-1', name: 'Li User', emails: [{ email: li, primary: true, verified: true }] }, codeVerifier: VERIFIER, redirectUri: REDIRECT })
-    const link = await t.gql<{ oauthExchange: { session: { accessToken: string; user: { id: string } } | null; userErrors: Err[] } }>(EXCHANGE, { input: { provider: 'LINKEDIN', code: liCode, codeVerifier: VERIFIER, redirectUri: REDIRECT } })
-    expect(link.data!.oauthExchange.userErrors).toEqual([])
-    const methods = await t.gql<{ viewer: { id: string } }>(VIEWER, {}, link.data!.oauthExchange.session!.accessToken)
-    expect(methods.data!.viewer.id).toBeDefined()
+    for (const provider of ['GITHUB', 'LINKEDIN'] as const) {
+      const code = `code-${provider}-${githubEmail}`
+      stub.issue(code, { user: { id: '4242', name: 'Gh User', emails: [{ email: githubEmail, primary: true, verified: true }] }, codeVerifier: VERIFIER, redirectUri: REDIRECT })
+      const refused = await t.gql<{ oauthExchange: { session: null; userErrors: Err[] } }>(EXCHANGE, { input: { provider, code, codeVerifier: VERIFIER, redirectUri: REDIRECT } })
+      expect(refused.data!.oauthExchange.session).toBeNull()
+      expect(refused.data!.oauthExchange.userErrors).toEqual([expect.objectContaining({ code: 'VALIDATION', field: ['input', 'provider'] })])
+      expect(refused.data!.oauthExchange.userErrors[0]!.message).toMatch(/no longer offered/)
+    }
   })
 
   it('applies a role to an existing account immediately and signs it out', async () => {

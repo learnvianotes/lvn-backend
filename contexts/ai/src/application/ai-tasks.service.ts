@@ -5,7 +5,7 @@ import { AppError, Errors, planLimitError } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { LEARNING, LIVE, NOTE_AI, type Learning, type Live, type NoteAi, type NoteAiSource } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
-import { Queues } from '@lvn-backend/queue'
+import { DelayJobError, Queues } from '@lvn-backend/queue'
 import { RateLimiter } from '@lvn-backend/redis'
 import { batches, batchText, isRepair, type TextChange } from '../domain/clean-up'
 import { LANGUAGE_NAMES, repairs, SOURCE_CHARS, TASKS, type AiLanguage, type TaskResult } from '../domain/tasks'
@@ -158,6 +158,12 @@ export class AiTasksService {
       await this.db.noteArtifact.update({ where: { id: artifactId }, data: { status: 'READY', payload: result as unknown as Prisma.InputJsonValue, options: { ...options, cut, ...(read.length ? { read } : {}) } as unknown as Prisma.InputJsonValue } })
       if (!artifact.ownerId) await this.events.publish('NoteArtifactReady', { artifactId, noteId: artifact.noteId, versionId: artifact.versionId!, artifactType: task })
     } catch (e) {
+      // A photo or PDF uploaded a moment ago may still be in the virus scan (ADR-0102). Wait for it instead of failing
+      // the task, so a quick note made right after an upload does not have to be started again.
+      if (scanPending(e) && Date.now() - artifact.createdAt.getTime() < SCAN_WAIT_MS) {
+        await this.db.noteArtifact.updateMany({ where: { id: artifactId, status: 'RUNNING' }, data: { status: 'QUEUED' } })
+        throw new DelayJobError(Date.now() + SCAN_RECHECK_MS)
+      }
       const message = e instanceof AppError ? e.message : 'Something went wrong. Try again.'
       if (!(e instanceof AppError)) this.log.error(`AI task ${artifactId} failed: ${(e as Error).message}`)
       await this.db.noteArtifact.update({ where: { id: artifactId }, data: { status: 'FAILED', error: message } })
@@ -328,3 +334,12 @@ export class AiTasksService {
 
 /** The cards whose words clean-up mends (ADR-0063), as the notes context rewrites them. */
 const MENDABLE: ReadonlySet<string> = new Set([CardType.TEXT, CardType.HEADING, CardType.QUOTE])
+
+/** How long a task waits for its files' virus scan before it gives up, and how often it looks again. */
+export const SCAN_WAIT_MS = 15 * 60_000
+export const SCAN_RECHECK_MS = 5_000
+
+/** The notes context refuses a file that is still being scanned with UNAVAILABLE and these words (files.service). */
+export function scanPending(e: unknown): boolean {
+  return e instanceof AppError && e.code === 'UNAVAILABLE' && /still being scanned/.test(e.message)
+}

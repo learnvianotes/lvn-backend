@@ -14,6 +14,7 @@ import { graphqlOperationRetryAfter } from './graphql/operation-rate'
 import { buildRequestContext } from './graphql/request-context'
 import { AdminAuditInterceptor } from './graphql/admin-audit'
 import { SuspendedRefusals } from './graphql/suspended-refusals'
+import { AbuseModule, AbuseStrikeInterceptor, AbuseStrikes } from './graphql/abuse-strikes'
 import { GitHubWebhookController } from '@lvn-backend/core'
 import { HealthController } from './health/health.controller'
 import { MonitoringController, SENTRY_DSN } from './monitoring/monitoring.controller'
@@ -44,6 +45,7 @@ export class AppModule {
         }),
         EventBusModule,
         facades(),
+        AbuseModule,
         ...contextModules(config),
         ...graphqlModules({
           subgraphs: SUBGRAPHS,
@@ -51,8 +53,9 @@ export class AppModule {
           introspection: config.APP_ENV === 'development',
           // ADR-0090: signed-in operations per person, anonymous operations per network. Fail open when Redis is down.
           rateLimit: {
-            inject: [RateLimiter],
-            useFactory: (limiter: RateLimiter) => (ctx: unknown) => graphqlOperationRetryAfter(limiter, ctx as RequestContext),
+            inject: [RateLimiter, AbuseStrikes],
+            useFactory: (limiter: RateLimiter, strikes: AbuseStrikes) => (ctx: unknown) =>
+              graphqlOperationRetryAfter(limiter, ctx as RequestContext, async (c) => (c.viewer ? strikes.strike(c.viewer, 'operation-rate', c.req.ip) : undefined)),
           },
         }),
       ],
@@ -61,6 +64,7 @@ export class AppModule {
       // A suspended person's refused change says why (ADR-0053).
       providers: [
         { provide: APP_INTERCEPTOR, useClass: SuspendedRefusals },
+        { provide: APP_INTERCEPTOR, useClass: AbuseStrikeInterceptor },
         { provide: APP_INTERCEPTOR, useClass: AdminAuditInterceptor },
         { provide: AccessTokenVerifier, useValue: verifier },
         { provide: SENTRY_DSN, useValue: config.SENTRY_DSN },

@@ -15,7 +15,7 @@ export const DEFAULT_TERMS_VERSION = '2026-11-12'
  * only choose one of these. The admin setting `terms_published_versions`, else TERMS_PUBLISHED_VERSIONS, replaces it.
  * `2026-11-12` is the 13+ terms update (ADR-0113). Older dates stay so an acceptance of them is still a known version.
  */
-export const DEFAULT_PUBLISHED_TERMS_VERSIONS: readonly string[] = ['2026-10-08', '2026-11-03', '2026-11-12']
+export const DEFAULT_PUBLISHED_TERMS_VERSIONS: readonly string[] = ['2026-10-08', '2026-11-03', '2026-11-12', '2026-11-25']
 
 export const SESSION_TTL_DAYS = 30
 export const VERIFY_EMAIL_TTL_HOURS = 24
@@ -54,7 +54,24 @@ export const LIMITS = {
   mfaSendPerNetwork: { max: 30, windowSeconds: 60 * 60 },
   /** Code checks for one account. Wrong attempts are also capped on the challenge itself. */
   mfaVerify: { max: 10, windowSeconds: 15 * 60 },
+  /** Emailed sign-in codes (ADR-0115) asked for one address. Counted whether or not an account has it. */
+  signInCodeSend: { max: 5, windowSeconds: 60 * 60 },
+  /** Emailed sign-in codes asked for from one network, across any number of addresses. */
+  signInCodeSendPerNetwork: { max: 40, windowSeconds: 60 * 60 },
+  /** Sign-in code checks for one address. Each code also burns after SIGN_IN_CODE_MAX_ATTEMPTS wrong tries. */
+  signInCodeVerify: { max: 10, windowSeconds: 15 * 60 },
+  /**
+   * Wrong passwords for one address in a day (ADR-0116). Past this, password sign-in for that address stops until the
+   * window passes; an emailed code or a passkey still works, since those prove the person owns the account.
+   */
+  passwordFailuresPerAddress: { max: 20, windowSeconds: 24 * 60 * 60 },
+  /** Passkey sign-in starts from one network (each one stores a challenge for a minute). */
+  passkeyStartPerNetwork: { max: 120, windowSeconds: 15 * 60 },
 } as const
+
+/** ADR-0115: an emailed sign-in code lasts ten minutes and five wrong tries. */
+export const SIGN_IN_CODE_TTL_MINUTES = 10
+export const SIGN_IN_CODE_MAX_ATTEMPTS = 5
 
 /** §7.1: at least 10 characters; the upper bound keeps hashing cheap for absurd inputs. */
 export const PASSWORD_MIN = 10

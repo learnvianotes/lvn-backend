@@ -24,8 +24,14 @@ type SignInOptions {
   emailPassword: Boolean!
   "False when FIREBASE_PROJECT_ID is unset, or a platform admin has turned Google sign-in off"
   google: Boolean!
-  github: Boolean!
-  linkedin: Boolean!
+  "Retired (ADR-0115). Always false."
+  github: Boolean! @deprecated(reason: "GitHub sign-in is retired. Always false.")
+  "Retired (ADR-0115). Always false."
+  linkedin: Boolean! @deprecated(reason: "LinkedIn sign-in is retired. Always false.")
+  "A 6-digit code emailed to the account (requestSignInCode, signInWithCode)."
+  emailCode: Boolean!
+  "Passkeys (startPasskeySignIn, finishPasskeySignIn), where the device supports them."
+  passkey: Boolean!
 }
 
 "A way this account can sign in. EMAIL is a password; the others are linked provider identities (ADR-0100)."

@@ -41,7 +41,7 @@ describe('terms settings input', () => {
 
   it('normalises the published list and refuses anything that is not a date', () => {
     const def = settingDef('terms_published_versions')!
-    expect(def.defaultValue).toBe('2026-10-08,2026-11-03,2026-11-12')
+    expect(def.defaultValue).toBe('2026-10-08,2026-11-03,2026-11-12,2026-11-25')
     expect(parseSettingInput(def, ' 2026-11-03, 2026-10-08,2026-11-03 ,')).toEqual({ ok: true, value: '2026-10-08,2026-11-03' })
     expect(parseSettingInput(def, '').ok).toBe(false)
     expect(parseSettingInput(def, '2026-10-08,soon').ok).toBe(false)

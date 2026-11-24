@@ -38,10 +38,10 @@ describe('upload limits', () => {
     expect(refusal).toEqual({ retryAfter: 4000, message: 'You can upload 100 files a day. Try again in 4000 seconds.' })
   })
 
-  it('refuses another upload while five scans are still waiting', () => {
-    const refusal = uploadRefusal({ minute: { allowed: false, retryAfter: 30 }, day: open, bytes: open, ip: open, pending: 5 }, limits)
+  it('refuses another upload while twelve scans are still waiting', () => {
+    const refusal = uploadRefusal({ minute: { allowed: false, retryAfter: 30 }, day: open, bytes: open, ip: open, pending: 12 }, limits)
     expect(refusal?.retryAfter).toBe(60)
-    expect(refusal?.message).toMatch(/5 files waiting/)
+    expect(refusal?.message).toMatch(/12 files waiting/)
   })
 
   it('refuses a network that has used its upload URLs', () => {

@@ -46,6 +46,6 @@ export class MediaJobs implements OnApplicationBootstrap {
     )
     await this.queues.repeat(NOTES_MEDIA_QUEUE, 'reconcile', '40 3 * * *')
     // Files left pending while the scan service was down (ADR-0102).
-    await this.queues.repeat(NOTES_MEDIA_QUEUE, 'retry-pending-scans', '7-59/10 * * * *')
+    await this.queues.repeat(NOTES_MEDIA_QUEUE, 'retry-pending-scans', '*/2 * * * *')
   }
 }

@@ -41,9 +41,12 @@ export class OAuthService {
     @Optional() @Inject(GOOGLE_ID_TOKENS) private readonly google: GoogleIdTokens | null,
   ) {}
 
-  /** Which sign-in methods this deployment offers (clients show only those buttons). */
+  /**
+   * Which sign-in methods this deployment offers (clients show only those buttons). GitHub and LinkedIn sign-in were
+   * retired (ADR-0115): always false, kept in the type so older apps still read the answer.
+   */
   async options() {
-    return { emailPassword: true, google: await this.googleOffered(), github: !!this.config.github, linkedin: !!this.config.linkedin }
+    return { emailPassword: true, google: await this.googleOffered(), github: false, linkedin: false, emailCode: true, passkey: true }
   }
 
   /** Google is offered only when Firebase is configured and a platform admin has left the switch on (ADR-0100). */
@@ -63,8 +66,11 @@ export class OAuthService {
   }
 
   async exchange(provider: 'GITHUB' | 'LINKEDIN', x: CodeExchange, device: DeviceInfo, correlationId?: string): Promise<IssuedSession> {
-    const app = provider === 'GITHUB' ? this.config.github : this.config.linkedin
-    if (!app) throw Errors.validation(`${NAMES[provider]} sign-in is not available here.`, ['input', 'provider'])
+    // ADR-0115: GitHub and LinkedIn sign-in are retired. An account made with them signs in with its email (a code, or
+    // a password reset) and keeps everything. GitHub stays available as a connection for skills and projects.
+    const retired = true
+    const app = retired ? null : provider === 'GITHUB' ? this.config.github : this.config.linkedin
+    if (!app) throw Errors.validation(`${NAMES[provider]} sign-in is no longer offered. Sign in with Google, a code sent to your email, or a passkey.`, ['input', 'provider'])
     if (!this.config.oauthRedirectUris.includes(x.redirectUri)) throw Errors.validation('This redirect URI is not allowed.', ['input', 'redirectUri'])
     if (!/^[A-Za-z0-9._~-]{43,128}$/.test(x.codeVerifier)) throw Errors.validation('Invalid PKCE code verifier.', ['input', 'codeVerifier'])
     let identity: ProviderIdentity
