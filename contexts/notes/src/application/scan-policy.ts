@@ -4,16 +4,17 @@ export const FILE_SCAN_QUEUE = 'file-scan'
 export const FILE_SCAN_DLQ = 'file-scan-dlq'
 
 export const SCAN_JOB_ATTEMPTS = 5
-/** First retry waits about 15s, then 30s, 60s, 120s, each reduced by up to 20%. */
-export const SCAN_BACKOFF_BASE_MS = 15_000
+/** First retry waits about 5s, then 10s, 20s, 40s, each reduced by up to 20%: a phone upload is not left waiting minutes. */
+export const SCAN_BACKOFF_BASE_MS = 5_000
 export const SCAN_BACKOFF_JITTER = 0.2
-export const SCAN_QUEUE_CONCURRENCY = 2
+export const SCAN_QUEUE_CONCURRENCY = 4
 
 export const UPLOAD_LIMIT_DEFAULTS = {
   perMinute: 10,
   perDay: 100,
   bytesPerDay: 500 * 1024 * 1024,
-  pendingScans: 5,
+  /** At least QuickNoteLimits.files (10), so one quick note of photos and PDFs is never refused halfway. */
+  pendingScans: 12,
   perIpPerMinute: 30,
 } as const
 
