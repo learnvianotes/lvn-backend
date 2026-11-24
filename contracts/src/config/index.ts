@@ -238,6 +238,14 @@ const auth = z.object({
    * Comma-separated hosts the safe fetcher (ADR-0074) reaches although they are not on the public internet: a test's
    * stand-in server. Never set in production.
    */
+  /**
+   * ADR-0115: extra origins allowed to use passkeys besides WEB_URL's, comma separated (for example the Android app's
+   * `android:apk-key-hash:...` origin). The passkeys still belong to WEB_URL's host.
+   */
+  PASSKEY_ORIGINS: z
+    .string()
+    .optional()
+    .transform((s) => (s ? s.split(',').map((h) => h.trim()).filter(Boolean) : [])),
   SAFE_FETCH_ALLOW_HOSTS: z
     .string()
     .optional()

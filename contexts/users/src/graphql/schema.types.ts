@@ -951,6 +951,19 @@ export interface ExternalIdentityPayload {
   userErrors: Array<UserError>
 }
 
+export interface FinishPasskeyRegistrationInput {
+  /** RegistrationResponseJSON from the browser, as a JSON string */
+  responseJson: string
+  /** Defaults to "Passkey". At most 60 characters. */
+  name?: string | null
+}
+
+export interface FinishPasskeySignInInput {
+  attemptId: string
+  /** AuthenticationResponseJSON from the browser, as a JSON string */
+  responseJson: string
+}
+
 export interface FunnelStep {
   name: string
   users: number
@@ -1260,6 +1273,30 @@ export interface MutationVerifyInstitutionalEmailArgs {
   input: VerifyInstitutionalEmailInput
 }
 
+export interface MutationRequestSignInCodeArgs {
+  input: RequestSignInCodeInput
+}
+
+export interface MutationSignInWithCodeArgs {
+  input: SignInWithCodeInput
+}
+
+export interface MutationFinishPasskeySignInArgs {
+  input: FinishPasskeySignInInput
+}
+
+export interface MutationFinishPasskeyRegistrationArgs {
+  input: FinishPasskeyRegistrationInput
+}
+
+export interface MutationRenamePasskeyArgs {
+  input: RenamePasskeyInput
+}
+
+export interface MutationRemovePasskeyArgs {
+  id: string
+}
+
 export interface MutationFollowUserArgs {
   input: PersonInput
 }
@@ -1388,6 +1425,33 @@ export interface OkPayload {
 export interface PageInfo {
   hasNextPage: boolean
   endCursor: string | null
+}
+
+export interface Passkey {
+  id: string
+  /** What the person calls the device, e.g. "Pixel 8" */
+  name: string
+  createdAt: Date
+  lastUsedAt: Date | null
+  /** Synced to the person's cloud account (iCloud Keychain, Google Password Manager), so it survives a lost phone. */
+  backedUp: boolean
+}
+
+export interface PasskeyPayload {
+  passkey: Passkey | null
+  userErrors: Array<UserError>
+}
+
+export interface PasskeyRegistrationStart {
+  /** PublicKeyCredentialCreationOptionsJSON, as a JSON string */
+  optionsJson: string
+}
+
+/** Options for navigator.credentials.get, and the id that names this attempt. Five minutes, one use. */
+export interface PasskeySignInStart {
+  attemptId: string
+  /** PublicKeyCredentialRequestOptionsJSON, as a JSON string */
+  optionsJson: string
 }
 
 export interface PendingConnection {
@@ -1658,6 +1722,11 @@ export interface RelationActions {
   removeConnection: boolean
 }
 
+export interface RenamePasskeyInput {
+  id: string
+  name: string
+}
+
 export interface RequestAccountDeletionInput {
   /** The account's password; required when the account has one */
   password?: string | null
@@ -1672,6 +1741,10 @@ export interface RequestDocumentVerificationInput {
 }
 
 export interface RequestPasswordResetInput {
+  email: string
+}
+
+export interface RequestSignInCodeInput {
   email: string
 }
 
@@ -1744,8 +1817,20 @@ export interface SignInOptions {
   emailPassword: boolean
   /** False when FIREBASE_PROJECT_ID is unset, or a platform admin has turned Google sign-in off */
   google: boolean
+  /** Retired (ADR-0115). Always false. */
   github: boolean
+  /** Retired (ADR-0115). Always false. */
   linkedin: boolean
+  /** A 6-digit code emailed to the account (requestSignInCode, signInWithCode). */
+  emailCode: boolean
+  /** Passkeys (startPasskeySignIn, finishPasskeySignIn), where the device supports them. */
+  passkey: boolean
+}
+
+export interface SignInWithCodeInput {
+  email: string
+  /** The 6 digits from the email. Spaces are ignored. */
+  code: string
 }
 
 /** Firebase ID token from a Google sign-in; verified by the API and exchanged for an LVN session (ADR-0007) */

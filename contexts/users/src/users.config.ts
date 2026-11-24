@@ -14,6 +14,8 @@ export interface UsersConfig {
   /** Second-factor policy. `enforced` is ADMIN_MFA_REQUIRED, defaulting on in production. */
   mfa: { enforced: boolean; roles: readonly string[] }
   passwordBreachApiUrl?: string
+  /** ADR-0115: origins besides WEB_URL's that may use passkeys (PASSKEY_ORIGINS). */
+  passkeyOrigins?: string[]
   firebaseProjectId?: string
   github?: { clientId: string; clientSecret: string; oauthUrl: string; apiUrl: string }
   linkedin?: { clientId: string; clientSecret: string; oauthUrl: string; apiUrl: string }
@@ -64,6 +66,7 @@ export function usersConfigFrom(c: ApiConfig): UsersConfig {
     supportEmail: c.SUPPORT_EMAIL,
     mfa: { enforced: adminMfaEnforced(c.APP_ENV, c.ADMIN_MFA_REQUIRED), roles: c.MFA_ENFORCED_ROLES },
     passwordBreachApiUrl: c.PASSWORD_BREACH_API_URL,
+    passkeyOrigins: c.PASSKEY_ORIGINS,
     firebaseProjectId: c.FIREBASE_PROJECT_ID,
     github:
       c.GITHUB_CLIENT_ID && c.GITHUB_CLIENT_SECRET && c.GITHUB_OAUTH_URL && c.GITHUB_API_URL

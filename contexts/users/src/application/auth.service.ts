@@ -184,6 +184,10 @@ export class AuthService {
     }
     const limit = await this.limiter.hit(`signin:${email}`, LIMITS.signIn)
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many sign-in attempts. Try again in a few minutes.')
+    const locked = await this.limiter.peek(`signin-fail-addr:${email}`, LIMITS.passwordFailuresPerAddress)
+    if (!locked.allowed) {
+      throw Errors.rateLimited(locked.retryAfter, 'Password sign-in for this email is paused after many wrong passwords. Sign in with a code sent to your email instead, or reset your password.')
+    }
     await this.access.assertAllowed(email)
 
     const user = await this.db.user.findUnique({ where: { email }, select: { id: true, email: true, passwordHash: true, deletedAt: true, emailVerifiedAt: true } })
@@ -191,6 +195,7 @@ export class AuthService {
     const ok = await this.passwords.verify(user && !user.deletedAt && !isStudyPublisher(user) ? user.passwordHash : null, password)
     if (!user || !ok) {
       if (network) await this.limiter.hit(`signin-fail:${network}`, LIMITS.signInFailuresPerNetwork)
+      await this.limiter.hit(`signin-fail-addr:${email}`, LIMITS.passwordFailuresPerAddress)
       throw Errors.validation('Email or password is incorrect.')
     }
 
@@ -283,6 +288,8 @@ export class AuthService {
     })
     await this.db.emailToken.updateMany({ where: { userId: user.id, purpose: 'RESET_PASSWORD', usedAt: null }, data: { usedAt: new Date() } })
     await this.sessions.revokeAll(user.id)
+    // A new password ends the pause that wrong passwords put on this address (ADR-0116).
+    await this.limiter.reset(`signin-fail-addr:${user.email.toLowerCase()}`)
     await this.mailer.send(user.email, 'passwordChanged', { displayName: user.displayName })
   }
 

@@ -71,6 +71,9 @@ import { MfaResolver } from './graphql/mfa.resolver'
 import { AdminContentResolver } from './graphql/admin-content.resolver'
 import { AdminUsageMetricsResolver } from './graphql/admin-usage-metrics.resolver'
 import { PlansResolver } from './graphql/plans.resolver'
+import { SignInCodeService } from './application/sign-in-code.service'
+import { PasskeyService } from './application/passkey.service'
+import { SignInMethodsResolver } from './graphql/sign-in-methods.resolver'
 
 /**
  * The `users` bounded context (spec §6.1) — Postgres schema `users`.
@@ -99,6 +102,8 @@ export class UsersModule {
         PasswordService,
         SessionService,
         AuthService,
+        SignInCodeService,
+        PasskeyService,
         OAuthService,
         RegistrationService,
         WelcomeEmailService,
@@ -160,6 +165,7 @@ export class UsersModule {
         TeacherProfileFieldsResolver,
         UserReferenceResolver,
         AuthResolver,
+        SignInMethodsResolver,
         RegistrationResolver,
         VerificationResolver,
         StudentIdVerificationResolver,
