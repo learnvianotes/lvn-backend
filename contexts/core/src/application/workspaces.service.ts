@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common'
-import { Action, can, GlobalRole, GroupRole as Role } from '@lvn/contracts/domain'
+import { Action, can, GlobalRole, GroupRole as Role, verificationBlocks } from '@lvn/contracts/domain'
 import { docSchema, docText } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
@@ -124,7 +124,7 @@ export class WorkspacesService implements OnModuleInit {
   async refresh(groupId: string): Promise<void> {
     const repo = await this.db.groupRepository.findUnique({ where: { groupId } })
     if (!repo) return
-    let details: RepositoryDetails | null = null
+    let details: RepositoryDetails | null
     try {
       details = await this.fetchDetails(repo.provider, repo.path)
     } catch (err) {
@@ -204,7 +204,7 @@ export class WorkspacesService implements OnModuleInit {
       await this.db.mentorInvite.update({ where: { id: inviteId }, data: { declinedAt: new Date() } })
       return inv.groupId
     }
-    if (!can(actor, Action.GROUP_ACCEPT_MENTOR_INVITE, resource)) throw Errors.forbidden(actor.institutionVerified ? 'Only teachers mentor workspaces.' : 'Verify your account to mentor.')
+    if (!can(actor, Action.GROUP_ACCEPT_MENTOR_INVITE, resource)) throw Errors.forbidden(verificationBlocks(actor, Action.GROUP_ACCEPT_MENTOR_INVITE, resource) ? 'Verify your account to mentor.' : 'Only teachers mentor workspaces.')
     await this.db.$transaction([
       this.db.mentorInvite.update({ where: { id: inviteId }, data: { acceptedAt: new Date() } }),
       this.db.groupMember.createMany({ data: [{ groupId: inv.groupId, userId: teacherId, role: 'MENTOR' }], skipDuplicates: true }),
@@ -214,6 +214,7 @@ export class WorkspacesService implements OnModuleInit {
   }
 
   async myMentorInvites(teacherId: string) {
+    await this.people.assertSocialOpen(teacherId)
     return this.db.mentorInvite.findMany({ where: { teacherId, acceptedAt: null, declinedAt: null, expiresAt: { gt: new Date() }, group: { deletedAt: null } }, include: { group: true }, orderBy: { createdAt: 'desc' } })
   }
 
@@ -221,14 +222,18 @@ export class WorkspacesService implements OnModuleInit {
 
   async ask(actorId: string, groupId: string, input: { title: string; body: unknown; repoRef?: string | null }): Promise<string> {
     const { resource, actor } = await this.workspace(actorId, groupId)
-    if (!can(actor, Action.GROUP_ASK_DOUBT, resource)) throw Errors.forbidden(actor.institutionVerified ? 'The team asks doubts.' : 'Verify your account to ask.')
+    if (!can(actor, Action.GROUP_ASK_DOUBT, resource)) throw Errors.forbidden(verificationBlocks(actor, Action.GROUP_ASK_DOUBT, resource) ? 'Verify your account to ask.' : 'The team asks doubts.')
     await this.notMuted(groupId, actorId)
-    const title = input.title.replace(/\s+/g, ' ').trim()
+    const title = (await this.people.filterMinorText(actorId, input.title.replace(/\s+/g, ' ').trim()))
     if (title.length < 3) throw Errors.validation('Give the doubt a title of at least 3 characters.', ['input', 'title'])
     if (title.length > WORKSPACE_LIMITS.title) throw Errors.validation(`Keep the title to ${WORKSPACE_LIMITS.title} characters.`, ['input', 'title'])
     const repoRef = input.repoRef?.trim() || null
     if (repoRef && repoRef.length > WORKSPACE_LIMITS.repoRef) throw Errors.validation(`Keep the reference to ${WORKSPACE_LIMITS.repoRef} characters.`, ['input', 'repoRef'])
-    const { doc, text } = this.doc(input.body, 'doubt')
+    const parsed = this.doc(input.body, 'doubt')
+    const filtered = docSchema.safeParse(await this.people.filterMinorDoc(actorId, parsed.doc))
+    if (!filtered.success) throw Errors.validation('This doubt could not be read.', ['input', 'body'])
+    const doc = filtered.data as Prisma.InputJsonValue
+    const text = docText(filtered.data).trim()
     this.screen(`${title}\n${text}`, 'doubt')
     const rate = await this.limiter.hit(`core:doubt:${actorId}`, { max: WORKSPACE_LIMITS.doubtsPerHour, windowSeconds: 3600 })
     if (!rate.allowed) throw Errors.rateLimited(rate.retryAfter, 'You have asked a lot in the last hour. Try again later.')
@@ -245,7 +250,7 @@ export class WorkspacesService implements OnModuleInit {
   /** The doubt with the viewer's place in its workspace; null when they may not see it. */
   async getDoubt(viewerId: string, doubtId: string) {
     const doubt = await this.db.doubt.findFirst({ where: { id: doubtId, deletedAt: null, OR: [{ moderation: 'OK' }, { authorId: viewerId }] } })
-    if (!doubt) return null
+    if (!doubt || (doubt.authorId !== viewerId && (await this.people.socialClosedIds([doubt.authorId])).length)) return null
     const loaded = await this.groups.load(viewerId, doubt.groupId)
     if (!loaded?.role) return null
     if (doubt.authorId !== viewerId && (await this.people.blockedBetween(viewerId, doubt.authorId))) return null
@@ -293,7 +298,11 @@ export class WorkspacesService implements OnModuleInit {
     if (doubt.status === 'RESOLVED') throw Errors.validation('This doubt is resolved. Reopen it to answer.')
     if (!may.answer) throw Errors.forbidden('The team and the mentor answer doubts.')
     await this.notMuted(doubt.groupId, actorId)
-    const { doc, text } = this.doc(body, 'answer')
+    const parsed = this.doc(body, 'answer')
+    const filtered = docSchema.safeParse(await this.people.filterMinorDoc(actorId, parsed.doc))
+    if (!filtered.success) throw Errors.validation('This answer could not be read.', ['input', 'body'])
+    const doc = filtered.data as Prisma.InputJsonValue
+    const text = docText(filtered.data).trim()
     this.screen(text, 'answer')
     const rate = await this.limiter.hit(`core:doubt:answer:${actorId}`, { max: WORKSPACE_LIMITS.answersPerHour, windowSeconds: 3600 })
     if (!rate.allowed) throw Errors.rateLimited(rate.retryAfter, 'You have answered a lot in the last hour. Try again later.')
@@ -337,7 +346,7 @@ export class WorkspacesService implements OnModuleInit {
   async doubts(viewerId: string, groupId: string, status: 'OPEN' | 'ANSWERED' | 'RESOLVED' | null | undefined, size: number, after: [string, string] | null) {
     const { role } = await this.workspace(viewerId, groupId)
     if (!role) throw Errors.forbidden('Join the workspace to see its doubts.')
-    const hidden = await this.people.blockedIds(viewerId)
+    const hidden = [...new Set([...(await this.people.blockedIds(viewerId)), ...(await this.people.socialClosedIds((await this.db.groupMember.findMany({ where: { groupId }, select: { userId: true }, take: 1000 })).map((m) => m.userId)))])]
     return this.db.doubt.findMany({
       where: {
         groupId,
@@ -352,8 +361,9 @@ export class WorkspacesService implements OnModuleInit {
   }
 
   async answers(viewerId: string, doubtId: string) {
-    const hidden = await this.people.blockedIds(viewerId)
-    return this.db.doubtAnswer.findMany({ where: { doubtId, deletedAt: null, ...(hidden.length ? { authorId: { notIn: hidden } } : {}) }, orderBy: { createdAt: 'asc' }, take: 200 })
+    const rows = await this.db.doubtAnswer.findMany({ where: { doubtId, deletedAt: null }, orderBy: { createdAt: 'asc' }, take: 200 })
+    const hidden = new Set([...(await this.people.blockedIds(viewerId)), ...(await this.people.socialClosedIds(rows.map((r) => r.authorId)))])
+    return rows.filter((r) => !hidden.has(r.authorId))
   }
 
   async answerCount(doubtId: string) {

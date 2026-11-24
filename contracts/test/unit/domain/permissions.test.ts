@@ -1,5 +1,5 @@
 import { AiTaskType, ClassroomRole, GlobalRole, GroupJoinPolicy, GroupPrivacy, GroupRole, GroupType, NoteKind, ResourceStatus, VerificationMethod, Visibility } from '../../../src/domain/enums'
-import { Action, aiTaskAction, BLOCKED_WHILE_SUSPENDED, can, NEEDS_VERIFIED_ACCOUNT, type Actor, type NoteFacts, type Resource } from '../../../src/domain/permissions'
+import { Action, aiTaskAction, BLOCKED_WHILE_SUSPENDED, can, NEEDS_VERIFIED_ACCOUNT, parseUnverifiedGateSetting, unverifiedGatesFromSetting, verificationBlocks, type Actor, type NoteFacts, type Resource } from '../../../src/domain/permissions'
 
 /**
  * One assertion per cell of the §5 table that has a defined value. If this file and the spec disagree,
@@ -43,6 +43,7 @@ describe('note rows of §5', () => {
   it('read', () => {
     expectRow(Action.NOTE_READ, 'PRIVATE', ['owner'])
     expectRow(Action.NOTE_READ, 'SHARED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare'])
+    expectRow(Action.NOTE_READ, 'UNLISTED', RELATIONS)
     expectRow(Action.NOTE_READ, 'PUBLIC', RELATIONS)
   })
 
@@ -58,6 +59,7 @@ describe('note rows of §5', () => {
   it('edit draft: owner always, share editor while SHARED or PUBLIC (ADR-0005)', () => {
     expectRow(Action.NOTE_EDIT_DRAFT, 'PRIVATE', ['owner'])
     expectRow(Action.NOTE_EDIT_DRAFT, 'SHARED', ['owner', 'editor'])
+    expectRow(Action.NOTE_EDIT_DRAFT, 'UNLISTED', ['owner', 'editor'])
     expectRow(Action.NOTE_EDIT_DRAFT, 'PUBLIC', ['owner', 'editor'])
   })
 
@@ -75,6 +77,7 @@ describe('note rows of §5', () => {
   it('fork: anyone who can read it and is signed in; owners fork their own PRIVATE notes (ADR-0005)', () => {
     expectRow(Action.NOTE_FORK, 'PRIVATE', ['owner'])
     expectRow(Action.NOTE_FORK, 'SHARED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare'])
+    expectRow(Action.NOTE_FORK, 'UNLISTED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare', 'anyUser'])
     expectRow(Action.NOTE_FORK, 'PUBLIC', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare', 'anyUser'])
   })
 
@@ -103,14 +106,28 @@ describe('note rows of §5', () => {
     for (const a of [Action.NOTE_COMMENT, Action.NOTE_ASK_AI]) {
       expectRow(a, 'PRIVATE', ['owner'])
       expectRow(a, 'SHARED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare'])
+      expectRow(a, 'UNLISTED', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare', 'anyUser'])
       expectRow(a, 'PUBLIC', ['owner', 'editor', 'viewer', 'groupShare', 'classShare', 'connectionShare', 'anyUser'])
     }
   })
 
-  it('an unverified account cannot comment or publish (§7.1, ADR-0017)', () => {
+  it('an unverified account can comment and cannot publish (§7.1, ADR-0017)', () => {
     const unverified = student('owner', { institutionVerified: false })
-    expect(can(unverified, Action.NOTE_COMMENT, { kind: 'note', note: note('PUBLIC') })).toBe(false)
+    expect(can(unverified, Action.NOTE_COMMENT, { kind: 'note', note: note('PUBLIC') })).toBe(true)
     expect(can(unverified, Action.NOTE_PUBLISH, { kind: 'note', note: note('PRIVATE') })).toBe(false)
+  })
+
+  it('an unverified owner can set Private, Shared and Unlisted; Public waits on mayPublishPublic', () => {
+    const unverified = student('owner', { institutionVerified: false })
+    const n = note('PRIVATE', { ownerId: 'owner' })
+    const change = (target: Visibility, extra: Partial<Actor> = {}) =>
+      can({ ...unverified, ...extra }, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: n, targetVisibility: target })
+    expect(change('PRIVATE')).toBe(true)
+    expect(change('SHARED')).toBe(true)
+    expect(change('UNLISTED')).toBe(true)
+    expect(change('PUBLIC')).toBe(false)
+    expect(change('PUBLIC', { mayPublishPublic: true })).toBe(true)
+    expect(can(unverified, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: n })).toBe(true)
   })
 
   it('restricted minors comment and react on notes shared with them, never on PUBLIC notes (§15.2, ADR-0047)', () => {
@@ -123,6 +140,7 @@ describe('note rows of §5', () => {
   it('restricted minors cannot make a note PUBLIC but can share it (§15.2)', () => {
     const minor = student('owner', { restrictedMinor: true })
     expect(can(minor, Action.NOTE_PUBLISH, { kind: 'note', note: note('PRIVATE'), targetVisibility: 'PUBLIC' })).toBe(false)
+    expect(can(minor, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: note('PRIVATE'), targetVisibility: 'PUBLIC' })).toBe(false)
     expect(can(minor, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: note('PRIVATE'), targetVisibility: 'SHARED' })).toBe(true)
   })
 
@@ -131,17 +149,21 @@ describe('note rows of §5', () => {
     const fork = (originVisibilityAtFork: Visibility, forkedAsOwnerOrEditor: boolean) =>
       note('PRIVATE', { fork: { originVisibilityAtFork, forkedAsOwnerOrEditor } })
     const toPublic = (n: NoteFacts) => can(owner, Action.NOTE_PUBLISH, { kind: 'note', note: n, targetVisibility: 'PUBLIC' })
+    const showPublic = (n: NoteFacts) => can(owner, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: n, targetVisibility: 'PUBLIC' })
 
     it('a fork of a PUBLIC note can be published publicly by anyone who forked it', () => {
       expect(toPublic(fork('PUBLIC', false))).toBe(true)
+      expect(showPublic(fork('PUBLIC', false))).toBe(true)
     })
 
     it("an Editor's fork of a SHARED note can be published publicly", () => {
       expect(toPublic(fork('SHARED', true))).toBe(true)
+      expect(showPublic(fork('SHARED', true))).toBe(true)
     })
 
     it("a viewer's or group member's fork of a SHARED note can never go public, only stay private or be shared", () => {
       expect(toPublic(fork('SHARED', false))).toBe(false)
+      expect(showPublic(fork('SHARED', false))).toBe(false)
       expect(can(owner, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: fork('SHARED', false), targetVisibility: 'SHARED' })).toBe(true)
     })
 
@@ -195,20 +217,20 @@ describe('group rows of §5', () => {
       expect(can(other, Action.GROUP_REQUEST_JOIN, priv)).toBe(true)
     })
 
-    it('members, unverified users and anonymous visitors cannot join directly', () => {
+    it('members and anonymous visitors cannot join directly; an unverified account can', () => {
       expect(can(other, Action.GROUP_JOIN, { ...open, role: GroupRole.MEMBER })).toBe(false)
-      expect(can(student('x', { institutionVerified: false }), Action.GROUP_JOIN, open)).toBe(false)
+      expect(can(student('x', { institutionVerified: false }), Action.GROUP_JOIN, open)).toBe(true)
       expect(can(anon, Action.GROUP_JOIN, open)).toBe(false)
     })
 
     it('admins and the owner change the policy through group settings', () => allowedFrom(Action.GROUP_MANAGE, 3))
   })
 
-  it('request to join: verified non-members without a pending request (ADR-0009)', () => {
+  it('request to join: non-members without a pending request, verified or not (ADR-0009)', () => {
     expect(can(other, Action.GROUP_REQUEST_JOIN, g())).toBe(true)
     expect(can(other, Action.GROUP_REQUEST_JOIN, g(GroupRole.MEMBER))).toBe(false)
     expect(can(other, Action.GROUP_REQUEST_JOIN, { kind: 'group', pendingJoinRequest: true })).toBe(false)
-    expect(can(student('x', { institutionVerified: false }), Action.GROUP_REQUEST_JOIN, g())).toBe(false)
+    expect(can(student('x', { institutionVerified: false }), Action.GROUP_REQUEST_JOIN, g())).toBe(true)
   })
 
   it('review join requests: admin and owner only (ADR-0009)', () => allowedFrom(Action.GROUP_REVIEW_JOIN_REQUESTS, 3))
@@ -403,9 +425,9 @@ describe('teacher network (ADR-0013)', () => {
     expect(can(t1, Action.NOTE_READ, { kind: 'newNote', noteKind: NoteKind.BLOG })).toBe(false)
   })
 
-  it('connection requests: verified, not already connected, nothing pending either way', () => {
+  it('connection requests: not already connected, nothing pending either way', () => {
     expect(can(t1, Action.USER_REQUEST_CONNECTION, towards())).toBe(true)
-    expect(can(teacher('t1', { institutionVerified: false }), Action.USER_REQUEST_CONNECTION, towards())).toBe(false)
+    expect(can(teacher('t1', { institutionVerified: false }), Action.USER_REQUEST_CONNECTION, towards())).toBe(true)
     expect(can(t1, Action.USER_REQUEST_CONNECTION, towards({ connected: true }))).toBe(false)
     expect(can(t1, Action.USER_REQUEST_CONNECTION, towards({ pendingConnection: 'OUTGOING' }))).toBe(false)
     expect(can(t1, Action.USER_REQUEST_CONNECTION, towards({ pendingConnection: 'INCOMING' }))).toBe(false)
@@ -460,25 +482,62 @@ describe('verified account (ADR-0017)', () => {
     expect(can(unverified, Action.USER_BLOCK, { kind: 'user', targetId: 'x', targetGlobalRole: GlobalRole.STUDENT })).toBe(true)
   })
 
-  it('nothing that reaches other people works until the college or organisation email is confirmed', () => {
+  it('publishing, sharing, contests, payouts, bulk AI and resource submission stay gated', () => {
     expect(can(unverified, Action.NOTE_PUBLISH, pub)).toBe(false)
     expect(can(unverified, Action.NOTE_SHARE, pub)).toBe(false)
-    expect(can(unverified, Action.NOTE_COMMENT, pub)).toBe(false)
-    expect(can(unverified, Action.GROUP_CREATE)).toBe(false)
-    expect(can(unverified, Action.GROUP_POST, { kind: 'group', role: GroupRole.MEMBER })).toBe(false)
-    expect(can(unverified, Action.CLASSROOM_REQUEST_JOIN, { kind: 'classroom' })).toBe(false)
-    expect(can(unverified, Action.USER_FOLLOW, { kind: 'user', targetId: 'x', targetGlobalRole: GlobalRole.TEACHER })).toBe(false)
+    expect(can(unverified, Action.CONTEST_ENTER)).toBe(false)
+    expect(can(unverified, Action.PAYOUT_REQUEST)).toBe(false)
+    expect(can(unverified, Action.AI_BULK)).toBe(false)
+    expect(can(unverified, Action.RESOURCE_SUBMIT)).toBe(false)
+    expect(can(unverified, Action.NOTE_COMMENT, pub)).toBe(true)
+    expect(can(unverified, Action.GROUP_CREATE)).toBe(true)
+    expect(can(unverified, Action.GROUP_POST, { kind: 'group', role: GroupRole.MEMBER })).toBe(true)
+    expect(can(unverified, Action.CLASSROOM_REQUEST_JOIN, { kind: 'classroom' })).toBe(true)
+    expect(can(unverified, Action.USER_FOLLOW, { kind: 'user', targetId: 'x', targetGlobalRole: GlobalRole.TEACHER })).toBe(true)
+    expect(can(unverified, Action.RESOURCE_RECOMMEND)).toBe(true)
   })
 
-  it('the gated set is exactly the actions that reach other people', () => {
+  it('visibility other than Public is not blocked by note.share; Public follows mayPublishPublic', () => {
+    const mine = { kind: 'note' as const, note: note('PUBLIC', { ownerId: 'u' }) }
+    expect(can(unverified, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'PRIVATE' })).toBe(true)
+    expect(can(unverified, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'SHARED' })).toBe(true)
+    expect(can(unverified, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'UNLISTED' })).toBe(true)
+    expect(can(unverified, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'PUBLIC' })).toBe(false)
+    expect(can({ ...unverified, mayPublishPublic: true }, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'PUBLIC' })).toBe(true)
+    const listed = { ...unverified, unverifiedGates: new Set<Action>([Action.NOTE_CHANGE_VISIBILITY]) }
+    expect(can(listed, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'PRIVATE' })).toBe(false)
+    const open = { ...unverified, unverifiedGates: new Set<Action>() }
+    expect(can(open, Action.NOTE_PUBLISH, pub)).toBe(true)
+    expect(can(open, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'PUBLIC' })).toBe(false)
+    expect(can({ ...open, mayPublishPublic: true }, Action.NOTE_CHANGE_VISIBILITY, { ...mine, targetVisibility: 'PUBLIC' })).toBe(true)
+  })
+
+  it('parses the admin list, and verificationBlocks follows it', () => {
+    const parsed = parseUnverifiedGateSetting('note.publish, ,note.share')
+    expect(parsed.ok && [...parsed.actions].sort()).toEqual(['note.publish', 'note.share'])
+    expect(parseUnverifiedGateSetting('not.real').ok).toBe(false)
+    expect(unverifiedGatesFromSetting(null)).toBe(NEEDS_VERIFIED_ACCOUNT)
+    expect([...unverifiedGatesFromSetting('')]).toEqual([])
+    expect(unverifiedGatesFromSetting('not.real')).toBe(NEEDS_VERIFIED_ACCOUNT)
+    const pub = { kind: 'note' as const, note: note('SHARED', { ownerId: 'u' }) }
+    expect(verificationBlocks(null, Action.NOTE_PUBLISH)).toBe(false)
+    expect(verificationBlocks(student('v'), Action.NOTE_PUBLISH)).toBe(false)
+    expect(verificationBlocks(unverified, Action.NOTE_PUBLISH, pub)).toBe(true)
+    expect(verificationBlocks(unverified, Action.NOTE_COMMENT, pub)).toBe(false)
+    expect(can(unverified, Action.NOTE_CHANGE_VISIBILITY, pub)).toBe(true)
+    expect(can(student('v'), Action.CONTEST_ENTER)).toBe(true)
+    expect(can(student('v'), Action.PAYOUT_REQUEST)).toBe(true)
+    expect(can(student('v'), Action.AI_BULK)).toBe(true)
+  })
+
+  it('the default gated set is the abuse-prone list, and a suspended account still blocks the broad set', () => {
     expect([...NEEDS_VERIFIED_ACCOUNT].sort()).toEqual([
-      'account.reviewVerification',
-      'classroom.acceptInvite', 'classroom.create', 'classroom.requestJoin',
-      'group.acceptMentorInvite', 'group.answerDoubt', 'group.askDoubt', 'group.create', 'group.join', 'group.post', 'group.requestJoin',
-      'note.changeVisibility', 'note.comment', 'note.publish', 'note.share',
-      'resource.recommend', 'resource.submit',
-      'user.follow', 'user.requestConnection', 'user.respondToConnection',
+      'ai.bulk', 'contest.enter', 'note.publish', 'note.share', 'payout.request', 'resource.submit',
     ])
+    for (const a of NEEDS_VERIFIED_ACCOUNT) expect(BLOCKED_WHILE_SUSPENDED.has(a)).toBe(true)
+    for (const a of [Action.NOTE_COMMENT, Action.USER_FOLLOW, Action.GROUP_CREATE, Action.ACCOUNT_REVIEW_VERIFICATION]) {
+      expect(BLOCKED_WHILE_SUSPENDED.has(a)).toBe(true)
+    }
   })
 })
 
@@ -504,19 +563,60 @@ describe('verification without an institutional email (ADR-0019)', () => {
     expect(can(minor, Action.ACCOUNT_REQUEST_VERIFICATION, byTeacher({ targetIsVerifiedTeacher: true }))).toBe(true)
   })
 
-  it('a verified teacher reviews only requests addressed to them, and never sees documents', () => {
+  it('a verified teacher reviews students who picked them or share their institution, documents included', () => {
     expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher({ addressedToActor: true }))).toBe(true)
     expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher())).toBe(false)
-    expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ addressedToActor: true }))).toBe(false)
+    expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ addressedToActor: true }))).toBe(true)
+    expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ sameInstitution: true }))).toBe(true)
+    expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(false)
+    expect(can(teacher, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ purpose: 'TEACHER_ROLE', sameInstitution: true }))).toBe(false)
     expect(can(student('t2', { globalRole: GlobalRole.TEACHER, institutionVerified: false }), Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher({ addressedToActor: true }))).toBe(false)
     expect(can(other, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher({ addressedToActor: true }))).toBe(false)
   })
 
-  it('platform admins review every request, documents included', () => {
+  it('a manager, an unverified teacher and a student cannot review', () => {
+    const manager = student('m', { globalRole: GlobalRole.MANAGER })
+    expect(can(manager, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(false)
+    expect(can(manager, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher())).toBe(false)
+    expect(can(student('m2', { globalRole: GlobalRole.MANAGER, institutionVerified: false }), Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(false)
+    expect(can(student('m3', { globalRole: GlobalRole.MANAGER, institutionVerified: true }), Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ purpose: 'TEACHER_ROLE' }))).toBe(false)
+    expect(can(student('s', { institutionVerified: true }), Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(false)
+    expect(can(student('t2', { globalRole: GlobalRole.TEACHER, institutionVerified: false }), Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher({ addressedToActor: true }))).toBe(false)
+    expect(can(student('t2', { globalRole: GlobalRole.TEACHER, institutionVerified: false }), Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ sameInstitution: true }))).toBe(false)
+  })
+
+  it('platform admins review every request, documents and teacher applications included', () => {
     expect(can(admin, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(true)
     expect(can(admin, Action.ACCOUNT_REVIEW_VERIFICATION, byTeacher())).toBe(true)
+    expect(can(admin, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ purpose: 'TEACHER_ROLE' }))).toBe(true)
+    expect(can(student('a2', { globalRole: GlobalRole.PLATFORM_ADMIN, institutionVerified: false }), Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(true)
+    expect(can(student('a2', { globalRole: GlobalRole.PLATFORM_ADMIN, institutionVerified: false, unverifiedGates: new Set([Action.ACCOUNT_REVIEW_VERIFICATION]) }), Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(true)
     expect(can(anon, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(false)
     expect(can(admin, Action.NOTE_READ, byDocuments())).toBe(false)
+  })
+
+  it('an unverified platform admin passes every institution-verification gate', () => {
+    const admin = student('a2', {
+      globalRole: GlobalRole.PLATFORM_ADMIN,
+      institutionVerified: false,
+      unverifiedGates: new Set(Object.values(Action)),
+    })
+    const mine: Resource = { kind: 'note', note: note(Visibility.PRIVATE, { ownerId: 'a2' }), targetVisibility: Visibility.PUBLIC }
+    for (const action of [Action.NOTE_PUBLISH, Action.NOTE_SHARE, Action.NOTE_CHANGE_VISIBILITY, Action.CONTEST_ENTER, Action.PAYOUT_REQUEST, Action.AI_BULK, Action.RESOURCE_SUBMIT, Action.ACCOUNT_REVIEW_VERIFICATION, Action.NOTE_COMMENT]) {
+      expect(verificationBlocks(admin, action, action === Action.ACCOUNT_REVIEW_VERIFICATION ? byDocuments() : mine)).toBe(false)
+    }
+    expect(can(admin, Action.NOTE_PUBLISH, mine)).toBe(true)
+    expect(can(admin, Action.NOTE_SHARE, mine)).toBe(true)
+    expect(can(admin, Action.NOTE_CHANGE_VISIBILITY, mine)).toBe(true)
+    expect(can({ ...admin, mayPublishPublic: false }, Action.NOTE_CHANGE_VISIBILITY, mine)).toBe(true)
+    expect(can({ ...unverified, mayPublishPublic: false }, Action.NOTE_CHANGE_VISIBILITY, { kind: 'note', note: note(Visibility.PRIVATE, { ownerId: 'u' }), targetVisibility: Visibility.PUBLIC })).toBe(false)
+    expect(can(admin, Action.CONTEST_ENTER)).toBe(true)
+    expect(can(admin, Action.PAYOUT_REQUEST)).toBe(true)
+    expect(can(admin, Action.AI_BULK)).toBe(true)
+    expect(can(admin, Action.RESOURCE_SUBMIT)).toBe(true)
+    expect(can(admin, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments())).toBe(true)
+    expect(can(admin, Action.ACCOUNT_REVIEW_VERIFICATION, byDocuments({ purpose: 'TEACHER_ROLE' }))).toBe(true)
+    expect(can({ ...admin, suspended: true }, Action.NOTE_PUBLISH, mine)).toBe(false)
   })
 })
 
@@ -585,6 +685,8 @@ describe('a suspended account (ADR-0053)', () => {
     expect(can(suspended, Action.NOTE_EDIT_DRAFT, mine(Visibility.PUBLIC))).toBe(true)
     expect(can(suspended, Action.NOTE_DELETE, mine(Visibility.PUBLIC))).toBe(true)
     expect(can(suspended, Action.NOTE_CHANGE_VISIBILITY, mine(Visibility.PUBLIC, Visibility.PRIVATE))).toBe(true)
+    expect(can(suspended, Action.NOTE_CHANGE_VISIBILITY, mine(Visibility.PRIVATE, Visibility.UNLISTED))).toBe(false)
+    expect(can(suspended, Action.NOTE_CHANGE_VISIBILITY, mine(Visibility.PRIVATE, Visibility.PUBLIC))).toBe(false)
     expect(can(suspended, Action.NOTE_FORK, { kind: 'note', note: note(Visibility.PUBLIC, { ownerId: 'x' }) })).toBe(true)
     expect(can(suspended, Action.USER_BLOCK, { kind: 'user', targetId: 't2', targetGlobalRole: GlobalRole.STUDENT })).toBe(true)
     expect(can(suspended, Action.CONTENT_REPORT)).toBe(true)
@@ -609,10 +711,10 @@ describe('resources (ADR-0074)', () => {
     expect(can(anon, Action.RESOURCE_SUBMIT)).toBe(false)
   })
 
-  it('verified accounts recommend resources, child accounts too (within their own places); not unverified or suspended ones (ADR-0075)', () => {
+  it('accounts recommend resources, child accounts too (within their own places); not suspended ones (ADR-0075)', () => {
     expect(can(other, Action.RESOURCE_RECOMMEND)).toBe(true)
     expect(can(student('m', { restrictedMinor: true }), Action.RESOURCE_RECOMMEND)).toBe(true)
-    expect(can(student('u', { institutionVerified: false }), Action.RESOURCE_RECOMMEND)).toBe(false)
+    expect(can(student('u', { institutionVerified: false }), Action.RESOURCE_RECOMMEND)).toBe(true)
     expect(can(student('s', { suspended: true }), Action.RESOURCE_RECOMMEND)).toBe(false)
     expect(can(anon, Action.RESOURCE_RECOMMEND)).toBe(false)
   })

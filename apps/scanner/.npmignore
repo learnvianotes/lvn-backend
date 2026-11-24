@@ -1,0 +1,8 @@
+src
+test
+tsconfig.json
+tsconfig.build.json
+jest.config.cjs
+compose.yaml
+Dockerfile
+*.tsbuildinfo

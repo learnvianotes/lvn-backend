@@ -3,6 +3,7 @@ import { AppError } from '@lvn-backend/errors'
 import { InProcessEventBus } from '@lvn-backend/event-bus'
 import { NoteChunks } from '@lvn-backend/notes'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
+import { RateLimiter } from '@lvn-backend/redis'
 import { startFakeOllama, type FakeOllama } from '@lvn-backend/testing'
 import { createTestApp, type TestApp } from '../support/app'
 import { seedUser, tokenFor } from '../support/seed'
@@ -110,6 +111,7 @@ describe('security: Ask AI leaks nothing (§10.2)', () => {
     let refused = 0
     let answeredWithSources = 0
     const keyOf = new Map(keys.map((k) => [ids[k], k]))
+    const limiter = t.app.get(RateLimiter)
 
     for (let i = 0; i < QUESTIONS; i++) {
       const who = pick(whos)
@@ -119,6 +121,10 @@ describe('security: Ask AI leaks nothing (§10.2)', () => {
       const mayOpen = new Set(MAY_OPEN[who])
       let answerId: string
       try {
+        // The sweep is about what retrieval will show, and it asks far more than one person may in a minute.
+        // Clearing that person's window keeps every question on the real ask path.
+        await limiter.reset(`ai-min:${people[who].id}`)
+        await limiter.reset(`ai:${people[who].id}`)
         answerId = (await ask.ask(people[who].id, { question, scope, noteId: scope === 'THIS_NOTE' ? ids[target] : null })).id
       } catch (e) {
         // Only a note the asker may not open is refused.
@@ -126,7 +132,7 @@ describe('security: Ask AI leaks nothing (§10.2)', () => {
           refused++
           continue
         }
-        throw new Error(`#${i} ${who} ${scope} ${target}: ${(e as Error).message}`)
+        throw new Error(`#${i} ${who} ${scope} ${target}: ${(e as Error).message}`, { cause: e })
       }
       if (scope === 'THIS_NOTE' && !mayOpen.has(target)) leaks.push(`#${i} ${who} could ask about ${target}`)
       const chatsBefore = ollama.chats.length

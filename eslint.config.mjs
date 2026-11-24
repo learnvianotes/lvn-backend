@@ -22,6 +22,6 @@ export default tseslint.config(
     },
   },
   // Config loading, test tooling and scripts are where the environment is read.
-  { files: ['libs/config/**', 'libs/testing/**', '**/test/**', 'prisma.config.ts'], rules: { 'no-restricted-properties': 'off' } },
+  { files: ['libs/config/**', 'libs/testing/**', '**/test/**', 'prisma.config.ts', 'apps/scanner/**'], rules: { 'no-restricted-properties': 'off' } },
   { files: ['**/*.cjs'], languageOptions: { sourceType: 'commonjs', globals: globals.node } },
 )

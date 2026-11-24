@@ -8,10 +8,10 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test",
-    "test": "jest"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest"
   },
   "dependencies": {
     "@lvn/contracts": "workspace:@learnvianotes/contracts@*",
-    "@nestjs/common": "^11.2.7"
+    "@nestjs/common": "^12.6.0"
   }
 }

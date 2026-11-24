@@ -1,14 +1,17 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { Action, can, LearningEventType, type Actor, type CardType, type NoteKind } from '@lvn/contracts/domain'
+import { Action, can, LearningEventType, LimitKey, type Actor, type CardType, type NoteKind } from '@lvn/contracts/domain'
 import { cardAnchor, isValidPosition, MEDIA_CARD_TYPES, NOTE_LIMITS, noteTitleSchema, parseCardContent } from '@lvn/contracts/validation'
-import { Errors } from '@lvn-backend/errors'
+import { assertWithinPlan, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
-import { LEARNING, POLICY, type Learning, type Policy } from '@lvn-backend/facades'
+import { ENTITLEMENTS, LEARNING, POLICY, type Entitlements, type Learning, type Policy } from '@lvn-backend/facades'
 import { decodeCursor, pageSize } from '@lvn-backend/graphql'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { noteAccess, type NoteAccess, type NoteAccessRow, type ReachFacts, visibleNotesWhere } from '../domain/note-access'
 import { OrganiseService } from './organise.service'
+
+/** Anonymous public-note reads from one network, a minute. Keyed `notes:read`. */
+export const ANONYMOUS_NOTE_READS_PER_MINUTE = { max: 120, windowSeconds: 60 }
 
 export type NoteRow = Prisma.NoteGetPayload<object>
 
@@ -64,7 +67,15 @@ export class NotesService {
     @Inject(POLICY) private readonly policy: Policy,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(LEARNING) private readonly learning: Learning,
+    @Inject(ENTITLEMENTS) private readonly entitlements: Entitlements,
   ) {}
+
+  /** Refuses another note once NOTES_OWNED is used. A null limit never refuses. Trashed notes do not count. */
+  async assertNotesOwned(ownerId: string, adding = 1n): Promise<void> {
+    const limit = await this.entitlements.limit(ownerId, LimitKey.NOTES_OWNED)
+    const used = BigInt(await this.db.note.count({ where: { ownerId, deletedAt: null } }))
+    assertWithinPlan(LimitKey.NOTES_OWNED, limit, used, adding)
+  }
 
   /** The actor for a viewer id; null for anonymous visitors. Throws for a signed-in id whose account is gone. */
   async actor(viewerId: string | null): Promise<Actor | null> {
@@ -72,6 +83,16 @@ export class NotesService {
     const actor = await this.policy.actor(viewerId)
     if (!actor) throw Errors.unauthenticated()
     return actor
+  }
+
+  /**
+   * An anonymous read of notes that are public (the reader is not the owner). No address: nothing to key.
+   * Signed-in reads are not counted here.
+   */
+  async limitAnonymousPublicRead(network: string | null): Promise<void> {
+    if (!network) return
+    const hit = await this.limiter.hit(`notes:read:${network}`, ANONYMOUS_NOTE_READS_PER_MINUTE)
+    if (!hit.allowed) throw Errors.rateLimited(hit.retryAfter, `Too many note reads from your network. Try again in ${hit.retryAfter} seconds.`)
   }
 
   /** The note as the viewer may see it, or null when they may not see it at all. */
@@ -107,6 +128,7 @@ export class NotesService {
     const kind = input.kind ?? 'NOTE'
     // Notes and projects for anyone, blogs and posts for teachers (ADR-0014, ADR-0015, ADR-0044).
     if (!can(actor, Action.NOTE_CREATE, { kind: 'newNote', noteKind: kind })) throw Errors.forbidden('Blogs and posts are for teachers.')
+    await this.assertNotesOwned(ownerId)
     const limit = await this.limiter.hit(`notes:create:${ownerId}`, { max: 300, windowSeconds: 3600 })
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'You have created a lot of notes in the last hour. Try again later.')
 
@@ -187,6 +209,7 @@ export class NotesService {
   async restore(ownerId: string, noteId: string): Promise<OpenedNote> {
     const { note } = await this.require(ownerId, noteId, 'owner')
     if (!note.deletedAt) return (await this.open(ownerId, noteId))!
+    await this.assertNotesOwned(ownerId)
     await this.db.note.update({ where: { id: noteId }, data: { deletedAt: null } })
     if (note.visibility === 'PUBLIC' && note.publishedVersionId) {
       await this.events.publish('NotePublished', { noteId, versionId: note.publishedVersionId, ownerId, visibility: note.visibility, kind: note.kind })

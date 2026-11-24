@@ -3,7 +3,9 @@ import { JsonScalar } from '@lvn-backend/graphql'
 import { AttachmentsService } from './application/attachments.service'
 import { DraftsService } from './application/drafts.service'
 import { NoteModerationService } from './application/moderation.service'
+import { NotesAdminStats } from './application/admin-stats'
 import { FilesService } from './application/files.service'
+import { NotesPlanUsage } from './application/plan-usage'
 import { NotesService } from './application/notes.service'
 import { NoteImportService } from './application/note-import.service'
 import { LegacyContentImport } from './application/legacy-content'
@@ -12,6 +14,7 @@ import { NotesMaintenance } from './application/notes-maintenance'
 import { NotesAccountErasure } from './application/account-erasure'
 import { OrganiseService } from './application/organise.service'
 import { PdfConversionService } from './application/pdf-conversion.service'
+import { FileScanQueue } from './application/file-scan-queue'
 import { MediaProcessingService } from './application/media-processing.service'
 import { PdfReaderService } from './application/pdf-reader.service'
 import { PublicPages } from './application/public-pages'
@@ -22,6 +25,7 @@ import { NoteChunks, NoteRetrievalFacade, PgvectorSemanticSearch } from './appli
 import { SearchService } from './application/search.service'
 import { Typesense } from './infrastructure/typesense'
 import { SyncService } from './application/sync.service'
+import { PagesService } from './application/pages.service'
 import { SharingService } from './application/sharing.service'
 import { FilesResolver, UploadsResolver } from './graphql/files.resolver'
 import { ImportResolver } from './graphql/import.resolver'
@@ -46,6 +50,7 @@ import { OrganiseResolver, SubjectResolver, TopicResolver } from './graphql/orga
 import { ReaderResolver } from './graphql/reader.resolver'
 import { ConversionResolver, NoteConversionResolver } from './graphql/convert.resolver'
 import { SearchResolver } from './graphql/search.resolver'
+import { NotePagesResolver, PageMutationsResolver, PagesResolver } from './graphql/pages.resolver'
 import { SharingResolver } from './graphql/sharing.resolver'
 import { SyncResolver } from './graphql/sync.resolver'
 import { NOTES_CONFIG, type NotesConfig } from './notes.config'
@@ -68,6 +73,8 @@ export class NotesModule {
         { provide: NOTES_CONFIG, useValue: config },
         JsonScalar,
         FilesService,
+        NotesPlanUsage,
+        NotesAdminStats,
         AttachmentsService,
         NotesAccountErasure,
         NoteModerationService,
@@ -75,6 +82,7 @@ export class NotesModule {
         DraftsService,
         OrganiseService,
         SharingService,
+        PagesService,
         NotesMaintenance,
         NotesExport,
         NoteImportService,
@@ -124,14 +132,18 @@ export class NotesModule {
         SubjectResolver,
         TopicResolver,
         SharingResolver,
+        PagesResolver,
+        NotePagesResolver,
+        PageMutationsResolver,
         PdfReaderService,
         ReaderResolver,
         PdfConversionService,
+        FileScanQueue,
         MediaProcessingService,
         ConversionResolver,
         NoteConversionResolver,
       ],
-      exports: [FilesService, NotesMaintenance, NoteModerationService, NoteAccessFacade, TopicsFacade, NoteAiFacade, NoteChunks, NoteRetrievalFacade, SearchIndex, NoteImportService, LegacyContentImport, PdfConversionService, MediaProcessingService],
+      exports: [FilesService, NotesAdminStats, NotesMaintenance, NoteModerationService, NoteAccessFacade, TopicsFacade, NoteAiFacade, NoteChunks, NoteRetrievalFacade, SearchIndex, NoteImportService, LegacyContentImport, PdfConversionService, MediaProcessingService],
     }
   }
 }

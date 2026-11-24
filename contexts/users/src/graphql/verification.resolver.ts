@@ -1,6 +1,6 @@
 import { UseGuards } from '@nestjs/common'
 import { Args, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql'
-import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
+import { CurrentViewer, RequireMfa, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
 import { Errors, withUserErrors } from '@lvn-backend/errors'
 import { PrismaService } from '@lvn-backend/prisma-base'
 import { AdminService } from '../application/admin.service'
@@ -40,6 +40,11 @@ interface RequestRow {
   decidedAt: Date | null
   reason: string | null
   documentIds: string[]
+  aiVerdict: string | null
+  aiConfidence: number | null
+  aiReason: string | null
+  aiExtracted: unknown
+  aiCheckedAt: Date | null
 }
 
 @Resolver('VerificationRequest')
@@ -68,11 +73,13 @@ export class VerificationResolver {
   }
 
   @Query('verificationRequestsToReview')
+  @RequireMfa()
   verificationRequestsToReview(@Args() { first, after }: QueryVerificationRequestsToReviewArgs, @CurrentViewer() viewer: Viewer): Promise<RequestRow[]> {
     return this.verification.toReview(viewer.userId, first ?? 20, after)
   }
 
   @Query('verificationDocumentUrl')
+  @RequireMfa()
   verificationDocumentUrl(@Args() { requestId, fileId }: QueryVerificationDocumentUrlArgs, @CurrentViewer() viewer: Viewer): Promise<SignedUrl> {
     return this.verification.documentUrl(viewer.userId, requestId, fileId)
   }
@@ -96,6 +103,7 @@ export class VerificationResolver {
   }
 
   @Query('domainReviews')
+  @RequireMfa()
   domainReviews(@Args() { status }: QueryDomainReviewsArgs, @CurrentViewer() viewer: Viewer): Promise<DomainReview[]> {
     return this.admin.domainReviews(viewer.userId, status)
   }
@@ -125,6 +133,7 @@ export class VerificationResolver {
   }
 
   @Mutation('reviewVerificationRequest')
+  @RequireMfa()
   reviewVerificationRequest(@Args() { input }: MutationReviewVerificationRequestArgs, @CurrentViewer() viewer: Viewer): Promise<VerificationRequestPayload> {
     return withUserErrors<VerificationRequestPayload>(
       async () => ({ request: (await this.verification.review(viewer.userId, input.requestId, input.approve, input.reason)) as never }),
@@ -133,6 +142,7 @@ export class VerificationResolver {
   }
 
   @Mutation('decideDomainReview')
+  @RequireMfa()
   decideDomainReview(@Args() { input }: MutationDecideDomainReviewArgs, @CurrentViewer() viewer: Viewer): Promise<OkPayload> {
     return withUserErrors<OkPayload>(async () => {
       await this.admin.decideDomain(viewer.userId, input.domain, input.approve)
@@ -141,9 +151,25 @@ export class VerificationResolver {
   }
 
   @Mutation('setGlobalRole')
+  @RequireMfa()
   setGlobalRole(@Args() { input }: MutationSetGlobalRoleArgs, @CurrentViewer() viewer: Viewer): Promise<OkPayload> {
     return withUserErrors<OkPayload>(async () => {
       await this.admin.setGlobalRole(viewer.userId, input.userId, input.role)
+      return { ok: true }
+    }, { ok: false })
+  }
+
+  @Query('institutionDomains')
+  @RequireMfa()
+  institutionDomains(@Args('status') status: DomainReview['status'] | null, @Args('first') first: number | null, @CurrentViewer() viewer: Viewer): Promise<DomainReview[]> {
+    return this.admin.institutionDomains(viewer.userId, status, first ?? 50)
+  }
+
+  @Mutation('reviewInstitutionDomain')
+  @RequireMfa()
+  reviewInstitutionDomain(@Args('input') input: { domain: string; approve: boolean }, @CurrentViewer() viewer: Viewer): Promise<OkPayload> {
+    return withUserErrors<OkPayload>(async () => {
+      await this.admin.reviewInstitutionDomain(viewer.userId, input.domain, input.approve)
       return { ok: true }
     }, { ok: false })
   }
@@ -164,8 +190,13 @@ export class VerificationResolver {
 
   @ResolveField('documents')
   async documents(@Parent() r: RequestRow, @CurrentViewer() viewer: Viewer): Promise<VerificationDocument[]> {
-    const files = await this.verification.documentsFor(viewer.userId, r.documentIds)
+    const files = await this.verification.documentsFor(viewer.userId, r)
     return files.map((f) => ({ fileId: f.id, fileName: f.originalFileName, mimeType: f.mimeType, sizeBytes: f.sizeBytes }))
+  }
+
+  @ResolveField('aiCheck')
+  aiCheck(@Parent() r: RequestRow, @CurrentViewer() viewer: Viewer) {
+    return this.verification.aiCheckFor(viewer.userId, r)
   }
 }
 

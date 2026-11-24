@@ -8,6 +8,16 @@ export interface Viewer {
   userId: string
   sessionId: string
   roles: GlobalRole[]
+  /** Authentication methods on the access token. Empty when the token predates MFA claims. */
+  amr: string[]
+  /** The token was issued after a second factor that was still fresh. */
+  mfa: boolean
+  /** Unix seconds of that verification. Null when `mfa` is false. */
+  mfaAt: number | null
+  /** Role policy or an opt-in said this account must pass MFA. */
+  mfaReq: boolean
+  /** Recovery window: do not challenge this token even though the role would require MFA. */
+  mfaExempt: boolean
 }
 
 /** The GraphQL context every resolver receives (built by apps/api for the gateway). */

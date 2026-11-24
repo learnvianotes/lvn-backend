@@ -193,6 +193,7 @@ export class PdfReaderService {
     const file = await this.db.fileObject.findUnique({ where: { id: fileId } })
     if (!file || file.deletedAt || file.status !== 'READY') throw Errors.notFound('PDF not found.')
     if (file.mimeType !== PDF) throw Errors.validation('Only PDFs can be studied this way.', field('fileId'))
+    await this.notes.assertNotesOwned(viewerId)
     // Copies and studied PDFs share the copy budget.
     const limit = await this.limiter.hit(`notes:fork:${viewerId}`, { max: 100, windowSeconds: 3600 })
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'You have copied a lot of notes in the last hour. Try again later.')

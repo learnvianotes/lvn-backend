@@ -38,8 +38,18 @@ esac
 
 # --- settings ----------------------------------------------------------------------------------------------------------
 canonical=$(printf '%s' "$LVN_PUBLIC_URL" | sed -E 's#^https://([^/:]+)/?$#\1#')
-[ "$canonical" != "$LVN_PUBLIC_URL" ] || die "LVN_PUBLIC_URL must be https://<host>, e.g. https://beta.learnvianotes.in"
+[ "$canonical" != "$LVN_PUBLIC_URL" ] || die "LVN_PUBLIC_URL must be https://<host>, e.g. https://app.learnvianotes.in"
 case " $LVN_SITE_HOSTS " in *" $canonical "*) ;; *) die "LVN_SITE_HOSTS ($LVN_SITE_HOSTS) must include $canonical" ;; esac
+# Bare hostnames. Unset keeps the single public host (beta). Production sets app. and api. to different names.
+app_host=${LVN_APP_HOST:-$canonical}
+api_host=${LVN_API_HOST:-$canonical}
+case "$app_host" in *://*|*/*|*" "*|*":"*|'') die "LVN_APP_HOST must be a hostname, not a URL" ;; esac
+case "$api_host" in *://*|*/*|*" "*|*":"*|'') die "LVN_API_HOST must be a hostname, not a URL" ;; esac
+case " $LVN_SITE_HOSTS " in *" $app_host "*) ;; *) die "LVN_SITE_HOSTS ($LVN_SITE_HOSTS) must include $app_host" ;; esac
+case " $LVN_SITE_HOSTS " in *" $api_host "*) ;; *) die "LVN_SITE_HOSTS ($LVN_SITE_HOSTS) must include $api_host" ;; esac
+# Same host: the old path split (beta). Different hosts: the API only serves its paths, the app only the web.
+entrance=split_entrance
+[ "$app_host" = "$api_host" ] && entrance=single_entrance
 r2_origin=$(printf '%s' "$LVN_R2_ENDPOINT" | sed -E 's#^(https://[^/]+).*#\1#')
 [[ $r2_origin == https://* ]] || die "LVN_R2_ENDPOINT must be https://<account>.r2.cloudflarestorage.com"
 
@@ -62,7 +72,10 @@ kv() {
   kv LVN_POSTGRES_PASSWORD "$LVN_POSTGRES_PASSWORD"
   kv LVN_REDIS_PASSWORD "$LVN_REDIS_PASSWORD"
   kv LVN_SITE_HOSTS "$LVN_SITE_HOSTS"
-  kv LVN_CANONICAL_HOST "$canonical"
+  kv LVN_APP_HOST "$app_host"
+  kv LVN_API_HOST "$api_host"
+  kv LVN_CANONICAL_HOST "$app_host"
+  kv LVN_ENTRANCE "$entrance"
   kv LVN_ACME_EMAIL "$LVN_ACME_EMAIL"
 } > "$work/env/stack.env"
 
@@ -74,9 +87,18 @@ kv() {
   kv WORKER_HEALTH_PORT 4001
   # Caddy is the one proxy in front of the API.
   kv TRUST_PROXY_HOPS 1
-  kv CORS_ORIGINS "$LVN_PUBLIC_URL"
-  kv WEB_URL "$LVN_PUBLIC_URL"
-  kv JWT_ISSUER "$LVN_PUBLIC_URL"
+  # Split hosts: the browser origin is the app, and new access tokens name the API. One host: all three stay the
+  # public URL, as before. JWT_EXTRA_ISSUERS (previous issuers, for the 15-minute cutover) goes in LVN_BACKEND_EXTRA_ENV.
+  if [ "$entrance" = split_entrance ]; then
+    kv CORS_ORIGINS "https://$app_host"
+    kv WEB_URL "https://$app_host"
+    kv JWT_ISSUER "https://$api_host"
+  else
+    kv CORS_ORIGINS "$LVN_PUBLIC_URL"
+    kv WEB_URL "$LVN_PUBLIC_URL"
+    kv JWT_ISSUER "$LVN_PUBLIC_URL"
+  fi
+  kv MAIL_REPLY_TO "${LVN_MAIL_REPLY_TO:-support@learnvianotes.in}"
   kv DATABASE_URL "postgresql://lvn:$LVN_POSTGRES_PASSWORD@postgres:5432/lvn"
   kv REDIS_URL "redis://:$LVN_REDIS_PASSWORD@redis:6379"
   kv JWT_PRIVATE_KEY "$LVN_JWT_PRIVATE_KEY"
@@ -134,7 +156,7 @@ target="${LVN_DEPLOY_USER:-deploy}@$LVN_DEPLOY_HOST"
 rdir=${LVN_REMOTE_DIR:-/opt/lvn}
 remote() { ssh -i "$work/key" -o UserKnownHostsFile="$work/known_hosts" -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=20 "$target" "$@"; }
 
-echo "==> $LVN_ENV: $canonical ($target), backend $LVN_API_IMAGE"
+echo "==> $LVN_ENV: app $app_host, api $api_host ($entrance) ($target), backend $LVN_API_IMAGE"
 # The stack files, then the settings (only the deploy user can read /opt/lvn/env).
 tar -C "$here" -cf - compose.yaml Caddyfile lvn.sh | remote "set -e; cd '$rdir' && tar -xf - && chmod 755 lvn.sh"
 tar -C "$work" -cf - env | remote "set -e; cd '$rdir' && umask 077 && mkdir -p env && tar -xf - && chmod 700 env && chmod 600 env/*.env"
@@ -146,6 +168,6 @@ printf '%s' "$LVN_GHCR_TOKEN" | remote "docker login ghcr.io -u '$LVN_GHCR_USER'
 remote "'$rdir/lvn.sh' set-image api '$LVN_API_IMAGE' && LVN_READY_TIMEOUT=${LVN_READY_TIMEOUT:-300} '$rdir/lvn.sh' up"
 
 echo "==> From outside"
-curl -fsS --retry 10 --retry-delay 6 --retry-all-errors --max-time 10 "$LVN_PUBLIC_URL/health/ready" >/dev/null ||
-  die "$LVN_PUBLIC_URL/health/ready does not answer from outside the VM (DNS, ports 80/443, or the certificate)"
-echo "Deployed $LVN_API_IMAGE to $LVN_ENV ($LVN_PUBLIC_URL)"
+curl -fsS --retry 10 --retry-delay 6 --retry-all-errors --max-time 10 "https://$api_host/health/ready" >/dev/null ||
+  die "https://$api_host/health/ready does not answer from outside the VM (DNS, ports 80/443, or the certificate)"
+echo "Deployed $LVN_API_IMAGE to $LVN_ENV (app https://$app_host, api https://$api_host)"

@@ -1,7 +1,9 @@
-import { Parent, Query, ResolveField, Resolver } from '@nestjs/graphql'
-import { CurrentViewer, type Viewer } from '@lvn-backend/auth-guard'
+import { UseGuards } from '@nestjs/common'
+import { Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql'
+import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
+import { withUserErrors } from '@lvn-backend/errors'
 import { UsersService } from '../application/users.service'
-import type { SignInMethod, User } from './schema.types'
+import type { OkPayload, SignInMethod, User } from './schema.types'
 
 @Resolver()
 export class ViewerResolver {
@@ -11,6 +13,15 @@ export class ViewerResolver {
   async viewer(@CurrentViewer() viewer: Viewer | null): Promise<User | null> {
     if (!viewer) return null
     return this.users.viewerProfile(viewer.userId)
+  }
+
+  @Mutation('acknowledgeSafetyReminder')
+  @UseGuards(SignedInGuard)
+  acknowledge(@CurrentViewer() viewer: Viewer): Promise<OkPayload> {
+    return withUserErrors<OkPayload>(async () => {
+      await this.users.acknowledgeSafetyReminder(viewer.userId)
+      return { ok: true }
+    }, { ok: false })
   }
 }
 

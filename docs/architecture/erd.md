@@ -16,6 +16,9 @@ erDiagram
   User ||--o{ Membership : "belongs to"
   Organization ||--o{ Membership : has
   User ||--o{ ConsentRecord : accepts
+  User ||--o{ GuardianConsent : "auto notice, kept on purge (ADR-0109, ADR-0110)"
+  User ||--o{ GuardianLink : "confirm and manage links (ADR-0110)"
+  User ||--o{ FirebaseInstallation : "minor purge (ADR-0110)"
   User ||--o| InstitutionalEmail : "verifies (ADR-0017)"
   User ||--o{ VerificationRequest : "asks (ADR-0019)"
   User ||--o| StudentProfile : "ADR-0026"
@@ -35,7 +38,11 @@ erDiagram
     text handle UK
     text passwordHash "Argon2id, nullable for OAuth-only"
     timestamptz emailVerifiedAt
-    date dateOfBirth "required (ADR-0017)"
+    date dateOfBirth "accounts before ADR-0104, or set by an admin"
+    int declaredAge "whole years given at registration (ADR-0104)"
+    timestamptz ageDeclaredAt "when declaredAge was given"
+    timestamptz safetyReminderAcknowledgedAt "when the minor acknowledged the safety reminder; null until then"
+    timestamptz welcomeEmailSentAt "when the one welcome email was claimed"
     timestamptz institutionVerifiedAt
     enum globalRole "STUDENT | TEACHER | PLATFORM_ADMIN"
     timestamptz deletionRequestedAt
@@ -78,7 +85,13 @@ erDiagram
   }
   Plan {
     uuid id PK
-    text code "FREE today"
+    text code "FREE today; accounts without a plan use it"
+    text name
+    int priceMinor "ADR-0101: minor units, config only, nothing is charged"
+    text currency "ISO 4217, default INR"
+    enum interval "NONE | MONTH | YEAR"
+    text_array features
+    bool active "FREE stays active"
   }
   Entitlement {
     uuid planId FK
@@ -109,8 +122,9 @@ erDiagram
     text reason
   }
   AppSetting {
-    text key PK "student_id_verification (ADR-0099, missing means off); google_sign_in (ADR-0100, inserted on)"
-    bool enabled
+    text key PK "catalog in setting-catalog.ts (ADR-0101); student_id_verification missing means off; google_sign_in missing means on"
+    bool enabled "mirrors a boolean value"
+    jsonb value "{ v: boolean | number | string | null }"
     uuid updatedBy
     timestamptz updatedAt
   }
@@ -163,6 +177,30 @@ erDiagram
     enum document "TERMS | PRIVACY | PUBLIC_LICENCE"
     text version
     timestamptz acceptedAt
+  }
+  GuardianConsent {
+    uuid id PK
+    uuid userId FK "ON DELETE RESTRICT"
+    enum kind "GUARDIAN"
+    text method "auto_unverified | email_plus | verified | later id"
+    text noticeVersion
+    timestamptz recordedAt
+    timestamptz verifiedAt "set on confirm click; null until then"
+    citext parentEmail "cleared on purge"
+    text ageBand "under_13 | 13_15 | 16_17"
+    boolean socialEnabled "parent toggle; applies only when consent is verified and the band is under_13"
+  }
+  GuardianLink {
+    uuid id PK
+    uuid userId FK "ON DELETE CASCADE"
+    enum purpose "CONFIRM | MANAGE | SESSION"
+    bytes tokenHash UK
+    timestamptz expiresAt
+    timestamptz usedAt
+  }
+  FirebaseInstallation {
+    text fid PK
+    uuid userId FK "ON DELETE CASCADE"
   }
   AuditLog {
     uuid id PK

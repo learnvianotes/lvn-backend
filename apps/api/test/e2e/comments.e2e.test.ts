@@ -15,7 +15,8 @@ describe('comments and reactions', () => {
   type Person = { id: string; handle: string; token: string }
   const person = async (opts: { verified?: boolean; teacher?: boolean; minor?: boolean; name?: string } = {}): Promise<Person> => {
     const u = await seedUser(t.app, { verified: opts.verified ?? true, globalRole: opts.teacher ? 'TEACHER' : 'STUDENT', displayName: opts.name ?? 'Someone' })
-    if (opts.minor) await db.user.update({ where: { id: u.id }, data: { dateOfBirth: new Date('2015-03-01') } })
+    // 16: a restricted minor (under 18) who is not under the Families under-13 social gate.
+    if (opts.minor) await db.user.update({ where: { id: u.id }, data: { dateOfBirth: new Date(Date.UTC(new Date().getUTCFullYear() - 16, 0, 15)) } })
     return { id: u.id, handle: u.handle, token: tokenFor(t.config, u.id) }
   }
   const doc = (s: string) => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: s }] }] })
@@ -114,7 +115,7 @@ describe('comments and reactions', () => {
     expect(texts(await comments(target, owner))).toEqual(['(removed)'])
   })
 
-  it('comments follow the note’s read rule, need a verified account, and a card must be in the note', async () => {
+  it('comments follow the note’s read rule, and a card must be in the note', async () => {
     const { target, cardId } = await note(owner, 'PRIVATE')
     expect(await discussion(target, asha)).toBeNull()
     expect((await say(asha, target, 'Hello')).code).toBe('NOT_FOUND')
@@ -130,8 +131,8 @@ describe('comments and reactions', () => {
     const open = await note(owner)
     expect((await t.gql<{ note: { discussion: unknown } }>('query ($id: UUID!) { note(id: $id) { discussion { commentCount } } }', { id: open.target.id })).data!.note.discussion).toBeNull()
     const unverified = await person({ verified: false })
-    expect(await discussion(open.target, unverified)).toMatchObject({ viewerCanComment: false, whyNot: 'Verify your account to comment.' })
-    expect(await say(unverified, open.target, 'Hi')).toMatchObject({ code: 'FORBIDDEN', error: 'Verify your account to comment.' })
+    expect(await discussion(open.target, unverified)).toMatchObject({ viewerCanComment: true, whyNot: null })
+    expect((await say(unverified, open.target, 'Hi')).comment).toMatchObject({ author: { id: unverified.id } })
   })
 
   it('a restricted minor comments on notes shared with them, never on public ones (§15.2)', async () => {

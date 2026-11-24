@@ -1,19 +1,16 @@
 import 'reflect-metadata'
 import { NestFactory } from '@nestjs/core'
 import { loadWorkerConfig } from '@lvn-backend/config'
-import { InProcessEventBus } from '@lvn-backend/event-bus'
 import { LegacySnapshots } from '@lvn-backend/legacy'
 import { Queues } from '@lvn-backend/queue'
 import { Storage } from '@lvn-backend/storage'
-import { firestoreContentSource, LegacyContentImport } from '@lvn-backend/notes'
-import { firestoreLegacySource, snapshotOldSite } from '@lvn-backend/users'
+import { firestoreLegacySource, snapshotOldSite, UsersMaintenance } from '@lvn-backend/users'
 import { WorkerModule } from './worker.module'
 
 const USAGE = `Usage: cli.js <command>
   legacy:snapshot              copy the old learnvianotes.in data into the restricted bucket (ADR-0023); re-runnable
-  content:import-legacy --credentials <service-account.json> [--owner <handle>] [--dry-run] [--subject <id>]…
-                               the old site's subjects, topics and Sheet 150 problems from its Firestore into the catalogue
-                               and public notes (ADR-0098); idempotent. docs/runbooks/legacy-content.md
+  metrics:backfill <from> <to> roll up the admin usage metrics of past IST days, YYYY-MM-DD inclusive (ADR-0106);
+                               re-runnable, e.g. metrics:backfill 2026-10-01 2026-11-12
   queues                       each queue's waiting, delayed, active and failed jobs
   queue:failed <queue>         the last 20 failed jobs with their reasons
   queue:retry <queue>          retry every failed job (each job is idempotent, §9.2)
@@ -28,7 +25,7 @@ const USAGE = `Usage: cli.js <command>
 async function main(command: string | undefined, args: string[]) {
   const config = loadWorkerConfig()
   if (command?.startsWith('queue')) return queueCommand(new Queues(config.REDIS_URL), command, args)
-  if (command === 'content:import-legacy') return importLegacyContent(config, args)
+  if (command === 'metrics:backfill') return backfillMetrics(config, args)
   if (command !== 'legacy:snapshot') throw new Error(USAGE)
   if (!config.LEGACY_FIREBASE_PROJECT_ID) throw new Error('Set LEGACY_FIREBASE_PROJECT_ID and GOOGLE_APPLICATION_CREDENTIALS (read-only service account).')
   const app = await NestFactory.createApplicationContext(WorkerModule.forRoot(config, { jobs: false }), { logger: ['log', 'warn', 'error'] })
@@ -41,44 +38,13 @@ async function main(command: string | undefined, args: string[]) {
   }
 }
 
-/**
- * The old site's study content into Postgres (ADR-0098, docs/runbooks/legacy-content.md). Reads Firestore with the
- * service-account key file given (read-only access is all it needs) and refuses a production database unless told.
- */
-async function importLegacyContent(config: ReturnType<typeof loadWorkerConfig>, args: string[]) {
-  const opts = { credentials: '', owner: '', project: '', dryRun: false, allowProduction: false, subjects: [] as string[] }
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!
-    const value = () => {
-      const v = args[++i]
-      if (!v || v.startsWith('--')) throw new Error(`${arg} needs a value.\n${USAGE}`)
-      return v
-    }
-    if (arg === '--credentials') opts.credentials = value()
-    else if (arg === '--owner') opts.owner = value()
-    else if (arg === '--project') opts.project = value()
-    else if (arg === '--subject') opts.subjects.push(value())
-    else if (arg === '--dry-run') opts.dryRun = true
-    else if (arg === '--allow-production') opts.allowProduction = true
-    else throw new Error(`Unknown option ${arg}.\n${USAGE}`)
-  }
-  if (!opts.credentials) throw new Error(`Give the read-only service account's key file: --credentials <file>.\n${USAGE}`)
-  if (config.APP_ENV === 'production' && !opts.allowProduction && !opts.dryRun) {
-    throw new Error('This database is production (APP_ENV=production). Import into beta first; production only when the owner says so, with --allow-production.')
-  }
-  const source = await firestoreContentSource(opts.credentials, opts.project || undefined)
-  const app = await NestFactory.createApplicationContext(WorkerModule.forRoot(config, { jobs: false }), { logger: ['log', 'warn', 'error'] })
+/** ADR-0106: in this process, a month at a time; days already rolled up are rewritten with the same rows. */
+async function backfillMetrics(config: ReturnType<typeof loadWorkerConfig>, [from, to]: string[]) {
+  if (!from || !to) throw new Error(USAGE)
+  const app = await NestFactory.createApplicationContext(WorkerModule.forRoot(config, { jobs: false }), { logger: ['warn', 'error'] })
   try {
-    const report = await app.get(LegacyContentImport).run(source, { owner: opts.owner || null, dryRun: opts.dryRun, subjects: opts.subjects })
-    // Publishing hands work to event handlers (search, Ask AI's chunks, the web's pages): let them finish first.
-    await app.get(InProcessEventBus).drain()
-    console.log(JSON.stringify(report, null, 2))
-    const n = report.notes
-    console.log(
-      `${report.dryRun ? 'Dry run, nothing written: would create' : 'Created'} ${n.created}, ${report.dryRun ? 'update' : 'updated'} ${n.updated}, unchanged ${n.unchanged}; ` +
-        `left alone ${n.editedInApp.length} edited in the app and ${n.trashed.length} trashed; ${n.held.length} held for moderation; ${n.invalid.length} invalid. ` +
-        `Catalogue: +${report.catalog.subjectsAdded.length} subjects, +${report.catalog.topicsAdded.length} topics, ${report.catalog.subjectsChanged.length + report.catalog.topicsChanged.length} changed.`,
-    )
+    const report = await app.get(UsersMaintenance).backfillMetrics(from, to, (chunk) => console.log(`${chunk.fromDay}..${chunk.toDay}: ${chunk.days} days, ${chunk.weeks} weeks, ${chunk.rows} rows`))
+    console.log(JSON.stringify(report))
   } finally {
     await app.close()
   }

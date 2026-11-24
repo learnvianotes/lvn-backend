@@ -24,8 +24,14 @@ type SignInOptions {
   emailPassword: Boolean!
   "False when FIREBASE_PROJECT_ID is unset, or a platform admin has turned Google sign-in off"
   google: Boolean!
-  github: Boolean!
-  linkedin: Boolean!
+  "Retired (ADR-0115). Always false."
+  github: Boolean! @deprecated(reason: "GitHub sign-in is retired. Always false.")
+  "Retired (ADR-0115). Always false."
+  linkedin: Boolean! @deprecated(reason: "LinkedIn sign-in is retired. Always false.")
+  "A 6-digit code emailed to the account (requestSignInCode, signInWithCode)."
+  emailCode: Boolean!
+  "Passkeys (startPasskeySignIn, finishPasskeySignIn), where the device supports them."
+  passkey: Boolean!
 }
 
 "A way this account can sign in. EMAIL is a password; the others are linked provider identities (ADR-0100)."
@@ -64,6 +70,8 @@ extend type User {
   institution: Institution
   "Viewer only: a minor without verified consent (§15.2) — no public publishing, no DMs"
   restrictedMinor: Boolean
+  "Viewer only. True when this person is under 18, or has no known age, and has not acknowledged the safety reminder. Clients show it before the first use of social features."
+  safetyReminderRequired: Boolean
 }
 
 "Firebase ID token from a Google sign-in; verified by the API and exchanged for an LVN session (ADR-0007)"
@@ -82,8 +90,16 @@ input OAuthExchangeInput {
 "After a provider sign-in (no signUp call): the same details, collected once"
 input CompleteRegistrationInput {
   displayName: String!
-  dateOfBirth: String!
+  """
+  Whole years, 1 to 120 (ADR-0104). Required, unless an app from before ADR-0104 sends dateOfBirth instead. When both
+  are sent, age is used and dateOfBirth is ignored.
+  """
+  age: Int
+  "YYYY-MM-DD, from apps released before ADR-0104. The age it gives today is stored, not the date."
+  dateOfBirth: String @deprecated(reason: "Send age, in whole years. Ignored when age is sent.")
   institutionalEmail: String
+  "Parent or guardian email. Required for an admitted registration under 18. Stored with the consent record, not as this account's email."
+  parentEmail: String
   acceptedTermsVersion: String!
 }
 
@@ -102,6 +118,8 @@ extend type Query {
 }
 
 extend type Mutation {
+  "The signed-in person has seen the safety reminder. Later reads of safetyReminderRequired are false."
+  acknowledgeSafetyReminder: OkPayload!
   "Platform admins. Turns Google sign-in on or off without a deploy. Does nothing until FIREBASE_PROJECT_ID is set."
   setGoogleSignInEnabled(input: SetGoogleSignInEnabledInput!): AuthSettingsPayload!
   signInWithGoogle(input: SignInWithGoogleInput!): AuthPayload!

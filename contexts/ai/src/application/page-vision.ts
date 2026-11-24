@@ -106,8 +106,8 @@ export class AiPageVision implements PageVision {
     return (await this.gateway.status()).available
   }
 
-  async read(png: string): Promise<{ cards: NewCard[]; text: string }> {
-    const out = await this.gateway.generate({ task: 'READ_PAGE', userId: null, private: true, prompt: 'read-page', images: [png], schema: pageSchema, temperature: 0 })
+  async read(png: string, subjectId?: string | null): Promise<{ cards: NewCard[]; text: string }> {
+    const out = await this.gateway.generate({ task: 'READ_PAGE', userId: null, subjectId, private: true, prompt: 'read-page', images: [png], schema: pageSchema, temperature: 0 })
     return { cards: blocksToCards(out.output.blocks), text: blocksText(out.output.blocks) }
   }
 }

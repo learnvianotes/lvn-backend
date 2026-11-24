@@ -1,10 +1,14 @@
 // Interfaces through which contexts call each other in-process (spec §6.1, §6.5 step 5). Only tokens and types live
 // here; each implementation belongs to the owning context and is bound by the composition roots.
+export { AUDIENCE, type Audience, type AudienceContact } from './audience'
 export { MAILER, type Mailer, type MailOptions, type MailTemplate, type MailTemplates } from './mail'
 export { POLICY, type Policy } from './policy'
 export { ENTITLEMENTS, type Entitlements } from './entitlements'
+export { AI_PLAN_USAGE, CORE_PLAN_USAGE, NOTES_PLAN_USAGE, type PlanUsageSource } from './plan-usage'
+export { PLATFORM_SETTINGS, fallbackPlatformSettings, type PlatformSettings } from './platform-settings'
+export { AI_ADMIN_STATS, CORE_ADMIN_STATS, CORE_DAILY_METRICS, NOTES_ADMIN_STATS, NOTES_DAILY_METRICS, type AdminDailyCount, type AdminDayWindow, type AiAdminStats, type AiUsageSlice, type CoreAdminStats, type NotesAdminStats, type NotesUploadStats, type SubjectActivity } from './admin-stats'
 export { FILES, type Files, type FileParentKind, type FilePurposeKind, type FileSummary } from './files'
-export { PEOPLE, type People, type Person, type SearchProfile } from './people'
+export { PEOPLE, type FamiliesStanding, type People, type Person, type SearchProfile } from './people'
 export { AUDIT, type Audit, type AuditEntry } from './audit'
 export { MODERATION, NOTE_MODERATION, type Moderation, type ModerationSubject, type ModerationStateKind, type ModeratedNote, type NoteModeration } from './moderation'
 export { PLACES, type ClassroomForSearch, type GroupForSearch, type Places } from './places'

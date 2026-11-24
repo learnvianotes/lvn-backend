@@ -143,8 +143,23 @@ describe('security: resources', () => {
         .toLowerCase()
         .split(' ')
     const commerce = [...COMMERCE_WORDS, 'purchase', 'payment', 'pay', 'coupon', 'sale', 'sell']
+    // Plan prices and AI usage cost are configuration or a public price list (ADR-0101). Nothing is charged or sold.
+    const adminConfig = new Set([
+      'AdminAiMetrics.costMicroUsd',
+      'AdminAiModelUsage.costMicroUsd',
+      'AdminAiProviderUsage.costMicroUsd',
+      'AdminAiTaskUsage.costMicroUsd',
+      'AdminPlan.priceMinor',
+      'AdminPlan.currency',
+      'CreateAdminPlanInput.priceMinor',
+      'CreateAdminPlanInput.currency',
+      'UpdateAdminPlanInput.priceMinor',
+      'UpdateAdminPlanInput.currency',
+      'PublicPlan.priceMinor',
+      'PublicPlan.currency',
+    ])
     expect(names.length).toBeGreaterThan(500)
-    expect(names.filter((n) => words(n).some((w) => commerce.includes(w)))).toEqual([])
+    expect(names.filter((n) => !adminConfig.has(n) && words(n).some((w) => commerce.includes(w)))).toEqual([])
   })
 
   it('skills import never reads this machine or a private network, whatever page a teacher claims', async () => {

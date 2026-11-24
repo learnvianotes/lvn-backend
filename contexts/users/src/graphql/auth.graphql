@@ -1,17 +1,29 @@
 # Sign-in and sessions (spec §7, ADR-0007, ADR-0017).
 
 "Fixed error vocabulary (§6.2)"
-enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL UNAVAILABLE UNDER_MINIMUM_AGE }
+enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL UNAVAILABLE UNDER_MINIMUM_AGE AGE_RESTRICTED AI_UNAVAILABLE_FOR_MINOR FEATURE_UNAVAILABLE_FOR_MINOR MINOR_PII_BLOCKED MFA_REQUIRED ADMIN_MFA_REQUIRED }
 
 "An expected failure of a mutation; `field` is the dotted input path, e.g. [\"input\", \"email\"]"
 type UserError @shareable {
   field: [String!]
   message: String!
   code: ErrorCode!
+  "Seconds until a RATE_LIMITED caller may retry. Null for every other code."
+  retryAfter: Int
+  "One address on AGE_RESTRICTED and on a blocked sign-in: SUPPORT_EMAIL (support@learnvianotes.in unless the environment sets another)."
+  supportEmail: String
 }
 
 type OkPayload @shareable {
   ok: Boolean!
+  userErrors: [UserError!]!
+}
+
+"The account after a verification link is used. `user` is null when the link fails."
+type VerifyEmailPayload {
+  ok: Boolean!
+  "Login email is `emailVerified`. Institution verification is `verified` and is not set by this link."
+  user: User
   userErrors: [UserError!]!
 }
 
@@ -34,18 +46,34 @@ type AuthPayload {
   including a normal sign-up and "an account already exists, sign in instead".
   """
   emailLinkPending: Boolean!
+  """
+  True when this session must finish a second factor before protected operations (an admin or staff role, or an
+  account that opted in). Sign-in still returns a session: use it for `startMfaChallenge` and `verifyMfaChallenge`.
+  False when nothing further is required, including a normal account.
+  """
+  mfaRequired: Boolean!
+  "Factors this sign-in may use. Empty when mfaRequired is false. EMAIL_OTP is the one that sends a code today."
+  mfaFactors: [MfaFactorType!]!
 }
 
 """
-Registration (ADR-0017, ADR-0019): date of birth is required (YYYY-MM-DD). A college or organisation email is
+Registration (ADR-0017, ADR-0019, ADR-0104): the age in whole years is required. A college or organisation email is
 optional; it receives a 6-digit code. `acceptedTermsVersion` must be Query.termsVersion.
 """
 input SignUpInput {
   email: String!
   password: String!
   displayName: String!
-  dateOfBirth: String!
+  """
+  Whole years, 1 to 120 (ADR-0104). Required, unless an app from before ADR-0104 sends dateOfBirth instead. When both
+  are sent, age is used and dateOfBirth is ignored.
+  """
+  age: Int
+  "YYYY-MM-DD, from apps released before ADR-0104. The age it gives today is stored, not the date."
+  dateOfBirth: String @deprecated(reason: "Send age, in whole years. Ignored when age is sent.")
   institutionalEmail: String
+  "Parent or guardian email. Required for an admitted sign-up under 18. Stored with the consent record, not as this account's email."
+  parentEmail: String
   acceptedTermsVersion: String!
 }
 
@@ -73,8 +101,14 @@ input ResetPasswordInput {
 }
 
 extend type Query {
-  "Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2)"
+  "Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2). A platform admin can change it (ADR-0103), so read it here instead of hard-coding it."
   termsVersion: String!
+  "Youngest whole-year age that may sign up. A platform admin changes it (account_minimum_age). Default 13. It cannot be set below 13, and a lower saved value is still enforced as 13. Ages under 13 cannot create an account. Read it here instead of hard-coding a minimum."
+  accountMinimumAge: Int!
+  "Action ids an institution-unverified account cannot do. Empty means none. Pass these into can() on web and mobile."
+  unverifiedGatedActions: [String!]!
+  "Whether Public notes and quizzes require an institution-verified account. True when the admin has not saved the row. Anyone may read it."
+  publicNotesRequireVerification: Boolean!
 }
 
 type Mutation {
@@ -83,8 +117,11 @@ type Mutation {
   refreshSession(input: RefreshSessionInput!): AuthPayload!
   "Ends this device's session (its whole refresh-token family)"
   signOut: OkPayload!
-  verifyEmail(input: VerifyEmailInput!): OkPayload!
-  "Always ok, whether or not an account exists"
+  "Confirms the login email, or attaches a password from a link. Returns the user so clients can replace the session snapshot."
+  verifyEmail(input: VerifyEmailInput!): VerifyEmailPayload!
+  "Sends another login-email link to the signed-in account. Already verified: ok, and no mail. Three an hour."
+  resendVerification: OkPayload!
+  "Always ok, whether or not an account exists. No mail is sent when no live account has that address."
   requestPasswordReset(input: RequestPasswordResetInput!): OkPayload!
   "Sets the password and signs out every device"
   resetPassword(input: ResetPasswordInput!): OkPayload!

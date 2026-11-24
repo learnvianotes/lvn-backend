@@ -71,4 +71,38 @@ export class RateLimiter {
   async reset(key: string): Promise<void> {
     await this.redis.del(`rl:${key}`)
   }
+
+  /**
+   * Adds `amount` to a sliding window of sums (upload bytes per day). Refused charges are not recorded.
+   * The member stores the amount; the window is the same shape as `hit`.
+   */
+  async charge(key: string, amount: number, limit: Limit, now = Date.now()): Promise<LimitResult> {
+    const windowMs = limit.windowSeconds * 1000
+    const [allowed, value] = (await this.redis.eval(CHARGE, 1, `rl:${key}`, now, windowMs, limit.max, amount, `${now}:${randomUUID()}`)) as [number, number]
+    if (allowed === 1) return { allowed: true, retryAfter: 0, remaining: Math.max(0, limit.max - value) }
+    return { allowed: false, retryAfter: Math.max(1, Math.ceil((value + windowMs - now) / 1000)), remaining: 0 }
+  }
 }
+
+/** Sum of the amounts still inside the window. A member is `<id>:<amount>`. */
+const CHARGE = `
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+local max = tonumber(ARGV[3])
+local amount = tonumber(ARGV[4])
+redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
+local total = 0
+local members = redis.call('ZRANGE', key, 0, -1)
+for _, member in ipairs(members) do
+  local bytes = tonumber(string.match(member, ':(%d+)$')) or 0
+  total = total + bytes
+end
+if total + amount > max then
+  local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+  return {0, tonumber(oldest[2] or now)}
+end
+redis.call('ZADD', key, now, ARGV[5] .. ':' .. amount)
+redis.call('PEXPIRE', key, window)
+return {1, total + amount}
+`

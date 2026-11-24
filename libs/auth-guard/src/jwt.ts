@@ -20,6 +20,27 @@ export interface AccessClaims {
   aud: string
   iat: number
   exp: number
+  /** How the session was authenticated. `otp` is present only after a fresh second factor. */
+  amr?: string[]
+  /** True when `mfaAt` is still inside the caller's MFA window. Absent on older tokens. */
+  mfa?: boolean
+  /** Unix seconds when the second factor was accepted. */
+  mfaAt?: number
+  /** This account must pass MFA (role policy or the account opted in). Absent means no. */
+  mfaReq?: boolean
+  /** A recovery window is open, so role policy does not challenge this token. */
+  mfaExempt?: boolean
+}
+
+export interface AccessSubject {
+  userId: string
+  sessionId: string
+  roles: GlobalRole[]
+  amr?: string[]
+  mfa?: boolean
+  mfaAt?: number
+  mfaReq?: boolean
+  mfaExempt?: boolean
 }
 
 const b64url = (data: Buffer | string) => Buffer.from(data).toString('base64url')
@@ -32,7 +53,7 @@ export class AccessTokenSigner {
     if (this.key.asymmetricKeyType !== 'rsa') throw new Error('JWT_PRIVATE_KEY must be an RSA key')
   }
 
-  sign(subject: { userId: string; sessionId: string; roles: GlobalRole[] }, now = Math.floor(Date.now() / 1000)): { token: string; expiresAt: Date } {
+  sign(subject: AccessSubject, now = Math.floor(Date.now() / 1000)): { token: string; expiresAt: Date } {
     const claims: AccessClaims = {
       sub: subject.userId,
       sid: subject.sessionId,
@@ -41,6 +62,10 @@ export class AccessTokenSigner {
       aud: this.audience,
       iat: now,
       exp: now + ACCESS_TOKEN_TTL_SECONDS,
+      ...(subject.amr ? { amr: subject.amr } : {}),
+      ...(subject.mfa ? { mfa: true, mfaAt: subject.mfaAt } : {}),
+      ...(subject.mfaReq ? { mfaReq: true } : {}),
+      ...(subject.mfaExempt ? { mfaExempt: true } : {}),
     }
     const input = `${HEADER}.${b64url(JSON.stringify(claims))}`
     const signature = sign('sha256', Buffer.from(input), this.key)
@@ -52,8 +77,13 @@ export type VerifyResult = { ok: true; claims: AccessClaims } | { ok: false; rea
 
 export class AccessTokenVerifier {
   private readonly key: KeyObject
-  constructor(publicKeyPem: string, private readonly issuer: string, private readonly audience: string) {
+  /** Issuers accepted on verify. New tokens are signed with the first one (`JWT_ISSUER`). */
+  private readonly issuers: ReadonlySet<string>
+  constructor(publicKeyPem: string, issuer: string | readonly string[], private readonly audience: string) {
     this.key = createPublicKey(publicKeyPem)
+    const issuers = typeof issuer === 'string' ? [issuer] : [...issuer]
+    if (!issuers.length || issuers.some((iss) => !iss)) throw new Error('at least one JWT issuer is required')
+    this.issuers = new Set(issuers)
   }
 
   verify(token: string, now = Math.floor(Date.now() / 1000)): VerifyResult {
@@ -73,9 +103,15 @@ export class AccessTokenVerifier {
     if (!verify('sha256', Buffer.from(`${header}.${payload}`), this.key, Buffer.from(signature, 'base64url'))) {
       return { ok: false, reason: 'signature' }
     }
-    if (claims.iss !== this.issuer || claims.aud !== this.audience) return { ok: false, reason: 'claims' }
+    if (typeof claims.iss !== 'string' || !this.issuers.has(claims.iss) || claims.aud !== this.audience) return { ok: false, reason: 'claims' }
     if (typeof claims.sub !== 'string' || typeof claims.sid !== 'string' || !Array.isArray(claims.roles)) return { ok: false, reason: 'claims' }
     if (typeof claims.exp !== 'number' || typeof claims.iat !== 'number') return { ok: false, reason: 'claims' }
+    if (claims.amr !== undefined && (!Array.isArray(claims.amr) || claims.amr.some((method) => typeof method !== 'string'))) return { ok: false, reason: 'claims' }
+    if (claims.mfa !== undefined && typeof claims.mfa !== 'boolean') return { ok: false, reason: 'claims' }
+    if (claims.mfaReq !== undefined && typeof claims.mfaReq !== 'boolean') return { ok: false, reason: 'claims' }
+    if (claims.mfaExempt !== undefined && typeof claims.mfaExempt !== 'boolean') return { ok: false, reason: 'claims' }
+    if (claims.mfa === true && typeof claims.mfaAt !== 'number') return { ok: false, reason: 'claims' }
+    if (claims.mfaAt !== undefined && typeof claims.mfaAt !== 'number') return { ok: false, reason: 'claims' }
     if (claims.iat > now + CLOCK_SKEW_SECONDS) return { ok: false, reason: 'claims' }
     if (claims.exp <= now - CLOCK_SKEW_SECONDS) return { ok: false, reason: 'expired' }
     return { ok: true, claims: claims as AccessClaims }

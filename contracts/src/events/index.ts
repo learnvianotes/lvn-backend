@@ -83,7 +83,7 @@ export const events = {
     failed: z.number().int().min(0),
   })),
   RoleChanged: eventEnvelope('RoleChanged', 1, z.object({ userId: uuid, globalRole: z.enum(enumValues(GlobalRole)) })),
-  /** What people search finds of someone changed (ADR-0055): name, handle, date of birth, a teacher's headline or bio. */
+  /** What people search finds of someone changed (ADR-0055): name, handle, age (ADR-0104), a teacher's headline or bio. */
   PersonChanged: eventEnvelope('PersonChanged', 1, z.object({ userId: uuid })),
   SessionRevoked: eventEnvelope('SessionRevoked', 1, z.object({ userId: uuid, sessionId: uuid, family: z.boolean() })),
   // Teacher network (ADR-0013). notes keeps a connections read model for "shared with my connections"; core

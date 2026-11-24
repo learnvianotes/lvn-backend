@@ -6,6 +6,10 @@ export { CoreModule }
 export { coreConfigFrom, type CoreConfig } from './core.config'
 /** Implementation of the MODERATION facade (ADR-0037), bound by the composition roots. */
 export { ModerationService } from './application/moderation.service'
+/** Queue and place totals for the admin dashboard (ADR-0101). */
+export { CoreAdminStats } from './application/admin-stats'
+/** Groups, classes and membership counted against a plan (CORE_PLAN_USAGE). */
+export { CorePlanUsage } from './application/plan-usage'
 /** Implementation of the PLACES facade (ADR-0050), bound by the composition roots. */
 export { ClassroomsService } from './application/classrooms.service'
 /** Implementation of the PLACES facade (ADR-0050, ADR-0056), bound by the composition roots. */

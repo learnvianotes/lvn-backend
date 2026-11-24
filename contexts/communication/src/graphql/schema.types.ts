@@ -20,9 +20,9 @@ export interface Classroom {
 
 export type DevicePlatform = 'ANDROID' | 'IOS'
 
-export type EmailKind = 'CLASSROOM_POST' | 'DIGEST'
+export type EmailKind = 'CLASSROOM_POST' | 'DIGEST' | 'MARKETING'
 
-export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE'
+export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED' | 'AI_UNAVAILABLE_FOR_MINOR' | 'FEATURE_UNAVAILABLE_FOR_MINOR' | 'MINOR_PII_BLOCKED' | 'MFA_REQUIRED' | 'ADMIN_MFA_REQUIRED'
 
 /** A group, owned by the core subgraph: null when the viewer may no longer see it */
 export interface Group {
@@ -107,6 +107,8 @@ export interface NotificationSettings {
   /** An IANA time zone, e.g. Asia/Kolkata */
   timeZone: string
   weeklyDigest: boolean
+  /** Product news. False unsubscribes this account from the audience. */
+  productEmails: boolean
   /** The server can send push (it has FCM settings) */
   pushAvailable: boolean
   /** Phones registered for push */
@@ -160,6 +162,7 @@ export interface UpdateNotificationSettingsInput {
   quietEnd?: string | null
   timeZone?: string | null
   weeklyDigest?: boolean | null
+  productEmails?: boolean | null
 }
 
 /** A person, owned by the users subgraph */
@@ -171,4 +174,8 @@ export interface UserError {
   field: Array<string> | null
   message: string
   code: ErrorCode
+  /** Seconds until a RATE_LIMITED caller may retry. Null for every other code. */
+  retryAfter: number | null
+  /** One address on AGE_RESTRICTED and on a blocked sign-in: SUPPORT_EMAIL (support@learnvianotes.in unless the environment sets another). */
+  supportEmail: string | null
 }

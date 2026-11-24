@@ -6,7 +6,7 @@ Cloudflare R2, and email to Resend. Images come from GHCR. GitHub Actions deploy
 | Environment | Host | VM | Deploys from | GitHub environment |
 | --- | --- | --- | --- | --- |
 | beta | `https://beta.learnvianotes.in` | Lightsail `lvn-test`, Mumbai, `13.204.214.142`: 2 GB RAM, 2 GB swap, Ubuntu 24.04, Docker 29 | an lvn-backend or lvn-web `release/**` branch | `beta` (both repositories) |
-| production | `https://www.learnvianotes.in` (planned) | **none for now**: the server was deleted on 2026-10-22 and will be brought back as another 2 GB VM | a `v*` tag, the same tag in both repositories | `production`, with a required reviewer |
+| production | `https://app.learnvianotes.in` (web) and `https://api.learnvianotes.in` (API); `www` and the apex redirect to the app | **none for now**: the server was deleted on 2026-10-22 and will be brought back as another 2 GB VM | a `v*` tag, the same tag in both repositories | `production`, with a required reviewer |
 
 Until production has a VM, a `v*` tag builds and pushes the images, and then the deploy job stops at SSH. Its host
 secret is empty, so it fails before it touches anything. Don't push `v*` tags until production is back.
@@ -67,8 +67,9 @@ clients at once.
   restarted by Docker; the VM keeps going.
 - Watch `lvn.sh status`. If the API or the worker sits near its cap, raise it here before anything else (a bigger
   Lightsail plan raises all of them).
-- Not on the VM: ClamAV and the PDF engine (uploads are off, ADR-0097), Typesense (search on Postgres), and the
-  monitoring stack (ADR-0089: use Grafana Cloud or an uptime check).
+- Not on the VM: ClamAV (its own 2 GB instance, `docs/ops/scanner-host.md`, ADR-0102), the PDF engine (uploads are off
+  until that host is up, ADR-0097), Typesense (search on Postgres), and the monitoring stack (ADR-0089: use Grafana
+  Cloud or an uptime check).
 
 ## What Infra provisions
 
@@ -79,7 +80,7 @@ For each environment:
    docker group, and `/opt/lvn` owned by it. Give it a static IP.
 2. **DNS.**
    - beta: `beta.learnvianotes.in` A → `13.204.214.142`.
-   - production: `www.learnvianotes.in` and `learnvianotes.in` A → its static IP (`learnvianotes.in` redirects to `www`).
+   - production: `app.learnvianotes.in`, `api.learnvianotes.in`, `www.learnvianotes.in` and `learnvianotes.in` A → its static IP (`16.4.70.135` when that VM is this one). `www` and the apex redirect to `https://app.learnvianotes.in`. The API is only on `api`.
    - DNS must point at the VM before the first deploy: Caddy gets its certificates from Let's Encrypt over port 80/443,
      and the deploy fails until the site answers over HTTPS.
 3. **R2.**
@@ -98,7 +99,7 @@ For each environment:
    - Create an API key with sending access.
    - `MAIL_FROM` must use that domain.
 5. **Firebase (Google sign-in).**
-   - Add the environment's host to the project's Authorized domains.
+   - Add the environment's web host to the project's Authorized domains. Production: `app.learnvianotes.in`. The Google sign-in redirect is `https://app.learnvianotes.in/__/auth/handler`.
    - Production must use the production project; beta must not (the web build refuses a mix-up: lvn-web
      `config/firebase-projects.json`). `learnvianotes-test` is still to be created, so beta can run without Google
      sign-in until then (leave the Firebase variables empty).
@@ -134,11 +135,14 @@ Set in the `beta` and the `production` environment of each repository. Values di
 | secret | `LVN_R2_SECRET_ACCESS_KEY` | R2 token's secret |
 | secret, optional | `LVN_BACKEND_EXTRA_ENV` | more `KEY=VALUE` lines for `backend.env` from docs/architecture/env.md, e.g. FCM push |
 | variable | `LVN_GHCR_USER` | the GHCR token's account |
-| variable | `LVN_PUBLIC_URL` | `https://beta.learnvianotes.in` (production: `https://www.learnvianotes.in`) |
-| variable | `LVN_SITE_HOSTS` | `beta.learnvianotes.in` (production: `www.learnvianotes.in learnvianotes.in`) |
+| variable | `LVN_PUBLIC_URL` | `https://beta.learnvianotes.in` (production: `https://app.learnvianotes.in`) |
+| variable | `LVN_SITE_HOSTS` | `beta.learnvianotes.in` (production: `app.learnvianotes.in api.learnvianotes.in www.learnvianotes.in learnvianotes.in`) |
+| variable, optional | `LVN_APP_HOST` | bare hostname of the web. Unset: the host of `LVN_PUBLIC_URL` (beta stays one host). Production: `app.learnvianotes.in` |
+| variable, optional | `LVN_API_HOST` | bare hostname of the API. Unset: the same host as the app, and Caddy keeps the path split. Production: `api.learnvianotes.in`. When the two differ, `CORS_ORIGINS` and `WEB_URL` are `https://` plus the app host, and `JWT_ISSUER` is `https://` plus the API host |
+| variable, optional | `LVN_MAIL_REPLY_TO` | Reply-To on transactional mail. Unset: `support@learnvianotes.in` |
 | variable | `LVN_ACME_EMAIL` | where Let's Encrypt writes about certificates |
 | variable | `LVN_APP_ENV` | `sandbox` for beta (noindex), `production` for production |
-| variable | `LVN_MAIL_FROM` | e.g. `LearnViaNotes <no-reply@learnvianotes.in>` |
+| variable | `LVN_MAIL_FROM` | `LearnViaNotes <no-reply@learnvianotes.in>` (the verified Resend sender) |
 | variable | `LVN_R2_ENDPOINT` | `https://<account id>.r2.cloudflarestorage.com` |
 | variable | `LVN_R2_BUCKET` | `lvn-<env>-files` |
 | variable | `LVN_R2_RESTRICTED_BUCKET` | `lvn-<env>-restricted` |
@@ -180,8 +184,10 @@ don't need it.
    ```
 4. Each run ends with `Deployed …` only when every service is healthy and the site answers over HTTPS. Then check
    `https://beta.learnvianotes.in`: sign up with a real address and confirm that the email arrives.
-5. Bring the old site's subjects, topics and Sheet 150 problems across as public notes: `legacy-content.md`
-   (ADR-0098). It needs the read-only Firestore key and the LearnViaNotes account.
+5. Study notes are not a separate import. The migrate container runs `scripts/migrate-and-sync.mjs`, which applies
+   migrations and then upserts `content/study` (ADR-0098, `legacy-content.md`). No Firestore key and no extra command.
+   Before the first deploy that includes this sync, run the checks in that runbook: production is seeded by the
+   deploy itself.
 
 ## Every deploy
 
@@ -194,5 +200,8 @@ don't need it.
 
 ## Uploads
 
-Off (ADR-0097). To turn them on: room for ClamAV (or a `CLAMAV_URL` elsewhere), the PDF engine for PDF conversion,
-`LVN_UPLOADS_ENABLED=true`, the files bucket's `PUT` CORS rule, then deploy lvn-backend.
+Off (ADR-0097). To turn them on: provision the scan service (`docs/ops/scanner-host.md`, ADR-0102), put
+`SCAN_MODE=remote`, `SCANNER_URL` and `SCANNER_SECRET` in `LVN_BACKEND_EXTRA_ENV` (the same secret as the scanner
+host; do not set `CLAMAV_URL` on this VM), the PDF engine for PDF conversion, `LVN_UPLOADS_ENABLED=true`, the files
+bucket's `PUT` CORS rule, then deploy lvn-backend. Until the scan service answers, a remote upload stays pending and
+is not served.

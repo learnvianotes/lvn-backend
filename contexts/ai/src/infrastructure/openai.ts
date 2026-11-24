@@ -1,7 +1,12 @@
+import { randomBytes } from 'node:crypto'
 import { EMBEDDING_DIMENSIONS, HttpProviderError, mediaTypeOf, normalized, ProviderError, type AiProviderAdapter, type ChatMessage, type ChatRequest, type ChatResult, type EmbedResult } from '../domain/provider'
-import { callProvider, serverSentEvents } from './http'
+import { callProvider, callProviderBytes, serverSentEvents } from './http'
 
-type Part = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } } | { type: 'input_audio'; input_audio: { data: string; format: 'wav' } }
+type Part =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+  | { type: 'input_audio'; input_audio: { data: string; format: 'wav' } }
+  | { type: 'file'; file: { filename: string; file_data: string } }
 
 interface Completion {
   choices?: { message?: { content?: string | null }; delta?: { content?: string | null } }[]
@@ -9,12 +14,17 @@ interface Completion {
   error?: { message?: string }
 }
 
-const toMessage = (m: ChatMessage): { role: string; content: string | Part[] } => {
+/** A guard against a server that never stops saying there are more models. Not a cap on the list. */
+const MAX_MODEL_PAGES = 500
+
+const toMessage = (m: ChatMessage, kind: string): { role: string; content: string | Part[] } => {
   if (!m.images?.length) return { role: m.role, content: m.content }
   const parts: Part[] = [{ type: 'text', text: m.content }]
   for (const data of m.images) {
     const type = mediaTypeOf(data)
-    parts.push(type === 'audio/wav' ? { type: 'input_audio', input_audio: { data, format: 'wav' } } : { type: 'image_url', image_url: { url: `data:${type};base64,${data}` } })
+    if (type === 'audio/wav') parts.push({ type: 'input_audio', input_audio: { data, format: 'wav' } })
+    else if (type === 'application/pdf' && kind !== 'GEMINI') parts.push({ type: 'file', file: { filename: 'document.pdf', file_data: `data:application/pdf;base64,${data}` } })
+    else parts.push({ type: 'image_url', image_url: { url: `data:${type};base64,${data}` } })
   }
   return { role: m.role, content: parts }
 }
@@ -25,8 +35,10 @@ const refused = (e: unknown, option: string) => e instanceof HttpProviderError &
 /**
  * OpenAI's Chat Completions and Embeddings API (ADR-0065), spoken by OpenAI, by Gemini's OpenAI-compatible endpoint and
  * by any compatible server: a LiteLLM proxy, OpenRouter, vLLM, Ollama's /v1… Structured answers use `response_format`
- * with the JSON schema; pictures go as data URLs and recordings as `input_audio`. Embeddings are asked for 768
- * numbers and scaled to length 1.
+ * with the JSON schema. This dialect does not force `tool_choice`. A model that refuses JSON-schema answers is asked
+ * for a JSON object, and one that refuses that too is asked for JSON in its instructions; the gateway checks either
+ * way. Pictures go as data URLs and recordings as `input_audio`. Embeddings are asked for 768 numbers and scaled to
+ * length 1.
  */
 export class OpenAiProvider implements AiProviderAdapter {
   constructor(
@@ -39,7 +51,7 @@ export class OpenAiProvider implements AiProviderAdapter {
   async chat(request: ChatRequest, onDelta?: (text: string) => void): Promise<ChatResult> {
     const body: Record<string, unknown> = {
       model: request.model,
-      messages: request.messages.map(toMessage),
+      messages: request.messages.map((message) => toMessage(message, this.name)),
       stream: !!onDelta,
       ...(onDelta ? { stream_options: { include_usage: true } } : {}),
       ...(request.schema ? { response_format: { type: 'json_schema', json_schema: { name: 'answer', schema: request.schema, strict: false } } } : {}),
@@ -69,6 +81,19 @@ export class OpenAiProvider implements AiProviderAdapter {
     return { text, promptTokens: usage?.prompt_tokens ?? 0, completionTokens: usage?.completion_tokens ?? 0 }
   }
 
+  /** Whisper and *-transcribe. The body is multipart, not the JSON chat call. */
+  async transcribe(request: { model: string; wav: Uint8Array; timeoutMs: number }): Promise<{ text: string; promptTokens: number }> {
+    const form = multipart([
+      { name: 'model', value: request.model },
+      { name: 'response_format', value: 'json' },
+      { name: 'file', file: { filename: 'audio.wav', type: 'audio/wav', bytes: Buffer.from(request.wav) } },
+    ])
+    const res = await callProviderBytes(this.name, this.url('/audio/transcriptions'), this.headers(), form.body, form.contentType, request.timeoutMs)
+    const json = (await res.json()) as { text?: string; error?: { message?: string } }
+    if (json.error || typeof json.text !== 'string') throw new ProviderError(`${this.name}: ${json.error?.message ?? 'no transcript'}`, false)
+    return { text: json.text, promptTokens: 0 }
+  }
+
   async embed(model: string, inputs: string[], timeoutMs: number): Promise<EmbedResult> {
     const body: Record<string, unknown> = { model, input: inputs, encoding_format: 'float', dimensions: EMBEDDING_DIMENSIONS }
     let res: Response
@@ -88,31 +113,64 @@ export class OpenAiProvider implements AiProviderAdapter {
     return { vectors: vectors.map(normalized), promptTokens: json.usage?.prompt_tokens ?? 0 }
   }
 
+  /**
+   * Every model the account lists. One response is the whole list when the server says so; when it sets `has_more`,
+   * the next page is `after` the last id. There is no cap on how many ids come back (the page limit only stops a
+   * server that never says it is done).
+   */
   async models(timeoutMs: number): Promise<string[]> {
-    const res = await callProvider(this.name, this.url('/models'), this.headers(), {}, timeoutMs, 'GET')
-    const json = (await res.json()) as { data?: { id: string }[] }
-    // Gemini names its models "models/…".
-    return (json.data ?? []).map((m) => m.id.replace(/^models\//, '')).sort()
+    const ids: string[] = []
+    const seen = new Set<string>()
+    let after: string | null = null
+    for (let page = 0; page < MAX_MODEL_PAGES; page++) {
+      const path = after ? `/models?after=${encodeURIComponent(after)}` : '/models'
+      const res = await callProvider(this.name, this.url(path), this.headers(), {}, timeoutMs, 'GET')
+      const json = (await res.json()) as { data?: { id: string }[]; has_more?: boolean; last_id?: string | null }
+      const pageIds = (json.data ?? []).map((m) => m.id.replace(/^models\//, ''))
+      let added = 0
+      for (const id of pageIds) {
+        if (seen.has(id)) continue
+        seen.add(id)
+        ids.push(id)
+        added++
+      }
+      if (!json.has_more) break
+      const next = json.last_id ?? pageIds.at(-1) ?? null
+      if (!next || next === after || added === 0) break
+      after = next
+    }
+    return ids.sort()
   }
 
   /**
    * Any model the account lists can answer: one that refuses `temperature` (a reasoning model) is asked again without
-   * it, and one that takes no JSON schema (an older or smaller model) is asked for JSON with the schema in its
-   * instructions; the gateway checks the answer against the schema either way.
+   * it, and one that takes no JSON schema (an older or smaller model) is asked for a JSON object with the schema in
+   * its instructions. One that also refuses a JSON object is asked for JSON with no `response_format`. The gateway
+   * checks the answer against the schema either way. A 400 that none of these can fix is the model's refusal.
    */
   private async send(body: Record<string, unknown>, schema: object | undefined, timeoutMs: number): Promise<Response> {
+    let instructed = false
     for (let attempt = 0; ; attempt++) {
       try {
         return await this.post('/chat/completions', body, timeoutMs)
       } catch (e) {
-        if (attempt >= 2) throw e
+        // temperature, JSON schema and JSON object can each be refused.
+        if (attempt >= 3) throw e
         if (refused(e, 'temperature') && body.temperature !== undefined) {
           delete body.temperature
           continue
         }
-        if (schema && (refused(e, 'json_schema') || refused(e, 'response_format')) && (body.response_format as { type?: string } | undefined)?.type === 'json_schema') {
+        const format = (body.response_format as { type?: string } | undefined)?.type
+        if (schema && format === 'json_schema' && (refused(e, 'json_schema') || refused(e, 'response_format'))) {
           body.response_format = { type: 'json_object' }
-          body.messages = [{ role: 'system', content: `Answer with JSON only, matching this JSON schema: ${JSON.stringify(schema)}` }, ...(body.messages as object[])]
+          if (!instructed) {
+            body.messages = [{ role: 'system', content: `Answer with JSON only, matching this JSON schema: ${JSON.stringify(schema)}` }, ...(body.messages as object[])]
+            instructed = true
+          }
+          continue
+        }
+        if (schema && format === 'json_object' && (refused(e, 'json_object') || refused(e, 'response_format'))) {
+          delete body.response_format
           continue
         }
         throw e
@@ -131,4 +189,20 @@ export class OpenAiProvider implements AiProviderAdapter {
   private post(path: string, body: object, timeoutMs: number) {
     return callProvider(this.name, this.url(path), this.headers(), body, timeoutMs)
   }
+}
+
+function multipart(fields: { name: string; value?: string; file?: { filename: string; type: string; bytes: Buffer } }[]): { body: Buffer; contentType: string } {
+  const boundary = `lvn${randomBytes(12).toString('hex')}`
+  const parts: Buffer[] = []
+  for (const field of fields) {
+    if (field.file) {
+      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${field.name}"; filename="${field.file.filename}"\r\nContent-Type: ${field.file.type}\r\n\r\n`))
+      parts.push(field.file.bytes)
+      parts.push(Buffer.from('\r\n'))
+    } else {
+      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${field.name}"\r\n\r\n${field.value ?? ''}\r\n`))
+    }
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`))
+  return { body: Buffer.concat(parts), contentType: `multipart/form-data; boundary=${boundary}` }
 }

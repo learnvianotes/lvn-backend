@@ -28,6 +28,41 @@ input AcceptTermsInput
   version: String!
 }
 
+"""
+One email allowed to sign up and sign in while the allowlist is on. `email` is stored lowercased.
+"""
+type AccessAllowlistEntry
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  email: String!
+
+  """
+  Applied to the account on sign-up, and immediately when the account already exists.
+  """
+  role: GlobalRole!
+  note: String
+  hasAccount: Boolean!
+  addedByEmail: String
+  createdAt: DateTime!
+}
+
+type AccessAllowlistPayload
+  @join__type(graph: USERS)
+{
+  entry: AccessAllowlistEntry
+  userErrors: [UserError!]!
+}
+
+"""
+Whether sign-up and sign-in are limited to the access allowlist. Public: no sign-in required.
+"""
+type AccessPolicy
+  @join__type(graph: USERS)
+{
+  inviteOnly: Boolean!
+}
+
 type AccountDeletionPayload
   @join__type(graph: USERS)
 {
@@ -51,6 +86,15 @@ type AccountStanding
 
   """Warnings from the last 90 days, newest first"""
   warnings: [AccountWarning!]!
+}
+
+enum AccountStatus
+  @join__type(graph: USERS)
+{
+  ACTIVE @join__enumValue(graph: USERS)
+  AGE_BLOCKED @join__enumValue(graph: USERS)
+  BLOCKED @join__enumValue(graph: USERS)
+  SUSPENDED @join__enumValue(graph: USERS)
 }
 
 """A warning platform moderators gave an account (ADR-0053)"""
@@ -175,6 +219,14 @@ enum ActivityKind
   REPOSITORY @join__enumValue(graph: CORE)
 }
 
+input AddAccessAllowlistEntryInput
+  @join__type(graph: USERS)
+{
+  email: String!
+  role: GlobalRole!
+  note: String
+}
+
 input AddCommentInput
   @join__type(graph: CORE)
 {
@@ -230,6 +282,288 @@ input AddWeeklyTaskInput
   plan: String
 }
 
+type AdminActivityActionCount
+  @join__type(graph: USERS)
+{
+  action: String!
+  count: Int!
+}
+
+type AdminActivityConnection
+  @join__type(graph: USERS)
+{
+  entries: [AdminActivityEntry!]!
+
+  """Pass as cursor to read the next page. Null on the last page."""
+  nextCursor: String
+}
+
+type AdminActivityDayCount
+  @join__type(graph: USERS)
+{
+  """UTC midnight of that day."""
+  day: DateTime!
+  count: Int!
+}
+
+"""
+One append-only audit row. details has secrets redacted. There is no mutation that changes or deletes it.
+"""
+type AdminActivityEntry
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  actorId: UUID
+
+  """
+  The actor's email at the time. Null when the account had already been removed.
+  """
+  actorEmail: String
+  action: String!
+  targetType: String!
+  targetId: UUID
+  details: JSON
+  ip: String
+  userAgent: String
+  createdAt: DateTime!
+}
+
+input AdminActivityFilter
+  @join__type(graph: USERS)
+{
+  actorId: UUID
+
+  """Exact action name, such as settings.updated or mfa.verified."""
+  action: String
+  targetType: String
+  from: DateTime
+  to: DateTime
+}
+
+"""
+Counts for charts. from is inclusive and to is exclusive. Omit both for the last 30 days. At most 366 days.
+"""
+type AdminActivitySummary
+  @join__type(graph: USERS)
+{
+  from: DateTime!
+  to: DateTime!
+  total: Int!
+  byAction: [AdminActivityActionCount!]!
+  byDay: [AdminActivityDayCount!]!
+}
+
+"""
+`from` is inclusive and `to` is exclusive, both aligned to a UTC minute. A refresh within that minute reuses the cached aggregate.
+"""
+type AdminAiMetrics
+  @join__type(graph: USERS)
+{
+  from: DateTime!
+  to: DateTime!
+  tasksRun: Int!
+  failures: Int!
+  promptTokens: String!
+  completionTokens: String!
+  costMicroUsd: String!
+  byProvider: [AdminAiProviderUsage!]!
+  byModel: [AdminAiModelUsage!]!
+  byTask: [AdminAiTaskUsage!]!
+}
+
+type AdminAiModelUsage
+  @join__type(graph: USERS)
+{
+  provider: String!
+  model: String!
+  tasksRun: Int!
+  failures: Int!
+  promptTokens: String!
+  completionTokens: String!
+  costMicroUsd: String!
+}
+
+"""
+Token sums and cost are decimal strings because they can exceed a GraphQL Int. Cost is millionths of a US dollar, 0 when no call recorded a price.
+"""
+type AdminAiProviderUsage
+  @join__type(graph: USERS)
+{
+  provider: String!
+  tasksRun: Int!
+  failures: Int!
+  promptTokens: String!
+  completionTokens: String!
+  costMicroUsd: String!
+}
+
+type AdminAiTaskUsage
+  @join__type(graph: USERS)
+{
+  task: String!
+  tasksRun: Int!
+  failures: Int!
+  promptTokens: String!
+  completionTokens: String!
+  costMicroUsd: String!
+}
+
+type AdminAppVersionCount
+  @join__type(graph: USERS)
+{
+  """
+  Null: no version was sent, or it was not one (MAJOR.MINOR[.PATCH], at most 32 characters).
+  """
+  appVersion: String
+
+  """
+  Distinct people who sent an event from this version. Always at least 5.
+  """
+  users: Int!
+  events: Int!
+
+  """
+  users / the platform's users, 0 to 1. Someone on two versions counts in both, so shares can add up past 1.
+  """
+  share: Float!
+}
+
+type AdminContentAuthor
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  handle: String!
+  email: String!
+}
+
+type AdminContentConnection
+  @join__type(graph: USERS)
+{
+  edges: [AdminContentEdge!]!
+  pageInfo: PageInfo!
+}
+
+type AdminContentCount
+  @join__type(graph: USERS)
+{
+  type: AdminContentType!
+  count: Int!
+}
+
+type AdminContentCounts
+  @join__type(graph: USERS)
+{
+  from: DateTime
+  to: DateTime
+  counts: [AdminContentCount!]!
+}
+
+type AdminContentEdge
+  @join__type(graph: USERS)
+{
+  cursor: String!
+  node: AdminContentItem!
+}
+
+input AdminContentFilter
+  @join__type(graph: USERS)
+{
+  type: AdminContentType
+  userId: UUID
+  handle: String
+  from: DateTime
+  to: DateTime
+  visibility: AdminContentVisibility
+}
+
+type AdminContentItem
+  @join__type(graph: USERS)
+{
+  """
+  A uuid for most kinds. A share is noteId:userId, noteId:groupId or noteId:classroomId.
+  """
+  id: String!
+  type: AdminContentType!
+
+  """Set when the item has a title. At most 200 characters."""
+  title: String
+
+  """The body, or the title when there is no body. At most 200 characters."""
+  excerpt: String
+  author: AdminContentAuthor!
+  visibility: AdminContentVisibility!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+
+  """
+  OK, PENDING_REVIEW, HIDDEN, REMOVED, PENDING, APPROVED, REJECTED, DRAFT or PUBLISHED. Null when this kind has none.
+  """
+  moderation: String
+  deepLink: String!
+}
+
+"""
+Notes, the catalogue, and places. Deleted notes, groups and classes are left out.
+"""
+type AdminContentMetrics
+  @join__type(graph: USERS)
+{
+  notes: Int!
+  publicNotes: Int!
+  subjects: Int!
+  topics: Int!
+  groups: Int!
+  classrooms: Int!
+}
+
+"""
+What was created in the window. Cached in each API process for about 5 minutes.
+"""
+type AdminContentStats
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  generatedAt: DateTime!
+  notes: AdminNoteCreationCounts!
+  uploads: AdminUploadStats!
+  scans: AdminScanCounts!
+  doubts: AdminDoubtStats!
+  places: AdminPlaceCounts!
+  sharing: AdminSharingCounts!
+}
+
+enum AdminContentType
+  @join__type(graph: USERS)
+{
+  NOTE @join__enumValue(graph: USERS)
+  COMMENT @join__enumValue(graph: USERS)
+  GROUP @join__enumValue(graph: USERS)
+  GROUP_POST @join__enumValue(graph: USERS)
+  CLASSROOM @join__enumValue(graph: USERS)
+  CLASSROOM_POST @join__enumValue(graph: USERS)
+  QUIZ @join__enumValue(graph: USERS)
+  DOUBT @join__enumValue(graph: USERS)
+  DOUBT_ANSWER @join__enumValue(graph: USERS)
+  SHARE @join__enumValue(graph: USERS)
+  UPLOAD @join__enumValue(graph: USERS)
+  RESOURCE @join__enumValue(graph: USERS)
+  HIGHLIGHT @join__enumValue(graph: USERS)
+  CONTEST @join__enumValue(graph: USERS)
+}
+
+"""
+How widely the item can be seen. PRIVATE is only used for a private group; private notes are not returned.
+"""
+enum AdminContentVisibility
+  @join__type(graph: USERS)
+{
+  PUBLIC @join__enumValue(graph: USERS)
+  SHARED @join__enumValue(graph: USERS)
+  UNLISTED @join__enumValue(graph: USERS)
+  PRIVATE @join__enumValue(graph: USERS)
+  MEMBERS @join__enumValue(graph: USERS)
+}
+
 """A contest as its writers see it"""
 type AdminContest
   @join__type(graph: CORE)
@@ -266,6 +600,859 @@ type AdminContestQuestion
   explanation: String!
 }
 
+input AdminDeleteUserInput
+  @join__type(graph: USERS)
+{
+  userId: UUID!
+  reason: String!
+
+  """The exact word DELETE."""
+  confirm: String!
+}
+
+"""Doubts in group workspaces. Deleted doubts and answers are left out."""
+type AdminDoubtStats
+  @join__type(graph: USERS)
+{
+  asked: Int!
+
+  """
+  Doubts whose first answer from someone other than the asker came in the window.
+  """
+  answered: Int!
+  resolved: Int!
+
+  """Answers posted."""
+  answers: Int!
+
+  """
+  Median hours from asking to that first answer, for the doubts answered in the window, one decimal. Null when none.
+  """
+  medianHoursToFirstAnswer: Float
+}
+
+"""
+Activity. A person is active on a day when they signed in or refreshed a session, sent a usage event, or recorded
+learning (by their own learning day) that day. Accounts that opted out of analytics and deleted accounts are never
+counted as active. dau is the last day of the range; wau and mau its last 7 and 30 days (they can reach before
+`range.from`). stickiness is the average daily active people over those 30 days divided by mau (0 to 1; 0 when mau
+is 0). Cached in each API process for about 5 minutes.
+"""
+type AdminEngagement
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  interval: MetricsInterval!
+  generatedAt: DateTime!
+  dau: Int!
+  wau: Int!
+  mau: Int!
+  stickiness: Float!
+  series: [AdminEngagementPoint!]!
+}
+
+type AdminEngagementPoint
+  @join__type(graph: USERS)
+{
+  """The bucket's first day, YYYY-MM-DD."""
+  date: String!
+
+  """Distinct active people in the bucket (see AdminEngagement)."""
+  activeUsers: Int!
+
+  """
+  Learning minutes (focus, reviews, quizzes), by each learner's own day; imported old-site time is left out.
+  """
+  learningMinutes: Int!
+
+  """Notes created and not deleted. Synced study pages are left out."""
+  notesCreated: Int!
+  doubtsAsked: Int!
+
+  """
+  Doubts whose first answer from someone other than the asker came in the bucket.
+  """
+  doubtsAnswered: Int!
+
+  """Class-quiz and shared-quiz attempts submitted."""
+  quizAttempts: Int!
+}
+
+"""One error code in the window, with who it affected."""
+type AdminErrorGroup
+  @join__type(graph: USERS)
+{
+  code: String!
+  count: Int!
+  firstSeen: DateTime!
+  lastSeen: DateTime!
+
+  """At most 100 distinct account ids."""
+  userIds: [UUID!]!
+  sampleMessage: String!
+}
+
+type AdminFeatureCount
+  @join__type(graph: USERS)
+{
+  feature: UsageFeature!
+
+  """Distinct people who used it in the window. Always at least 5."""
+  users: Int!
+
+  """feature_use events."""
+  events: Int!
+}
+
+"""
+First-party feature_use and quiz_start events (ADR-0107), most people first. Accounts that opted out of analytics and
+deleted accounts are left out. A feature or quiz kind with fewer than 5 distinct people is left out and counted in
+hiddenSmallGroups; events and starts include it. People are counted from the events, kept 180 days: for a window
+reaching further back, users is at least the busiest stored day's count, a lower bound. Past days' events come from the
+nightly rollup (ADR-0106). Cached in each API process for about 5 minutes.
+"""
+type AdminFeatureUsage
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  generatedAt: DateTime!
+
+  """feature_use events in the window."""
+  events: Int!
+  features: [AdminFeatureCount!]!
+  hiddenSmallGroups: Int!
+  quizStarts: AdminQuizStarts!
+}
+
+"""
+Sign-ups and verifications. Cached in each API process for about 5 minutes. Methods with fewer than 5 accounts are
+left out of signUpMethods and counted in hiddenSmallGroups.
+"""
+type AdminGrowth
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  interval: MetricsInterval!
+  generatedAt: DateTime!
+  totals: AdminGrowthTotals!
+  series: [AdminGrowthPoint!]!
+  signUpMethods: [AdminSignUpMethodCount!]!
+  hiddenSmallGroups: Int!
+}
+
+"""
+One bucket. Accounts deleted since, and the study publisher, are left out.
+"""
+type AdminGrowthPoint
+  @join__type(graph: USERS)
+{
+  """The bucket's first day, YYYY-MM-DD."""
+  date: String!
+
+  """Accounts created."""
+  signUps: Int!
+
+  """Login emails verified (a provider sign-up verifies it at once)."""
+  emailVerified: Int!
+
+  """Registrations finished (age and terms)."""
+  registrationsCompleted: Int!
+
+  """Accounts that became verified students or teachers."""
+  verifications: Int!
+}
+
+type AdminGrowthTotals
+  @join__type(graph: USERS)
+{
+  signUps: Int!
+  emailVerified: Int!
+  registrationsCompleted: Int!
+  verifications: Int!
+}
+
+"""
+An account as a platform admin sees it, including its age (ADR-0104) and the standing reason.
+"""
+type AdminManagedUser
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  email: String!
+  displayName: String!
+  handle: String!
+
+  """
+  YYYY-MM-DD. Only accounts that have one: registered before ADR-0104, or set by an admin. Null otherwise.
+  """
+  dateOfBirth: String
+
+  """
+  Whole years now (ADR-0104): from dateOfBirth when there is one, else the age given at registration plus the whole
+  years since, which is never more than the real age. Null before registration is finished.
+  """
+  age: Int
+  accountStatus: AccountStatus!
+  statusReason: String
+  globalRole: GlobalRole!
+  createdAt: DateTime!
+}
+
+"""
+Dashboard totals. Cached in each API process for about a minute. No personal data.
+`from` and `to` bound AI usage only. Omit them for the last 30 days through the current minute.
+The window can be at most 366 days.
+"""
+type AdminMetrics
+  @join__type(graph: USERS)
+{
+  generatedAt: DateTime!
+  users: AdminUserMetrics!
+  content: AdminContentMetrics!
+  ai: AdminAiMetrics!
+  storage: AdminStorageMetrics!
+  verification: AdminVerificationMetrics!
+  moderation: AdminModerationMetrics!
+  scans: AdminScanMetrics!
+}
+
+"""
+The days a result covers: whole calendar days in `timeZone` (Asia/Kolkata). `from` is midnight at the start of
+`firstDay`, `to` midnight after `lastDay` (exclusive). A last day after today is today.
+"""
+type AdminMetricsRange
+  @join__type(graph: USERS)
+{
+  from: DateTime!
+  to: DateTime!
+
+  """YYYY-MM-DD."""
+  firstDay: String!
+
+  """YYYY-MM-DD, inclusive."""
+  lastDay: String!
+  timeZone: String!
+}
+
+type AdminModerationMetrics
+  @join__type(graph: USERS)
+{
+  openReports: Int!
+  openAppeals: Int!
+}
+
+"""
+Notes created in the window and not deleted, by their visibility now. Synced study pages are left out.
+"""
+type AdminNoteCreationCounts
+  @join__type(graph: USERS)
+{
+  created: Int!
+  public: Int!
+  unlisted: Int!
+  shared: Int!
+  private: Int!
+}
+
+"""Created in the window and not deleted."""
+type AdminPlaceCounts
+  @join__type(graph: USERS)
+{
+  groups: Int!
+  classrooms: Int!
+  groupPosts: Int!
+  classroomPosts: Int!
+}
+
+"""
+A plan's price and limits. `priceMinor` is minor currency units (paise, cents): 49900 INR MONTH is ₹499 a month.
+`subscriberCount` is how many accounts are on it. Saving a price does not charge anyone.
+"""
+type AdminPlan
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  code: String!
+  name: String!
+  priceMinor: Int!
+  currency: String!
+  interval: PlanInterval!
+  features: [String!]!
+  active: Boolean!
+  entitlements: [AdminPlanEntitlement!]!
+  subscriberCount: Int!
+}
+
+"""
+One limit on a plan. `limit` is a decimal string, or null for unlimited.
+"""
+type AdminPlanEntitlement
+  @join__type(graph: USERS)
+{
+  key: LimitKey!
+  limit: String
+  appliesToRole: GlobalRole
+}
+
+input AdminPlanEntitlementInput
+  @join__type(graph: USERS)
+{
+  key: LimitKey!
+
+  """A whole number of the unit LimitKey names, or null for unlimited."""
+  limit: String
+
+  """Null means every role. A role-specific row wins over that one."""
+  appliesToRole: GlobalRole
+}
+
+type AdminPlanPayload
+  @join__type(graph: USERS)
+{
+  plan: AdminPlan
+  userErrors: [UserError!]!
+}
+
+type AdminPlatformAdoption
+  @join__type(graph: USERS)
+{
+  platform: ClientPlatform!
+
+  """
+  Distinct people who sent a usage event from the platform. Always at least 5.
+  """
+  users: Int!
+
+  """Usage events from the platform, hidden versions included."""
+  events: Int!
+
+  """Newest version first."""
+  versions: [AdminAppVersionCount!]!
+}
+
+type AdminQuizStartCount
+  @join__type(graph: USERS)
+{
+  kind: QuizStartKind!
+
+  """Distinct people who started one in the window. Always at least 5."""
+  users: Int!
+  starts: Int!
+}
+
+"""quiz_start events. starts counts every kind, hidden ones included."""
+type AdminQuizStarts
+  @join__type(graph: USERS)
+{
+  starts: Int!
+  byKind: [AdminQuizStartCount!]!
+  hiddenSmallGroups: Int!
+}
+
+input AdminRecoverMfaInput
+  @join__type(graph: USERS)
+{
+  userId: UUID!
+
+  """Why this recovery is being made. Required."""
+  reason: String!
+}
+
+"""
+Weekly retention, oldest cohort first, the last one this week. Past weeks come from the nightly rollup, this week is
+counted live. A cohort with fewer than 5 people (at any week counted) is left out and counted in hiddenSmallGroups; a
+week nobody signed up in is left out and not counted. Cached in each API process for about 5 minutes.
+"""
+type AdminRetention
+  @join__type(graph: USERS)
+{
+  cohortInterval: CohortInterval!
+  timeZone: String!
+
+  """
+  The first and the last (this) sign-up week asked for, Mondays, YYYY-MM-DD.
+  """
+  firstWeek: String!
+  lastWeek: String!
+  generatedAt: DateTime!
+  cohorts: [AdminRetentionCohort!]!
+  hiddenSmallGroups: Int!
+}
+
+"""
+The people who signed up in one week and the share of them active in each week since. Active as in AdminEngagement
+(a session started or refreshed, a usage event, or learning that day); accounts that opted out of analytics and
+deleted accounts are in no cohort.
+"""
+type AdminRetentionCohort
+  @join__type(graph: USERS)
+{
+  """The sign-up week's Monday, YYYY-MM-DD (IST)."""
+  start: String!
+
+  """People who signed up that week, as last counted. Always at least 5."""
+  size: Int!
+
+  """
+  returned[n] is the share (0 to 1, three decimals) of the cohort active in the n-th week after the sign-up week;
+  returned[0] is the sign-up week itself and the last value is this week, still in progress. Each share is over the
+  cohort as it was when that week was counted.
+  """
+  returned: [Float!]!
+}
+
+"""
+Scan results of those uploads. failed is a scanner error or a scan that used up its attempts.
+"""
+type AdminScanCounts
+  @join__type(graph: USERS)
+{
+  clean: Int!
+  infected: Int!
+  failed: Int!
+  pending: Int!
+}
+
+type AdminScanMetrics
+  @join__type(graph: USERS)
+{
+  """Uploads waiting for a scan. They are not served."""
+  pending: Int!
+
+  """Scans that used up their attempts. They are not served."""
+  failed: Int!
+}
+
+"""
+Search quality from first-party events (ADR-0107): search events, and search_no_results events a client sends besides
+the search when it found nothing. Neither holds the words searched. A scope with fewer than 5 distinct people is left out
+of byScope and counted in hiddenSmallGroups; the totals include it. Same people, retention and caching rules as
+AdminFeatureUsage.
+"""
+type AdminSearchQuality
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  generatedAt: DateTime!
+  searches: Int!
+  zeroResults: Int!
+
+  """
+  zeroResults / searches, 0 to 1, three decimals. Null when there were no searches.
+  """
+  zeroResultRate: Float
+  byScope: [AdminSearchScopeQuality!]!
+  hiddenSmallGroups: Int!
+}
+
+type AdminSearchScopeQuality
+  @join__type(graph: USERS)
+{
+  """Null: the client sent no scope (clients from before ADR-0107)."""
+  scope: UsageSearchScope
+
+  """Distinct people who searched in the scope. Always at least 5."""
+  users: Int!
+  searches: Int!
+  zeroResults: Int!
+
+  """
+  zeroResults / searches, 0 to 1, three decimals. Null when there were no searches.
+  """
+  zeroResultRate: Float
+}
+
+input AdminSetAccountStandingInput
+  @join__type(graph: USERS)
+{
+  userId: UUID!
+
+  """
+  ACTIVE lifts a block or suspension. BLOCKED is indefinite. SUSPENDED needs until. AGE_BLOCKED is refused: correct the age or date of birth.
+  """
+  status: AccountStatus!
+  reason: String!
+
+  """Required when status is SUSPENDED. A time in the future."""
+  until: DateTime
+}
+
+"""
+One application setting. `value` is `true` or `false`, a decimal integer, text, or empty when an integer is cleared.
+`overridden` is false when no admin has saved a row: `value` is then the environment variable or the built-in default.
+Categories: auth, verification, uploads, ai, search, accounts, notes, legal.
+"""
+type AdminSetting
+  @join__type(graph: USERS)
+{
+  key: String!
+  type: AdminSettingType!
+  category: String!
+  description: String!
+  value: String!
+  overridden: Boolean!
+
+  """
+  When an admin last saved it. Null while the environment or the built-in default is in effect.
+  """
+  updatedAt: DateTime
+  constraints: AdminSettingConstraints!
+}
+
+"""What an admin may send for this setting."""
+type AdminSettingConstraints
+  @join__type(graph: USERS)
+{
+  """
+  The smallest value, when the setting is an integer. Float so a byte cap above 2^31-1 can be listed.
+  """
+  min: Float
+
+  """
+  The largest value, when the setting is an integer. Float so a byte cap above 2^31-1 can be listed.
+  """
+  max: Float
+
+  """Text: the longest value, in characters."""
+  maxLength: Int
+
+  """Text: a regular expression the value must match."""
+  pattern: String
+
+  """
+  An integer may be cleared. Send an empty value. Empty means no cap for ai_monthly_budget_micro_usd.
+  """
+  nullable: Boolean!
+}
+
+type AdminSettingPayload
+  @join__type(graph: USERS)
+{
+  setting: AdminSetting
+  userErrors: [UserError!]!
+}
+
+enum AdminSettingType
+  @join__type(graph: USERS)
+{
+  BOOLEAN @join__enumValue(graph: USERS)
+  INTEGER @join__enumValue(graph: USERS)
+  STRING @join__enumValue(graph: USERS)
+}
+
+"""
+noteShares are notes shared with one person; placeShares with a group or class.
+"""
+type AdminSharingCounts
+  @join__type(graph: USERS)
+{
+  noteShares: Int!
+  placeShares: Int!
+  saves: Int!
+}
+
+"""
+Accounts created in the window by how they signed up. A provider counts when it was linked within a minute of sign-up.
+"""
+type AdminSignUpMethodCount
+  @join__type(graph: USERS)
+{
+  method: SignUpMethod!
+  users: Int!
+}
+
+"""
+Bytes are a decimal string. Files are those stored: uploaded, processing, ready or quarantined.
+"""
+type AdminStorageMetrics
+  @join__type(graph: USERS)
+{
+  bytes: String!
+  files: Int!
+}
+
+type AdminSubjectCount
+  @join__type(graph: USERS)
+{
+  subjectId: UUID!
+  title: String!
+
+  """Notes, minutes or saves, as AdminTopSubjects.by says."""
+  value: Int!
+
+  """
+  Distinct people behind value: note owners, learners or savers. Always at least 5.
+  """
+  users: Int!
+}
+
+"""Which measure ranks subjects in adminTopSubjects."""
+enum AdminSubjectMetric
+  @join__type(graph: USERS)
+{
+  """Notes created in the window with a topic in the subject."""
+  NOTES @join__enumValue(graph: USERS)
+
+  """
+  Minutes people spent with the subject's topics open (studying and reading).
+  """
+  LEARNING_TIME @join__enumValue(graph: USERS)
+
+  """Saves of notes with a topic in the subject."""
+  SAVES @join__enumValue(graph: USERS)
+}
+
+"""The latest save or reset of the terms_version setting."""
+type AdminTermsChange
+  @join__type(graph: USERS)
+{
+  """The admin who made it. Null when that account is gone."""
+  actorId: UUID
+
+  """Null when that account is gone or deleted."""
+  actorDisplayName: String
+  at: DateTime!
+
+  """The version in effect before the change."""
+  previous: String
+}
+
+"""
+The terms version that signUp, completeRegistration and acceptTerms require (Query.termsVersion), and who has accepted
+it (ADR-0103). Counts are accounts that are not deleted, by their latest Terms acceptance, the same rule as
+User.termsAccepted. A count below 5 is null, so a small group is not shown. Change the version with
+updateAdminSetting(key: "terms_version"); it must be one of publishedVersions (setting terms_published_versions).
+"""
+type AdminTermsStatus
+  @join__type(graph: USERS)
+{
+  current: String!
+  source: TermsVersionSource!
+
+  """
+  Versions whose text the web has published, oldest first. Only these may be chosen.
+  """
+  publishedVersions: [String!]!
+
+  """
+  Accounts whose latest acceptance is the current version. Null when fewer than 5.
+  """
+  acceptedCurrent: Int
+
+  """
+  Accounts whose latest acceptance is another version; they are asked to accept again. Null when fewer than 5.
+  """
+  acceptedOlder: Int
+
+  """Null when no admin has saved or reset terms_version."""
+  lastChange: AdminTermsChange
+}
+
+"""
+Subjects ranked by `by`, at most `first`. A subject with fewer than 5 distinct people behind it is never listed and is
+counted in hiddenSmallGroups. Cached in each API process for about 5 minutes.
+"""
+type AdminTopSubjects
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  by: AdminSubjectMetric!
+  generatedAt: DateTime!
+  subjects: [AdminSubjectCount!]!
+  hiddenSmallGroups: Int!
+}
+
+input AdminUpdateUserInput
+  @join__type(graph: USERS)
+{
+  userId: UUID!
+  displayName: String
+  email: String
+
+  """
+  Whole years, 1 to 120, as of now (ADR-0104). The age gate runs again. Refused (VALIDATION) on an account that has
+  a date of birth, which decides the age (correct dateOfBirth instead), and together with dateOfBirth.
+  """
+  age: Int
+
+  """
+  YYYY-MM-DD. The age gate runs again; a date of birth decides the age over a declared one. Not together with age.
+  """
+  dateOfBirth: String
+
+  """
+  Why this change is being made. Required, including when a new age or date of birth lets an under-age account pass.
+  """
+  reason: String!
+}
+
+"""Bytes are a decimal string."""
+type AdminUploadPurposeCount
+  @join__type(graph: USERS)
+{
+  """
+  A FilePurpose value: ATTACHMENT, COVER, VOICE_NOTE, AVATAR, IMPORT, VERIFICATION_DOCUMENT, GROUP_PICTURE, COLLEGE_ID or PAGE_IMAGE.
+  """
+  purpose: String!
+  files: Int!
+  bytes: String!
+}
+
+"""
+Files people uploaded in the window that are still stored. Server-made data exports are left out. A purpose with fewer
+than 5 distinct uploaders is left out of byPurpose (still in files and bytes) and counted in hiddenSmallGroups.
+"""
+type AdminUploadStats
+  @join__type(graph: USERS)
+{
+  files: Int!
+  bytes: String!
+  byPurpose: [AdminUploadPurposeCount!]!
+  hiddenSmallGroups: Int!
+}
+
+"""
+DAU, WAU and MAU are distinct accounts in the last 1, 7 and 30 days before `to`.
+"""
+type AdminUsageSummary
+  @join__type(graph: USERS)
+{
+  from: DateTime!
+  to: DateTime!
+  dau: Int!
+  wau: Int!
+  mau: Int!
+  topEvents: [UsageCount!]!
+  topFeatures: [UsageCount!]!
+}
+
+type AdminUserList
+  @join__type(graph: USERS)
+{
+  users: [AdminManagedUser!]!
+  total: Int!
+}
+
+"""
+Display name, email and role for the errors dashboard. Platform admins only.
+"""
+type AdminUserLookup
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  displayName: String!
+  email: String!
+  globalRole: GlobalRole!
+}
+
+"""
+People. `active` is distinct accounts with a session that is not revoked and not expired.
+"""
+type AdminUserMetrics
+  @join__type(graph: USERS)
+{
+  total: Int!
+  newLast7Days: Int!
+  newLast30Days: Int!
+  active: Int!
+}
+
+type AdminUserPayload
+  @join__type(graph: USERS)
+{
+  user: AdminManagedUser
+  userErrors: [UserError!]!
+}
+
+"""
+Which accounts adminUsers returns. BLOCKED_OR_SUSPENDED is both reversible holds.
+"""
+enum AdminUserStatusFilter
+  @join__type(graph: USERS)
+{
+  AGE_BLOCKED @join__enumValue(graph: USERS)
+  BLOCKED_OR_SUSPENDED @join__enumValue(graph: USERS)
+  ACTIVE @join__enumValue(graph: USERS)
+}
+
+"""
+A verification route: the request's method, with a college ID card (ADR-0099) apart from other documents.
+"""
+enum AdminVerificationMethod
+  @join__type(graph: USERS)
+{
+  INSTITUTIONAL_EMAIL @join__enumValue(graph: USERS)
+  TEACHER @join__enumValue(graph: USERS)
+  DOCUMENTS @join__enumValue(graph: USERS)
+  COLLEGE_ID @join__enumValue(graph: USERS)
+}
+
+type AdminVerificationMethodCount
+  @join__type(graph: USERS)
+{
+  method: AdminVerificationMethod!
+  requested: Int!
+  approved: Int!
+  rejected: Int!
+}
+
+type AdminVerificationMetrics
+  @join__type(graph: USERS)
+{
+  """Pending college-ID reviews."""
+  studentIdQueue: Int!
+
+  """
+  Pending verification requests of every purpose, including the college-ID queue.
+  """
+  pendingRequests: Int!
+
+  """Domains waiting for a decision (ACADEMIC_QUEUED or NEEDS_REVIEW)."""
+  domainReviews: Int!
+}
+
+"""
+Verification requests of every purpose. requested counts requests made in the window; approved and rejected count
+decisions made in it. pending and oldestPendingHours describe the queue now, whatever the window. A method with fewer
+than 5 distinct requesters is left out of byMethod and counted in hiddenSmallGroups. Cached for about 5 minutes.
+"""
+type AdminVerificationStats
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  generatedAt: DateTime!
+  requested: Int!
+  approved: Int!
+  rejected: Int!
+  pending: Int!
+
+  """
+  Median hours from request to decision, for decisions in the window, one decimal. Null when none.
+  """
+  medianHoursToDecision: Float
+
+  """
+  Hours the oldest pending request has waited, one decimal. Null when nothing is pending.
+  """
+  oldestPendingHours: Float
+  byMethod: [AdminVerificationMethodCount!]!
+  hiddenSmallGroups: Int!
+}
+
+"""
+Which app versions people use, from the platform and appVersion of every first-party usage event (ADR-0107). A
+platform or version with fewer than 5 distinct people is left out and counted in hiddenSmallGroups (a hidden platform's
+versions too). Same people, retention and caching rules as AdminFeatureUsage.
+"""
+type AdminVersionAdoption
+  @join__type(graph: USERS)
+{
+  range: AdminMetricsRange!
+  generatedAt: DateTime!
+  platforms: [AdminPlatformAdoption!]!
+  hiddenSmallGroups: Int!
+}
+
 """
 The viewer's AI tokens today (UTC) against their plan's daily limit (§10.1, ADR-0024)
 """
@@ -296,6 +1483,11 @@ type AiAnswer
 
   """FAILED: why, in words for the asker"""
   error: String
+
+  """
+  True when this text was produced by a model, so clients can show an AI label.
+  """
+  aiGenerated: Boolean!
   noteId: UUID
   doubtId: UUID
   createdAt: DateTime!
@@ -328,6 +1520,11 @@ type AiArtifact
 
   """FAILED: why, in words for the person"""
   error: String
+
+  """
+  True when this text was produced by a model, so clients can show an AI label.
+  """
+  aiGenerated: Boolean!
 
   """
   Made from the published version (the viewer is a reader) rather than the draft
@@ -420,6 +1617,19 @@ input AiConnectionIdInput
   id: UUID!
 }
 
+"""Every model a connection lists, and the select for each use"""
+type AiConnectionModels
+  @join__type(graph: AI)
+{
+  """Every model the account lists, sorted by id. Nothing is dropped."""
+  all: [AiListedModel!]!
+
+  """
+  One select per use, in a fixed order. A use this app cannot call has an empty list.
+  """
+  pickers: [AiModelPicker!]!
+}
+
 type AiConnectionPayload
   @join__type(graph: AI)
 {
@@ -478,6 +1688,11 @@ type AiInsight
 
   """Hidden by the owner: only they see it"""
   hidden: Boolean!
+
+  """
+  True when this text was produced by a model, so clients can show an AI label.
+  """
+  aiGenerated: Boolean!
   versionId: UUID!
 }
 
@@ -487,6 +1702,87 @@ enum AiLanguage
   ENGLISH @join__enumValue(graph: AI)
   HINDI @join__enumValue(graph: AI)
   TELUGU @join__enumValue(graph: AI)
+}
+
+"""One model a connection's account lists"""
+type AiListedModel
+  @join__type(graph: AI)
+{
+  """
+  The id the provider uses, sent back as chatModel, embedModel or a route's model
+  """
+  id: String!
+  kind: AiModelKind!
+
+  """
+  Pickers that offer this model. Empty: listed under `all`, shown in no select.
+  """
+  supports: [AiModelUse!]!
+}
+
+"""
+What a listed model is. A picker offers it only when `supports` includes that picker's use.
+"""
+enum AiModelKind
+  @join__type(graph: AI)
+{
+  CHAT @join__enumValue(graph: AI)
+  EMBEDDING @join__enumValue(graph: AI)
+  IMAGE @join__enumValue(graph: AI)
+  AUDIO @join__enumValue(graph: AI)
+  REALTIME @join__enumValue(graph: AI)
+  TTS @join__enumValue(graph: AI)
+  MODERATION @join__enumValue(graph: AI)
+  OTHER @join__enumValue(graph: AI)
+}
+
+"""The models one select offers"""
+type AiModelPicker
+  @join__type(graph: AI)
+{
+  use: AiModelUse!
+  models: [AiListedModel!]!
+}
+
+"""
+A select on /admin/ai. IMAGE, TTS, AUDIO, REALTIME and MODERATION stay empty.
+TRANSCRIBE offers models that can hear. Whisper and *-transcribe go to POST /audio/transcriptions.
+gpt-audio, Gemini and Gemma take the recording on the chat call.
+"""
+enum AiModelUse
+  @join__type(graph: AI)
+{
+  """
+  The connection's chat model, and every task route except embeddings and transcription
+  """
+  CHAT @join__enumValue(graph: AI)
+
+  """
+  The connection's embedding model, and the EMBED route. Embeddings are 768 numbers.
+  """
+  EMBEDDING @join__enumValue(graph: AI)
+
+  """The TRANSCRIBE route: a model that can hear a recording"""
+  TRANSCRIBE @join__enumValue(graph: AI)
+
+  """Image generation. This app does not call it, so the picker is empty."""
+  IMAGE @join__enumValue(graph: AI)
+
+  """Speech. This app does not call it, so the picker is empty."""
+  TTS @join__enumValue(graph: AI)
+
+  """
+  Reserved. Whisper is offered on TRANSCRIBE, so this picker stays empty.
+  """
+  AUDIO @join__enumValue(graph: AI)
+
+  """Realtime. This app does not call it, so the picker is empty."""
+  REALTIME @join__enumValue(graph: AI)
+
+  """
+  Moderation models. This app does not call them, so the picker is empty.
+  """
+  MODERATION @join__enumValue(graph: AI)
 }
 
 """Who answers AI calls"""
@@ -527,6 +1823,54 @@ type AiProviderPreset
   """Hints; a connection test lists what the account has"""
   chatModels: [String!]!
   embedModels: [String!]!
+}
+
+"""
+A report of one AI answer. context is the task, status and note id. The answer text is not here.
+"""
+type AiReport
+  @join__type(graph: AI)
+{
+  id: UUID!
+  reporterId: UUID!
+  responseId: UUID!
+
+  """ANSWER or ARTIFACT"""
+  responseKind: String!
+  reason: AiReportReason!
+  comment: String
+  context: JSON!
+  status: AiReportStatus!
+  resolvedBy: UUID
+  resolvedAt: DateTime
+  createdAt: DateTime!
+}
+
+type AiReportPayload
+  @join__type(graph: AI)
+{
+  report: AiReport
+  userErrors: [UserError!]!
+}
+
+"""Why someone reported a model answer"""
+enum AiReportReason
+  @join__type(graph: AI)
+{
+  INACCURATE @join__enumValue(graph: AI)
+  INAPPROPRIATE @join__enumValue(graph: AI)
+  HARMFUL @join__enumValue(graph: AI)
+  PERSONAL_INFO @join__enumValue(graph: AI)
+  OTHER @join__enumValue(graph: AI)
+}
+
+"""Where a report sits in the admin queue"""
+enum AiReportStatus
+  @join__type(graph: AI)
+{
+  OPEN @join__enumValue(graph: AI)
+  RESOLVED @join__enumValue(graph: AI)
+  DISMISSED @join__enumValue(graph: AI)
 }
 
 type AiSettings
@@ -790,6 +2134,18 @@ type AuthPayload
   including a normal sign-up and "an account already exists, sign in instead".
   """
   emailLinkPending: Boolean!
+
+  """
+  True when this session must finish a second factor before protected operations (an admin or staff role, or an
+  account that opted in). Sign-in still returns a session: use it for `startMfaChallenge` and `verifyMfaChallenge`.
+  False when nothing further is required, including a normal account.
+  """
+  mfaRequired: Boolean!
+
+  """
+  Factors this sign-in may use. Empty when mfaRequired is false. EMAIL_OTP is the one that sends a code today.
+  """
+  mfaFactors: [MfaFactorType!]!
 }
 
 """
@@ -1343,6 +2699,37 @@ type ClassTopicPerformance
   hard: Boolean!
 }
 
+input ClientErrorInput
+  @join__type(graph: USERS)
+{
+  route: String
+  code: String!
+  message: String!
+  occurredAt: DateTime
+  platform: ClientPlatform!
+  release: String
+  appVersion: String
+}
+
+"""
+Where the client recorded the event. Backend failures are stored by the server and are not sent here.
+"""
+enum ClientPlatform
+  @join__type(graph: USERS)
+{
+  WEB @join__enumValue(graph: USERS)
+  MOBILE @join__enumValue(graph: USERS)
+}
+
+"""
+How retention cohorts are grouped by sign-up date. WEEK: IST weeks, Monday to Sunday.
+"""
+enum CohortInterval
+  @join__type(graph: USERS)
+{
+  WEEK @join__enumValue(graph: USERS)
+}
+
 type Comment
   @join__type(graph: CORE)
 {
@@ -1474,8 +2861,23 @@ input CompleteRegistrationInput
   @join__type(graph: USERS)
 {
   displayName: String!
-  dateOfBirth: String!
+
+  """
+  Whole years, 1 to 120 (ADR-0104). Required, unless an app from before ADR-0104 sends dateOfBirth instead. When both
+  are sent, age is used and dateOfBirth is ignored.
+  """
+  age: Int
+
+  """
+  YYYY-MM-DD, from apps released before ADR-0104. The age it gives today is stored, not the date.
+  """
+  dateOfBirth: String @deprecated(reason: "Send age, in whole years. Ignored when age is sent.")
   institutionalEmail: String
+
+  """
+  Parent or guardian email. Required for an admitted registration under 18. Stored with the consent record, not as this account's email.
+  """
+  parentEmail: String
   acceptedTermsVersion: String!
 }
 
@@ -1744,6 +3146,30 @@ type CoreTopicProgress
   lastStudiedAt: DateTime
 }
 
+input CreateAdminPlanInput
+  @join__type(graph: USERS)
+{
+  """
+  2–32 characters: A–Z, digits and underscores, starting with a letter. Stored uppercase.
+  """
+  code: String!
+  name: String!
+
+  """Minor units, 0 to 2000000000."""
+  priceMinor: Int!
+
+  """ISO 4217, three letters."""
+  currency: String!
+  interval: PlanInterval!
+  features: [String!]
+  active: Boolean
+
+  """
+  Replaces nothing: these are the plan's limits. Empty means unlimited everywhere.
+  """
+  entitlements: [AdminPlanEntitlementInput!]
+}
+
 input CreateClassroomInput
   @join__type(graph: CORE)
 {
@@ -1863,6 +3289,11 @@ type DailyLine
 
   """Written by AI for this person"""
   fromAi: Boolean!
+
+  """
+  True when a model wrote the line, false for the chosen line. Clients use this for the AI label.
+  """
+  aiGenerated: Boolean!
 
   """AI is writing today's line: ask again in a few seconds"""
   pending: Boolean!
@@ -2073,6 +3504,7 @@ enum EmailKind
 {
   CLASSROOM_POST @join__enumValue(graph: COMMUNICATION)
   DIGEST @join__enumValue(graph: COMMUNICATION)
+  MARKETING @join__enumValue(graph: COMMUNICATION)
 }
 
 """Fixed error vocabulary (§6.2)"""
@@ -2092,6 +3524,12 @@ enum ErrorCode
   INTERNAL @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
   UNAVAILABLE @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
   UNDER_MINIMUM_AGE @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  AGE_RESTRICTED @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  AI_UNAVAILABLE_FOR_MINOR @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  FEATURE_UNAVAILABLE_FOR_MINOR @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  MINOR_PII_BLOCKED @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  MFA_REQUIRED @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
+  ADMIN_MFA_REQUIRED @join__enumValue(graph: AI) @join__enumValue(graph: COMMUNICATION) @join__enumValue(graph: CORE) @join__enumValue(graph: NOTES) @join__enumValue(graph: USERS)
 }
 
 type Exam
@@ -2242,7 +3680,7 @@ type ExternalIdentityPayload
 }
 
 """
-What an upload is for: AVATAR, VERIFICATION_DOCUMENT, and ATTACHMENT (a picture, video, audio or PDF for a note you can edit, given as parentId). Other purposes arrive with their features.
+What an upload is for. ATTACHMENT is a picture, video, audio, PDF, Word (.doc, .docx), PowerPoint (.ppt, .pptx) or plain-text file for a note you can edit (parentId). PAGE_IMAGE is a PNG or JPEG for a note page (parentId). VOICE_NOTE is audio; parentId is the note when the recording belongs to one, and omitted when it stands alone. Every one of these finishes with completeUpload, so a remote scan still runs.
 """
 enum FilePurpose
   @join__type(graph: NOTES)
@@ -2255,6 +3693,26 @@ enum FilePurpose
   EXPORT @join__enumValue(graph: NOTES)
   VERIFICATION_DOCUMENT @join__enumValue(graph: NOTES)
   GROUP_PICTURE @join__enumValue(graph: NOTES)
+  PAGE_IMAGE @join__enumValue(graph: NOTES)
+}
+
+input FinishPasskeyRegistrationInput
+  @join__type(graph: USERS)
+{
+  """RegistrationResponseJSON from the browser, as a JSON string"""
+  responseJson: String!
+
+  """Defaults to "Passkey". At most 60 characters."""
+  name: String
+}
+
+input FinishPasskeySignInInput
+  @join__type(graph: USERS)
+{
+  attemptId: String!
+
+  """AuthenticationResponseJSON from the browser, as a JSON string"""
+  responseJson: String!
 }
 
 type FocusSession
@@ -2318,11 +3776,19 @@ type ForkCredit
   title: String
 }
 
+type FunnelStep
+  @join__type(graph: USERS)
+{
+  name: String!
+  users: Int!
+}
+
 enum GlobalRole
   @join__type(graph: USERS)
 {
   STUDENT @join__enumValue(graph: USERS)
   TEACHER @join__enumValue(graph: USERS)
+  MANAGER @join__enumValue(graph: USERS)
   PLATFORM_ADMIN @join__enumValue(graph: USERS)
 }
 
@@ -2585,6 +4051,65 @@ enum GroupType
   PROJECT @join__enumValue(graph: CORE)
 }
 
+"""
+What a parent sees. Counts and the consent record only: no email address and no note text.
+"""
+type GuardianChildSummary
+  @join__type(graph: USERS)
+{
+  displayName: String!
+  ageYears: Int
+
+  """under_13, 13_15 or 16_17, as recorded at sign-up."""
+  ageBand: String!
+  noticeVersion: String!
+
+  """
+  auto_unverified until the parent clicks confirm. email_plus after that click.
+  """
+  consentMethod: String!
+
+  """
+  True only when the method currently lifts restricted-minor limits. email_plus needs the click and the admin setting.
+  """
+  consentVerified: Boolean!
+
+  """
+  The parent's choice for groups, classes, doubts, messages and public posts. It applies only while consentVerified is true and ageBand is under_13. Withdrawing consent clears it.
+  """
+  socialEnabled: Boolean!
+  accountStatus: String!
+  notes: Int!
+  files: Int!
+  deletionScheduledFor: DateTime
+}
+
+type GuardianExportsPayload
+  @join__type(graph: USERS)
+{
+  exports: [DataExport!]
+  userErrors: [UserError!]!
+}
+
+type GuardianSessionPayload
+  @join__type(graph: USERS)
+{
+  """
+  Present this on the later parent calls until expiresAt. The manage link that produced it cannot be used again.
+  """
+  sessionToken: String
+  expiresAt: DateTime
+  summary: GuardianChildSummary
+  userErrors: [UserError!]!
+}
+
+type GuardianSummaryPayload
+  @join__type(graph: USERS)
+{
+  summary: GuardianChildSummary
+  userErrors: [UserError!]!
+}
+
 enum HighlightColor
   @join__type(graph: NOTES)
 {
@@ -2603,6 +4128,37 @@ enum HighlightKind
 
   """An area of the page, such as a figure or a formula"""
   AREA @join__enumValue(graph: NOTES)
+}
+
+"""
+match, mismatch or unreadable. A mismatch is never an automatic rejection.
+"""
+type IdCardCheck
+  @join__type(graph: USERS)
+{
+  verdict: IdCardVerdict!
+  confidence: Float
+  reason: String
+  checkedAt: DateTime!
+  extracted: IdCardFields!
+}
+
+"""Fields read from the document. `idNumber` is null for the student."""
+type IdCardFields
+  @join__type(graph: USERS)
+{
+  name: String
+  institution: String
+  idNumber: String
+  validUntil: String
+}
+
+enum IdCardVerdict
+  @join__type(graph: USERS)
+{
+  MATCH @join__enumValue(graph: USERS)
+  MISMATCH @join__enumValue(graph: USERS)
+  UNREADABLE @join__enumValue(graph: USERS)
 }
 
 input IdInput
@@ -2633,6 +4189,25 @@ type ImportSkip
   """The file (or card) in the upload"""
   path: String!
   reason: String!
+}
+
+input IngestAnalyticsInput
+  @join__type(graph: USERS)
+{
+  events: [UsageEventInput!]
+  errors: [ClientErrorInput!]
+}
+
+type InkStroke
+  @join__type(graph: NOTES)
+{
+  id: String!
+  tool: StrokeTool!
+
+  """Set for pen and marker"""
+  color: String
+  width: Float!
+  points: [StrokePoint!]!
 }
 
 type Institution
@@ -2723,6 +4298,7 @@ scalar JSON
   @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
   @join__type(graph: NOTES)
+  @join__type(graph: USERS)
 
 input KeepAiCardsInput
   @join__type(graph: AI)
@@ -2913,6 +4489,8 @@ enum LimitKey
   EXPORTS_DAILY @join__enumValue(graph: USERS)
   IMPORTS_DAILY @join__enumValue(graph: USERS)
   ORG_SEATS @join__enumValue(graph: USERS)
+  NOTES_OWNED @join__enumValue(graph: USERS)
+  AI_REQUESTS_DAILY @join__enumValue(graph: USERS)
 }
 
 scalar link__Import
@@ -2927,6 +4505,15 @@ enum link__Purpose {
   `EXECUTION` features provide metadata necessary for operation execution.
   """
   EXECUTION
+}
+
+input MakeNotesFromTranscriptInput
+  @join__type(graph: AI)
+{
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
 }
 
 input MarkNotificationsReadInput
@@ -2983,6 +4570,82 @@ type MentorInviteItem
   group: Group!
   invitedBy: User!
   expiresAt: DateTime!
+}
+
+"""
+How a series is grouped. WEEK starts on Monday (ISO); the first week starts on the window's first day and can be shorter.
+"""
+enum MetricsInterval
+  @join__type(graph: USERS)
+{
+  DAY @join__enumValue(graph: USERS)
+  WEEK @join__enumValue(graph: USERS)
+}
+
+type MfaChallengePayload
+  @join__type(graph: USERS)
+{
+  challengeId: UUID
+  factor: MfaFactorType
+  expiresAt: DateTime
+  userErrors: [UserError!]!
+}
+
+type MfaFactor
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  type: MfaFactorType!
+  status: MfaFactorStatus!
+  createdAt: DateTime!
+  lastUsedAt: DateTime
+}
+
+enum MfaFactorStatus
+  @join__type(graph: USERS)
+{
+  PENDING @join__enumValue(graph: USERS)
+  ACTIVE @join__enumValue(graph: USERS)
+  DISABLED @join__enumValue(graph: USERS)
+}
+
+enum MfaFactorType
+  @join__type(graph: USERS)
+{
+  """A 6-digit code emailed to the account address."""
+  EMAIL_OTP @join__enumValue(graph: USERS)
+
+  """
+  Reserved. startMfaChallenge refuses it until an authenticator app is built.
+  """
+  TOTP @join__enumValue(graph: USERS)
+
+  """Reserved. startMfaChallenge refuses it until a security key is built."""
+  WEBAUTHN @join__enumValue(graph: USERS)
+}
+
+"""
+Whether this signed-in session still needs a second factor. `satisfied` is true when nothing is required, or the
+code was accepted less than 12 hours ago. Calling this does not itself require MFA.
+"""
+type MfaStatus
+  @join__type(graph: USERS)
+{
+  required: Boolean!
+  satisfied: Boolean!
+  verifiedAt: DateTime
+  factors: [MfaFactor!]!
+  allowedFactors: [MfaFactorType!]!
+}
+
+"""
+A new access token after the code is accepted. The refresh token rotates with it.
+"""
+type MfaVerifyPayload
+  @join__type(graph: USERS)
+{
+  session: Session
+  userErrors: [UserError!]!
 }
 
 input ModerateContentInput
@@ -3178,15 +4841,51 @@ type Mutation
   """The note's owner only"""
   setAiInsightHidden(id: UUID!, hidden: Boolean!): OkPayload! @join__field(graph: AI)
 
+  """
+  The person who received the answer, or any signed-in person for a public study aid. Rate limited per account.
+  """
+  reportAiAnswer(input: ReportAiAnswerInput!): ReportAiAnswerPayload! @join__field(graph: AI)
+
+  """Platform admins. Only an OPEN report can be resolved."""
+  resolveAiReport(id: UUID!): AiReportPayload! @join__field(graph: AI)
+
+  """Platform admins. Only an OPEN report can be dismissed."""
+  dismissAiReport(id: UUID!): AiReportPayload! @join__field(graph: AI)
+
   """Platform admins only, as every mutation below"""
   saveAiConnection(input: SaveAiConnectionInput!): AiConnectionPayload! @join__field(graph: AI)
 
-  """Routes through it then use the default connection"""
+  """Platform admins. Routes through it then use the default connection"""
   deleteAiConnection(input: AiConnectionIdInput!): AiSettingsPayload! @join__field(graph: AI)
+
+  """Platform admins. Which connection answers chat, and which one embeds"""
   setAiDefaults(input: SetAiDefaultsInput!): AiSettingsPayload! @join__field(graph: AI)
+
+  """
+  Platform admins. Asks the connection for one word, one embedding and its model list
+  """
   testAiConnection(input: AiConnectionIdInput!): AiConnectionTestPayload! @join__field(graph: AI)
+
+  """Platform admins. Points one AI task at a connection and model"""
   saveAiTaskRoute(input: SaveAiTaskRouteInput!): AiSettingsPayload! @join__field(graph: AI)
+
+  """Platform admins. The task uses the default connection again"""
   deleteAiTaskRoute(input: AiTaskRouteInput!): AiSettingsPayload! @join__field(graph: AI)
+
+  """
+  A VOICE_NOTE or audio ATTACHMENT on this note, finished with completeUpload.
+  """
+  transcribeAudio(input: TranscribeAudioInput!): TranscriptPayload! @join__field(graph: AI)
+
+  """
+  Browser captions, or a short uploaded clip when the browser cannot caption.
+  """
+  transcribeCaptionClip(input: TranscribeCaptionClipInput!): TranscriptPayload! @join__field(graph: AI)
+
+  """
+  A private note from a transcript: a summary, then headings and text. At most 20,000 characters are read.
+  """
+  makeNotesFromTranscript(input: MakeNotesFromTranscriptInput!): NotesFromTranscriptPayload! @join__field(graph: AI)
   markNotificationsRead(input: MarkNotificationsReadInput!): MarkNotificationsReadPayload! @join__field(graph: COMMUNICATION)
   updateNotificationSettings(input: UpdateNotificationSettingsInput!): NotificationSettingsPayload! @join__field(graph: COMMUNICATION)
 
@@ -3262,9 +4961,11 @@ type Mutation
 
   """Platform admins: creates a draft, or changes one"""
   saveContest(input: ContestInput!): AdminContestPayload! @join__field(graph: CORE)
+
+  """Platform admins: makes a draft visible for the window"""
   publishContest(input: ContestIdInput!): AdminContestPayload! @join__field(graph: CORE)
 
-  """Drafts only"""
+  """Platform admins. Drafts only"""
   deleteContest(input: ContestIdInput!): OkPayload! @join__field(graph: CORE)
 
   """
@@ -3379,6 +5080,15 @@ type Mutation
   Shows, or stops showing, the viewer's name and counted days on their classes' Rhythm ring
   """
   setRhythmSharing(input: SetRhythmSharingInput!): OkPayload! @join__field(graph: CORE)
+  createSharedQuiz(input: SharedQuizWriteInput!): SharedQuizPayload! @join__field(graph: CORE)
+
+  """Refused once anyone has taken the quiz"""
+  updateSharedQuiz(input: UpdateSharedQuizInput!): SharedQuizPayload! @join__field(graph: CORE)
+  setSharedQuizVisibility(input: SetSharedQuizVisibilityInput!): SharedQuizPayload! @join__field(graph: CORE)
+
+  """The taker's own result. The owner is not told who submitted."""
+  submitSharedQuizAttempt(input: SubmitSharedQuizAttemptInput!): SharedQuizAttemptPayload! @join__field(graph: CORE)
+  deleteSharedQuiz(input: SharedQuizIdInput!): OkPayload! @join__field(graph: CORE)
 
   """Adds a task to this week (at most three)"""
   addWeeklyTask(input: AddWeeklyTaskInput!): WeeklyTaskPayload! @join__field(graph: CORE)
@@ -3464,6 +5174,15 @@ type Mutation
   deleteTag(input: IdInput!): OkPayload! @join__field(graph: NOTES)
   proposeTopic(input: ProposeTopicInput!): TopicPayload! @join__field(graph: NOTES)
 
+  """Write the ink and pictures of these pages. Editors of the note."""
+  saveNotePages(input: SaveNotePagesInput!): NotePagesPayload! @join__field(graph: NOTES)
+  deleteNotePage(input: NotePageIdInput!): OkPayload! @join__field(graph: NOTES)
+
+  """Place a scanned PNG or JPEG on a page."""
+  placePageImage(input: PlacePageImageInput!): NotePagePayload! @join__field(graph: NOTES)
+  updatePageImage(input: UpdatePageImageInput!): NotePagePayload! @join__field(graph: NOTES)
+  removePageImage(input: PageImageIdInput!): OkPayload! @join__field(graph: NOTES)
+
   """Owner and editors"""
   addPdfHighlight(input: AddPdfHighlightInput!): PdfHighlightPayload! @join__field(graph: NOTES)
   updatePdfHighlight(input: UpdatePdfHighlightInput!): PdfHighlightPayload! @join__field(graph: NOTES)
@@ -3484,7 +5203,7 @@ type Mutation
   unsaveNote(input: NoteIdInput!): NotePayload! @join__field(graph: NOTES)
 
   """
-  PRIVATE, SHARED or PUBLIC (owner, verified account); PUBLIC needs a published version
+  PRIVATE, SHARED, UNLISTED or PUBLIC (owner). Unlisted and Public need a published version. Public follows the admin setting public_notes_require_verification.
   """
   changeNoteVisibility(input: ChangeNoteVisibilityInput!): NotePayload! @join__field(graph: NOTES)
 
@@ -3525,21 +5244,89 @@ type Mutation
 
   """Ends this device's session (its whole refresh-token family)"""
   signOut: OkPayload! @join__field(graph: USERS)
-  verifyEmail(input: VerifyEmailInput!): OkPayload! @join__field(graph: USERS)
 
-  """Always ok, whether or not an account exists"""
+  """
+  Confirms the login email, or attaches a password from a link. Returns the user so clients can replace the session snapshot.
+  """
+  verifyEmail(input: VerifyEmailInput!): VerifyEmailPayload! @join__field(graph: USERS)
+
+  """
+  Sends another login-email link to the signed-in account. Already verified: ok, and no mail. Three an hour.
+  """
+  resendVerification: OkPayload! @join__field(graph: USERS)
+
+  """
+  Always ok, whether or not an account exists. No mail is sent when no live account has that address.
+  """
   requestPasswordReset(input: RequestPasswordResetInput!): OkPayload! @join__field(graph: USERS)
 
   """Sets the password and signs out every device"""
   resetPassword(input: ResetPasswordInput!): OkPayload! @join__field(graph: USERS)
 
   """
-  Ask for your account to be deleted in 14 days, with your private notes and learning history; every other device is signed out. Public notes, posts and comments stay, by "Deleted user"
+  Platform admins. CONFLICT when the email is already listed. VALIDATION when the email is not usable.
+  """
+  addAccessAllowlistEntry(input: AddAccessAllowlistEntryInput!): AccessAllowlistPayload! @join__field(graph: USERS)
+
+  """Platform admins. Applies `role` to an existing account at once."""
+  updateAccessAllowlistEntry(input: UpdateAccessAllowlistEntryInput!): AccessAllowlistPayload! @join__field(graph: USERS)
+
+  """Platform admins. Signs that account out everywhere."""
+  removeAccessAllowlistEntry(id: UUID!): OkPayload! @join__field(graph: USERS)
+
+  """
+  Ask for your account to be deleted after the grace period, with your private notes and learning history; every other device is signed out. Adults wait 14 days. A minor uses the admin purge window, which defaults to 14 days. Public notes, posts and comments stay, by "Deleted user"
   """
   requestAccountDeletion(input: RequestAccountDeletionInput!): AccountDeletionPayload! @join__field(graph: USERS)
 
   """Keep your account: cancels a deletion you asked for"""
   cancelAccountDeletion: AccountDeletionPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins. Saves one setting and writes an audit row. A boolean is true or false.
+  """
+  updateAdminSetting(input: UpdateAdminSettingInput!): AdminSettingPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins. Forgets the saved row. The environment variable or the built-in default applies again.
+  """
+  resetAdminSetting(key: String!): AdminSettingPayload! @join__field(graph: USERS)
+
+  """Platform admins. Adds a plan. Nothing is charged."""
+  createAdminPlan(input: CreateAdminPlanInput!): AdminPlanPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins. Edits a plan's name, price, limits, features or active flag. The code stays. FREE cannot be deactivated.
+  """
+  updateAdminPlan(input: UpdateAdminPlanInput!): AdminPlanPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins. Deletes a plan nobody is on. FREE cannot be deleted. People on a plan are left where they are: mark it inactive instead.
+  """
+  deleteAdminPlan(id: UUID!): OkPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins. Edits name, email, age or date of birth and re-runs the age gate. A passing age clears AGE_BLOCKED. Audited.
+  """
+  adminUpdateUser(input: AdminUpdateUserInput!): AdminUserPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins. Blocks, suspends or restores an account. Block and suspend revoke every session. Audited.
+  """
+  adminSetAccountStanding(input: AdminSetAccountStandingInput!): AdminUserPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins. Permanently anonymises the account, deletes its files and sessions, and keeps a hashed-email tombstone. confirm must be DELETE.
+  """
+  adminDeleteUser(input: AdminDeleteUserInput!): OkPayload! @join__field(graph: USERS)
+
+  """
+  Signed in. At most 40 events, 30 batches a minute. Unknown event names, and props that break UsageEventInput.props' rules, are refused.
+  """
+  ingestAnalytics(input: IngestAnalyticsInput!): OkPayload! @join__field(graph: USERS)
+
+  """Signed in. Stops or resumes usage analytics for this account."""
+  setAnalyticsOptOut(optOut: Boolean!): OkPayload! @join__field(graph: USERS)
 
   """
   Signed in, unverified, no request already waiting. UNAVAILABLE while the switch is off — nothing is stored.
@@ -3557,7 +5344,7 @@ type Mutation
   withdrawStudentIdVerification(requestId: UUID!): OkPayload! @join__field(graph: USERS)
 
   """
-  Platform admins. Approval sets the account verified with method DOCUMENTS. The card is deleted either way. A reason is optional.
+  A reviewer of this request. Approval sets the account verified with method DOCUMENTS. The card is kept until the retention window. A reason is optional.
   """
   reviewStudentIdVerification(input: ReviewStudentIdVerificationInput!): StudentIdVerificationPayload! @join__field(graph: USERS)
 
@@ -3568,6 +5355,66 @@ type Mutation
   Ask for an archive of everything about you: notes as Markdown and JSON with their files, and your account data. One a day; you are emailed when it is ready
   """
   requestDataExport: DataExportPayload! @join__field(graph: USERS)
+
+  """
+  The parent clicked the confirm link. Receiving or opening the email does not call this. Sets method email_plus.
+  """
+  confirmGuardianConsent(token: String!): OkPayload! @join__field(graph: USERS)
+
+  """
+  One use of the manage link. Returns a session for the summary, export, withdrawal and deletion calls.
+  """
+  redeemGuardianManageLink(token: String!): GuardianSessionPayload! @join__field(graph: USERS)
+
+  """The same archive the account can ask for. One a day."""
+  guardianRequestDataExport(sessionToken: String!): DataExportPayload! @join__field(graph: USERS)
+
+  """
+  Puts consent back to auto_unverified. Restricted-minor limits apply again. Suspends only when an admin requires consent for access.
+  """
+  guardianWithdrawConsent(sessionToken: String!): GuardianSummaryPayload! @join__field(graph: USERS)
+
+  """
+  Schedules deletion. confirm must be the word DELETE. There is no child password.
+  """
+  guardianDeleteAccount(sessionToken: String!, confirm: String!): AccountDeletionPayload! @join__field(graph: USERS)
+
+  """
+  Turns social features on or off for an under-13 child. Refused until consent is verified. Ages 13 to 17 keep the usual restricted-minor rules and do not use this.
+  """
+  guardianSetSocialEnabled(sessionToken: String!, enabled: Boolean!): GuardianSummaryPayload! @join__field(graph: USERS)
+
+  """
+  Sends the notice again, with a new confirm link, to the stored parent address. Rate limited. Signed in.
+  """
+  resendGuardianConfirmLink: OkPayload! @join__field(graph: USERS)
+
+  """
+  Sends a new manage link to the stored parent address. Rate limited. Signed in.
+  """
+  resendGuardianManageLink: OkPayload! @join__field(graph: USERS)
+
+  """
+  Signed in. Sends a 6-digit code when factor is EMAIL_OTP. The code lasts 10 minutes, and five wrong attempts burn it.
+  Five sends an hour per account, plus a cap per network. TOTP and WEBAUTHN are reserved.
+  """
+  startMfaChallenge(factor: MfaFactorType!): MfaChallengePayload! @join__field(graph: USERS)
+
+  """
+  Signed in. Checks the code. On success the refresh session is marked verified and the new access token carries amr including otp.
+  """
+  verifyMfaChallenge(challengeId: UUID!, code: String!): MfaVerifyPayload! @join__field(graph: USERS)
+
+  """
+  Signed in. Asks for a second factor on later sign-ins, or stops asking. No screen calls this yet. The next sign-in or refresh applies it.
+  """
+  setMfaOptIn(optIn: Boolean!): OkPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins who have already passed MFA. Clears another account's unused codes and send limits, and lets that
+  account sign in without a code for 2 hours. You cannot recover yourself. Audited. There is no way to edit or delete the audit row.
+  """
+  adminRecoverMfa(input: AdminRecoverMfaInput!): OkPayload! @join__field(graph: USERS)
   updateProfile(input: UpdateProfileInput!): ProfilePayload! @join__field(graph: USERS)
 
   """Attach the old site's data to this account"""
@@ -3575,6 +5422,11 @@ type Mutation
 
   """Decline the old site's data, or remove it after it was attached"""
   declineLegacyData: OkPayload! @join__field(graph: USERS)
+
+  """
+  The signed-in person has seen the safety reminder. Later reads of safetyReminderRequired are false.
+  """
+  acknowledgeSafetyReminder: OkPayload! @join__field(graph: USERS)
 
   """
   Platform admins. Turns Google sign-in on or off without a deploy. Does nothing until FIREBASE_PROJECT_ID is set.
@@ -3590,6 +5442,30 @@ type Mutation
   setInstitutionalEmail(input: SetInstitutionalEmailInput!): OkPayload! @join__field(graph: USERS)
   verifyInstitutionalEmail(input: VerifyInstitutionalEmailInput!): OkPayload! @join__field(graph: USERS)
   resendInstitutionalEmailCode: OkPayload! @join__field(graph: USERS)
+
+  """
+  Emails a 6-digit sign-in code when an account has this address. Always ok, so it never tells who has an account.
+  """
+  requestSignInCode(input: RequestSignInCodeInput!): OkPayload! @join__field(graph: USERS)
+
+  """
+  Signs in with the emailed code. Five wrong tries end the code; ask for a new one.
+  """
+  signInWithCode(input: SignInWithCodeInput!): AuthPayload! @join__field(graph: USERS)
+
+  """
+  Starts a passkey sign-in. No email: the browser offers the passkeys it has for this site.
+  """
+  startPasskeySignIn: PasskeySignInStart! @join__field(graph: USERS)
+  finishPasskeySignIn(input: FinishPasskeySignInInput!): AuthPayload! @join__field(graph: USERS)
+
+  """Signed in. Starts adding a passkey for this device."""
+  startPasskeyRegistration: PasskeyRegistrationStart! @join__field(graph: USERS)
+
+  """Signed in. Saves the passkey the browser made."""
+  finishPasskeyRegistration(input: FinishPasskeyRegistrationInput!): PasskeyPayload! @join__field(graph: USERS)
+  renamePasskey(input: RenamePasskeyInput!): PasskeyPayload! @join__field(graph: USERS)
+  removePasskey(id: UUID!): OkPayload! @join__field(graph: USERS)
   followUser(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
   unfollowUser(input: PersonInput!): PersonPayload! @join__field(graph: USERS)
 
@@ -3654,7 +5530,7 @@ type Mutation
   withdrawVerificationRequest(requestId: UUID!): OkPayload! @join__field(graph: USERS)
 
   """
-  Teachers: requests addressed to them. Platform admins: all, including documents.
+  Verified teachers: student requests in their scope. Platform admins: all, including teacher applications. A reviewer cannot decide their own request. Managers are refused.
   """
   reviewVerificationRequest(input: ReviewVerificationRequestInput!): VerificationRequestPayload! @join__field(graph: USERS)
 
@@ -3662,7 +5538,12 @@ type Mutation
   decideDomainReview(input: DecideDomainReviewInput!): OkPayload! @join__field(graph: USERS)
 
   """
-  Platform admins: TEACHER is granted by review, not by an email address (§5, ADR-0017)
+  Platform admins: approve or reject a domain, including one nobody has asked for yet.
+  """
+  reviewInstitutionDomain(input: DecideDomainReviewInput!): OkPayload! @join__field(graph: USERS)
+
+  """
+  Platform admins: TEACHER and MANAGER are granted here, not by an email address (§5, ADR-0017). Every change is audited.
   """
   setGlobalRole(input: SetGlobalRoleInput!): OkPayload! @join__field(graph: USERS)
 }
@@ -3675,6 +5556,13 @@ input MuteGroupMemberInput
 
   """Null lifts the mute"""
   until: DateTime
+}
+
+type MyPlan
+  @join__type(graph: USERS)
+{
+  plan: PublicPlan!
+  usage: [PlanUsage!]!
 }
 
 """A note, owned by the notes subgraph; ai adds the viewer's AI results"""
@@ -3736,7 +5624,12 @@ type Note
   draftUpdatedAt: DateTime @join__field(graph: NOTES)
   publishedVersion: NoteVersion @join__field(graph: NOTES)
   publishedAt: DateTime @join__field(graph: NOTES)
-  forkingEnabled: Boolean! @join__field(graph: NOTES)
+
+  """Whether other people may copy this note"""
+  allowForks: Boolean! @join__field(graph: NOTES)
+
+  """Private copies other people have made"""
+  forkCount: Int! @join__field(graph: NOTES)
   cardCount: Int! @join__field(graph: NOTES)
 
   """
@@ -3774,6 +5667,9 @@ type Note
   """Owner only; null for everyone else"""
   moderation: NoteModeration @join__field(graph: NOTES)
 
+  """In index order. Empty when the note has no pages."""
+  pages: [NotePage!]! @join__field(graph: NOTES)
+
   """
   Its first picture as the viewer sees it (ADR-0076): a card's preview in Community; null without one
   """
@@ -3799,6 +5695,16 @@ type Note
   Owner only: every connection of the owner reads it, and new connections will too (teachers, ADR-0013)
   """
   sharedWithConnections: Boolean @join__field(graph: NOTES)
+
+  """
+  Owner only: Private, Unlisted and Public, plus Shared while the note is already Shared
+  """
+  visibilityChoices: [VisibilityChoice!] @join__field(graph: NOTES)
+
+  """
+  Owner only, once the note is published and Unlisted or Public: /n/{slug}-{id}
+  """
+  sharePath: String @join__field(graph: NOTES)
 
   """Owner only: the groups the note is shared to"""
   groups: [Group!] @join__field(graph: NOTES)
@@ -3944,6 +5850,58 @@ type NoteModeration
   canAppeal: Boolean!
 }
 
+type NotePage
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  index: Int!
+
+  """
+  The drawing as stored: { strokes: [{ id, tool, color, width, points }] }. tool is pen, marker, eraser or ruler.
+  """
+  drawing: JSON!
+  strokes: [InkStroke!]!
+  images: [NotePageImage!]!
+}
+
+input NotePageIdInput
+  @join__type(graph: NOTES)
+{
+  pageId: UUID!
+}
+
+type NotePageImage
+  @join__type(graph: NOTES)
+{
+  id: UUID!
+  fileId: UUID!
+
+  """Null while the scan is pending or failed"""
+  href: String
+
+  """The file's name"""
+  name: String!
+  x: Float!
+  y: Float!
+  w: Float!
+  h: Float!
+  rotation: Float!
+}
+
+type NotePagePayload
+  @join__type(graph: NOTES)
+{
+  page: NotePage
+  userErrors: [UserError!]!
+}
+
+type NotePagesPayload
+  @join__type(graph: NOTES)
+{
+  pages: [NotePage!]
+  userErrors: [UserError!]!
+}
+
 type NotePayload
   @join__type(graph: NOTES)
 {
@@ -3992,6 +5950,26 @@ type NoteSearchHit
   Words around the match from the published version; each match is wrapped in U+E000 … U+E001
   """
   snippet: String!
+}
+
+type NotesFromTranscript
+  @join__type(graph: AI)
+{
+  noteId: UUID!
+  title: String!
+  summary: String!
+
+  """
+  True when this text was produced by a model, so clients can show an AI label.
+  """
+  aiGenerated: Boolean!
+}
+
+type NotesFromTranscriptPayload
+  @join__type(graph: AI)
+{
+  notes: NotesFromTranscript
+  userErrors: [UserError!]!
 }
 
 """
@@ -4178,6 +6156,9 @@ type NotificationSettings
   timeZone: String!
   weeklyDigest: Boolean!
 
+  """Product news. False unsubscribes this account from the audience."""
+  productEmails: Boolean!
+
   """The server can send push (it has FCM settings)"""
   pushAvailable: Boolean!
 
@@ -4233,6 +6214,12 @@ type OutlineItem
   text: String!
 }
 
+input PageImageIdInput
+  @join__type(graph: NOTES)
+{
+  imageId: UUID!
+}
+
 type PageInfo
   @join__type(graph: COMMUNICATION)
   @join__type(graph: CORE)
@@ -4241,6 +6228,50 @@ type PageInfo
 {
   hasNextPage: Boolean!
   endCursor: String
+}
+
+type Passkey
+  @join__type(graph: USERS)
+{
+  id: UUID!
+
+  """
+  What the person calls the device, e.g. "Pixel 8"
+  """
+  name: String!
+  createdAt: DateTime!
+  lastUsedAt: DateTime
+
+  """
+  Synced to the person's cloud account (iCloud Keychain, Google Password Manager), so it survives a lost phone.
+  """
+  backedUp: Boolean!
+}
+
+type PasskeyPayload
+  @join__type(graph: USERS)
+{
+  passkey: Passkey
+  userErrors: [UserError!]!
+}
+
+type PasskeyRegistrationStart
+  @join__type(graph: USERS)
+{
+  """PublicKeyCredentialCreationOptionsJSON, as a JSON string"""
+  optionsJson: String!
+}
+
+"""
+Options for navigator.credentials.get, and the id that names this attempt. Five minutes, one use.
+"""
+type PasskeySignInStart
+  @join__type(graph: USERS)
+{
+  attemptId: String!
+
+  """PublicKeyCredentialRequestOptionsJSON, as a JSON string"""
+  optionsJson: String!
 }
 
 input PauseRhythmInput
@@ -4408,6 +6439,61 @@ input PinGroupPostInput
   pinned: Boolean!
 }
 
+input PlacePageImageInput
+  @join__type(graph: NOTES)
+{
+  pageId: UUID!
+
+  """A PAGE_IMAGE upload for this note, finished with completeUpload"""
+  fileId: UUID!
+  name: String
+  x: Float!
+  y: Float!
+  w: Float!
+  h: Float!
+  rotation: Float
+}
+
+enum PlanInterval
+  @join__type(graph: USERS)
+{
+  NONE @join__enumValue(graph: USERS)
+  MONTH @join__enumValue(graph: USERS)
+  YEAR @join__enumValue(graph: USERS)
+}
+
+"""
+One limit on a plan. `limit` is a decimal string, or null when the plan does not cap it.
+"""
+type PlanLimit
+  @join__type(graph: USERS)
+{
+  key: LimitKey!
+
+  """Words for the limit, such as "AI asks a day"."""
+  label: String!
+  limit: String
+}
+
+"""
+How much of one limit the signed-in person has used. `resetsAt` is null for a standing cap.
+"""
+type PlanUsage
+  @join__type(graph: USERS)
+{
+  key: LimitKey!
+  label: String!
+  used: String!
+
+  """Null when the plan does not cap this."""
+  limit: String
+
+  """
+  When a daily or monthly counter goes back to zero. Null for a standing cap.
+  """
+  resetsAt: DateTime
+}
+
 enum Platform
   @join__type(graph: CORE)
 {
@@ -4490,6 +6576,32 @@ input ProposeTopicInput
   title: String!
 }
 
+"""
+A plan as a person sees it: price, features and the limits for their role.
+`priceMinor` is minor currency units. Showing a price does not charge anyone.
+"""
+type PublicPlan
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  code: String!
+  name: String!
+  priceMinor: Int!
+  currency: String!
+  interval: PlanInterval!
+  features: [String!]!
+
+  """
+  Limits for the viewer's role. Signed out, these are the student limits.
+  """
+  limits: [PlanLimit!]!
+
+  """
+  True when this is the signed-in viewer's plan. False for every plan when nobody is signed in.
+  """
+  current: Boolean!
+}
+
 input PublishClassQuizInput
   @join__type(graph: CORE)
 {
@@ -4519,14 +6631,22 @@ type Query
   """
   myAiAnswers(first: Int = 20, noteId: UUID, doubtId: UUID): [AiAnswer!]! @join__field(graph: AI)
 
+  """Platform admins. Newest first. status defaults to OPEN. first is 1–50."""
+  aiReports(status: AiReportStatus, first: Int = 20): [AiReport!]! @join__field(graph: AI)
+
+  """Platform admins."""
+  aiReport(id: UUID!): AiReport! @join__field(graph: AI)
+
   """Platform admins only"""
   aiSettings: AiSettings! @join__field(graph: AI)
 
   """
-  Platform admins only: every model the connection's account lists, sorted, for its chat and embedding model fields.
-  Empty when the provider does not list its models, cannot be reached or the key cannot be read. Spends no tokens.
+  Platform admins only: every model the connection's account lists, and the select for each use.
+  `all` keeps every id (paged through when the provider splits the list). `pickers` offers only models this app can
+  call for that use. Both are empty when the provider does not list its models, cannot be reached or the key cannot
+  be read. Spends no tokens.
   """
-  aiConnectionModels(input: AiConnectionIdInput!): [String!]! @join__field(graph: AI)
+  aiConnectionModels(input: AiConnectionIdInput!): AiConnectionModels! @join__field(graph: AI)
 
   """
   One of the viewer's AI results; null when it is not theirs or they can no longer read the note
@@ -4538,6 +6658,11 @@ type Query
 
   """Signed in only"""
   myAiAllowance: AiAllowance! @join__field(graph: AI)
+
+  """
+  How to caption live. It describes the browser and does not call a model. Signed out, the note must be public.
+  """
+  voiceCapture(input: VoiceCaptureInput!): VoiceCapturePayload! @join__field(graph: AI)
 
   """The viewer's notifications, newest first"""
   notifications(first: Int, after: String): NotificationConnection! @join__field(graph: COMMUNICATION)
@@ -4680,6 +6805,20 @@ type Query
   """Signed in only"""
   rhythm: Rhythm! @join__field(graph: CORE)
 
+  """
+  A quiz the viewer may open by id. Public and Unlisted are open to anyone who has the id. Null when it is private to someone else.
+  """
+  sharedQuiz(id: UUID!): SharedQuiz @join__field(graph: CORE)
+
+  """The share link. A private token opens the quiz only for its owner."""
+  sharedQuizByLink(token: String!): SharedQuiz @join__field(graph: CORE)
+
+  """The viewer's quizzes, newest first"""
+  myQuizzes(first: Int): [SharedQuiz!]! @join__field(graph: CORE)
+
+  """Public quizzes, newest published first. Unlisted quizzes are not here."""
+  publicQuizzes(first: Int): [SharedQuiz!]! @join__field(graph: CORE)
+
   """The viewer's tasks this week, with how far each has come"""
   weeklyTasks: WeeklyTasks! @join__field(graph: CORE)
 
@@ -4752,17 +6891,159 @@ type Query
   sharedWithMe(first: Int, after: String): NoteConnection! @join__field(graph: NOTES)
 
   """
+  Whether this note allows copies. False when the viewer cannot read it. The same value as Note.allowForks.
+  """
+  forkingEnabled(noteId: UUID!): Boolean! @join__field(graph: NOTES)
+
+  """
   What changed since `since` (the cursor of the last completed sync) or `after` (the previous page); 1 to 50 notes (default 20)
   """
   syncPull(since: String, after: String, first: Int): SyncPullResult! @join__field(graph: NOTES)
 
   """The signed-in user, null for anonymous visitors"""
   viewer: User @join__field(graph: USERS)
+  accessPolicy: AccessPolicy! @join__field(graph: USERS)
 
   """
-  Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2)
+  Platform admins. Every allowlist entry, or those whose email or note contains `search`.
+  """
+  adminAccessAllowlist(search: String): [AccessAllowlistEntry!]! @join__field(graph: USERS)
+
+  """
+  Platform admins. One page of content that is not private. Every call writes an audit row with the filter.
+  """
+  adminContent(filter: AdminContentFilter, first: Int, after: String): AdminContentConnection! @join__field(graph: USERS)
+
+  """
+  Platform admins. How many of each kind were created in the window. The same private items are left out.
+  """
+  adminContentCounts(from: DateTime, to: DateTime): AdminContentCounts! @join__field(graph: USERS)
+
+  """
+  Platform admins. Sign-ups and verifications per DAY (when omitted) or WEEK. Omit from and to for the last 30 days. At most 366 days.
+  """
+  adminGrowth(from: DateTime, to: DateTime, interval: MetricsInterval): AdminGrowth! @join__field(graph: USERS)
+
+  """
+  Platform admins. DAU, WAU, MAU, stickiness and activity per DAY (when omitted) or WEEK. At most 366 days.
+  """
+  adminEngagement(from: DateTime, to: DateTime, interval: MetricsInterval): AdminEngagement! @join__field(graph: USERS)
+
+  """
+  Platform admins. Notes, uploads, scans, doubts, places and sharing created in the window. At most 366 days.
+  """
+  adminContentStats(from: DateTime, to: DateTime): AdminContentStats! @join__field(graph: USERS)
+
+  """
+  Platform admins. Top subjects by notes, learning time or saves. first is 1 to 50, 10 when omitted. At most 366 days.
+  """
+  adminTopSubjects(from: DateTime, to: DateTime, by: AdminSubjectMetric!, first: Int): AdminTopSubjects! @join__field(graph: USERS)
+
+  """
+  Platform admins. Verification requests and decisions in the window and the queue now. At most 366 days.
+  """
+  adminVerificationStats(from: DateTime, to: DateTime): AdminVerificationStats! @join__field(graph: USERS)
+
+  """
+  Platform admins. Retention by sign-up week: the last `weeks` weeks (1 to 52, 12 when omitted), this week included.
+  """
+  adminRetention(cohortInterval: CohortInterval = WEEK, weeks: Int): AdminRetention! @join__field(graph: USERS)
+
+  """
+  Platform admins. Feature use and quiz starts from first-party events (ADR-0107). Omit from and to for the last 30 days. At most 366 days.
+  """
+  adminFeatureUsage(from: DateTime, to: DateTime): AdminFeatureUsage! @join__field(graph: USERS)
+
+  """
+  Platform admins. Searches and zero-result searches by scope (ADR-0107). At most 366 days.
+  """
+  adminSearchQuality(from: DateTime, to: DateTime): AdminSearchQuality! @join__field(graph: USERS)
+
+  """
+  Platform admins. Distinct people per platform and app version (ADR-0107). At most 366 days.
+  """
+  adminVersionAdoption(from: DateTime, to: DateTime): AdminVersionAdoption! @join__field(graph: USERS)
+
+  """
+  Platform admins with a valid MFA. Audit rows, newest first. limit is 1 to 100, 50 when omitted.
+  """
+  adminActivity(filter: AdminActivityFilter, cursor: String, limit: Int): AdminActivityConnection! @join__field(graph: USERS)
+
+  """
+  Platform admins with a valid MFA. How many audit rows, per action and per UTC day.
+  """
+  adminActivitySummary(from: DateTime, to: DateTime): AdminActivitySummary! @join__field(graph: USERS)
+
+  """Platform admins. Counts for the dashboard."""
+  adminMetrics(from: DateTime, to: DateTime): AdminMetrics! @join__field(graph: USERS)
+
+  """
+  Platform admins. Every application setting, with its type, description and validation.
+  """
+  adminSettings: [AdminSetting!]! @join__field(graph: USERS)
+
+  """
+  Platform admins. The terms version in effect, where it comes from, the published versions and acceptance counts.
+  """
+  adminTermsStatus: AdminTermsStatus! @join__field(graph: USERS)
+
+  """
+  Platform admins. Every plan, with its price, limits and how many accounts are on it.
+  """
+  adminPlans: [AdminPlan!]! @join__field(graph: USERS)
+
+  """
+  Platform admins. Accounts in one standing, optionally matched on name, email or handle.
+  """
+  adminUsers(status: AdminUserStatusFilter!, search: String, first: Int): AdminUserList! @join__field(graph: USERS)
+
+  """
+  Platform admins. Errors since `since`, or the last 90 days. Grouped by code.
+  """
+  adminErrors(since: DateTime): [AdminErrorGroup!]! @join__field(graph: USERS)
+
+  """
+  Platform admins. Usage between `from` and `to`. Omit them for the last 30 days.
+  """
+  adminUsage(from: DateTime, to: DateTime): AdminUsageSummary! @join__field(graph: USERS)
+
+  """Platform admins. One account's usage, newest first."""
+  adminUserActivity(userId: UUID!, first: Int): [UserActivityEvent!]! @join__field(graph: USERS)
+
+  """
+  Platform admins. 1 to 5 ordered steps, each a usage event name (page_view, note_open, note_upload, search, download,
+  sign_in, feature_use, search_no_results, quiz_start) or a step read from the database (ADR-0105): signed_up (account created), email_verified (login email
+  verified), first_note (the account's first note), returned_d7 (active again 7 or more days after signing up, and
+  after the previous step: a sign-in or session refresh, a usage event, or learning). A person counts at a step when
+  each earlier step happened first; each step's time is its first occurrence since `since` (default: 30 days ago).
+  Database steps leave out deleted accounts and accounts that opted out of analytics.
+  """
+  adminFunnel(steps: [String!]!, since: DateTime): [FunnelStep!]! @join__field(graph: USERS)
+
+  """
+  Platform admins. Resolves account ids for the errors dashboard. Unknown and deleted accounts are omitted.
+  """
+  usersByIds(ids: [UUID!]!): [AdminUserLookup!]! @join__field(graph: USERS)
+
+  """
+  Version of the Terms, Privacy Policy and public-content licence a new account accepts (§15.2). A platform admin can change it (ADR-0103), so read it here instead of hard-coding it.
   """
   termsVersion: String! @join__field(graph: USERS)
+
+  """
+  Youngest whole-year age that may sign up. A platform admin changes it (account_minimum_age). Default 13. It cannot be set below 13, and a lower saved value is still enforced as 13. Ages under 13 cannot create an account. Read it here instead of hard-coding a minimum.
+  """
+  accountMinimumAge: Int! @join__field(graph: USERS)
+
+  """
+  Action ids an institution-unverified account cannot do. Empty means none. Pass these into can() on web and mobile.
+  """
+  unverifiedGatedActions: [String!]! @join__field(graph: USERS)
+
+  """
+  Whether Public notes and quizzes require an institution-verified account. True when the admin has not saved the row. Anyone may read it.
+  """
+  publicNotesRequireVerification: Boolean! @join__field(graph: USERS)
 
   """
   Public. False until a platform admin turns it on. Clients hide the college-ID control while it is false. Independent of uploadsEnabled.
@@ -4775,12 +7056,12 @@ type Query
   myStudentIdVerification: StudentIdVerificationRequest @join__field(graph: USERS)
 
   """
-  Platform admins: pending college-ID requests, oldest first. `after` is the last id seen.
+  Platform admins: every pending college-ID request. A verified teacher: students of their institution. Managers, unverified teachers and students are refused. Oldest first. `after` is the last id seen.
   """
   studentIdVerificationQueue(first: Int, after: UUID): [StudentIdVerificationRequest!]! @join__field(graph: USERS)
 
   """
-  Platform admins: a 5-minute link to the card. Every view is written to the audit log. The student, and every other non-admin, is refused.
+  A reviewer of this card: a 5-minute link. Every view is written to the audit log. The student is refused.
   """
   studentIdCardUrl(requestId: UUID!): SignedUrl! @join__field(graph: USERS)
 
@@ -4789,12 +7070,38 @@ type Query
 
   """Your latest data exports, newest first"""
   myDataExports: [DataExport!]! @join__field(graph: USERS)
+
+  """The child's summary for a live manage session."""
+  guardianChildSummary(sessionToken: String!): GuardianSummaryPayload! @join__field(graph: USERS)
+
+  """
+  Data exports already asked for on this account. A ready one includes a short-lived download link.
+  """
+  guardianDataExports(sessionToken: String!): GuardianExportsPayload! @join__field(graph: USERS)
+
+  """
+  Signed in. The second-factor state of this session. Does not require MFA.
+  """
+  mfaStatus: MfaStatus! @join__field(graph: USERS)
+
+  """
+  Active plans, cheapest first. Works signed out; `current` is then false on every plan.
+  """
+  plans: [PublicPlan!]! @join__field(graph: USERS)
+
+  """
+  The signed-in person's plan and how much of each limit they have used. An account with no plan is on FREE.
+  """
+  myPlan: MyPlan! @join__field(graph: USERS)
   signInOptions: SignInOptions! @join__field(graph: USERS)
 
   """
   Platform admins. Google's on/off switch and whether a Firebase project is configured.
   """
   authSettings: AuthSettings! @join__field(graph: USERS)
+
+  """Signed in. This account's passkeys, oldest first."""
+  myPasskeys: [Passkey!]! @join__field(graph: USERS)
 
   """
   A person by handle (with or without @) or by id; null when there is none, or when they have no public profile (restricted minors, ADR-0043)
@@ -4823,12 +7130,12 @@ type Query
   myTeacherApplication: VerificationRequest @join__field(graph: USERS)
 
   """
-  Teachers: pending requests addressed to them. Platform admins: every pending request. Oldest first; `after` is the last id seen.
+  Verified teachers: student requests addressed to them, and students of their institution. Platform admins: every pending request. Managers, unverified teachers and students are refused. Oldest first; `after` is the last id seen.
   """
   verificationRequestsToReview(first: Int, after: UUID): [VerificationRequest!]! @join__field(graph: USERS)
 
   """
-  Platform admins only: a 15-minute link to one document; the view is written to the audit log
+  A reviewer of this request: a 15-minute link to one document. The view is written to the audit log.
   """
   verificationDocumentUrl(requestId: UUID!, fileId: UUID!): SignedUrl! @join__field(graph: USERS)
 
@@ -4841,6 +7148,16 @@ type Query
   Platform admins: institutional email domains waiting for review (ADR-0017)
   """
   domainReviews(status: DomainReviewStatus): [DomainReview!]! @join__field(graph: USERS)
+
+  """
+  Platform admins: the same queue, or every domain of one status. Omit status for domains still waiting.
+  """
+  institutionDomains(status: DomainReviewStatus, first: Int): [DomainReview!]! @join__field(graph: USERS)
+
+  """
+  Public. This running build: the package version plus the short git SHA, as vX.Y.Z+sha. Not the terms date (termsVersion).
+  """
+  version: String! @join__field(graph: USERS)
 }
 
 type QuizAnswer
@@ -4878,6 +7195,41 @@ type QuizAttemptPayload
   """The quiz again, now with its answers for the viewer"""
   quiz: ClassQuiz
   userErrors: [UserError!]!
+}
+
+"""
+What kind of quiz a quiz_start event started: the @lvn/contracts QuizStartKind id in upper case.
+"""
+enum QuizStartKind
+  @join__type(graph: USERS)
+{
+  """A classroom quiz."""
+  CLASS @join__enumValue(graph: USERS)
+
+  """A shared or public quiz."""
+  SHARED @join__enumValue(graph: USERS)
+
+  """The quiz cards of a note."""
+  NOTE @join__enumValue(graph: USERS)
+
+  """Practice questions: AI-made, or a topic's quiz."""
+  PRACTICE @join__enumValue(graph: USERS)
+}
+
+enum QuizVisibility
+  @join__type(graph: CORE)
+{
+  PRIVATE @join__enumValue(graph: CORE)
+  UNLISTED @join__enumValue(graph: CORE)
+  PUBLIC @join__enumValue(graph: CORE)
+}
+
+type QuizVisibilityChoice
+  @join__type(graph: CORE)
+{
+  visibility: QuizVisibility!
+  enabled: Boolean!
+  reason: String
 }
 
 input ReactInput
@@ -5081,11 +7433,38 @@ type RemovedGroup
   canAppeal: Boolean!
 }
 
+input RenamePasskeyInput
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  name: String!
+}
+
 input RenameTagInput
   @join__type(graph: NOTES)
 {
   id: UUID!
   name: String!
+}
+
+input ReportAiAnswerInput
+  @join__type(graph: AI)
+{
+  responseId: UUID!
+
+  """
+  ANSWER (Ask AI) or ARTIFACT (a task result, including a public study aid)
+  """
+  responseKind: String!
+  reason: AiReportReason!
+  comment: String
+}
+
+type ReportAiAnswerPayload
+  @join__type(graph: AI)
+{
+  reportId: UUID
+  userErrors: [UserError!]!
 }
 
 input ReportContentInput
@@ -5184,7 +7563,7 @@ input RequestAccountDeletionInput
 }
 
 """
-fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by platform admins only, deleted 30 days after the decision
+fileIds uploaded with createUploadIntent(purpose: VERIFICATION_DOCUMENT); seen by reviewers of this request, deleted 30 days after the decision
 """
 input RequestDocumentVerificationInput
   @join__type(graph: USERS)
@@ -5194,6 +7573,12 @@ input RequestDocumentVerificationInput
 }
 
 input RequestPasswordResetInput
+  @join__type(graph: USERS)
+{
+  email: String!
+}
+
+input RequestSignInCodeInput
   @join__type(graph: USERS)
 {
   email: String!
@@ -5792,6 +8177,41 @@ input SaveAiTaskRouteInput
   outputMicroUsdPerMTok: Int
 }
 
+input SaveNotePageImageInput
+  @join__type(graph: NOTES)
+{
+  """Absent: a new picture on this page"""
+  id: UUID
+  fileId: UUID!
+
+  """Stored as the file's name when set"""
+  name: String
+  x: Float!
+  y: Float!
+  w: Float!
+  h: Float!
+  rotation: Float
+}
+
+input SaveNotePageInput
+  @join__type(graph: NOTES)
+{
+  """Absent: a new page"""
+  id: UUID
+  index: Int!
+  drawing: JSON!
+
+  """When set, replaces the pictures on this page. Omit to leave them."""
+  images: [SaveNotePageImageInput!]
+}
+
+input SaveNotePagesInput
+  @join__type(graph: NOTES)
+{
+  noteId: UUID!
+  pages: [SaveNotePageInput!]!
+}
+
 """
 Narrows the notes found (and topics, by subject); never widens what the viewer may read
 """
@@ -6005,6 +8425,108 @@ input SetRhythmSharingInput
   share: Boolean!
 }
 
+input SetSharedQuizVisibilityInput
+  @join__type(graph: CORE)
+{
+  quizId: UUID!
+  visibility: QuizVisibility!
+}
+
+type SharedQuiz
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  title: String!
+  visibility: QuizVisibility!
+  owner: User!
+  publishedAt: DateTime
+  questionCount: Int!
+  questions: [SharedQuizQuestion!]!
+
+  """Owner only, when the quiz is not Private: /q/{linkToken}"""
+  sharePath: String
+
+  """Owner only"""
+  visibilityChoices: [QuizVisibilityChoice!]
+
+  """The viewer's own attempts, newest first"""
+  myAttempts: [QuizAttempt!]!
+
+  """Owner only. Counts, never who took it."""
+  stats: SharedQuizStats
+  viewerIsOwner: Boolean!
+}
+
+type SharedQuizAttemptPayload
+  @join__type(graph: CORE)
+{
+  attempt: QuizAttempt
+  quiz: SharedQuiz
+  userErrors: [UserError!]!
+}
+
+input SharedQuizIdInput
+  @join__type(graph: CORE)
+{
+  quizId: UUID!
+}
+
+type SharedQuizPayload
+  @join__type(graph: CORE)
+{
+  quiz: SharedQuiz
+  userErrors: [UserError!]!
+}
+
+type SharedQuizQuestion
+  @join__type(graph: CORE)
+{
+  id: UUID!
+  position: Int!
+  question: JSON!
+  choices: [ClassQuizChoice!]!
+  multiple: Boolean!
+
+  """Null until the viewer has submitted, or is the owner"""
+  correct: [String!]
+  explanation: JSON
+}
+
+type SharedQuizQuestionStats
+  @join__type(graph: CORE)
+{
+  questionId: UUID!
+
+  """
+  How many scored attempts (the first one of each person) got this question right
+  """
+  correctCount: Int!
+}
+
+type SharedQuizStats
+  @join__type(graph: CORE)
+{
+  takerCount: Int!
+  scoredAttempts: Int!
+  practiceAttempts: Int!
+
+  """
+  Mean of each person's first score, as a fraction of the questions. Null when nobody has taken it.
+  """
+  averageScore: Float
+  questions: [SharedQuizQuestionStats!]!
+}
+
+input SharedQuizWriteInput
+  @join__type(graph: CORE)
+{
+  title: String!
+
+  """1 to 50 questions, each quiz card content"""
+  questions: [JSON!]!
+  visibility: QuizVisibility
+}
+
 input ShareNoteInput
   @join__type(graph: NOTES)
 {
@@ -6053,8 +8575,31 @@ type SignInOptions
   False when FIREBASE_PROJECT_ID is unset, or a platform admin has turned Google sign-in off
   """
   google: Boolean!
-  github: Boolean!
-  linkedin: Boolean!
+
+  """Retired (ADR-0115). Always false."""
+  github: Boolean! @deprecated(reason: "GitHub sign-in is retired. Always false.")
+
+  """Retired (ADR-0115). Always false."""
+  linkedin: Boolean! @deprecated(reason: "LinkedIn sign-in is retired. Always false.")
+
+  """
+  A 6-digit code emailed to the account (requestSignInCode, signInWithCode).
+  """
+  emailCode: Boolean!
+
+  """
+  Passkeys (startPasskeySignIn, finishPasskeySignIn), where the device supports them.
+  """
+  passkey: Boolean!
+}
+
+input SignInWithCodeInput
+  @join__type(graph: USERS)
+{
+  email: String!
+
+  """The 6 digits from the email. Spaces are ignored."""
+  code: String!
 }
 
 """
@@ -6067,7 +8612,7 @@ input SignInWithGoogleInput
 }
 
 """
-Registration (ADR-0017, ADR-0019): date of birth is required (YYYY-MM-DD). A college or organisation email is
+Registration (ADR-0017, ADR-0019, ADR-0104): the age in whole years is required. A college or organisation email is
 optional; it receives a 6-digit code. `acceptedTermsVersion` must be Query.termsVersion.
 """
 input SignUpInput
@@ -6076,9 +8621,36 @@ input SignUpInput
   email: String!
   password: String!
   displayName: String!
-  dateOfBirth: String!
+
+  """
+  Whole years, 1 to 120 (ADR-0104). Required, unless an app from before ADR-0104 sends dateOfBirth instead. When both
+  are sent, age is used and dateOfBirth is ignored.
+  """
+  age: Int
+
+  """
+  YYYY-MM-DD, from apps released before ADR-0104. The age it gives today is stored, not the date.
+  """
+  dateOfBirth: String @deprecated(reason: "Send age, in whole years. Ignored when age is sent.")
   institutionalEmail: String
+
+  """
+  Parent or guardian email. Required for an admitted sign-up under 18. Stored with the consent record, not as this account's email.
+  """
+  parentEmail: String
   acceptedTermsVersion: String!
+}
+
+"""
+How an account was created: a password or an email link (EMAIL), or a sign-in provider.
+"""
+enum SignUpMethod
+  @join__type(graph: USERS)
+{
+  EMAIL @join__enumValue(graph: USERS)
+  GOOGLE @join__enumValue(graph: USERS)
+  GITHUB @join__enumValue(graph: USERS)
+  LINKEDIN @join__enumValue(graph: USERS)
 }
 
 """Skills import for the viewer (ADR-0077)"""
@@ -6119,6 +8691,22 @@ input StartFocusSessionInput
   meetUrl: String
 }
 
+type StrokePoint
+  @join__type(graph: NOTES)
+{
+  x: Float!
+  y: Float!
+}
+
+enum StrokeTool
+  @join__type(graph: NOTES)
+{
+  PEN @join__enumValue(graph: NOTES)
+  MARKER @join__enumValue(graph: NOTES)
+  ERASER @join__enumValue(graph: NOTES)
+  RULER @join__enumValue(graph: NOTES)
+}
+
 """
 A short-lived upload of one college ID card. PUT the bytes to uploadUrl with exactly these headers within 10 minutes, then call submitStudentIdVerification. Do not call completeUpload.
 """
@@ -6153,7 +8741,7 @@ type StudentIdVerificationPayload
 }
 
 """
-The student's own view of a college-ID request. `card` is null except for a platform admin, and null once the card has been deleted.
+A college-ID request. `card` is set for a reviewer and null for the student. It is null once the card has been deleted.
 """
 type StudentIdVerificationRequest
   @join__type(graph: USERS)
@@ -6166,14 +8754,37 @@ type StudentIdVerificationRequest
   reason: String
   requester: User!
   card: VerificationDocument
+
+  """
+  The automated reading, once it has run. The ID number is hidden from the student.
+  """
+  aiCheck: IdCardCheck
 }
 
-"""Platform admins. `updatedAt` is null until someone changes the switch."""
+"""
+Platform admins. `updatedAt` is null until someone changes the college-ID switch. The AI switches default off.
+"""
 type StudentIdVerificationSettings
   @join__type(graph: USERS)
 {
   enabled: Boolean!
   updatedAt: DateTime
+
+  """student_id_ai_check. Off until an admin turns it on."""
+  aiCheckEnabled: Boolean!
+
+  """
+  student_id_ai_auto_approve. Off until an admin turns it on. Never rejects.
+  """
+  autoApproveOnHighConfidence: Boolean!
+
+  """student_id_ai_confidence_threshold, 50–100. Default 90."""
+  confidenceThreshold: Int!
+
+  """
+  student_id_image_retention_days. Default 30. A withdrawn card is deleted at once.
+  """
+  imageRetentionDays: Int!
 }
 
 """
@@ -6251,6 +8862,14 @@ input SubmitResourceInput
 
   """Else the preview's imageUrl, copied into storage"""
   imageUrl: String
+}
+
+input SubmitSharedQuizAttemptInput
+  @join__type(graph: CORE)
+{
+  quizId: UUID!
+  clientOpId: UUID!
+  answers: [QuizAnswerInput!]!
 }
 
 input SubmitStudentIdVerificationInput
@@ -6486,6 +9105,17 @@ enum TeacherStatus
   DECLINED @join__enumValue(graph: USERS)
 }
 
+"""
+Where a value in effect comes from: a saved admin setting, the environment variable, or the built-in default.
+"""
+enum TermsVersionSource
+  @join__type(graph: USERS)
+{
+  SETTING @join__enumValue(graph: USERS)
+  ENV @join__enumValue(graph: USERS)
+  DEFAULT @join__enumValue(graph: USERS)
+}
+
 """A topic of the notes subgraph"""
 type Topic
   @join__type(graph: CORE, key: "id", resolvable: false)
@@ -6541,6 +9171,47 @@ type TrackEventsPayload
   userErrors: [UserError!]!
 }
 
+input TranscribeAudioInput
+  @join__type(graph: AI)
+{
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
+}
+
+input TranscribeCaptionClipInput
+  @join__type(graph: AI)
+{
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
+}
+
+type Transcript
+  @join__type(graph: AI)
+{
+  text: String!
+
+  """
+  The recording was longer than 30 minutes and the rest was not transcribed
+  """
+  cut: Boolean!
+
+  """
+  True when a model produced this text, so clients can show an AI label. False for browser SpeechRecognition captions.
+  """
+  aiGenerated: Boolean!
+}
+
+type TranscriptPayload
+  @join__type(graph: AI)
+{
+  transcript: Transcript
+  userErrors: [UserError!]!
+}
+
 input UnregisterDeviceInput
   @join__type(graph: COMMUNICATION)
 {
@@ -6567,6 +9238,46 @@ type UnsubscribePayload
   """What was turned off"""
   kind: EmailKind
   userErrors: [UserError!]!
+}
+
+input UpdateAccessAllowlistEntryInput
+  @join__type(graph: USERS)
+{
+  id: UUID!
+
+  """Omit to leave the role."""
+  role: GlobalRole
+
+  """Omit to leave the note. An empty note clears it."""
+  note: String
+}
+
+input UpdateAdminPlanInput
+  @join__type(graph: USERS)
+{
+  id: UUID!
+  name: String
+  priceMinor: Int
+  currency: String
+  interval: PlanInterval
+
+  """Replaces the whole feature list, including with an empty list."""
+  features: [String!]
+  active: Boolean
+
+  """
+  Replaces the whole limit list, including with an empty list. Omit to leave the limits.
+  """
+  entitlements: [AdminPlanEntitlementInput!]
+}
+
+input UpdateAdminSettingInput
+  @join__type(graph: USERS)
+{
+  key: String!
+
+  """The same form as AdminSetting.value."""
+  value: String!
 }
 
 input UpdateClassroomInput
@@ -6656,6 +9367,19 @@ input UpdateNotificationSettingsInput
   quietEnd: String
   timeZone: String
   weeklyDigest: Boolean
+  productEmails: Boolean
+}
+
+input UpdatePageImageInput
+  @join__type(graph: NOTES)
+{
+  imageId: UUID!
+  name: String
+  x: Float!
+  y: Float!
+  w: Float!
+  h: Float!
+  rotation: Float
 }
 
 input UpdatePdfHighlightInput
@@ -6697,6 +9421,14 @@ input UpdateResourceInput
 
   """Take the cover away"""
   removeCover: Boolean
+}
+
+input UpdateSharedQuizInput
+  @join__type(graph: CORE)
+{
+  quizId: UUID!
+  title: String!
+  questions: [JSON!]!
 }
 
 """
@@ -6746,6 +9478,93 @@ type UploadIntentPayload
   userErrors: [UserError!]!
 }
 
+type UsageCount
+  @join__type(graph: USERS)
+{
+  name: String!
+  count: Int!
+}
+
+"""
+One usage event. The names and the props each may carry are in @lvn/contracts (USAGE_EVENT_NAMES, sanitizeUsageProps;
+ADR-0107).
+"""
+input UsageEventInput
+  @join__type(graph: USERS)
+{
+  """
+  One of: page_view, note_open, note_upload, search, download, sign_in, feature_use, search_no_results, quiz_start.
+  """
+  name: String!
+
+  """
+  Letters, digits, _ and -, at most 64; anything else is replaced by the server's session.
+  """
+  sessionId: String
+  occurredAt: DateTime
+
+  """
+  A small object: at most 1024 characters as JSON and 16 keys, or the batch is refused.
+  feature_use: { feature } (a UsageFeature id, lower case, e.g. "pdf_viewer"; required).
+  search_no_results: { scope, wordCount } (a UsageSearchScope id, e.g. "notes", and a whole number; both required).
+  quiz_start: { kind } (a QuizStartKind id, e.g. "shared"; required).
+  search: { scope, wordCount } (both optional; `words` is read as wordCount).
+  A missing or unknown required value refuses the batch; every other key is dropped. The other events keep short
+  tokens (letters, digits, _ . : -, at most 40, not an id), numbers and booleans under keys that do not name personal
+  data or text; everything else is dropped. A string `feature` is counted in adminUsage's top features.
+  """
+  props: JSON
+  platform: ClientPlatform!
+
+  """
+  MAJOR.MINOR[.PATCH[.BUILD]] with an optional -prerelease and +build, at most 32 characters; anything else is not stored.
+  """
+  appVersion: String
+}
+
+"""
+A product area a feature_use event names: the @lvn/contracts UsageFeature id in upper case (NOTES_EDITOR is
+notes_editor).
+"""
+enum UsageFeature
+  @join__type(graph: USERS)
+{
+  NOTES_EDITOR @join__enumValue(graph: USERS)
+  PAGE_EDITOR @join__enumValue(graph: USERS)
+  PDF_VIEWER @join__enumValue(graph: USERS)
+  VOICE_NOTE @join__enumValue(graph: USERS)
+  QUICK_CAPTURE @join__enumValue(graph: USERS)
+  READ_ALOUD @join__enumValue(graph: USERS)
+  CLASS_QUIZ @join__enumValue(graph: USERS)
+  SHARED_QUIZ @join__enumValue(graph: USERS)
+  FLASHCARDS_REVIEW @join__enumValue(graph: USERS)
+  EXAM_PLAN @join__enumValue(graph: USERS)
+  FOCUS @join__enumValue(graph: USERS)
+  GROUPS @join__enumValue(graph: USERS)
+  CLASSROOM @join__enumValue(graph: USERS)
+  DOUBTS @join__enumValue(graph: USERS)
+  AI_ASSIST @join__enumValue(graph: USERS)
+  RESOURCES @join__enumValue(graph: USERS)
+  SEARCH @join__enumValue(graph: USERS)
+  PROFILE @join__enumValue(graph: USERS)
+  SETTINGS @join__enumValue(graph: USERS)
+}
+
+"""
+Where a search was made: the @lvn/contracts UsageSearchScope id in upper case. ALL is a search across every scope.
+"""
+enum UsageSearchScope
+  @join__type(graph: USERS)
+{
+  ALL @join__enumValue(graph: USERS)
+  NOTES @join__enumValue(graph: USERS)
+  PEOPLE @join__enumValue(graph: USERS)
+  GROUPS @join__enumValue(graph: USERS)
+  CLASSROOMS @join__enumValue(graph: USERS)
+  RESOURCES @join__enumValue(graph: USERS)
+  TOPICS @join__enumValue(graph: USERS)
+}
+
 """A person, owned by the users subgraph"""
 type User
   @join__type(graph: COMMUNICATION, key: "id", resolvable: false)
@@ -6778,9 +9597,14 @@ type User
   registrationComplete: Boolean! @join__field(graph: USERS)
 
   """
-  Verified by institutional email, a teacher, or platform admins (ADR-0019)
+  Verified by institutional email, a teacher, or platform admins (ADR-0019). The stored institution flag. A platform admin can be false here and still need no verification.
   """
   verified: Boolean! @join__field(graph: USERS)
+
+  """
+  Viewer only. False for a platform admin, and for an account that is already institution-verified. True when this signed-in person should still verify. Null on anyone else's User. Clients hide verify-your-account prompts when this is false; do not key those prompts off verified alone.
+  """
+  viewerNeedsVerification: Boolean @join__field(graph: USERS)
   verificationMethod: VerificationMethod @join__field(graph: USERS)
   globalRole: GlobalRole! @join__field(graph: USERS)
   createdAt: DateTime! @join__field(graph: USERS)
@@ -6789,6 +9613,11 @@ type User
   Viewer only: when the account will be deleted, if its owner asked (ADR-0088)
   """
   deletionScheduledFor: DateTime @join__field(graph: USERS)
+
+  """
+  Viewer only. When true, usage analytics are not stored for this account.
+  """
+  analyticsOptOut: Boolean @join__field(graph: USERS)
 
   """The viewer's own profile; for others only when they show it"""
   profile: StudentProfile @join__field(graph: USERS)
@@ -6820,6 +9649,11 @@ type User
   """
   restrictedMinor: Boolean @join__field(graph: USERS)
 
+  """
+  Viewer only. True when this person is under 18, or has no known age, and has not acknowledged the safety reminder. Clients show it before the first use of social features.
+  """
+  safetyReminderRequired: Boolean @join__field(graph: USERS)
+
   """Viewer only: exact counts"""
   followerCount: Int @join__field(graph: USERS)
   followingCount: Int @join__field(graph: USERS)
@@ -6846,6 +9680,16 @@ type User
   teacherStatus: TeacherStatus @join__field(graph: USERS)
 }
 
+type UserActivityEvent
+  @join__type(graph: USERS)
+{
+  occurredAt: DateTime!
+  name: String!
+  props: JSON
+  platform: ClientPlatform!
+  appVersion: String
+}
+
 """
 An expected failure of a mutation; `field` is the dotted input path, e.g. ["input", "email"]
 """
@@ -6859,6 +9703,16 @@ type UserError
   field: [String!]
   message: String!
   code: ErrorCode!
+
+  """
+  Seconds until a RATE_LIMITED caller may retry. Null for every other code.
+  """
+  retryAfter: Int
+
+  """
+  One address on AGE_RESTRICTED and on a blocked sign-in: SUPPORT_EMAIL (support@learnvianotes.in unless the environment sets another).
+  """
+  supportEmail: String
 }
 
 scalar UUID
@@ -6896,7 +9750,7 @@ enum VerificationPurpose
 }
 
 """
-Shown to the requester, the addressed teacher and platform admins. Documents are listed for platform admins only.
+Shown to the requester, a verified teacher who was addressed or shares the institution, and platform admins. Documents are listed for those reviewers. Managers cannot review.
 """
 type VerificationRequest
   @join__type(graph: USERS)
@@ -6919,14 +9773,19 @@ type VerificationRequest
   teacher: User
 
   """
-  Platform admins only; open one with verificationDocumentUrl (every view is audited)
+  Reviewers who may decide this request. Open one with verificationDocumentUrl (every view is audited).
   """
   documents: [VerificationDocument!]!
 
   """
-  True when the proof is one college ID card (ADR-0099). Deleted when the request is decided or withdrawn.
+  True when the proof is one college ID card (ADR-0099). Kept for the retention window after a decision, and deleted at once when withdrawn.
   """
   collegeIdCard: Boolean!
+
+  """
+  The automated reading, once it has run. The ID number is hidden from the student.
+  """
+  aiCheck: IdCardCheck
 }
 
 type VerificationRequestPayload
@@ -6951,19 +9810,84 @@ input VerifyEmailInput
   token: String!
 }
 
+"""
+The account after a verification link is used. `user` is null when the link fails.
+"""
+type VerifyEmailPayload
+  @join__type(graph: USERS)
+{
+  ok: Boolean!
+
+  """
+  Login email is `emailVerified`. Institution verification is `verified` and is not set by this link.
+  """
+  user: User
+  userErrors: [UserError!]!
+}
+
 input VerifyInstitutionalEmailInput
   @join__type(graph: USERS)
 {
   code: String!
 }
 
-"""Who can read a note (§4.2)"""
+"""
+Who can read a note (§4.2). UNLISTED is the link: anyone with it can read, and it is left out of lists, search and profiles.
+"""
 enum Visibility
   @join__type(graph: NOTES)
 {
   PRIVATE @join__enumValue(graph: NOTES)
   SHARED @join__enumValue(graph: NOTES)
+  UNLISTED @join__enumValue(graph: NOTES)
   PUBLIC @join__enumValue(graph: NOTES)
+}
+
+"""
+One visibility the owner may set. reason is set only when enabled is false.
+"""
+type VisibilityChoice
+  @join__type(graph: NOTES)
+{
+  visibility: Visibility!
+  enabled: Boolean!
+  reason: String
+}
+
+type VoiceCapture
+  @join__type(graph: AI)
+{
+  """
+  The browser API: SpeechRecognition (webkitSpeechRecognition where that is the name)
+  """
+  api: String!
+  interimResults: Boolean!
+  continuous: Boolean!
+
+  """BCP-47 tags the apps may pass as the recognition language"""
+  languages: [String!]!
+
+  """The mutation to call with a short clip when the browser cannot caption"""
+  streamingFallback: String!
+}
+
+"""
+Shared by the voice operations. captions is browser SpeechRecognition text. transcript is the finished text. fileId is an uploaded recording.
+"""
+input VoiceCaptureInput
+  @join__type(graph: AI)
+{
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
+}
+
+type VoiceCapturePayload
+  @join__type(graph: AI)
+{
+  voiceCapture: VoiceCapture
+  userErrors: [UserError!]!
 }
 
 type WeakTopic

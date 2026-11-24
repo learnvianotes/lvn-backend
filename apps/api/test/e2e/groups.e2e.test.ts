@@ -57,7 +57,9 @@ describe('groups', () => {
   it('a verified person starts a group and owns it; a private group always approves members', async () => {
     const id = await create(owner, { name: '  Algorithms   study ', description: 'Weekly problems', privacy: 'PRIVATE', joinPolicy: 'OPEN' })
     expect(await group(id, owner)).toMatchObject({ name: 'Algorithms study', privacy: 'PRIVATE', joinPolicy: 'APPROVAL', viewerRole: 'OWNER', memberCount: 1, viewerCan: { manage: true, delete: true, leave: false } })
-    expect((await mutate('createGroup', { name: 'Mine', privacy: 'PUBLIC' }, await person(false))).error).toBe('Verify your account to create groups.')
+    const unverifiedGroup = await mutate('createGroup', { name: 'Mine', privacy: 'PUBLIC' }, await person(false))
+    expect(unverifiedGroup.error).toBeUndefined()
+    expect(unverifiedGroup.payload?.group?.id).toEqual(expect.any(String))
     expect((await mutate('createGroup', { name: 'ab', privacy: 'PUBLIC' }, owner)).error).toMatch(/at least 3 characters/)
   })
 
@@ -188,7 +190,7 @@ describe('groups', () => {
     try {
       const fresh = await person(true)
       await create(fresh, { name: 'First', privacy: 'PUBLIC' })
-      expect((await mutate('createGroup', { name: 'Second', privacy: 'PUBLIC' }, fresh)).error).toBe('Your plan allows 1 groups. Delete one to start another.')
+      expect((await mutate('createGroup', { name: 'Second', privacy: 'PUBLIC' }, fresh)).error).toBe("You've reached your plan's limit for groups.")
     } finally {
       await db.entitlement.delete({ where: { id: row.id } })
     }

@@ -1,6 +1,8 @@
 import { MentionsService } from './application/mentions.service'
 import { Module, type DynamicModule } from '@nestjs/common'
 import { JsonScalar } from '@lvn-backend/graphql'
+import { CoreAdminStats } from './application/admin-stats'
+import { CorePlanUsage } from './application/plan-usage'
 import { CoreExport } from './application/core-export'
 import { CoreProgressService } from './application/core-progress.service'
 import { LearningEventsService } from './application/learning-events.service'
@@ -13,7 +15,7 @@ import { RhythmService } from './application/rhythm.service'
 import { RhythmResolver } from './graphql/rhythm.resolver'
 import { DailyLineService } from './application/daily-line.service'
 import { CoreAccountErasure } from './application/account-erasure'
-import { DailyLineResolver } from './graphql/daily-line.resolver'
+import { DailyLineLabelResolver, DailyLineResolver } from './graphql/daily-line.resolver'
 import { ExamsService } from './application/exams.service'
 import { ExamsResolver } from './graphql/exams.resolver'
 import { RecommendationsService } from './application/recommendations.service'
@@ -23,6 +25,7 @@ import { BuddiesService } from './application/buddies.service'
 import { ClassInsightsService } from './application/class-insights.service'
 import { ClassroomInsightsResolver, FocusResolver } from './graphql/focus.resolver'
 import { ClassQuizzesService } from './application/class-quizzes.service'
+import { SharedQuizzesService } from './application/shared-quizzes.service'
 import { ClassroomsService } from './application/classrooms.service'
 import { PlacesService } from './application/places.service'
 import { CommentsService } from './application/comments.service'
@@ -42,6 +45,7 @@ import { CORE_CONFIG, type CoreConfig } from './core.config'
 import { CoreProgressResolver } from './graphql/core-progress.resolver'
 import { ClassroomReferenceResolver, ClassroomsResolver } from './graphql/classrooms.resolver'
 import { ClassQuizzesResolver, ClassroomQuizzesResolver } from './graphql/quizzes.resolver'
+import { SharedQuizzesResolver } from './graphql/shared-quizzes.resolver'
 import { DoubtResolver, GroupRepositoryResolver, WorkspaceGroupResolver } from './graphql/workspaces.resolver'
 import { GitHubAppService } from './application/github-app.service'
 import { PointsService } from './application/points.service'
@@ -68,8 +72,8 @@ export class CoreModule {
   static forRoot(config: CoreConfig): DynamicModule {
     return {
       module: CoreModule,
-      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreProgressService, CoreProgressResolver, LearningEventsService, LearningResolver, LearningHistoryService, LearningHistoryResolver, ReviewsService, ReviewsResolver, NoteStudyResolver, RhythmService, RhythmResolver, DailyLineService, DailyLineResolver, CoreAccountErasure, ExamsService, ExamsResolver, RecommendationsService, RecommendationsResolver, FocusService, BuddiesService, ClassInsightsService, FocusResolver, ClassroomInsightsResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver, ModeratedContentResolver, GroupModerationResolver, ScopedReportsService, MentionsService, GroupsService, GroupsResolver, GroupReferenceResolver, ClassroomsService, PlacesService, ClassroomsResolver, ClassroomReferenceResolver, ClassQuizzesService, ClassQuizzesResolver, ClassroomQuizzesResolver, CommentsService, NoteDiscussionResolver, GroupPostDiscussionResolver, ClassroomPostDiscussionResolver, DiscussionResolver, CommentResolver, WorkspacesService, WorkspaceGroupResolver, GroupRepositoryResolver, GitHubAppService, DoubtResolver, ActivityService, ActivityResolver, CommunityFeedsService, CommunityResolver, ResourcesService, ResourcesResolver, ResourceCaseResolver, ResourceCatalogueService, ResourceCatalogueResolver, ResourceRecommendationResolver, ResourceSearchFacade, ResourceReferenceResolver, PointsService, AchievementsService, EngagementResolver, EngagementUserResolver, WeeklyTasksService, TasksResolver, ContestsService, ContestsResolver, JsonScalar],
-      exports: [CoreProgressService, DailyLineService, ModerationService, GroupsService, ClassroomsService, PlacesService, WorkspacesService, GitHubAppService, LearningEventsService, LearningHistoryService, ReviewsService, RhythmService, ExamsService, RecommendationsService, FocusService, ResourcesService, ResourceSearchFacade, PointsService, AchievementsService],
+      providers: [{ provide: CORE_CONFIG, useValue: config }, CoreAdminStats, CorePlanUsage, CoreProgressService, CoreProgressResolver, LearningEventsService, LearningResolver, LearningHistoryService, LearningHistoryResolver, ReviewsService, ReviewsResolver, NoteStudyResolver, RhythmService, RhythmResolver, DailyLineService, DailyLineResolver, DailyLineLabelResolver, CoreAccountErasure, ExamsService, ExamsResolver, RecommendationsService, RecommendationsResolver, FocusService, BuddiesService, ClassInsightsService, FocusResolver, ClassroomInsightsResolver, CoreExport, ModerationService, ModerationResolver, ModerationReportResolver, ModeratedNoteResolver, ModeratedContentResolver, GroupModerationResolver, ScopedReportsService, MentionsService, GroupsService, GroupsResolver, GroupReferenceResolver, ClassroomsService, PlacesService, ClassroomsResolver, ClassroomReferenceResolver, ClassQuizzesService, ClassQuizzesResolver, ClassroomQuizzesResolver, SharedQuizzesService, SharedQuizzesResolver, CommentsService, NoteDiscussionResolver, GroupPostDiscussionResolver, ClassroomPostDiscussionResolver, DiscussionResolver, CommentResolver, WorkspacesService, WorkspaceGroupResolver, GroupRepositoryResolver, GitHubAppService, DoubtResolver, ActivityService, ActivityResolver, CommunityFeedsService, CommunityResolver, ResourcesService, ResourcesResolver, ResourceCaseResolver, ResourceCatalogueService, ResourceCatalogueResolver, ResourceRecommendationResolver, ResourceSearchFacade, ResourceReferenceResolver, PointsService, AchievementsService, EngagementResolver, EngagementUserResolver, WeeklyTasksService, TasksResolver, ContestsService, ContestsResolver, JsonScalar],
+      exports: [CoreAdminStats, CoreProgressService, DailyLineService, ModerationService, GroupsService, ClassroomsService, PlacesService, WorkspacesService, GitHubAppService, LearningEventsService, LearningHistoryService, ReviewsService, RhythmService, ExamsService, RecommendationsService, FocusService, ResourcesService, ResourceSearchFacade, PointsService, AchievementsService],
     }
   }
 }

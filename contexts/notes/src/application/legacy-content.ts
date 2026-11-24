@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { Action, can, Visibility, type NoteFacts } from '@lvn/contracts/domain'
 import { NOTE_LIMITS, positionsBetween } from '@lvn/contracts/validation'
@@ -6,6 +5,7 @@ import { PEOPLE, POLICY, type People, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { contentHash, problemNote, topicNote, type ConvertedNote, type LegacyProblem, type LegacyTopic } from '../domain/legacy-content'
 import { DraftsService } from './drafts.service'
+import { NotesService } from './notes.service'
 import { SharingService } from './sharing.service'
 
 /**
@@ -17,6 +17,9 @@ import { SharingService } from './sharing.service'
  * Idempotent: LegacyContentItem remembers what each old document became, so a re-run writes only what changed, and
  * leaves alone a note someone has since edited, unpublished or trashed in the app. A dry run reads everything,
  * converts everything and writes nothing.
+ *
+ * The deploy path is the Markdown catalogue under `content/study` (`study-content-sync`), not this class. The
+ * Firestore reader and the `content:import-legacy` command are retired (ADR-0098).
  */
 
 /** The old catalogue document (`catalog/current`, old repo content-build/catalog.json). */
@@ -97,6 +100,7 @@ export class LegacyContentImport {
   constructor(
     private readonly db: PrismaService,
     private readonly drafts: DraftsService,
+    private readonly notes: NotesService,
     private readonly sharing: SharingService,
     @Inject(PEOPLE) private readonly people: People,
     @Inject(POLICY) private readonly policy: Policy,
@@ -251,6 +255,7 @@ export class LegacyContentImport {
   }
 
   private async create(key: string, note: ConvertedNote, topics: string[], hash: string, ownerId: string, report: LegacyContentReport) {
+    await this.notes.assertNotesOwned(ownerId)
     const id = newId()
     await this.db.$transaction(async (tx) => {
       await tx.note.create({ data: { id, ownerId, kind: 'NOTE', title: note.title, draftRevision: note.cards.length ? 1 : 0 } })
@@ -288,37 +293,3 @@ export class LegacyContentImport {
 }
 
 class InvalidDocument extends Error {}
-
-/**
- * The old project's Firestore (`learnvianotes-2e2d7`), read with a service-account key file. Give that account read
- * access only (the Cloud Datastore Viewer role): nothing here writes, and the import never needs more. With
- * FIRESTORE_EMULATOR_HOST set, firebase-admin reads the emulator instead (tests). Loaded lazily: only the import needs it.
- */
-export async function firestoreContentSource(credentialsFile: string, projectId?: string): Promise<LegacyContentSource> {
-  const { cert, initializeApp } = await import('firebase-admin/app')
-  const { getFirestore } = await import('firebase-admin/firestore')
-  const key = JSON.parse(readFileSync(credentialsFile, 'utf8')) as { project_id?: string; client_email?: string; private_key?: string }
-  const project = projectId ?? key.project_id
-  if (!project) throw new Error(`${credentialsFile} names no project_id: pass --project <id>.`)
-  const app = initializeApp({ credential: cert(key as never), projectId: project }, `lvn-legacy-content-${Date.now()}`)
-  const db = getFirestore(app)
-  return {
-    name: `Firestore project ${project} as ${key.client_email ?? 'the service account'}`,
-    async meta() {
-      const snap = await db.doc('meta/content').get()
-      return snap.exists ? (snap.data() as LegacyContentMeta) : null
-    },
-    async catalog() {
-      const snap = await db.doc('catalog/current').get()
-      const catalog = snap.data() as LegacyCatalog | undefined
-      if (!catalog?.subjects?.length) throw new Error(`${project} has no catalog/current document: is this the old learnvianotes.in project?`)
-      return catalog
-    },
-    async topics(subjectId) {
-      return (await db.collection(`subjects/${subjectId}/topics`).get()).docs.map((d) => d.data() as LegacyTopic).sort((a, b) => a.order - b.order)
-    },
-    async problems(subjectId) {
-      return (await db.collection(`subjects/${subjectId}/problems`).get()).docs.map((d) => d.data() as LegacyProblem).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-    },
-  }
-}

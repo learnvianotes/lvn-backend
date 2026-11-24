@@ -23,6 +23,11 @@ export interface FakeProvider {
   refuseDimensions: boolean
   nativeDimensions: number
   models: string[]
+  /**
+   * When set, OpenAI's /v1/models returns at most this many ids a page, with `has_more` and `last_id`, in list order.
+   * Null: the whole list in one response, which is what OpenAI sends today.
+   */
+  modelPageSize: number | null
   stop(): Promise<void>
 }
 
@@ -49,7 +54,7 @@ async function serve(fake: Omit<FakeProvider, 'url' | 'stop'>, handle: (req: Fak
   return Object.assign(fake, { url: `http://127.0.0.1:${port}${prefix}`, stop: () => new Promise<void>((resolve) => (server.close(() => resolve()), server.closeAllConnections())) }) as FakeProvider
 }
 
-const defaults = (): Omit<FakeProvider, 'url' | 'stop'> => ({ requests: [], answer: () => 'OK', refuseTemperature: false, refuseDimensions: false, nativeDimensions: 768, models: [] })
+const defaults = (): Omit<FakeProvider, 'url' | 'stop'> => ({ requests: [], answer: () => 'OK', refuseTemperature: false, refuseDimensions: false, nativeDimensions: 768, models: [], modelPageSize: null })
 
 /**
  * A stand-in for OpenAI's Chat Completions and Embeddings API (ADR-0065), as OpenAI, Gemini's compatible endpoint and a
@@ -62,7 +67,15 @@ export function startFakeOpenAi(): Promise<FakeProvider> {
     fake,
     (req, res) => {
       const json = (status: number, body: unknown) => void res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body))
-      if (req.path === '/v1/models') return json(200, { object: 'list', data: fake.models.map((id) => ({ id, object: 'model' })) })
+      if (req.path === '/v1/models') {
+        if (fake.modelPageSize && fake.modelPageSize > 0) {
+          const after = req.query.get('after')
+          const from = after ? fake.models.indexOf(after) + 1 : 0
+          const page = fake.models.slice(from, from + fake.modelPageSize)
+          return json(200, { object: 'list', data: page.map((id) => ({ id, object: 'model' })), has_more: from + page.length < fake.models.length, last_id: page.at(-1) ?? null })
+        }
+        return json(200, { object: 'list', data: fake.models.map((id) => ({ id, object: 'model' })) })
+      }
       if (req.path === '/v1/embeddings') {
         if (fake.refuseDimensions && req.body.dimensions !== undefined) return json(400, { error: { message: 'This model does not support specifying dimensions.' } })
         const inputs = (Array.isArray(req.body.input) ? req.body.input : [req.body.input]) as string[]

@@ -31,12 +31,16 @@ type PageInfo @shareable {
   endCursor: String
 }
 
-enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL UNAVAILABLE UNDER_MINIMUM_AGE }
+enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL UNAVAILABLE UNDER_MINIMUM_AGE AGE_RESTRICTED AI_UNAVAILABLE_FOR_MINOR FEATURE_UNAVAILABLE_FOR_MINOR MINOR_PII_BLOCKED MFA_REQUIRED ADMIN_MFA_REQUIRED }
 
 type UserError @shareable {
   field: [String!]
   message: String!
   code: ErrorCode!
+  "Seconds until a RATE_LIMITED caller may retry. Null for every other code."
+  retryAfter: Int
+  "One address on AGE_RESTRICTED and on a blocked sign-in: SUPPORT_EMAIL (support@learnvianotes.in unless the environment sets another)."
+  supportEmail: String
 }
 
 enum NotificationCategory {

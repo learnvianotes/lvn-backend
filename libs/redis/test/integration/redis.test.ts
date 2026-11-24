@@ -58,6 +58,16 @@ describe('RateLimiter', () => {
     expect((await limiter.peek('d', limit, 60_001)).allowed).toBe(true)
   })
 
+  it('charges bytes until the window is full, and does not record a refused charge', async () => {
+    const limiter = new RateLimiter(redis)
+    const limit = { max: 100, windowSeconds: 60 }
+    expect(await limiter.charge('bytes', 40, limit, 1_000)).toEqual({ allowed: true, retryAfter: 0, remaining: 60 })
+    expect(await limiter.charge('bytes', 50, limit, 2_000)).toEqual({ allowed: true, retryAfter: 0, remaining: 10 })
+    expect(await limiter.charge('bytes', 20, limit, 3_000)).toEqual({ allowed: false, retryAfter: 58, remaining: 0 })
+    expect(await redis.zcard('rl:bytes')).toBe(2)
+    expect((await limiter.charge('bytes', 10, limit, 60_001)).allowed).toBe(true)
+  })
+
   it('holds under concurrency', async () => {
     const limiter = new RateLimiter(redis)
     const results = await Promise.all(Array.from({ length: 20 }, () => limiter.hit('d', { max: 5, windowSeconds: 60 })))

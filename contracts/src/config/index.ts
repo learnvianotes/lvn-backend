@@ -11,6 +11,11 @@ import { z } from 'zod'
 export const AppEnv = z.enum(['development', 'sandbox', 'production'])
 export type AppEnv = z.infer<typeof AppEnv>
 
+/** `ADMIN_MFA_REQUIRED` when set; otherwise on only in production. */
+export function adminMfaEnforced(appEnv: AppEnv, flag: boolean | undefined): boolean {
+  return flag ?? appEnv === 'production'
+}
+
 const port = z.coerce.number().int().min(1).max(65535)
 /** An http(s) URL — `host:port` alone would parse as a URL with the host as its scheme. */
 const httpUrl = z.url().refine((u) => /^https?:\/\//.test(u), 'must be an http(s) URL')
@@ -31,6 +36,13 @@ const backendBase = z.object({
 })
 
 const flag = z.enum(['true', 'false']).transform((v) => v === 'true')
+const termsVersion = /^\d{4}-\d{2}-\d{2}$/
+const termsVersionList = /^\d{4}-\d{2}-\d{2}(\s*,\s*\d{4}-\d{2}-\d{2})*$/
+/** YYYY-MM-DD that is a real calendar date (no 30 February). */
+const isCalendarDate = (s: string) => {
+  const d = new Date(`${s}T00:00:00Z`)
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s
+}
 /** A PEM key in one .env line: real newlines, or `\n` escapes as most secret stores and .env files keep them. */
 const pem = (kind: 'PRIVATE' | 'PUBLIC') =>
   z.string().transform((v) => v.replace(/\\n/g, '\n').trim()).refine((v) => v.startsWith(`-----BEGIN ${kind} KEY-----`), `must be a PEM ${kind.toLowerCase()} key (PKCS#8 / SPKI)`)
@@ -58,10 +70,21 @@ const storage = z.object({
  * Transactional email (§2): SMTP (Mailpit locally), Amazon SES on AWS (signed with the task role — no key), or Resend.
  */
 const mail = z.object({
-  MAIL_FROM: z.string().min(3),
+  /**
+   * Sender of every transactional email. The default is the address Resend has verified for learnvianotes.in.
+   * A deploy may still set it (Lightsail writes `LVN_MAIL_FROM`).
+   */
+  MAIL_FROM: z.string().min(3).default('LearnViaNotes <no-reply@learnvianotes.in>'),
+  /** Where replies to transactional mail go. The default is the public support inbox. */
+  MAIL_REPLY_TO: z.email().default('support@learnvianotes.in'),
   MAIL_TRANSPORT: z.enum(['smtp', 'resend', 'ses']),
   SMTP_URL: z.url().optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
+  /**
+   * Resend audience for product email (the General audience in production). Optional: without it, registration
+   * still completes and the audience job does nothing. Not required for MAIL_TRANSPORT=resend.
+   */
+  RESEND_AUDIENCE_ID: z.string().uuid().optional(),
   /** Region of the SES identity that MAIL_FROM uses. */
   SES_REGION: z.string().min(1).optional(),
 })
@@ -77,12 +100,39 @@ const auth = z.object({
   /** RS256 key pair for access tokens (§7.1). Development: `pnpm keys:dev` writes a pair to .env.local. */
   JWT_PRIVATE_KEY: pem('PRIVATE'),
   JWT_PUBLIC_KEY: pem('PUBLIC'),
-  /** The API's public origin, used as the token issuer. */
+  /**
+   * The API's public origin, used as the `iss` claim of new access tokens. Changing it rejects tokens that still
+   * carry the previous issuer until they expire (15 minutes). `JWT_EXTRA_ISSUERS` accepts those during a cutover.
+   * Refresh tokens are opaque and are not affected.
+   */
   JWT_ISSUER: z.url(),
+  /**
+   * Additional issuers accepted when verifying access tokens, comma-separated. Not used when signing.
+   * Set the previous public origin here for the 15 minutes after `JWT_ISSUER` changes, then remove it.
+   */
+  JWT_EXTRA_ISSUERS: z
+    .string()
+    .default('')
+    .transform((s) => s.split(',').map((o) => o.trim()).filter(Boolean)),
   /** lvn-web origin, for links in emails (verify, reset) and OAuth redirects. */
   WEB_URL: z.url(),
-  /** Secret for HMAC-hashing short codes (institutional email codes), so a database leak does not reveal them. */
+  /** Secret for HMAC-hashing short codes (institutional email codes and sign-in codes), so a database leak does not reveal them. */
   CODE_HMAC_SECRET: z.string().min(32),
+  /**
+   * When true, roles in `MFA_ENFORCED_ROLES` must pass a second factor before admin operations.
+   * Unset means on in production and off in development and sandbox, so local runs and the e2e suite stay usable
+   * unless a test sets it. An account that opted in still needs the second factor either way.
+   */
+  ADMIN_MFA_REQUIRED: flag.optional(),
+  /**
+   * Comma-separated global roles that must pass MFA when `ADMIN_MFA_REQUIRED` is on.
+   * `PLATFORM_ADMIN` is a platform admin. `MANAGER` is platform staff (verification review).
+   */
+  MFA_ENFORCED_ROLES: z
+    .string()
+    .default('PLATFORM_ADMIN,MANAGER')
+    .transform((s) => [...new Set(s.split(',').map((r) => r.trim()).filter(Boolean))])
+    .refine((roles) => roles.length > 0 && roles.every((r) => r === 'STUDENT' || r === 'TEACHER' || r === 'MANAGER' || r === 'PLATFORM_ADMIN'), 'Use STUDENT, TEACHER, MANAGER or PLATFORM_ADMIN'),
   /**
    * Push through FCM HTTP v1 (ADR-0021, ADR-0050): the API origin (https://fcm.googleapis.com), Google's OAuth token
    * endpoint (https://oauth2.googleapis.com/token) and the Firebase service account's JSON key. Push is off unless all
@@ -97,19 +147,60 @@ const auth = z.object({
    */
   DIGITAL_CONSENT_AGE: z.coerce.number().int().min(13).max(21).default(18),
   /**
-   * ADR-0091: the youngest age that may create an account. Below it sign-up refuses, and an account a sign-in provider
-   * created is erased when its own (confirmed) answer is younger. 18 for the College/Interview launch; 0 lets everyone
-   * in, minors then restricted as DIGITAL_CONSENT_AGE says (§15.2, the School track).
+   * The address shown on AGE_RESTRICTED and on a blocked sign-in (`userErrors.supportEmail`).
+   * Always this value: a platform admin's own inbox is not shown to people.
    */
-  ACCOUNT_MINIMUM_AGE: z.coerce.number().int().min(0).max(21).default(18),
+  SUPPORT_EMAIL: z.email().default('support@learnvianotes.in'),
+  /**
+   * ADR-0103: the Terms / Privacy version sign-up and acceptTerms require, YYYY-MM-DD, while no admin has saved the
+   * `terms_version` setting. Unset: the version built into the users context.
+   */
+  TERMS_VERSION: z.string().trim().regex(termsVersion, 'Use YYYY-MM-DD').refine(isCalendarDate, 'Use a real date').optional(),
+  /**
+   * ADR-0103: comma-separated YYYY-MM-DD versions whose text the web has published, while no admin has saved
+   * `terms_published_versions`. An admin can only choose one of these. Unset: the list built into the users context.
+   */
+  TERMS_PUBLISHED_VERSIONS: z
+    .string()
+    .trim()
+    .regex(termsVersionList, 'Use YYYY-MM-DD versions separated by commas')
+    .transform((s) => s.split(',').map((v) => v.trim()).join(','))
+    .refine((s) => s.split(',').every(isCalendarDate), 'Use real dates')
+    .optional(),
   /** ADR-0037: extra `REASON: phrase` lines for the rule-based moderation scorer; the built-in spam phrases apply without it. */
   MODERATION_WORDS_FILE: z.string().min(1).optional(),
   /** The web app's on-demand revalidation endpoint (`<web>/api/revalidate`): public note pages refresh when a note changes. Off without it. */
   WEB_REVALIDATE_URL: httpUrl.optional(),
   /** Shared with the web app's REVALIDATE_SECRET; at least 32 characters. */
   REVALIDATE_SECRET: z.string().min(32).optional(),
-  /** ClamAV's clamd for scanning uploads (ADR-0041), `tcp://host:3310`; without it uploads are not scanned (development). */
+  /** ClamAV's clamd for scanning uploads (ADR-0041), `tcp://host:3310`. Used when SCAN_MODE is local, or when SCAN_MODE is unset. */
   CLAMAV_URL: z.string().regex(/^tcp:\/\/[^:/]+:\d+$/, 'Use tcp://host:port').optional(),
+  /**
+   * ADR-0102. `remote`: the worker streams each upload to the scan service and does not serve it until the verdict is
+   * clean. `local`: clamd in this process's network (CLAMAV_URL), and a scanner error on the last attempt is still
+   * served (ADR-0041). `off`: nothing is scanned. Unset keeps that older rule: CLAMAV_URL means local, otherwise off.
+   */
+  SCAN_MODE: z.enum(['remote', 'local', 'off']).optional(),
+  /** The scan service, `http://<private-ip>:8080`. Required when SCAN_MODE=remote. A private IPv4 address outside development. */
+  SCANNER_URL: httpUrl.optional(),
+  /** Shared with the scan service. HMAC key, at least 32 characters. Required when SCAN_MODE=remote. */
+  SCANNER_SECRET: z.string().min(32).optional(),
+  /** How long one scan request may take, including the upload of the body. The worker retries inside this budget. */
+  SCANNER_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(180_000),
+  /** Scans the worker runs at once. Keep at or above the scanner's SCANNER_CONCURRENCY (3). Default 4. */
+  SCAN_QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(4),
+  /** Attempts for one file-scan job, then the job is dead-lettered and the file stays unserved. */
+  SCAN_JOB_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
+  /** createUploadIntent: files one user may start per minute. */
+  UPLOADS_PER_MINUTE: z.coerce.number().int().min(1).max(10_000).default(10),
+  /** createUploadIntent: files one user may start per day. */
+  UPLOADS_PER_DAY: z.coerce.number().int().min(1).max(100_000).default(100),
+  /** createUploadIntent: bytes one user may declare per day. */
+  UPLOAD_BYTES_PER_DAY: z.coerce.number().int().min(1).max(50 * 1024 * 1024 * 1024).default(500 * 1024 * 1024),
+  /** Files one user may have waiting on the remote scanner. */
+  UPLOAD_PENDING_SCANS: z.coerce.number().int().min(1).max(1000).default(12),
+  /** createUploadIntent: upload URLs one client address may ask for per minute. */
+  UPLOADS_PER_IP_PER_MINUTE: z.coerce.number().int().min(1).max(10_000).default(30),
   /** k-anonymity range API for the breached-password check (§7.1); unset only in tests. */
   PASSWORD_BREACH_API_URL: z.url().optional(),
   /** Firebase project whose ID tokens signInWithGoogle accepts (ADR-0007). */
@@ -147,6 +238,14 @@ const auth = z.object({
    * Comma-separated hosts the safe fetcher (ADR-0074) reaches although they are not on the public internet: a test's
    * stand-in server. Never set in production.
    */
+  /**
+   * ADR-0115: extra origins allowed to use passkeys besides WEB_URL's, comma separated (for example the Android app's
+   * `android:apk-key-hash:...` origin). The passkeys still belong to WEB_URL's host.
+   */
+  PASSKEY_ORIGINS: z
+    .string()
+    .optional()
+    .transform((s) => (s ? s.split(',').map((h) => h.trim()).filter(Boolean) : [])),
   SAFE_FETCH_ALLOW_HOSTS: z
     .string()
     .optional()
@@ -181,6 +280,13 @@ const providersConfigured = (
     need(!!c.LINKEDIN_API_URL, 'LINKEDIN_API_URL', 'required when LINKEDIN_CLIENT_ID is set')
   }
   if (c.GITHUB_CLIENT_ID || c.LINKEDIN_CLIENT_ID) need(c.OAUTH_REDIRECT_URIS.length > 0, 'OAUTH_REDIRECT_URIS', 'required when GitHub or LinkedIn sign-in is on')
+}
+
+/** ADR-0103: when both are set, the terms version must be one the web has published. */
+const termsConfigured = (c: { TERMS_VERSION?: string; TERMS_PUBLISHED_VERSIONS?: string }, ctx: z.RefinementCtx) => {
+  if (!c.TERMS_VERSION || !c.TERMS_PUBLISHED_VERSIONS) return
+  const published = c.TERMS_PUBLISHED_VERSIONS.split(',')
+  if (!published.includes(c.TERMS_VERSION)) ctx.addIssue({ code: 'custom', path: ['TERMS_VERSION'], message: 'must be one of TERMS_PUBLISHED_VERSIONS' })
 }
 
 /** ADR-0078: the GitHub App is all or nothing, and it needs GitHub's API and web origin. */
@@ -248,6 +354,38 @@ const analyticsConfigured = <T extends { POSTHOG_HOST?: string; POSTHOG_API_KEY?
   if (!!c.POSTHOG_HOST !== !!c.POSTHOG_API_KEY) ctx.addIssue({ code: 'custom', path: [c.POSTHOG_HOST ? 'POSTHOG_API_KEY' : 'POSTHOG_HOST'], message: 'POSTHOG_HOST and POSTHOG_API_KEY go together' })
 }
 
+/** An RFC1918 address. Loopback and public names are refused for the scan service outside development. */
+function isPrivateIpv4(host: string): boolean {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
+  if (!match) return false
+  const parts = match.slice(1).map(Number)
+  if (parts.some((p) => p > 255)) return false
+  const a = parts[0] ?? 0
+  const b = parts[1] ?? 0
+  if (a === 10) return true
+  if (a === 192 && b === 168) return true
+  return a === 172 && b >= 16 && b <= 31
+}
+
+const scanConfigured = <T extends { APP_ENV: string; SCAN_MODE?: 'remote' | 'local' | 'off'; CLAMAV_URL?: string; SCANNER_URL?: string; SCANNER_SECRET?: string }>(c: T, ctx: z.RefinementCtx) => {
+  if (c.SCAN_MODE === 'local' && !c.CLAMAV_URL) ctx.addIssue({ code: 'custom', path: ['CLAMAV_URL'], message: 'required when SCAN_MODE=local' })
+  if (c.SCAN_MODE === 'remote') {
+    if (!c.SCANNER_URL) ctx.addIssue({ code: 'custom', path: ['SCANNER_URL'], message: 'required when SCAN_MODE=remote' })
+    if (!c.SCANNER_SECRET) ctx.addIssue({ code: 'custom', path: ['SCANNER_SECRET'], message: 'required when SCAN_MODE=remote' })
+    if (c.SCANNER_URL && c.APP_ENV !== 'development') {
+      let host: string
+      try {
+        host = new URL(c.SCANNER_URL).hostname
+      } catch {
+        host = ''
+      }
+      if (!isPrivateIpv4(host)) ctx.addIssue({ code: 'custom', path: ['SCANNER_URL'], message: 'must be a private IPv4 address outside development' })
+    }
+  } else if (c.SCANNER_URL || c.SCANNER_SECRET) {
+    ctx.addIssue({ code: 'custom', path: ['SCAN_MODE'], message: 'set SCAN_MODE=remote to use the scan service' })
+  }
+}
+
 /** The safe fetcher's allow list is for tests and stand-ins: production fetches public addresses only (ADR-0074). */
 const safeFetchConfigured = <T extends { APP_ENV: string; SAFE_FETCH_ALLOW_HOSTS: string[] }>(c: T, ctx: z.RefinementCtx) => {
   if (c.APP_ENV === 'production' && c.SAFE_FETCH_ALLOW_HOSTS.length) ctx.addIssue({ code: 'custom', path: ['SAFE_FETCH_ALLOW_HOSTS'], message: 'never set in production' })
@@ -282,7 +420,7 @@ const apiShape = backendBase
   .extend(ai.shape)
   .extend(analytics.shape)
 
-export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(githubAppConfigured).superRefine(searchConfigured).superRefine(aiConfigured).superRefine(analyticsConfigured).superRefine(safeFetchConfigured)
+export const apiConfigSchema = apiShape.superRefine(mailTransportConfigured).superRefine(providersConfigured).superRefine(termsConfigured).superRefine(githubAppConfigured).superRefine(searchConfigured).superRefine(aiConfigured).superRefine(analyticsConfigured).superRefine(safeFetchConfigured).superRefine(scanConfigured)
 export type ApiConfig = z.infer<typeof apiConfigSchema>
 
 /**
@@ -294,14 +432,27 @@ export const workerConfigSchema = apiShape
     WORKER_HEALTH_PORT: port.default(4001),
     /** The old Firebase project read by `legacy:snapshot` (ADR-0023); credentials via GOOGLE_APPLICATION_CREDENTIALS. */
     LEGACY_FIREBASE_PROJECT_ID: z.string().min(1).optional(),
+    /**
+     * ADR-0106: when the admin usage metrics are rolled up, a five-field cron pattern in UTC like every schedule. The
+     * default, 20:30 UTC, is 02:00 in India.
+     */
+    METRICS_ROLLUP_CRON: z
+      .string()
+      .trim()
+      .regex(/^\S+(\s+\S+){4}$/, 'must be a five-field cron pattern (UTC)')
+      .default('30 20 * * *'),
+    /** ADR-0106: how many days before today each rollup recomputes (late events and learning days are picked up). */
+    METRICS_ROLLUP_DAYS: z.coerce.number().int().min(1).max(31).default(3),
   })
   .superRefine(mailTransportConfigured)
   .superRefine(providersConfigured)
+  .superRefine(termsConfigured)
   .superRefine(githubAppConfigured)
   .superRefine(searchConfigured)
   .superRefine(aiConfigured)
   .superRefine(analyticsConfigured)
   .superRefine(safeFetchConfigured)
+  .superRefine(scanConfigured)
 export type WorkerConfig = z.infer<typeof workerConfigSchema>
 
 const publicId = z.string().min(1).optional()
@@ -309,7 +460,7 @@ const publicId = z.string().min(1).optional()
 /** Public (browser-visible) web variables. Server-only web secrets get their own schema when the web needs one. */
 export const webConfigSchema = z.object({
   NEXT_PUBLIC_APP_ENV: AppEnv.default('development'),
-  /** Canonical web origin, e.g. https://www.learnvianotes.in in production. */
+  /** Canonical web origin, e.g. https://app.learnvianotes.in in production. */
   NEXT_PUBLIC_SITE_URL: z.url(),
   /** The API's GraphQL gateway. */
   NEXT_PUBLIC_API_URL: z.url(),

@@ -56,7 +56,7 @@ export const COLLECTIONS: Record<SearchEntityName, CollectionDef> = {
     ],
     defaultSortingField: 'publishedAt',
   },
-  /** Accounts with a date of birth; who may be found is decided per request (age, blocks). */
+  /** Accounts with a known age (ADR-0104); who may be found is decided per request (age, blocks). */
   USER: {
     name: 'users',
     entity: 'USER',

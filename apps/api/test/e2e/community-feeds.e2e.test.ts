@@ -77,7 +77,10 @@ describe('community feeds', () => {
     const child = await person({ dob: new Date(Date.now() - 12 * 365 * 86_400_000).toISOString().slice(0, 10) })
     for (const who of [adult, child]) await db.learningDayTopic.create({ data: { userId: who.id, day: new Date(), topicKey: `topic:${t3}`, seconds: 900, events: 3 } })
     expect(ids(await forYou(adult))).toContain(read)
-    expect(ids(await forYou(child))).not.toContain(read)
+    // A minor's For You is recent public notes, not the topics they read (ADR-0112). basedOn stays empty.
+    const childFeed = await forYou(child)
+    expect(childFeed.basedOn).toEqual([])
+    expect(childFeed.edges.every((edge) => edge.topic == null)).toBe(true)
   })
 
   it('Trending: most people reacting and discussing in the last week first, never counting the owner; private and blocked left out', async () => {

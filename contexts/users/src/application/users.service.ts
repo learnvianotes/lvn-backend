@@ -1,18 +1,31 @@
-import { Inject, Injectable } from '@nestjs/common'
-import type { People, Person, SearchProfile } from '@lvn-backend/facades'
-import { PrismaService } from '@lvn-backend/prisma-base'
-import { isRestrictedMinor } from '../domain/rules'
+import { Injectable } from '@nestjs/common'
+import { FEATURE_UNAVAILABLE_FOR_MINOR_MESSAGE, MINOR_PII_BLOCKED_MESSAGE, applyMinorPii, applyMinorPiiValue, isCaptureUpload, minorPiiMode } from '@lvn/contracts/domain'
+import { Errors } from '@lvn-backend/errors'
+import type { FamiliesStanding, People, Person, SearchProfile } from '@lvn-backend/facades'
+import { $Enums, PrismaService } from '@lvn-backend/prisma-base'
+import { familiesStandingFrom, safetyReminderRequired, under13DevicesClosed, under13SocialClosed } from '../domain/families-standing'
+import { methodsFromConsentRows } from '../domain/guardian-consent'
+import { ageOf, dayReachingAge, isAiMinor, isRestrictedMinor } from '../domain/rules'
+import { AGE_FIELDS, atLeastAge, RESTRICTION_CONSENT_SELECT } from './age'
 import type { SignInMethod, User } from '../graphql/schema.types'
-import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { InstitutionalEmailService } from './institutional-email.service'
-import { deletionDate } from './account-deletion.service'
+import { PlatformSettingsStore } from './platform-settings.store'
+import { deletionDate, graceDaysForAge } from './account-deletion.service'
+
+/** Age-blocked and admin-blocked accounts are not public and cannot be found by handle or email. */
+const PUBLIC_ACCOUNT = { notIn: [$Enums.AccountStatus.AGE_BLOCKED, $Enums.AccountStatus.BLOCKED] }
+
+/** Platform admins never need institution verification. Everyone else does until verifiedAt is set. */
+function accountNeedsVerification(globalRole: string, verifiedAt: Date | null): boolean {
+  return globalRole !== 'PLATFORM_ADMIN' && verifiedAt === null
+}
 
 @Injectable()
 export class UsersService implements People {
   constructor(
     private readonly db: PrismaService,
     private readonly institutional: InstitutionalEmailService,
-    @Inject(USERS_CONFIG) private readonly config: UsersConfig,
+    private readonly settings: PlatformSettingsStore,
   ) {}
 
   /** People facade: the account a handle or an email names (exact, case-insensitive), never a deleted one. */
@@ -20,7 +33,7 @@ export class UsersService implements People {
     const q = handleOrEmail.trim().replace(/^@/, '')
     if (!q || q.length > 254) return null
     const u = await this.db.user.findFirst({
-      where: { deletedAt: null, OR: [{ handle: { equals: q, mode: 'insensitive' } }, { email: q }] },
+      where: { deletedAt: null, accountStatus: PUBLIC_ACCOUNT, OR: [{ handle: { equals: q, mode: 'insensitive' } }, { email: q }] },
       select: { id: true, handle: true, displayName: true, globalRole: true },
     })
     return u ? { id: u.id, handle: u.handle, displayName: u.displayName, globalRole: u.globalRole } : null
@@ -28,20 +41,22 @@ export class UsersService implements People {
 
   /**
    * People facade, for search (P2e): handles starting with, or names containing, the query. Only people known to be
-   * past the digital-consent age are listed — younger people are never discoverable by strangers (§15.2).
+   * past the digital-consent age are listed — younger people are never discoverable by strangers (§15.2). The age is
+   * ADR-0104's: the date of birth, else the declared age counted forward.
    */
   async search(query: string, limit: number, viewerId?: string | null): Promise<Person[]> {
     const q = query.trim().replace(/^@/, '')
     if (q.length < 2) return []
-    const adultsBornBy = new Date()
-    adultsBornBy.setUTCFullYear(adultsBornBy.getUTCFullYear() - this.config.digitalConsentAge)
     const hidden = viewerId ? await this.blockedIds(viewerId) : []
     const rows = await this.db.user.findMany({
       where: {
         deletedAt: null,
-        dateOfBirth: { lte: adultsBornBy },
+        accountStatus: PUBLIC_ACCOUNT,
         ...(hidden.length ? { id: { notIn: hidden } } : {}),
-        OR: [{ handle: { startsWith: q, mode: 'insensitive' } }, { displayName: { contains: q, mode: 'insensitive' } }],
+        AND: [
+          { OR: atLeastAge(this.settings.consentAge()) },
+          { OR: [{ handle: { startsWith: q, mode: 'insensitive' } }, { displayName: { contains: q, mode: 'insensitive' } }] },
+        ],
       },
       select: { id: true, handle: true, displayName: true, globalRole: true },
       orderBy: [{ displayName: 'asc' }],
@@ -80,11 +95,18 @@ export class UsersService implements People {
     return Object.fromEntries(rows.map((r) => [r.id, r.displayName]))
   }
 
+  /** People facade: under 18, unknown age, or a deleted account. Guardian consent is not read. */
+  async isMinorForAi(userId: string): Promise<boolean> {
+    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: AGE_FIELDS })
+    if (!u) return true
+    return isAiMinor(u)
+  }
+
   /** People facade (ADR-0050): where communication writes to a person. */
   async contactOf(userId: string): Promise<{ email: string; displayName: string; restrictedMinor: boolean } | null> {
-    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { email: true, displayName: true, dateOfBirth: true, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } } })
+    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null, accountStatus: PUBLIC_ACCOUNT }, select: { email: true, displayName: true, ...AGE_FIELDS, ...RESTRICTION_CONSENT_SELECT } })
     if (!u) return null
-    return { email: u.email, displayName: u.displayName, restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.config.digitalConsentAge, u.consents.length > 0) }
+    return { email: u.email, displayName: u.displayName, restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u), new Date(), this.settings.verificationSettings()) }
   }
 
   /** People facade (ADR-0069): when the account was made; null for deleted accounts. */
@@ -107,17 +129,26 @@ export class UsersService implements People {
     return (await this.db.restriction.count({ where: { restricterId, restrictedId } })) > 0
   }
 
-  /** People facade (ADR-0055): what people search indexes; `adultFrom` instead of the date of birth. */
+  /**
+   * People facade (ADR-0055): what people search indexes; `adultFrom` instead of the date of birth or declared age
+   * (ADR-0104). Accounts with no known age are left out.
+   */
   async searchProfiles(ids: string[]): Promise<SearchProfile[]> {
     if (!ids.length) return []
+    const consentAge = this.settings.consentAge()
     const rows = await this.db.user.findMany({
-      where: { id: { in: ids }, deletedAt: null, dateOfBirth: { not: null } },
-      select: { id: true, handle: true, displayName: true, globalRole: true, dateOfBirth: true, teacherProfile: { select: { headline: true, bio: true } } },
+      where: {
+        id: { in: ids },
+        deletedAt: null,
+        accountStatus: PUBLIC_ACCOUNT,
+        OR: [{ dateOfBirth: { not: null } }, { declaredAge: { not: null }, ageDeclaredAt: { not: null } }],
+      },
+      select: { id: true, handle: true, displayName: true, globalRole: true, ...AGE_FIELDS, teacherProfile: { select: { headline: true, bio: true } } },
     })
-    return rows.map((u) => {
-      const adultFrom = new Date(u.dateOfBirth!)
-      adultFrom.setUTCFullYear(adultFrom.getUTCFullYear() + this.config.digitalConsentAge)
-      return { id: u.id, handle: u.handle, displayName: u.displayName, globalRole: u.globalRole, headline: u.teacherProfile?.headline ?? null, bio: u.teacherProfile?.bio ?? null, adultFrom }
+    return rows.flatMap((u) => {
+      const adultFrom = dayReachingAge(u, consentAge)
+      if (!adultFrom) return []
+      return [{ id: u.id, handle: u.handle, displayName: u.displayName, globalRole: u.globalRole, headline: u.teacherProfile?.headline ?? null, bio: u.teacherProfile?.bio ?? null, adultFrom }]
     })
   }
 
@@ -130,7 +161,7 @@ export class UsersService implements People {
   /** Anyone's view of a user: no email, institutional address, verification details or age signal. */
   async publicProfile(userId: string): Promise<User | null> {
     const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null } })
-    if (!u) return null
+    if (!u || u.accountStatus === 'AGE_BLOCKED' || u.accountStatus === 'BLOCKED') return null
     const institutional = await this.institutional.statusOf(userId)
     return {
       id: u.id,
@@ -140,6 +171,7 @@ export class UsersService implements People {
       emailVerified: u.emailVerifiedAt !== null,
       registrationComplete: u.registrationCompletedAt !== null,
       verified: u.verifiedAt !== null,
+      viewerNeedsVerification: null,
       verificationMethod: null,
       globalRole: u.globalRole,
       createdAt: u.createdAt,
@@ -148,6 +180,8 @@ export class UsersService implements People {
       institution: institutional.institution,
       restrictedMinor: null,
       deletionScheduledFor: null,
+      analyticsOptOut: null,
+      safetyReminderRequired: null,
     }
   }
 
@@ -168,7 +202,7 @@ export class UsersService implements People {
     ])
     const institutionOf = new Map<string, string>()
     for (const row of confirmed) if (row.organization && !institutionOf.has(row.userId)) institutionOf.set(row.userId, row.organization.name)
-    return users.map((u) => ({
+    return users.filter((u) => u.deletedAt !== null || (u.accountStatus !== 'AGE_BLOCKED' && u.accountStatus !== 'BLOCKED')).map((u) => ({
       id: u.id,
       handle: u.handle,
       displayName: u.displayName,
@@ -176,6 +210,7 @@ export class UsersService implements People {
       emailVerified: u.emailVerifiedAt !== null,
       registrationComplete: u.registrationCompletedAt !== null,
       verified: u.verifiedAt !== null,
+      viewerNeedsVerification: null,
       verificationMethod: null,
       globalRole: u.globalRole,
       createdAt: u.createdAt,
@@ -184,6 +219,8 @@ export class UsersService implements People {
       institution: institutionOf.has(u.id) ? { name: institutionOf.get(u.id)!, verified: true } : null,
       restrictedMinor: null,
       deletionScheduledFor: null,
+      analyticsOptOut: null,
+      safetyReminderRequired: null,
     }))
   }
 
@@ -206,9 +243,9 @@ export class UsersService implements People {
   async viewerProfile(userId: string): Promise<User | null> {
     const u = await this.db.user.findFirst({
       where: { id: userId, deletedAt: null },
-      include: { consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } },
+      include: RESTRICTION_CONSENT_SELECT,
     })
-    if (!u) return null
+    if (!u || u.accountStatus === 'AGE_BLOCKED' || u.accountStatus === 'BLOCKED') return null
     const institutional = await this.institutional.statusOf(userId)
     return {
       id: u.id,
@@ -218,14 +255,111 @@ export class UsersService implements People {
       emailVerified: u.emailVerifiedAt !== null,
       registrationComplete: u.registrationCompletedAt !== null,
       verified: u.verifiedAt !== null,
+      viewerNeedsVerification: accountNeedsVerification(u.globalRole, u.verifiedAt),
       verificationMethod: u.verificationMethod,
       globalRole: u.globalRole,
       createdAt: u.createdAt,
       institutionalEmail: institutional.email,
       institutionalEmailStatus: institutional.status,
       institution: institutional.institution,
-      restrictedMinor: isRestrictedMinor(u.dateOfBirth, this.config.digitalConsentAge, u.consents.length > 0),
-      deletionScheduledFor: deletionDate(u.deletionRequestedAt),
+      restrictedMinor: isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u), new Date(), this.settings.verificationSettings()),
+      deletionScheduledFor: deletionDate(u.deletionRequestedAt, graceDaysForAge(ageOf(u), this.settings.minorPurgeWindowDays())),
+      analyticsOptOut: u.analyticsOptOut,
+      safetyReminderRequired: safetyReminderRequired(await this.standingOf(u.id, u)),
     }
+  }
+
+  /** People facade (ADR-0112). Null when the account is gone. */
+  async familiesStanding(userId: string): Promise<FamiliesStanding | null> {
+    const user = await this.db.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { id: true, safetyReminderAcknowledgedAt: true, ...AGE_FIELDS },
+    })
+    if (!user) return null
+    return this.standingOf(user.id, user)
+  }
+
+  async assertDevicesOpen(userId: string): Promise<void> {
+    const standing = await this.familiesStanding(userId)
+    if (!standing) throw Errors.unauthenticated()
+    if (under13DevicesClosed(standing)) throw Errors.minorFeature(FEATURE_UNAVAILABLE_FOR_MINOR_MESSAGE)
+  }
+
+  async assertSocialOpen(userId: string): Promise<void> {
+    const standing = await this.familiesStanding(userId)
+    if (!standing) throw Errors.unauthenticated()
+    if (under13SocialClosed(standing)) throw Errors.minorFeature(FEATURE_UNAVAILABLE_FOR_MINOR_MESSAGE)
+  }
+
+  async assertCaptureAllowed(userId: string, purpose: string, mimeType: string): Promise<void> {
+    if (!isCaptureUpload(purpose, mimeType)) return
+    await this.assertDevicesOpen(userId)
+  }
+
+  async socialClosedIds(userIds: string[]): Promise<string[]> {
+    const ids = [...new Set(userIds)].filter(Boolean)
+    if (!ids.length) return []
+    const rows = await this.loadStandings(ids)
+    return rows.filter((row) => under13SocialClosed(row.standing)).map((row) => row.id)
+  }
+
+  async filterMinorText(userId: string, text: string): Promise<string> {
+    const standing = await this.familiesStanding(userId)
+    if (!standing?.minor) return text
+    const outcome = applyMinorPii(text, minorPiiMode(this.settings.string('minor_pii_filter_mode', 'block')))
+    if (outcome.blocked) throw Errors.minorPii(MINOR_PII_BLOCKED_MESSAGE)
+    return outcome.text
+  }
+
+  async filterMinorDoc(userId: string, doc: unknown): Promise<unknown> {
+    const standing = await this.familiesStanding(userId)
+    if (!standing?.minor) return doc
+    const outcome = applyMinorPiiValue(doc, minorPiiMode(this.settings.string('minor_pii_filter_mode', 'block')))
+    if (outcome.blocked) throw Errors.minorPii(MINOR_PII_BLOCKED_MESSAGE)
+    return outcome.value
+  }
+
+  async acknowledgeSafetyReminder(userId: string): Promise<void> {
+    await this.db.user.update({ where: { id: userId }, data: { safetyReminderAcknowledgedAt: new Date() } })
+  }
+
+  private async standingOf(userId: string, facts: { dateOfBirth: Date | null; declaredAge: number | null; ageDeclaredAt: Date | null; safetyReminderAcknowledgedAt?: Date | null }): Promise<FamiliesStanding> {
+    const [row] = await this.loadStandings([userId])
+    if (row) return row.standing
+    return familiesStandingFrom({
+      facts,
+      ageBand: null,
+      methods: [],
+      socialEnabled: false,
+      safetyReminderAcknowledgedAt: facts.safetyReminderAcknowledgedAt ?? null,
+      verification: this.settings.verificationSettings(),
+    })
+  }
+
+  private async loadStandings(userIds: string[]): Promise<{ id: string; standing: FamiliesStanding }[]> {
+    const users = await this.db.user.findMany({
+      where: { id: { in: userIds }, deletedAt: null },
+      select: {
+        id: true,
+        safetyReminderAcknowledgedAt: true,
+        ...AGE_FIELDS,
+        consents: { where: { kind: 'GUARDIAN' as const }, select: { kind: true }, take: 1 },
+        guardianConsents: { orderBy: { recordedAt: 'desc' as const }, select: { method: true, verifiedAt: true, ageBand: true, socialEnabled: true } },
+      },
+    })
+    return users.map((user) => {
+      const latest = user.guardianConsents[0]
+      return {
+        id: user.id,
+        standing: familiesStandingFrom({
+          facts: user,
+          ageBand: latest?.ageBand ?? null,
+          methods: methodsFromConsentRows(user),
+          socialEnabled: latest?.socialEnabled === true,
+          safetyReminderAcknowledgedAt: user.safetyReminderAcknowledgedAt,
+          verification: this.settings.verificationSettings(),
+        }),
+      }
+    })
   }
 }

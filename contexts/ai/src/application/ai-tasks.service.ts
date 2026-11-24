@@ -1,14 +1,16 @@
 import { Inject, Injectable, Logger } from '@nestjs/common'
-import { CardType, DERIVATIVE_AI_TASKS, LearningEventType, type AiTaskType } from '@lvn/contracts/domain'
+import { CardType, DERIVATIVE_AI_TASKS, LearningEventType, LimitKey, type AiTaskType } from '@lvn/contracts/domain'
 import { LiveEventKind } from '@lvn/contracts/notifications'
-import { AppError, Errors } from '@lvn-backend/errors'
+import { AppError, Errors, planLimitError } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { LEARNING, LIVE, NOTE_AI, type Learning, type Live, type NoteAi, type NoteAiSource } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
-import { Queues } from '@lvn-backend/queue'
+import { DelayJobError, Queues } from '@lvn-backend/queue'
+import { RateLimiter } from '@lvn-backend/redis'
 import { batches, batchText, isRepair, type TextChange } from '../domain/clean-up'
 import { LANGUAGE_NAMES, repairs, SOURCE_CHARS, TASKS, type AiLanguage, type TaskResult } from '../domain/tasks'
 import { MIN_SCRIPT_SHARE, pieces, scriptShare } from '../domain/translate'
+import { limitAiCalls } from './ai-calls'
 import { AiGateway } from './ai-gateway'
 import { MediaInput } from './media-input'
 import { fileOf, isRecording, MEDIA, NoteMaterial } from './note-material'
@@ -56,12 +58,11 @@ export class AiTasksService {
     private readonly media: MediaInput,
     private readonly material: NoteMaterial,
     @Inject(LEARNING) private readonly learning: Learning,
+    private readonly limiter: RateLimiter,
   ) {}
 
   async run(viewerId: string, input: RunTaskInput): Promise<ArtifactRow> {
     const def = TASKS[input.task]
-    const status = await this.gateway.status()
-    if (!status.available) throw Errors.unavailable(status.reason === 'BUDGET' ? 'AI is paused until next month: this month’s AI budget is used up.' : status.reason === 'PROVIDER_DOWN' ? 'AI is not answering right now. Try again in a minute.' : 'AI is not switched on here.')
     const source = await this.allowed(viewerId, input.noteId, input.task)
     if (def.editorsOnly && !source.canEdit) throw Errors.forbidden(def.kind === 'CHANGES' ? 'Only people who can edit the note clean it up.' : 'Quick notes are made from your own notes.')
     const cards = this.pick(source, input.cardIds ?? null, def)
@@ -69,8 +70,14 @@ export class AiTasksService {
     if (!cards.length) throw Errors.validation(def.codeOnly ? 'This note has no code to explain.' : def.kind === 'CHANGES' ? 'This note has no text to clean up.' : 'This note has nothing to work on yet: write something, or add photos, PDFs or a recording.', ['input', 'noteId'])
     // A note of only recordings is read from their transcripts (ADR-0085): one must be made first.
     if (def.input !== 'AUDIO' && cards.every(isRecording) && !(await this.material.transcripts(input.noteId, viewerId, cards)).size) throw Errors.validation('Transcribe the recording first: AI tasks work on what it says.', ['input', 'noteId'])
-    const { usedToday, limitToday, resetsAt } = await this.gateway.allowance(viewerId)
-    if (limitToday !== null && usedToday >= limitToday) throw Errors.rateLimited(Math.ceil((resetsAt.getTime() - Date.now()) / 1000), 'You have used today’s AI allowance. It renews at midnight UTC.')
+    // Before the gateway. A note the person may not use does not spend this. The monthly budget stays in status().
+    await limitAiCalls(this.limiter, viewerId)
+    const status = await this.gateway.status()
+    if (!status.available) throw Errors.unavailable(status.reason === 'BUDGET' ? 'AI is paused until next month: this month’s AI budget is used up.' : status.reason === 'PROVIDER_DOWN' ? 'AI is not answering right now. Try again in a minute.' : 'AI is not switched on here.')
+    await this.gateway.assertDailyRequests(viewerId)
+    const { usedToday, limitToday } = await this.gateway.allowance(viewerId)
+    if (limitToday !== null && usedToday >= limitToday) throw planLimitError(LimitKey.AI_TOKENS_DAILY)
+    await this.gateway.ensureRoutable(viewerId, def.input === 'AUDIO' ? 'TRANSCRIBE' : input.task, source.visibility !== 'PUBLIC')
     const options: Options = { language: input.language ?? 'ENGLISH', cardIds: input.cardIds?.length ? input.cardIds : null }
     const artifact = await this.db.noteArtifact.create({
       data: { id: newId(), noteId: input.noteId, versionId: source.versionId, ownerId: viewerId, task: input.task, options: options as unknown as Prisma.InputJsonValue, status: 'QUEUED' },
@@ -99,32 +106,34 @@ export class AiTasksService {
       if (def.editorsOnly && !source.canEdit) throw Errors.forbidden('You can no longer edit this note.')
       const cards = this.pick(source, options.cardIds, def)
       const isPrivate = source.visibility !== 'PUBLIC'
+      const subjectId = artifact.ownerId ?? source.ownerId
+      const reader = { noteId: artifact.noteId, ownerId: artifact.ownerId, private: isPrivate, subjectId }
       let result: TaskResult
       let cut = false
       let read: string[] = []
       if (def.input === 'AUDIO') {
         // TRANSCRIBE: the recording, heard piece by piece (ADR-0062).
-        const heard = await this.media.transcribe(fileOf(cards[0]!)!, { userId: artifact.ownerId, private: isPrivate })
+        const heard = await this.media.transcribe(fileOf(cards[0]!)!, { userId: artifact.ownerId, private: isPrivate, subjectId })
         cut = heard.cut
         result = def.result(heard, source.title)
       } else if (task === 'TRANSLATE') {
         // In plain text, piece by piece, each checked to be in the language (ADR-0086).
         // The words alone: "Photo 1:" is not part of the note to translate.
-        const material = await this.material.forTask(cards, { noteId: artifact.noteId, ownerId: artifact.ownerId, private: isPrivate, attach: false, labels: false })
+        const material = await this.material.forTask(cards, { ...reader, attach: false, labels: false })
         read = material.read
         let body = material.parts.join('\n\n')
         if (!body.trim()) throw Errors.validation('Nothing in this note’s photos, PDFs or recordings could be read. A scanned PDF becomes notes with Convert PDF.')
         cut = body.length > SOURCE_CHARS
         if (cut) body = body.slice(0, SOURCE_CHARS)
-        result = def.result(await this.translate(source.title, body, options.language, { userId: artifact.ownerId, private: isPrivate }), source.title)
+        result = def.result(await this.translate(source.title, body, options.language, { userId: artifact.ownerId, private: isPrivate, subjectId }), source.title)
       } else if (def.kind === 'CHANGES') {
         // CLEAN_UP: the note's words, batch by batch, as the person's work (ADR-0063).
-        const mended = await this.cleanUp(task, artifact.ownerId!, cards, isPrivate)
+        const mended = await this.cleanUp(task, artifact.ownerId!, cards, isPrivate, subjectId)
         cut = mended.cut
         result = def.result({ changes: mended.changes }, source.title)
       } else {
         // The note's words, what its photos say, its PDFs' words and its recordings' transcripts (ADR-0084, ADR-0085).
-        const material = await this.material.forTask(cards, { noteId: artifact.noteId, ownerId: artifact.ownerId, private: isPrivate, attach: def.input === 'IMAGES' })
+        const material = await this.material.forTask(cards, { ...reader, attach: def.input === 'IMAGES' })
         read = material.read
         let body = material.parts.join('\n\n')
         if (!body.trim() && !material.images.length) throw Errors.validation('Nothing in this note’s photos, PDFs or recordings could be read. A scanned PDF becomes notes with Convert PDF.')
@@ -135,6 +144,7 @@ export class AiTasksService {
         const generated = await this.gateway.generate({
           task,
           userId: artifact.ownerId,
+          subjectId,
           private: isPrivate,
           prompt: def.prompt,
           vars: { language, target: language, sentences: 5 },
@@ -148,6 +158,12 @@ export class AiTasksService {
       await this.db.noteArtifact.update({ where: { id: artifactId }, data: { status: 'READY', payload: result as unknown as Prisma.InputJsonValue, options: { ...options, cut, ...(read.length ? { read } : {}) } as unknown as Prisma.InputJsonValue } })
       if (!artifact.ownerId) await this.events.publish('NoteArtifactReady', { artifactId, noteId: artifact.noteId, versionId: artifact.versionId!, artifactType: task })
     } catch (e) {
+      // A photo or PDF uploaded a moment ago may still be in the virus scan (ADR-0102). Wait for it instead of failing
+      // the task, so a quick note made right after an upload does not have to be started again.
+      if (scanPending(e) && Date.now() - artifact.createdAt.getTime() < SCAN_WAIT_MS) {
+        await this.db.noteArtifact.updateMany({ where: { id: artifactId, status: 'RUNNING' }, data: { status: 'QUEUED' } })
+        throw new DelayJobError(Date.now() + SCAN_RECHECK_MS)
+      }
       const message = e instanceof AppError ? e.message : 'Something went wrong. Try again.'
       if (!(e instanceof AppError)) this.log.error(`AI task ${artifactId} failed: ${(e as Error).message}`)
       await this.db.noteArtifact.update({ where: { id: artifactId }, data: { status: 'FAILED', error: message } })
@@ -161,7 +177,7 @@ export class AiTasksService {
    * temperature; a piece whose letters are not mostly in the language's script is asked again once, insisting, and the
    * answer more in the language is kept. The first piece carries the title, answered as its first line ("# Title").
    */
-  private async translate(title: string, body: string, language: AiLanguage, who: { userId: string | null; private: boolean }): Promise<string> {
+  private async translate(title: string, body: string, language: AiLanguage, who: { userId: string | null; private: boolean; subjectId: string | null }): Promise<string> {
     const target = LANGUAGE_NAMES[language] ?? 'English'
     const out: string[] = []
     for (const [i, piece] of pieces(body).entries()) {
@@ -170,6 +186,7 @@ export class AiTasksService {
           await this.gateway.generate({
             task: 'TRANSLATE',
             userId: who.userId,
+            subjectId: who.subjectId,
             private: who.private,
             prompt: i === 0 ? 'translate' : 'translate-more',
             vars: { target, insist },
@@ -192,12 +209,12 @@ export class AiTasksService {
    * The changes the model proposes for the cards' words, checked one by one (`isRepair`). Batches run in order; when the
    * allowance or the model gives out after the first, what was found so far is kept and the rest counts as cut.
    */
-  private async cleanUp(task: AiTaskType, userId: string, cards: NoteAiSource['cards'], isPrivate: boolean): Promise<{ changes: TextChange[]; cut: boolean }> {
+  private async cleanUp(task: AiTaskType, userId: string, cards: NoteAiSource['cards'], isPrivate: boolean, subjectId: string | null): Promise<{ changes: TextChange[]; cut: boolean }> {
     const plan = batches(cards)
     const changes: TextChange[] = []
     for (const [i, batch] of plan.batches.entries()) {
       try {
-        const generated = await this.gateway.generate({ task, userId, private: isPrivate, prompt: 'clean-up', content: { passages: batchText(batch) }, schema: repairs, temperature: 0 })
+        const generated = await this.gateway.generate({ task, userId, subjectId, private: isPrivate, prompt: 'clean-up', content: { passages: batchText(batch) }, schema: repairs, temperature: 0 })
         for (const { n, text } of generated.output.changes) {
           const card = batch[n - 1]
           if (card && !changes.some((c) => c.cardId === card.id) && isRepair(card.text, text)) changes.push({ cardId: card.id, before: card.text, after: text.trim() })
@@ -295,7 +312,10 @@ export class AiTasksService {
   private async allowed(viewerId: string, noteId: string, task: AiTaskType): Promise<NoteAiSource> {
     const source = await this.notes.source(viewerId, noteId)
     if (!source) throw Errors.notFound('Note not found.')
-    if (DERIVATIVE_AI_TASKS.has(task) ? !source.mayFork : !source.mayAskAi) throw Errors.forbidden(DERIVATIVE_AI_TASKS.has(task) ? 'The owner does not allow copies of this note.' : 'You cannot use AI on this note.')
+    if (DERIVATIVE_AI_TASKS.has(task)) {
+      if (!source.mayFork) throw Errors.forbidden('The owner does not allow copies of this note.')
+      if (!source.mayBulkAi) throw Errors.forbidden('Verify your account before AI writes notes for you.')
+    } else if (!source.mayAskAi) throw Errors.forbidden('You cannot use AI on this note.')
     return source
   }
 
@@ -314,3 +334,12 @@ export class AiTasksService {
 
 /** The cards whose words clean-up mends (ADR-0063), as the notes context rewrites them. */
 const MENDABLE: ReadonlySet<string> = new Set([CardType.TEXT, CardType.HEADING, CardType.QUOTE])
+
+/** How long a task waits for its files' virus scan before it gives up, and how often it looks again. */
+export const SCAN_WAIT_MS = 15 * 60_000
+export const SCAN_RECHECK_MS = 5_000
+
+/** The notes context refuses a file that is still being scanned with UNAVAILABLE and these words (files.service). */
+export function scanPending(e: unknown): boolean {
+  return e instanceof AppError && e.code === 'UNAVAILABLE' && /still being scanned/.test(e.message)
+}

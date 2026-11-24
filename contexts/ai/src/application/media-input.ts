@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { Inject, Injectable } from '@nestjs/common'
 import { QuickNoteLimits } from '@lvn/contracts/domain'
+import { Errors } from '@lvn-backend/errors'
 import { FILES, type Files } from '@lvn-backend/facades'
 import { REDIS } from '@lvn-backend/redis'
 import type Redis from 'ioredis'
@@ -17,6 +18,10 @@ const run = promisify(execFile)
 export const PIECE_SECONDS = 30
 /** The most of a recording that is transcribed */
 export const MAX_SECONDS = 30 * 60
+/** A live-caption clip: short, not stored, not scanned. */
+export const CLIP_SECONDS = 15
+export const CLIP_BYTES = 2_500_000
+const CLIP_MIMES = new Set(['audio/webm', 'audio/ogg', 'audio/wav', 'audio/mpeg', 'audio/mp4', 'audio/webm;codecs=opus', 'video/webm', 'video/mp4'])
 /**
  * Photos a quick note reads (ADR-0084), and how many go to the model with the request: more are each read on their own
  * first, as a PDF page is, so ten fit a small model's context (a photo is about 540 of a local model's 4,096 tokens).
@@ -46,7 +51,7 @@ export class MediaInput {
   ) {}
 
   /** What a recording (an audio or video file) says; `cut` when it ran past MAX_SECONDS. */
-  async transcribe(fileId: string, who: { userId: string | null; private: boolean }): Promise<{ text: string; cut: boolean }> {
+  async transcribe(fileId: string, who: { userId: string | null; private: boolean; subjectId?: string | null }): Promise<{ text: string; cut: boolean }> {
     return this.inTemp(async (dir) => {
       const source = path.join(dir, 'source')
       await this.files.download(fileId, source, 'audio')
@@ -55,12 +60,30 @@ export class MediaInput {
       const pieces = (await readdir(dir)).filter((f) => f.startsWith('piece')).sort()
       const texts: string[] = []
       for (const [i, piece] of pieces.entries()) {
-        const sound = (await readFile(path.join(dir, piece))).toString('base64')
-        const heard = await this.gateway.generate({ task: 'TRANSCRIBE', userId: who.userId, private: who.private, prompt: 'transcribe', vars: { part: i + 1, parts: pieces.length }, images: [sound], temperature: 0 })
-        // The prompt's fence rule mentions <content> tags; with nothing fenced, a model may wrap its answer in them.
-        texts.push(heard.output.replace(/<\/?content>/g, '').trim())
+        const sound = await readFile(path.join(dir, piece))
+        texts.push(await this.gateway.transcribeBytes(sound, who, { part: i + 1, parts: pieces.length }))
       }
       return { text: texts.filter(Boolean).join('\n\n'), cut: seconds !== null && seconds > MAX_SECONDS }
+    })
+  }
+
+  /**
+   * A few seconds of audio for live captions when the browser cannot do it. The bytes are not stored, so they are
+   * not scanned. Full recordings go through createUploadIntent and completeUpload instead.
+   */
+  async transcribeClip(bytes: Buffer, mime: string, who: { userId: string | null; private: boolean; subjectId?: string | null }): Promise<{ text: string; cut: boolean }> {
+    const type = mime.split(';')[0]!.trim().toLowerCase()
+    if (!CLIP_MIMES.has(mime.toLowerCase()) && !CLIP_MIMES.has(type)) throw Errors.validation('Send a short audio clip (WebM, WAV, MP3, M4A or Ogg).', ['input', 'mimeType'])
+    if (bytes.length < 1 || bytes.length > CLIP_BYTES) throw Errors.validation('A caption clip can be at most about 2.5 MB.', ['input', 'audioBase64'])
+    return this.inTemp(async (dir) => {
+      const source = path.join(dir, 'clip')
+      await writeFile(source, bytes)
+      const seconds = await duration(source)
+      if (seconds !== null && seconds > CLIP_SECONDS) throw Errors.validation('A caption clip can be at most 15 seconds.', ['input', 'audioBase64'])
+      const wavPath = path.join(dir, 'clip.wav')
+      await run('ffmpeg', ['-v', 'error', '-y', '-i', source, '-t', String(CLIP_SECONDS), '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', wavPath], { timeout: 30_000 })
+      const text = await this.gateway.transcribeBytes(await readFile(wavPath), who)
+      return { text, cut: false }
     })
   }
 
@@ -84,13 +107,13 @@ export class MediaInput {
    * whoever asked (ADR-0084). The reading is kept for PHOTO_TEXT_SECONDS by file, so the note's other tasks do not read
    * it again (ADR-0085).
    */
-  async readPhoto(fileId: string, who: { userId: string | null; private: boolean }): Promise<string> {
+  async readPhoto(fileId: string, who: { userId: string | null; private: boolean; subjectId?: string | null }): Promise<string> {
     const key = `ai:photo-text:${fileId}`
     const kept = await this.redis.get(key).catch(() => null)
     // Readings kept before symbols were made plain (ADR-0086) are made plain as they are read.
     if (kept !== null) return plainSymbols(kept)
     const [jpeg] = await this.images([fileId])
-    const read = await this.gateway.generate({ task: 'READ_PAGE', userId: who.userId, private: who.private, prompt: 'read-page', images: [jpeg!], schema: pageSchema, temperature: 0 })
+    const read = await this.gateway.generate({ task: 'READ_PAGE', userId: who.userId, subjectId: who.subjectId, private: who.private, prompt: 'read-page', images: [jpeg!], schema: pageSchema, temperature: 0 })
     const text = blocksMarkdown(read.output.blocks)
     await this.redis.set(key, text, 'EX', PHOTO_TEXT_SECONDS).catch(() => undefined)
     return text

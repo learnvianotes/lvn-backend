@@ -15,7 +15,8 @@ describe('classrooms', () => {
   type Person = { id: string; handle: string; email: string; token: string }
   const person = async (opts: { teacher?: boolean; verified?: boolean; minor?: boolean; name?: string } = {}): Promise<Person> => {
     const u = await seedUser(t.app, { verified: opts.verified ?? true, globalRole: opts.teacher ? 'TEACHER' : 'STUDENT', displayName: opts.name ?? 'Someone' })
-    if (opts.minor) await db.user.update({ where: { id: u.id }, data: { dateOfBirth: new Date('2015-03-01') } })
+    // 16: a restricted minor (under 18) who is not under the Families under-13 social gate.
+    if (opts.minor) await db.user.update({ where: { id: u.id }, data: { dateOfBirth: new Date(Date.UTC(new Date().getUTCFullYear() - 16, 0, 15)) } })
     return { id: u.id, handle: u.handle, email: u.email, token: tokenFor(t.config, u.id) }
   }
   /** Mutations whose input type is shared with others */
@@ -128,7 +129,7 @@ describe('classrooms', () => {
     expect((await mutate('reviewClassroomJoinRequest', { requestId: second.id, decision: 'APPROVED' }, teacher)).error).toBe('That request was already answered.')
     expect(await classroom(id, other)).toBeNull()
     expect((await mutate('requestToJoinClassroom', { code: await codeOf(id, teacher) }, student)).error).toBe('You are already in this class.')
-    expect((await mutate('requestToJoinClassroom', { code: await codeOf(id, teacher) }, await person({ verified: false }))).error).toBe('Verify your account to join classes.')
+    expect((await mutate('requestToJoinClassroom', { code: await codeOf(id, teacher) }, await person({ verified: false }))).error).toBeUndefined()
   })
 
   it('staff invite by handle or email; the invite is accepted within 14 days; only the teacher invites TAs', async () => {
@@ -267,12 +268,12 @@ describe('classrooms', () => {
     try {
       const fresh = await person({ teacher: true })
       const id = await create(fresh, 'Only one')
-      expect((await mutate('createClassroom', { name: 'Second' }, fresh)).error).toBe('Your plan allows 1 classes.')
+      expect((await mutate('createClassroom', { name: 'Second' }, fresh)).error).toBe("You've reached your plan's limit for classes.")
       await admit(id, fresh, await person())
       const third = await person()
       await mutate('requestToJoinClassroom', { code: await codeOf(id, fresh) }, third)
       const req = (await classroom(id, fresh))!.joinRequests![0]!
-      expect((await mutate('reviewClassroomJoinRequest', { requestId: req.id, decision: 'APPROVED' }, fresh)).error).toBe('This class is full.')
+      expect((await mutate('reviewClassroomJoinRequest', { requestId: req.id, decision: 'APPROVED' }, fresh)).error).toBe("You've reached your plan's limit for class members.")
     } finally {
       await db.entitlement.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } })
     }

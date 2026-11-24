@@ -1,4 +1,5 @@
 import { Controller, Get, HttpStatus, Inject, Res } from '@nestjs/common'
+import { runningRelease } from '@lvn-backend/config'
 import { PrismaService, shippedMigration } from '@lvn-backend/prisma-base'
 import { REDIS } from '@lvn-backend/redis'
 import type { Response } from 'express'
@@ -13,6 +14,7 @@ const within = <T>(work: Promise<T>): Promise<T> =>
  * Probes for the load balancer and rolling deploys (spec §16.2). Liveness says the process answers; readiness says it
  * can serve: Postgres and Redis answer, and the database has at least the migrations this build ships. "At least",
  * because migrations run before new tasks start (expand/contract) and the old tasks keep serving meanwhile.
+ * `version` is this build (`vX.Y.Z+<shortsha>`, VERSIONING.md). `status` and `checks` stay as probes already read them.
  */
 @Controller('health')
 export class HealthController {
@@ -44,7 +46,7 @@ export class HealthController {
     const checks = { database, redis, schema }
     const ok = Object.values(checks).every((c) => c === 'ok')
     if (!ok) res.status(HttpStatus.SERVICE_UNAVAILABLE)
-    return { status: ok ? 'ok' : 'unavailable', checks }
+    return { status: ok ? 'ok' : 'unavailable', checks, version: runningRelease() }
   }
 
   private async check(probe: () => Promise<void>): Promise<string> {

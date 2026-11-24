@@ -6,12 +6,13 @@ import { QueueModule } from '@lvn-backend/queue'
 import { RedisModule } from '@lvn-backend/redis'
 import { StorageModule } from '@lvn-backend/storage'
 import { contextModules, facades } from './contexts'
-import { MaintenanceJobs } from './maintenance.jobs'
+import { MaintenanceJobs, METRICS_ROLLUP } from './maintenance.jobs'
 import { SearchJobs } from './search.jobs'
 import { AiJobs } from './ai.jobs'
 import { DataJobs } from './data.jobs'
 import { PdfJobs } from './pdf.jobs'
 import { MediaJobs } from './media.jobs'
+import { VerificationJobs } from './verification.jobs'
 
 /** Composition root for background jobs (spec §3 apps/worker): the contexts and their BullMQ processors. */
 @Module({})
@@ -34,7 +35,10 @@ export class WorkerModule {
         facades(),
         ...contextModules(config),
       ],
-      providers: options.jobs === false ? [] : [MaintenanceJobs, SearchJobs, AiJobs, DataJobs, PdfJobs, MediaJobs],
+      providers:
+        options.jobs === false
+          ? []
+          : [{ provide: METRICS_ROLLUP, useValue: { cron: config.METRICS_ROLLUP_CRON, days: config.METRICS_ROLLUP_DAYS } }, MaintenanceJobs, SearchJobs, AiJobs, DataJobs, PdfJobs, MediaJobs, VerificationJobs],
     }
   }
 }

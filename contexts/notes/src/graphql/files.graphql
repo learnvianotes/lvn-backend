@@ -5,12 +5,16 @@ scalar DateTime
 scalar UUID
 
 "Fixed error vocabulary (§6.2)"
-enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL UNAVAILABLE UNDER_MINIMUM_AGE }
+enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL UNAVAILABLE UNDER_MINIMUM_AGE AGE_RESTRICTED AI_UNAVAILABLE_FOR_MINOR FEATURE_UNAVAILABLE_FOR_MINOR MINOR_PII_BLOCKED MFA_REQUIRED ADMIN_MFA_REQUIRED }
 
 type UserError @shareable {
   field: [String!]
   message: String!
   code: ErrorCode!
+  "Seconds until a RATE_LIMITED caller may retry. Null for every other code."
+  retryAfter: Int
+  "One address on AGE_RESTRICTED and on a blocked sign-in: SUPPORT_EMAIL (support@learnvianotes.in unless the environment sets another)."
+  supportEmail: String
 }
 
 type OkPayload @shareable {
@@ -18,8 +22,8 @@ type OkPayload @shareable {
   userErrors: [UserError!]!
 }
 
-"What an upload is for: AVATAR, VERIFICATION_DOCUMENT, and ATTACHMENT (a picture, video, audio or PDF for a note you can edit, given as parentId). Other purposes arrive with their features."
-enum FilePurpose { ATTACHMENT COVER VOICE_NOTE AVATAR IMPORT EXPORT VERIFICATION_DOCUMENT GROUP_PICTURE }
+"What an upload is for. ATTACHMENT is a picture, video, audio, PDF, Word (.doc, .docx), PowerPoint (.ppt, .pptx) or plain-text file for a note you can edit (parentId). PAGE_IMAGE is a PNG or JPEG for a note page (parentId). VOICE_NOTE is audio; parentId is the note when the recording belongs to one, and omitted when it stands alone. Every one of these finishes with completeUpload, so a remote scan still runs."
+enum FilePurpose { ATTACHMENT COVER VOICE_NOTE AVATAR IMPORT EXPORT VERIFICATION_DOCUMENT GROUP_PICTURE PAGE_IMAGE }
 
 input CreateUploadIntentInput {
   "Shown to people; never part of the storage key"

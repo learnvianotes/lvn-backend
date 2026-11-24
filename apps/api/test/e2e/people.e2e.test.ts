@@ -66,10 +66,11 @@ describe('people', () => {
     expect(await followers(teacher)).toEqual([asha.id])
   })
 
-  it('nobody follows themselves or a restricted minor, and an unverified account follows nobody', async () => {
+  it('nobody follows themselves or a restricted minor, and an unverified account can follow a teacher', async () => {
     expect((await act('followUser', asha, asha)).userErrors[0]).toMatchObject({ code: 'VALIDATION' })
     expect((await act('followUser', asha, minor)).userErrors[0]).toMatchObject({ code: 'FORBIDDEN', message: "You can't follow this person." })
-    expect((await act('followUser', unverified, teacher)).userErrors[0]).toMatchObject({ code: 'FORBIDDEN', message: 'Verify your account to follow people.' })
+    expect((await act('followUser', unverified, teacher)).userErrors).toEqual([])
+    expect((await act('followUser', unverified, teacher)).user?.relation?.following).toBe(true)
     expect((await t.gql('mutation ($input: PersonInput!) { followUser(input: $input) { userErrors { message } } }', { input: { userId: teacher.id } })).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
   })
 
@@ -81,8 +82,8 @@ describe('people', () => {
     expect(await profile(minor.handle, asha)).toBeNull()
     expect(await profile(minor.id)).toBeNull()
     expect(await profile(minor.handle, minor)).toMatchObject({ id: minor.id, displayName: 'Young Learner' })
-    expect(await followers(teacher)).toEqual([asha.id])
-    expect((await profile(teacher.handle, teacher))!.followerCount).toBe(2)
+    expect(await followers(teacher)).toEqual([unverified.id, asha.id])
+    expect((await profile(teacher.handle, teacher))!.followerCount).toBe(3)
   })
 
   it('finds a profile by handle, with or without @, or by id, for anyone', async () => {
@@ -93,7 +94,7 @@ describe('people', () => {
   it('removing a follower is silent', async () => {
     const before = (await notified(asha)).length
     expect((await act('removeFollower', teacher, asha)).userErrors).toEqual([])
-    expect(await followers(teacher)).toEqual([])
+    expect(await followers(teacher)).toEqual([unverified.id])
     expect((await profile(teacher.handle, asha))!.relation).toMatchObject({ following: false })
     expect(await notified(asha)).toHaveLength(before)
   })

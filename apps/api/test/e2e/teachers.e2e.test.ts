@@ -33,7 +33,7 @@ describe('teachers', () => {
   }
   const text = (s: string) => ({ doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: s }] }] } })
   const publishedNote = async (who: Person, title: string, kind = 'NOTE') => {
-    const res = await t.gql<{ createNote: { note: { id: string; forkingEnabled: boolean } | null; userErrors: { message: string }[] } }>('mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id forkingEnabled } userErrors { message } } }', { input: { title, kind, cards: [{ id: newId(), type: 'text', position: 'a0', content: text(title) }] } }, who.token)
+    const res = await t.gql<{ createNote: { note: { id: string; allowForks: boolean } | null; userErrors: { message: string }[] } }>('mutation ($input: CreateNoteInput!) { createNote(input: $input) { note { id allowForks } userErrors { message } } }', { input: { title, kind, cards: [{ id: newId(), type: 'text', position: 'a0', content: text(title) }] } }, who.token)
     const note = res.data?.createNote.note
     if (note) await t.gql('mutation ($input: NoteIdInput!) { publishNote(input: $input) { note { id } } }', { input: { noteId: note.id } }, who.token)
     return { note, error: res.errors?.[0]?.message }
@@ -158,9 +158,9 @@ describe('teachers', () => {
 
   describe('publications (ADR-0014, ADR-0015)', () => {
     it('teachers write blogs and posts, anyone writes projects; posts and projects start with copies off', async () => {
-      expect((await publishedNote(asha, 'Why graphs first', 'BLOG')).note).toMatchObject({ forkingEnabled: true })
-      expect((await publishedNote(asha, 'Office hours moved', 'POST')).note).toMatchObject({ forkingEnabled: false })
-      expect((await publishedNote(student, 'My compiler', 'PROJECT')).note).toMatchObject({ forkingEnabled: false })
+      expect((await publishedNote(asha, 'Why graphs first', 'BLOG')).note).toMatchObject({ allowForks: true })
+      expect((await publishedNote(asha, 'Office hours moved', 'POST')).note).toMatchObject({ allowForks: false })
+      expect((await publishedNote(student, 'My compiler', 'PROJECT')).note).toMatchObject({ allowForks: false })
       expect((await publishedNote(student, 'My opinion', 'BLOG')).error).toBe('Blogs and posts are for teachers.')
       expect((await publishedNote(student, 'Update', 'POST')).error).toBe('Blogs and posts are for teachers.')
     })

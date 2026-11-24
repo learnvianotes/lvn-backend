@@ -27,6 +27,8 @@ datasource db {
 enum GlobalRole {
   STUDENT
   TEACHER
+  /// Reviews student verification (documents included). Cannot grant roles or approve teacher applications.
+  MANAGER
   PLATFORM_ADMIN
 
   @@schema("users")
@@ -57,6 +59,24 @@ enum VerificationRequestStatus {
   @@schema("users")
 }
 
+/// What the ID-card check decided. A mismatch is never an automatic rejection.
+enum IdCardVerdict {
+  MATCH
+  MISMATCH
+  UNREADABLE
+
+  @@schema("users")
+}
+
+/// Where an error or usage event was recorded.
+enum ClientPlatform {
+  WEB
+  MOBILE
+  BACKEND
+
+  @@schema("users")
+}
+
 enum EmailTokenPurpose {
   VERIFY_EMAIL
   RESET_PASSWORD
@@ -70,7 +90,8 @@ enum ConsentKind {
   TERMS
   PRIVACY
   PUBLIC_CONTENT_LICENCE
-  /// Verified parental or institutional consent for a minor (§15.2)
+  /// Verified parental or institutional consent for a minor (§15.2). Sign-up does not write this.
+  /// An auto_unverified notice lives on GuardianConsent and does not use this row (ADR-0109).
   GUARDIAN
 
   @@schema("users")
@@ -121,6 +142,8 @@ enum LimitKey {
   EXPORTS_DAILY
   IMPORTS_DAILY
   ORG_SEATS
+  NOTES_OWNED
+  AI_REQUESTS_DAILY
 
   @@schema("users")
 }
@@ -142,9 +165,18 @@ model User {
   /// Argon2id; null for accounts that only sign in with a provider
   passwordHash            String?
   emailVerifiedAt         DateTime?           @db.Timestamptz(3)
-  /// Required to finish registration (ADR-0017); never shown to anyone, only the derived age band is used
+  /// Accounts registered before ADR-0104, or set by a platform admin; never shown to anyone, only the derived age band is used.
+  /// Registration now asks for an age instead (declaredAge). When present it decides the age.
   dateOfBirth             DateTime?           @db.Date
+  /// ADR-0104: the whole-number age (1–120) given at registration, or by an admin. Used when there is no dateOfBirth.
+  declaredAge             Int?
+  /// When declaredAge was given. The age now is declaredAge plus the whole years since, never more than the real age.
+  ageDeclaredAt           DateTime?           @db.Timestamptz(3)
   registrationCompletedAt DateTime?           @db.Timestamptz(3)
+  /// Claimed when the one welcome email goes out. A retry, a profile edit or another sign-in does not send a second one.
+  welcomeEmailSentAt      DateTime?           @db.Timestamptz(3)
+  /// Set when this account was last upserted into the product-email audience. Null until that succeeds.
+  audienceSyncedAt        DateTime?           @db.Timestamptz(3)
   /// Verified by institutional email, a teacher or platform admins (ADR-0019)
   verifiedAt              DateTime?           @db.Timestamptz(3)
   verificationMethod      VerificationMethod?
@@ -157,6 +189,18 @@ model User {
   suspendedUntil          DateTime?           @db.Timestamptz(3)
   /// Why, for the account's owner alone
   suspensionReason        String?
+  /// When true, usage analytics for this account are not stored (DPDP). Error reports from the app are stored without this id.
+  analyticsOptOut         Boolean             @default(false)
+  /// When the person acknowledged the safety reminder (ADR-0112). Null until they do. Minors are asked before social features.
+  safetyReminderAcknowledgedAt DateTime?      @db.Timestamptz(3)
+  /// AGE_BLOCKED has no session and is not public. BLOCKED and SUSPENDED are reversible admin holds.
+  accountStatus           AccountStatus       @default(ACTIVE)
+  /// Why the account is age-blocked, blocked, or suspended. Admins read it; it is not a public field.
+  statusReason            String?
+  /// The person asked for a second factor on every new session. No screen sets this yet.
+  mfaOptIn                Boolean             @default(false)
+  /// Until this time, sign-in does not ask for a second factor. Set by an admin recovery or the owner CLI.
+  mfaExemptUntil          DateTime?           @db.Timestamptz(3)
   createdAt               DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt               DateTime            @updatedAt @db.Timestamptz(3)
 
@@ -165,6 +209,15 @@ model User {
   emailTokens          EmailToken[]
   institutionalEmails  InstitutionalEmail[]
   consents             ConsentRecord[]
+  /// Auto-recorded guardian notice for a sign-up under 18. Not deleted when the account is purged (ADR-0109).
+  /// The parent email on the row is cleared at purge (ADR-0110).
+  guardianConsents      GuardianConsent[]
+  guardianLinks         GuardianLink[]
+  mfaFactors            UserMfaFactor[]
+  mfaChallenges         MfaChallenge[]
+  signInCodes           SignInCode[]
+  passkeys              PasskeyCredential[]
+  firebaseInstallations FirebaseInstallation[]
   dataExports          DataExport[]
   memberships          Membership[]
   verificationRequests VerificationRequest[] @relation("requester")
@@ -184,6 +237,16 @@ model User {
   teacherProfile       TeacherProfile?
   teacherSkills        TeacherSkill[]
   externalIdentities   ExternalIdentity[]
+
+  @@index([accountStatus, createdAt(sort: Desc)])
+  @@schema("users")
+}
+
+enum AccountStatus {
+  ACTIVE
+  AGE_BLOCKED
+  BLOCKED
+  SUSPENDED
 
   @@schema("users")
 }
@@ -244,6 +307,10 @@ model Session {
   /// Set when rotated (replacedById) or signed out / revoked
   revokedAt        DateTime? @db.Timestamptz(3)
   replacedById     String?   @db.Uuid
+  /// When this refresh session finished a second factor. Copied when the refresh token rotates. Cleared by sign-out.
+  mfaVerifiedAt    DateTime? @db.Timestamptz(3)
+  /// How this session was authenticated: pwd, google, github, linkedin, and otp after a code is accepted.
+  amr              String[]  @default([])
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -395,6 +462,76 @@ model ConsentRecord {
   @@schema("users")
 }
 
+/// Guardian notice for a sign-up under 18 (ADR-0109, ADR-0110). Linked by user id with no cascade delete, so
+/// purging the account (which anonymises the user row and deletes ConsentRecord) leaves this row. `method` is
+/// text (`auto_unverified`, `email_plus`, `verified`, or a later id) so a new verification method needs no
+/// migration. `parentEmail` is the parent's address, not the child's, and purge sets it to null. The row then
+/// holds no name, email or date of birth.
+/// Bands: under_13 (below 13; existing accounts only — new sign-ups are 13 or older, ADR-0113), 13_15, 16_17.
+model GuardianConsent {
+  id            String      @id @db.Uuid
+  userId        String      @db.Uuid
+  /// The existing consent type. Always GUARDIAN. This is not a verified ConsentRecord.
+  kind          ConsentKind @default(GUARDIAN)
+  /// auto_unverified at sign-up. email_plus only after the parent clicks the confirm link. verified is legacy.
+  method        String
+  noticeVersion String
+  recordedAt    DateTime    @default(now()) @db.Timestamptz(3)
+  /// Set when the parent clicks confirm. Null for auto_unverified, and cleared if consent is withdrawn.
+  verifiedAt    DateTime?   @db.Timestamptz(3)
+  /// Parent or guardian address. Cleared when the account is purged.
+  parentEmail   String?     @db.Citext
+  /// under_13, 13_15 or 16_17
+  ageBand       String
+  /// Parent allows groups, classes, doubts, messages and public posts. Ignored unless consent is verified, and only for under_13 (ADR-0112).
+  socialEnabled Boolean     @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([method, noticeVersion])
+  @@index([ageBand])
+  @@index([userId])
+  @@schema("users")
+}
+
+/// A parent link. CONFIRM and MANAGE are single-use. SESSION is the manage session a manage link opens (ADR-0110).
+enum GuardianLinkPurpose {
+  CONFIRM
+  MANAGE
+  SESSION
+
+  @@schema("users")
+}
+
+/// Only the SHA-256 of the token is stored. The signature also carries the expiry.
+model GuardianLink {
+  id        String               @id @db.Uuid
+  userId    String               @db.Uuid
+  purpose   GuardianLinkPurpose
+  tokenHash Bytes                @unique
+  expiresAt DateTime             @db.Timestamptz(3)
+  usedAt    DateTime?            @db.Timestamptz(3)
+  createdAt DateTime             @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@schema("users")
+}
+
+/// A Firebase installation id registered for this account. The minor purge deletes these rows and asks Firebase
+/// to drop the installation (ADR-0110). Clients register the id later; an empty table is a no-op.
+model FirebaseInstallation {
+  fid       String   @id
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@schema("users")
+}
+
 /// ADR-0019. Documents are notes.FileObject rows (purpose VERIFICATION_DOCUMENT) referenced by id.
 /// What a verification request asks for (ADR-0073): the account verified (ADR-0019), or the TEACHER role.
 enum VerificationPurpose {
@@ -422,7 +559,16 @@ model VerificationRequest {
   decidedBy   String?                   @db.Uuid
   decidedAt   DateTime?                 @db.Timestamptz(3)
   reason      String?
-  createdAt   DateTime                  @default(now()) @db.Timestamptz(3)
+  /// Automated college-ID / proof check. Reviewers see it; the raw image is not stored here.
+  aiVerdict    IdCardVerdict?
+  /// 0–1. The model's confidence, not a second opinion.
+  aiConfidence Float?
+  /// Why the verdict was reached. Never the image and never a copy of the model's raw text beyond this sentence.
+  aiReason     String?
+  /// { name, institution, idNumber, validUntil }. Not written to logs.
+  aiExtracted  Json?
+  aiCheckedAt  DateTime?                 @db.Timestamptz(3)
+  createdAt    DateTime                  @default(now()) @db.Timestamptz(3)
 
   user User @relation("requester", fields: [userId], references: [id], onDelete: Cascade)
 
@@ -433,15 +579,35 @@ model VerificationRequest {
   @@schema("users")
 }
 
-/// A switch a platform admin changes without a deploy or an environment variable.
-/// `student_id_verification` (ADR-0099): a missing row means off.
-/// `google_sign_in` (ADR-0100): the unified-sign-in migration inserts it on, and a missing row is treated as on.
+/// A platform setting an admin changes without a deploy (ADR-0099, ADR-0100, ADR-0101).
+/// `student_id_verification`: a missing row means off.
+/// `google_sign_in`: the unified-sign-in migration inserts it on, and a missing row is treated as on.
+/// `access_allowlist_enabled`: a missing row means off (everyone may sign in).
+/// `enabled` mirrors a boolean value. `value` is `{ "v": <boolean | number | string | null> }` for every type.
 model AppSetting {
   key       String   @id
   enabled   Boolean  @default(false)
+  /// `{ "v": ... }`. Null on a row written before ADR-0101; readers then use `enabled`.
+  value     Json?
   updatedBy String?  @db.Uuid
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
+  @@schema("users")
+}
+
+/// Emails that may sign up and sign in while `access_allowlist_enabled` is on. Stored lowercased.
+/// The migration seeds one row per existing account so current admins keep access.
+model AccessAllowlistEntry {
+  id        String     @id @db.Uuid
+  email     String     @unique @db.Citext
+  role      GlobalRole
+  note      String?
+  /// Who added the row. Null for the migration seed.
+  addedById String?    @db.Uuid
+  createdAt DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime   @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@index([role])
   @@schema("users")
 }
 
@@ -463,12 +629,31 @@ model StudentProfile {
   @@schema("users")
 }
 
-/// ADR-0024: every limit is data. Only FREE exists today.
+/// How a plan's price is quoted. NONE is a plan with no billing period (ADR-0101). Nothing is charged.
+enum PlanInterval {
+  NONE
+  MONTH
+  YEAR
+
+  @@schema("users")
+}
+
+/// ADR-0024: every limit is data. ADR-0101 adds a price the admin can edit. Nothing is charged.
 model Plan {
-  id        String   @id @db.Uuid
-  code      String   @unique
+  id        String       @id @db.Uuid
+  code      String       @unique
   name      String
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  /// Minor units (paise, cents). 0 is free. Config only (ADR-0101).
+  priceMinor Int         @default(0)
+  /// ISO 4217
+  currency  String       @default("INR")
+  interval  PlanInterval @default(NONE)
+  /// Short lines for a pricing card. Not entitlements.
+  features  String[]     @default([])
+  /// False hides it from a pricing list. FREE stays active: accounts without a plan use it.
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime     @default(now()) @updatedAt @db.Timestamptz(3)
 
   entitlements Entitlement[]
   users        UserPlan[]
@@ -525,17 +710,194 @@ model LegacyImport {
 }
 
 /// §4.5: who changed roles, memberships, verification and moderation state — never content. Kept 7 years (§15.2).
+/// Append-only: a trigger rejects UPDATE and DELETE. There is no API that changes or removes a row.
 model AuditLog {
   id         String   @id @db.Uuid
   actorId    String?  @db.Uuid
+  /// The actor's email at the time, so the row still names them after the address changes.
+  actorEmail String?
   action     String
   targetType String
   targetId   String?  @db.Uuid
+  /// Before/after or other detail. Secrets are redacted before they are stored.
   metadata   Json?
+  ip         String?
+  userAgent  String?
   createdAt  DateTime @default(now()) @db.Timestamptz(3)
 
   @@index([targetType, targetId, createdAt])
   @@index([actorId, createdAt])
+  @@index([createdAt(sort: Desc)])
+  @@schema("users")
+}
+
+enum MfaFactorType {
+  EMAIL_OTP
+  /// Reserved. Not issued yet.
+  TOTP
+  /// Reserved. Not issued yet.
+  WEBAUTHN
+
+  @@schema("users")
+}
+
+enum MfaFactorStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+
+  @@schema("users")
+}
+
+/// A second factor enrolled for an account. Email OTP is created the first time a code is sent.
+model UserMfaFactor {
+  id         String          @id @db.Uuid
+  userId     String          @db.Uuid
+  type       MfaFactorType
+  status     MfaFactorStatus @default(ACTIVE)
+  createdAt  DateTime        @default(now()) @db.Timestamptz(3)
+  lastUsedAt DateTime?       @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId])
+  @@map("user_mfa_factors")
+  @@schema("users")
+}
+
+/// One emailed (or, later, authenticator) challenge. Only the HMAC of the code is stored. Single use.
+model MfaChallenge {
+  id              String        @id @db.Uuid
+  userId          String        @db.Uuid
+  factorType      MfaFactorType
+  /// sign_in today. Other purposes can reuse this store.
+  purpose         String
+  /// HMAC-SHA256 of `${id}:${code}` with CODE_HMAC_SECRET.
+  codeHash        Bytes
+  expiresAt       DateTime      @db.Timestamptz(3)
+  attempts        Int           @default(0)
+  usedAt          DateTime?     @db.Timestamptz(3)
+  /// The refresh-session family this challenge finishes.
+  sessionFamilyId String        @db.Uuid
+  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("mfa_challenges")
+  @@schema("users")
+}
+
+/// A 6-digit code emailed to sign in without a password (ADR-0115). Single use, ten minutes, five tries.
+model SignInCode {
+  id        String    @id @db.Uuid
+  userId    String    @db.Uuid
+  /// HMAC-SHA256 of `${id}:${code}` with CODE_HMAC_SECRET. The code itself is never stored.
+  codeHash  Bytes
+  expiresAt DateTime  @db.Timestamptz(3)
+  attempts  Int       @default(0)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("sign_in_codes")
+  @@schema("users")
+}
+
+/// A passkey (WebAuthn credential) that signs in without a password (ADR-0115). Only the public key is kept.
+model PasskeyCredential {
+  id           String    @id @db.Uuid
+  userId       String    @db.Uuid
+  /// The authenticator's credential id (raw bytes).
+  credentialId Bytes     @unique
+  /// COSE public key from the attestation.
+  publicKey    Bytes
+  /// Signature counter; a lower value than stored means a cloned authenticator and is refused.
+  counter      BigInt    @default(0)
+  transports   String[]
+  /// A name the person gives it, e.g. "Pixel 8" or "MacBook". Defaults from the browser.
+  name         String
+  backedUp     Boolean   @default(false)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  lastUsedAt   DateTime? @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("passkey_credentials")
+  @@schema("users")
+}
+
+/// DPDP tombstone of an admin's permanent deletion. The email is a SHA-256 hex digest, never the address itself.
+model AccountTombstone {
+  id        String   @id @db.Uuid
+  userId    String   @db.Uuid
+  emailHash String
+  adminId   String   @db.Uuid
+  reason    String
+  deletedAt DateTime @db.Timestamptz(3)
+
+  @@index([emailHash])
+  @@map("account_tombstones")
+  @@schema("users")
+}
+
+/// Unexpected failures and client-reported errors. `message` is scrubbed (no email, token, or document bytes).
+/// Kept 90 days. `userId` is null for anonymous failures and for people who opted out of analytics on a client report.
+model ErrorEvent {
+  id         String         @id @db.Uuid
+  occurredAt DateTime       @default(now()) @db.Timestamptz(3)
+  userId     String?        @db.Uuid
+  /// GraphQL operation, HTTP route, or queue/job.
+  route      String?
+  /// Error code (VALIDATION, INTERNAL, …) or a client-supplied type.
+  code       String
+  message    String
+  release    String?
+  platform   ClientPlatform
+
+  @@index([code, occurredAt])
+  @@index([occurredAt])
+  @@index([userId, occurredAt])
+  @@map("error_events")
+  @@schema("users")
+}
+
+/// What people use. Dropped at ingest when the account's analytics opt-out is on. Kept 180 days.
+model UsageEvent {
+  id         String         @id @db.Uuid
+  occurredAt DateTime       @default(now()) @db.Timestamptz(3)
+  userId     String         @db.Uuid
+  sessionId  String?
+  /// Allow-listed: page_view, note_open, note_upload, search, download, sign_in.
+  name       String
+  /// Small JSON. A string `feature` is counted as a feature.
+  props      Json?
+  platform   ClientPlatform
+  appVersion String?
+
+  @@index([name, occurredAt])
+  @@index([userId, occurredAt])
+  @@index([occurredAt])
+  @@map("usage_events")
+  @@schema("users")
+}
+
+/// Daily counts behind the admin usage metrics (ADR-0106), written by the worker's nightly rollup: one row per IST
+/// day, metric and breakdown key. Counts only: no account id, no free text. Kept 730 days.
+model DailyMetric {
+  day        DateTime @db.Date
+  metric     String
+  /// A breakdown key, '' when there is none: a sign-up method, a visibility, a cohort's Monday, a duration in ms.
+  dimension  String   @default("")
+  value      BigInt
+  computedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([day, metric, dimension])
+  @@map("daily_metrics")
   @@schema("users")
 }
 
@@ -582,6 +944,8 @@ enum FilePurpose {
   GROUP_PICTURE
   /// ADR-0099: a college ID card. Not accepted by createUploadIntent. Restricted bucket only.
   COLLEGE_ID
+  /// A PNG or JPEG placed on a note page. Scanned like every other upload.
+  PAGE_IMAGE
 
   @@schema("notes")
 }
@@ -590,6 +954,10 @@ enum ScanResult {
   CLEAN
   INFECTED
   ERROR
+  /// Waiting for the remote scanner (ADR-0102). A file in this state is never served.
+  PENDING
+  /// The remote scan used its attempts. The file is not served.
+  FAILED
 
   @@schema("notes")
 }
@@ -626,10 +994,12 @@ model FileObject {
   deletedAt          DateTime?      @db.Timestamptz(3)
 
   attachments NoteAttachment[]
+  pageImages  NotePageImage[]
 
   @@index([ownerId, status])
   @@index([parentType, parentId])
   @@index([status, expiresAt])
+  @@index([scanResult, status])
   @@schema("notes")
 }
 
@@ -647,6 +1017,8 @@ enum NoteKind {
 enum Visibility {
   PRIVATE
   SHARED
+  /// Anyone with the link can read the published version. Left out of public lists, search and profiles.
+  UNLISTED
   PUBLIC
 
   @@schema("notes")
@@ -789,6 +1161,8 @@ model Note {
   publishedVersionId    String?              @unique @db.Uuid
   publishedAt           DateTime?            @db.Timestamptz(3)
   forkingEnabled        Boolean              @default(true)
+  /// Private copies other people have made. Incremented when someone forks.
+  forkCount             Int                  @default(0)
   /// Every connection of the owner reads it, live (ADR-0013, ADR-0044): materialised as CONNECTIONS share rows
   sharedWithConnections Boolean              @default(false)
   groupShares           GroupShare[]
@@ -823,6 +1197,7 @@ model Note {
   chunks           NoteChunk[]
   saves            NoteSave[]
   legacyContent    LegacyContentItem?
+  pages            NotePage[]
 
   @@index([ownerId, deletedAt, draftUpdatedAt(sort: Desc)])
   @@index([folderId])
@@ -929,6 +1304,45 @@ model NoteShare {
 
   @@id([noteId, userId])
   @@index([userId])
+  @@schema("notes")
+}
+
+/// One page of a note. The drawing is vector ink (pen, marker, eraser, ruler); pictures sit on top of it.
+model NotePage {
+  id        String    @id @db.Uuid
+  noteId    String    @db.Uuid
+  /// Order on the note, 0-based. Gaps are fine; the reader sorts by this, then id.
+  index     Int
+  /// `{ strokes: [{ id, tool, color, width, points: [{x,y}] }] }`
+  drawing   Json      @default("{\"strokes\":[]}")
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  note   Note            @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  images NotePageImage[]
+
+  @@index([noteId, index])
+  @@schema("notes")
+}
+
+/// A PNG or JPEG placed on a page. The file is a normal upload (scanned, counted against storage).
+model NotePageImage {
+  id       String @id @db.Uuid
+  pageId   String @db.Uuid
+  fileId   String @db.Uuid
+  x        Float
+  y        Float
+  width    Float
+  height   Float
+  /// Degrees, clockwise
+  rotation Float  @default(0)
+
+  page NotePage   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  file FileObject @relation(fields: [fileId], references: [id])
+
+  @@index([pageId])
+  @@index([fileId])
   @@schema("notes")
 }
 
@@ -2208,6 +2622,78 @@ model QuizAnswer {
   @@schema("core")
 }
 
+/// Who can open a quiz that is not tied to a class. UNLISTED is the link.
+enum QuizVisibility {
+  PRIVATE
+  UNLISTED
+  PUBLIC
+
+  @@schema("core")
+}
+
+/// A quiz a person made and can share. Attempts are private to the taker; the owner sees aggregates only.
+model SharedQuiz {
+  id          String         @id @db.Uuid
+  /// Cross-context reference to users.User
+  ownerId     String         @db.Uuid
+  title       String
+  visibility  QuizVisibility @default(PRIVATE)
+  /// Opaque share link. Stops working when the quiz is Private or in the trash.
+  linkToken   String         @unique
+  publishedAt DateTime?      @db.Timestamptz(3)
+  deletedAt   DateTime?      @db.Timestamptz(3)
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime       @default(now()) @updatedAt @db.Timestamptz(3)
+
+  questions SharedQuizQuestion[]
+  attempts  SharedQuizAttempt[]
+
+  @@index([ownerId, deletedAt, updatedAt(sort: Desc)])
+  @@schema("core")
+}
+
+model SharedQuizQuestion {
+  id       String     @id @db.Uuid
+  quizId   String     @db.Uuid
+  position Int
+  content  Json
+  quiz     SharedQuiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers  SharedQuizAnswer[]
+
+  @@unique([quizId, position])
+  @@schema("core")
+}
+
+model SharedQuizAttempt {
+  id          String   @id @db.Uuid
+  quizId      String   @db.Uuid
+  /// Cross-context reference to users.User. Never listed to the quiz's owner.
+  userId      String   @db.Uuid
+  clientOpId  String   @unique @db.Uuid
+  score       Int
+  total       Int
+  submittedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  quiz    SharedQuiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers SharedQuizAnswer[]
+
+  @@index([quizId, userId, submittedAt])
+  @@index([userId])
+  @@schema("core")
+}
+
+model SharedQuizAnswer {
+  attemptId  String             @db.Uuid
+  questionId String             @db.Uuid
+  choiceIds  String[]
+  correct    Boolean
+  attempt    SharedQuizAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question   SharedQuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@id([attemptId, questionId])
+  @@schema("core")
+}
+
 /// notes' copy of the classes that exist (ADR-0046).
 model ClassroomRead {
   id        String                @id @db.Uuid
@@ -2987,6 +3473,8 @@ model NotificationSettings {
   quietEnd     String    @default("07:00")
   timeZone     String    @default("Asia/Kolkata")
   weeklyDigest Boolean   @default(true)
+  /// Product news. False means the audience contact is unsubscribed. No row, or true, means they receive it.
+  productEmails Boolean  @default(true)
   lastDigestAt DateTime? @db.Timestamptz(3)
 
   @@schema("comms")
@@ -3168,5 +3656,45 @@ model AiAnswer {
   @@index([askerId, createdAt(sort: Desc)])
   @@index([askerId, noteId])
   @@index([askerId, doubtId])
+  @@schema("ai")
+}
+
+enum AiReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+
+  @@schema("ai")
+}
+
+enum AiReportReason {
+  INACCURATE
+  INAPPROPRIATE
+  HARMFUL
+  PERSONAL_INFO
+  OTHER
+
+  @@schema("ai")
+}
+
+/// A report of one AI answer (Families policy). The answer text is not stored: `context` holds the task, status and
+/// note id so an admin can find the row. `reporterId` has no foreign key, matching AiUsage, and is cleared with the account.
+model AiReport {
+  id           String         @id @db.Uuid
+  reporterId   String         @db.Uuid
+  responseId   String         @db.Uuid
+  /// ANSWER or ARTIFACT
+  responseKind String
+  reason       AiReportReason
+  comment      String?
+  /// { task, status, noteId }
+  context      Json           @default("{}")
+  status       AiReportStatus @default(OPEN)
+  resolvedBy   String?        @db.Uuid
+  resolvedAt   DateTime?      @db.Timestamptz(3)
+  createdAt    DateTime       @default(now()) @db.Timestamptz(3)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([reporterId, createdAt(sort: Desc)])
   @@schema("ai")
 }

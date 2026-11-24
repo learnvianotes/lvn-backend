@@ -10,7 +10,7 @@
     "lint": "eslint src test",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "legacy:snapshot": "node --env-file-if-exists=../../.env --env-file-if-exists=../../.env.local dist/cli.js legacy:snapshot",
-    "content:import-legacy": "node --env-file-if-exists=../../.env --env-file-if-exists=../../.env.local dist/cli.js content:import-legacy"
+    "metrics:backfill": "node --env-file-if-exists=../../.env --env-file-if-exists=../../.env.local dist/cli.js metrics:backfill"
   },
   "dependencies": {
     "@lvn-backend/ai": "workspace:*",
@@ -27,16 +27,16 @@
     "@lvn-backend/redis": "workspace:*",
     "@lvn-backend/storage": "workspace:*",
     "@lvn-backend/users": "workspace:*",
-    "@nestjs/common": "^11.2.7",
-    "@nestjs/core": "^11.2.7",
+    "@nestjs/common": "^12.6.0",
+    "@nestjs/core": "^12.6.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "^3.1147.0",
+    "@aws-sdk/client-s3": "^3.1176.0",
     "@lvn-backend/testing": "workspace:*",
     "@lvn/contracts": "workspace:@learnvianotes/contracts@*",
-    "@nestjs/cli": "^11.0.24",
-    "@nestjs/testing": "^11.2.7"
+    "@nestjs/cli": "^12.0.15",
+    "@nestjs/testing": "^12.6.0"
   }
 }

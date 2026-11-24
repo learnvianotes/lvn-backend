@@ -34,6 +34,7 @@ describe('college ID verification (ADR-0099)', () => {
   let storage: Storage
   let admin: { id: string; token: string }
   let teacher: { id: string; token: string }
+  let manager: { token: string }
 
   const student = async (dob = '2004-05-01') => {
     const u = await seedUser(t.app)
@@ -71,6 +72,8 @@ describe('college ID verification (ADR-0099)', () => {
     admin = { id: a.id, token: tokenFor(t.config, a.id, undefined, ['PLATFORM_ADMIN']) }
     const teacherUser = await seedUser(t.app, { globalRole: 'TEACHER', verified: true })
     teacher = { id: teacherUser.id, token: tokenFor(t.config, teacherUser.id, undefined, ['TEACHER']) }
+    const managerUser = await seedUser(t.app, { globalRole: 'MANAGER', verified: true })
+    manager = { token: tokenFor(t.config, managerUser.id, undefined, ['MANAGER']) }
     expect((await t.gql(ENABLED)).data).toEqual({ studentIdVerificationEnabled: false })
     expect((await t.gql<{ studentIdVerificationSettings: { enabled: boolean } }>(SETTINGS, {}, admin.token)).data!.studentIdVerificationSettings.enabled).toBe(false)
     const probe = await student()
@@ -110,13 +113,15 @@ describe('college ID verification (ADR-0099)', () => {
     const listed = await t.gql<{ myVerificationRequests: { id: string; collegeIdCard: boolean; documents: unknown[] }[] }>('{ myVerificationRequests { id collegeIdCard documents { fileId } } }', {}, s.token)
     expect(listed.data!.myVerificationRequests.find((r) => r.id === request.id)).toEqual({ id: request.id, collegeIdCard: true, documents: [] })
 
-    for (const token of [s.token, other.token, teacher.token]) {
+    for (const token of [s.token, other.token, teacher.token, manager.token]) {
       expect((await t.gql(CARD, { id: request.id }, token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     }
     expect((await t.gql(QUEUE, {}, s.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     expect((await t.gql(QUEUE, {}, teacher.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+    expect((await t.gql(QUEUE, {}, manager.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     expect((await t.gql<{ verificationRequestsToReview: { id: string }[] }>('{ verificationRequestsToReview { id } }', {}, teacher.token)).data!.verificationRequestsToReview.map((r) => r.id)).not.toContain(request.id)
-    for (const token of [s.token, teacher.token]) {
+    expect((await t.gql('{ verificationRequestsToReview { id } }', {}, manager.token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+    for (const token of [s.token, teacher.token, manager.token]) {
       expect((await t.gql(REVIEW, { input: { requestId: request.id, approve: true } }, token)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
     }
 
@@ -134,25 +139,27 @@ describe('college ID verification (ADR-0099)', () => {
 
     const approved = await t.gql<{ reviewStudentIdVerification: { request: CardRequest | null; userErrors: Err[] } }>(REVIEW, { input: { requestId: request.id, approve: true } }, admin.token)
     expect(approved.data!.reviewStudentIdVerification.userErrors).toEqual([])
-    expect(approved.data!.reviewStudentIdVerification.request).toMatchObject({ status: 'APPROVED', card: null })
+    expect(approved.data!.reviewStudentIdVerification.request).toMatchObject({ status: 'APPROVED', card: { fileId: sent.fileId } })
     expect((await t.gql(VIEWER, {}, s.token)).data).toEqual({ viewer: { verified: true, verificationMethod: 'DOCUMENTS' } })
     expect(await db.auditLog.findFirst({ where: { action: 'verification.approved', targetId: request.id } })).toMatchObject({ actorId: admin.id, metadata: { collegeIdCard: true, method: 'DOCUMENTS' } })
-    expect(await db.auditLog.findFirst({ where: { action: 'verification.documents.deleted', targetId: request.id } })).toMatchObject({ actorId: admin.id })
-    expect(await db.fileObject.findUniqueOrThrow({ where: { id: sent.fileId } })).toMatchObject({ status: 'DELETED' })
-    expect(await storage.head(row.bucket, row.storageKey)).toBeNull()
-    expect(await db.verificationRequest.findUniqueOrThrow({ where: { id: request.id } })).toMatchObject({ documentIds: [], status: 'APPROVED' })
-    expect((await t.gql(CARD, { id: request.id }, admin.token)).errors?.[0]?.extensions.code).toBe('NOT_FOUND')
+    expect(await db.auditLog.findFirst({ where: { action: 'verification.documents.deleted', targetId: request.id } })).toBeNull()
+    expect(await db.fileObject.findUniqueOrThrow({ where: { id: sent.fileId } })).toMatchObject({ status: 'READY' })
+    expect(await storage.head(row.bucket, row.storageKey)).not.toBeNull()
+    expect(await db.verificationRequest.findUniqueOrThrow({ where: { id: request.id } })).toMatchObject({ documentIds: [sent.fileId], status: 'APPROVED' })
+    expect((await t.gql(MINE, {}, s.token)).data).toMatchObject({ myStudentIdVerification: { status: 'APPROVED', card: null } })
+    const kept = await t.gql<{ studentIdCardUrl: { url: string } }>(CARD, { id: request.id }, admin.token)
+    expect(new Uint8Array(await (await fetch(kept.data!.studentIdCardUrl.url)).arrayBuffer())).toEqual(SAMPLES.png)
   })
 
-  it('rejects without a reason, deletes the card, and leaves the account unverified', async () => {
+  it('rejects without a reason, keeps the card until the retention window, and leaves the account unverified', async () => {
     const s = await student()
     const sent = await send(s.token, SAMPLES.pdf, 'application/pdf', 'id.pdf')
     const rejected = await t.gql<{ reviewStudentIdVerification: { request: CardRequest | null; userErrors: Err[] } }>(REVIEW, { input: { requestId: sent.request!.id, approve: false } }, admin.token)
     expect(rejected.data!.reviewStudentIdVerification.userErrors).toEqual([])
-    expect(rejected.data!.reviewStudentIdVerification.request).toMatchObject({ status: 'REJECTED', reason: null, card: null })
+    expect(rejected.data!.reviewStudentIdVerification.request).toMatchObject({ status: 'REJECTED', reason: null, card: { fileId: sent.fileId } })
     expect((await t.gql(VIEWER, {}, s.token)).data).toEqual({ viewer: { verified: false, verificationMethod: null } })
     expect(await db.auditLog.findFirst({ where: { action: 'verification.rejected', targetId: sent.request!.id } })).toMatchObject({ actorId: admin.id })
-    expect(await db.fileObject.findUniqueOrThrow({ where: { id: sent.fileId } })).toMatchObject({ status: 'DELETED' })
+    expect(await db.fileObject.findUniqueOrThrow({ where: { id: sent.fileId } })).toMatchObject({ status: 'READY' })
     expect((await t.gql(MINE, {}, s.token)).data).toMatchObject({ myStudentIdVerification: { status: 'REJECTED', reason: null, card: null } })
 
     const again = await send(s.token)
@@ -222,10 +229,13 @@ describe('college ID verification (ADR-0099)', () => {
     expect(already.data!.createStudentIdUploadIntent.userErrors[0]!.code).toBe('CONFLICT')
   })
 
-  it('purges a college ID card that is still stored after the decision, without waiting 30 days', async () => {
+  it('keeps a college ID card for the retention window after the decision', async () => {
     const s = await student()
     const sent = await send(s.token)
     await db.verificationRequest.update({ where: { id: sent.request!.id }, data: { status: 'APPROVED', decidedBy: admin.id, decidedAt: new Date() } })
+    expect(await t.app.get(UsersMaintenance).purgeVerificationDocuments(new Date())).toBe(0)
+    expect(await db.fileObject.findUniqueOrThrow({ where: { id: sent.fileId } })).toMatchObject({ status: 'READY' })
+    await db.verificationRequest.update({ where: { id: sent.request!.id }, data: { decidedAt: new Date(Date.now() - 31 * 24 * 3600 * 1000) } })
     expect(await t.app.get(UsersMaintenance).purgeVerificationDocuments(new Date())).toBe(1)
     expect(await db.fileObject.findUniqueOrThrow({ where: { id: sent.fileId } })).toMatchObject({ status: 'DELETED' })
     expect(await db.verificationRequest.findUniqueOrThrow({ where: { id: sent.request!.id } })).toMatchObject({ documentIds: [] })

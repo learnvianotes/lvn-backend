@@ -7,6 +7,6 @@ export const DAILY_LINES = Symbol('DAILY_LINES')
 export interface DailyLines {
   /** Whether a line can be written now (AI on and answering); otherwise Home shows a chosen line. */
   available(): Promise<boolean>
-  /** A headline of a few words and one sentence for `day` ("Wednesday 14 October"), from what is known of them. */
-  write(input: { day: string; facts: string[] }): Promise<{ title: string; line: string }>
+  /** A headline of a few words and one sentence for `day` ("Wednesday 14 October"), from what is known of them. `userId` is that person. */
+  write(input: { day: string; facts: string[]; userId?: string | null }): Promise<{ title: string; line: string }>
 }

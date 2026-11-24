@@ -51,8 +51,8 @@ export class GroupsResolver {
   }
 
   @Query('discoverGroups')
-  discoverGroups(@Args('query') query: string | null, @Args('first') first: number | null) {
-    return this.groups.discover(query, pageSize(first, 20))
+  discoverGroups(@Args('query') query: string | null, @Args('first') first: number | null, @CurrentViewer() viewer: Viewer) {
+    return this.groups.discover(viewer.userId, query, pageSize(first, 20))
   }
 
   // ── Fields ──

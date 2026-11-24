@@ -5,13 +5,15 @@
 export const FILES = Symbol('FILES')
 
 export type FileParentKind = 'NOTE' | 'CARD' | 'GROUP_POST' | 'RESOURCE' | 'AVATAR' | 'VERIFICATION_REQUEST' | 'IMPORT_JOB' | 'DATA_EXPORT' | 'GROUP'
-export type FilePurposeKind = 'ATTACHMENT' | 'COVER' | 'VOICE_NOTE' | 'AVATAR' | 'IMPORT' | 'EXPORT' | 'VERIFICATION_DOCUMENT' | 'GROUP_PICTURE' | 'COLLEGE_ID'
+export type FilePurposeKind = 'ATTACHMENT' | 'COVER' | 'VOICE_NOTE' | 'AVATAR' | 'IMPORT' | 'EXPORT' | 'VERIFICATION_DOCUMENT' | 'GROUP_PICTURE' | 'COLLEGE_ID' | 'PAGE_IMAGE'
 
 export interface FileSummary {
   id: string
   ownerId: string
   purpose: FilePurposeKind
   originalFileName: string
+  /** The record this file is attached to. A standalone voice note uses the owner's id. */
+  parentId: string | null
   mimeType: string
   sizeBytes: number
   status: string
@@ -34,7 +36,7 @@ export interface Files {
    * not announced as FileReady, so the media pipeline does not make derivative copies. The caller has already checked
    * the admin setting, the actor and the rate limit.
    */
-  createCollegeIdUpload(ownerId: string, input: { fileName: string; mimeType: string; sizeBytes: number }): Promise<{ fileId: string; uploadUrl: string; uploadHeaders: { name: string; value: string }[]; expiresAt: Date }>
+  createCollegeIdUpload(ownerId: string, input: { fileName: string; mimeType: string; sizeBytes: number }, ip?: string): Promise<{ fileId: string; uploadUrl: string; uploadHeaders: { name: string; value: string }[]; expiresAt: Date }>
   /**
    * Checks the college-ID bytes (they arrived, the size matches, the magic bytes match the declared type) and marks
    * that unused upload READY. Refuses anything that is not this owner's unused college-ID upload.
@@ -47,6 +49,11 @@ export interface Files {
   download(fileId: string, toPath: string, variant?: 'audio' | 'medium'): Promise<{ mimeType: string }>
   /** Deletes the bytes and marks the rows DELETED (§8.2: the row stays as a record). */
   delete(fileIds: string[]): Promise<void>
+  /**
+   * Deletes every object this owner still has in storage, including variant keys, and marks the rows DELETED.
+   * Idempotent: a second call finds nothing left to delete. Used when a minor's account is purged (ADR-0110).
+   */
+  purgeOwner(ownerId: string): Promise<{ objects: number }>
   /**
    * Stores a file the server made (a data export, ADR-0018) as READY, in the restricted bucket when asked; it is deleted
    * after `expiresAt`. Returns its id.

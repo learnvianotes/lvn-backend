@@ -1,6 +1,6 @@
 {
   "name": "@learnvianotes/contracts",
-  "version": "0.65.0",
+  "version": "0.86.0",
   "description": "LearnViaNotes shared contracts: domain enums, permission matrix, config, event and notification schemas, GraphQL schema. Imported as @lvn/contracts (ADR-0031).",
   "license": "UNLICENSED",
   "publishConfig": {
@@ -81,14 +81,14 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test",
-    "test": "jest --coverage"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --coverage"
   },
   "peerDependencies": {
     "zod": "^4.1.0"
   },
   "devDependencies": {
-    "tsup": "^8.5.1",
-    "zod": "^4.6.5"
+    "tsup": "^9.0.0",
+    "zod": "^4.6.7"
   },
   "repository": {
     "type": "git",

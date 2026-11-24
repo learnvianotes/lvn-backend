@@ -12,6 +12,8 @@ type AiInsight {
   cards: [AiCard!]
   "Hidden by the owner: only they see it"
   hidden: Boolean!
+  "True when this text was produced by a model, so clients can show an AI label."
+  aiGenerated: Boolean!
   versionId: UUID!
 }
 

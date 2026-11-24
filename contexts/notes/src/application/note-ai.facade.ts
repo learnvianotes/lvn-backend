@@ -48,6 +48,7 @@ export class NoteAiFacade implements NoteAi {
       versionId,
       mayAskAi: can(actor, Action.NOTE_ASK_AI, { kind: 'note', note: facts }),
       mayFork: can(actor, Action.NOTE_FORK, { kind: 'note', note: facts }),
+      mayBulkAi: can(actor, Action.AI_BULK),
       canEdit: access !== 'READER',
       cards: cards.map((c) => ({ ...c, text: cardPlainText(c.type, c.content) })),
     }
@@ -69,6 +70,7 @@ export class NoteAiFacade implements NoteAi {
       versionId: version.id,
       mayAskAi: true,
       mayFork: false,
+      mayBulkAi: false,
       canEdit: false,
       cards: cards.map((c) => ({ ...c, text: cardPlainText(c.type, c.content) })),
     }

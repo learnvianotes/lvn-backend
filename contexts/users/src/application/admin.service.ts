@@ -3,7 +3,7 @@ import { GlobalRole } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { PrismaService } from '@lvn-backend/prisma-base'
-import { domainAndParents } from '../domain/email-domains'
+import { domainAndParents, isPersonalOrDisposable } from '../domain/email-domains'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
 import { AppSettingsService } from './app-settings.service'
 import { AuditService } from './audit.service'
@@ -58,7 +58,10 @@ export class AdminService {
     await this.db.domainReview.update({ where: { domain }, data: { status: approve ? 'APPROVED' : 'REJECTED', decidedAt: new Date(), decidedBy: adminId } })
     await this.audit.record({ actorId: adminId, action: approve ? 'domain.approved' : 'domain.rejected', targetType: 'DomainReview', metadata: { domain } })
     if (!approve) return 0
+    return this.verifyDomainHolders(domain)
+  }
 
+  private async verifyDomainHolders(domain: string): Promise<number> {
     const confirmed = await this.db.institutionalEmail.findMany({
       where: { verifiedAt: { not: null }, replacedAt: null, user: { verifiedAt: null, deletedAt: null } },
       select: { userId: true, domain: true },
@@ -72,13 +75,54 @@ export class AdminService {
     return users.length
   }
 
-  /** TEACHER is granted by an organisation or by manual review (§5); a faculty email alone is not enough (ADR-0017). */
+  /** Every institution-email domain, or the review queue when status is omitted. */
+  async institutionDomains(adminId: string, status?: 'ACADEMIC_QUEUED' | 'NEEDS_REVIEW' | 'APPROVED' | 'REJECTED' | null, first = 50) {
+    await this.assertAdmin(adminId)
+    return this.db.domainReview.findMany({
+      where: status ? { status } : { status: { in: ['ACADEMIC_QUEUED', 'NEEDS_REVIEW'] } },
+      orderBy: [{ requests: 'desc' }, { firstSeenAt: 'asc' }],
+      take: Math.min(Math.max(first, 1), 100),
+    })
+  }
+
+  /**
+   * Approves or rejects a domain, creating the queue row when nobody has asked for it yet.
+   * Approving verifies accounts whose confirmed address is on it, the same as decideDomain.
+   */
+  async reviewInstitutionDomain(adminId: string, rawDomain: string, approve: boolean): Promise<void> {
+    await this.assertAdmin(adminId)
+    const domain = rawDomain.trim().toLowerCase()
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(domain) || isPersonalOrDisposable(domain)) {
+      throw Errors.validation('Enter the college or organisation domain, not a personal mailbox.', ['input', 'domain'])
+    }
+    const now = new Date()
+    await this.db.domainReview.upsert({
+      where: { domain },
+      create: { domain, status: approve ? 'APPROVED' : 'REJECTED', requests: 0, decidedAt: now, decidedBy: adminId },
+      update: { status: approve ? 'APPROVED' : 'REJECTED', decidedAt: now, decidedBy: adminId },
+    })
+    await this.audit.record({ actorId: adminId, action: approve ? 'domain.approved' : 'domain.rejected', targetType: 'DomainReview', metadata: { domain } })
+    if (approve) await this.verifyDomainHolders(domain)
+  }
+
+  /** Display name, email and role for the errors dashboard. Unknown and deleted accounts are omitted. */
+  async usersByIds(adminId: string, ids: string[]): Promise<{ id: string; displayName: string; email: string; globalRole: GlobalRole }[]> {
+    await this.assertAdmin(adminId)
+    const unique = [...new Set(ids)].slice(0, 100)
+    if (!unique.length) return []
+    const users = await this.db.user.findMany({ where: { id: { in: unique }, deletedAt: null }, select: { id: true, displayName: true, email: true, globalRole: true } })
+    const order = new Map(unique.map((id, i) => [id, i]))
+    return users.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)).map((user) => ({ ...user, globalRole: user.globalRole as GlobalRole }))
+  }
+
+  /** TEACHER and MANAGER are granted here, never by an email address (§5, ADR-0017). Only a platform admin may call this. */
   async setGlobalRole(adminId: string, userId: string, role: GlobalRole): Promise<void> {
     await this.assertAdmin(adminId)
     if (adminId === userId) throw Errors.forbidden('Ask another platform admin to change your own role.')
     const user = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { globalRole: true } })
     if (!user) throw Errors.notFound('User not found.')
     if (user.globalRole === role) return
+    // The role is enough. PLATFORM_ADMIN does not need verifiedAt, and granting MANAGER does not verify the account.
     await this.db.user.update({ where: { id: userId }, data: { globalRole: role } })
     await this.audit.record({ actorId: adminId, action: 'role.changed', targetType: 'User', targetId: userId, metadata: { from: user.globalRole, to: role } })
     await this.events.publish('RoleChanged', { userId, globalRole: role })

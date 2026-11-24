@@ -59,7 +59,7 @@ describe('uploads', () => {
     [{ mimeType: 'text/html' }, ['input', 'mimeType']],
     [{ sizeBytes: 21 * 1024 * 1024 }, ['input', 'sizeBytes']],
     [{ sizeBytes: 0 }, ['input', 'sizeBytes']],
-    [{ purpose: 'VOICE_NOTE' }, ['input', 'purpose']],
+    [{ purpose: 'EXPORT' }, ['input', 'purpose']],
     // A resource's cover (ADR-0074) is a picture of at most 2 MB.
     [{ purpose: 'COVER', sizeBytes: 3 * 1024 * 1024 }, ['input', 'sizeBytes']],
     [{ purpose: 'COVER', mimeType: 'application/pdf', fileName: 'a.pdf' }, ['input', 'mimeType']],
@@ -75,7 +75,7 @@ describe('uploads', () => {
     await db.entitlement.update({ where: { id }, data: { limit: 50n } })
     try {
       const res = await createIntent(t, token, { fileName: 'big.png', mimeType: 'image/png', sizeBytes: 1000, purpose: 'AVATAR' })
-      expect(res.userErrors[0]!.message).toMatch(/storage is full/)
+      expect(res.userErrors[0]!.message).toBe("You've reached your plan's limit for storage.")
     } finally {
       await db.entitlement.update({ where: { id }, data: { limit: 5368709120n } })
     }

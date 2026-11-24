@@ -38,8 +38,8 @@ export class AiSkillsReader implements SkillsReader {
     return (await this.gateway.status()).available
   }
 
-  async read(source: 'a GitHub profile' | 'a personal or faculty page', text: string): Promise<ReadSkill[]> {
-    const out = await this.gateway.generate({ task: 'READ_SKILLS', userId: null, private: false, prompt: 'read-skills', vars: { source }, content: { text }, schema: skillsSchema, temperature: 0 })
+  async read(source: 'a GitHub profile' | 'a personal or faculty page', text: string, subjectId?: string | null): Promise<ReadSkill[]> {
+    const out = await this.gateway.generate({ task: 'READ_SKILLS', userId: null, subjectId, private: false, prompt: 'read-skills', vars: { source }, content: { text }, schema: skillsSchema, temperature: 0 })
     return cleanSkills(out.output.items)
   }
 }

@@ -3,34 +3,49 @@ import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { MAILER, type Mailer } from '@lvn-backend/facades'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
-import { RateLimiter } from '@lvn-backend/redis'
+import { RateLimiter, type Limit } from '@lvn-backend/redis'
+import { ageRestrictedError } from '../domain/account-status'
+import { enforcedMinimumAge, GUARDIAN_CONSENT_UNDER, guardianConsentFields } from '../domain/guardian-consent'
+import { requireParentEmail } from '../domain/parent-email'
 import {
-  dateOfBirthSchema,
   displayNameSchema,
   emailSchema,
   isBelowMinimumAge,
   LIMITS,
   RESET_PASSWORD_TTL_MINUTES,
-  TERMS_VERSION,
-  UNDER_MINIMUM_AGE_MESSAGE,
   VERIFY_EMAIL_TTL_HOURS,
 } from '../domain/rules'
 import { clientNetwork } from '../domain/network'
+import { isStudyPublisher } from '../domain/study-publisher'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { readDeclaredAge } from './age'
 import { freeHandle } from './handles'
 import { parseField } from './input'
 import { InstitutionalEmailService } from './institutional-email.service'
 import { LegacyService } from './legacy.service'
 import { PasswordService } from './password.service'
 import { randomToken, sha256 } from './secrets'
+import { AccessGate } from './access-gate'
+import { AgeBlockService } from './age-block.service'
+import { PlatformSettingsStore } from './platform-settings.store'
+import { SupportContact } from './support-contact'
 import { SessionService, type DeviceInfo, type IssuedSession } from './session.service'
+import { TermsVersionProvider } from './terms-version.provider'
+import { GuardianNoticeService } from './guardian-notice.service'
+import { AudienceSyncService } from './audience-sync.service'
+import { WelcomeEmailService } from './welcome-email.service'
 
 export interface SignUpInput {
   email: string
   password: string
   displayName: string
-  dateOfBirth: string
+  /** Whole years, 1–120 (ADR-0104). */
+  age?: number | null
+  /** Deprecated (ADR-0104): apps from before it send this instead of `age`. Ignored when `age` is sent. */
+  dateOfBirth?: string | null
   institutionalEmail?: string | null
+  /** Required when the age is under 18 and the account is admitted. Stored on the guardian row, not as the child's email. */
+  parentEmail?: string | null
   acceptedTermsVersion: string
 }
 
@@ -58,24 +73,45 @@ export class AuthService {
     @Inject(MAILER) private readonly mailer: Mailer,
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
+    private readonly settings: PlatformSettingsStore,
+    private readonly access: AccessGate,
+    private readonly ageBlock: AgeBlockService,
+    private readonly support: SupportContact,
+    private readonly terms: TermsVersionProvider,
+    private readonly welcome: WelcomeEmailService,
+    private readonly guardians?: GuardianNoticeService,
+    private readonly audience?: AudienceSyncService,
   ) {}
 
-  async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string): Promise<SignUpResult> {
+  async signUp(input: SignUpInput, device: DeviceInfo, correlationId?: string, ip?: string): Promise<SignUpResult> {
     const email = parseField(emailSchema, input.email, 'email')
+    await this.limitNetwork('signup-net', ip, LIMITS.signUpPerNetwork, 'Too many sign-ups from your network. Try again in a few minutes.')
     const displayName = parseField(displayNameSchema, input.displayName, 'displayName')
-    const dateOfBirth = parseField(dateOfBirthSchema, input.dateOfBirth, 'dateOfBirth')
-    // ADR-0091: too young for an account — nothing is created or kept, and an existing account is not touched.
-    if (isBelowMinimumAge(dateOfBirth, this.config.accountMinimumAge)) throw Errors.underMinimumAge(UNDER_MINIMUM_AGE_MESSAGE, ['input', 'dateOfBirth'])
-    if (input.acceptedTermsVersion !== TERMS_VERSION) {
+    // ADR-0104: the age typed in whole years, or the age today from an older app's date of birth. No date is stored.
+    const declared = readDeclaredAge(input)
+    // ADR-0103: the version in effect now. The consent rows record this same value.
+    const termsVersion = this.terms.current()
+    if (input.acceptedTermsVersion !== termsVersion) {
       throw Errors.validation('Accept the current Terms and Privacy Policy to continue.', ['input', 'acceptedTermsVersion'])
     }
     await this.passwords.assertAcceptable(input.password)
     if (input.institutionalEmail) await this.institutional.check(input.institutionalEmail, ['input', 'institutionalEmail'])
+    await this.access.assertAllowed(email)
+    const role = (await this.access.roleFor(email)) ?? 'STUDENT'
+    // Below the minimum the account is kept as AGE_BLOCKED (no session). An address that already has an account is not changed.
+    if (isBelowMinimumAge(declared.value.declaredAge, enforcedMinimumAge(this.settings.minimumAge()))) {
+      const passwordHash = await this.passwords.hash(input.password)
+      await this.ageBlock.holdSignUp({ email, displayName, age: declared.value, passwordHash, globalRole: role, termsVersion })
+      throw ageRestrictedError(await this.support.email(), ['input', declared.field])
+    }
     const existing = await this.db.user.findUnique({
       where: { email },
-      select: { id: true, deletedAt: true, emailVerifiedAt: true, passwordHash: true, displayName: true },
+      select: { id: true, email: true, deletedAt: true, emailVerifiedAt: true, passwordHash: true, displayName: true },
     })
     if (existing) {
+      // The study publisher cannot gain a password, including through the email-link that attaches one to a
+      // verified account that has none (ADR-0098).
+      if (isStudyPublisher(existing)) throw Errors.conflict(ACCOUNT_EXISTS, ['input', 'email'])
       // A password is attached only when the account's email is already verified and it has no password yet
       // (a Google, GitHub or LinkedIn account). The link proves this caller owns the inbox. Anything else is the
       // same "sign in instead" answer: no second account, and no password written over one that is already set.
@@ -86,6 +122,9 @@ export class AuthService {
       return { status: 'emailLinkPending' }
     }
 
+    // After the floor and after an existing account, so a blocked sign-up stores no parent address and a conflict stays a conflict.
+    const parentEmail = declared.value.declaredAge < GUARDIAN_CONSENT_UNDER ? requireParentEmail(email, input.parentEmail) : null
+
     const id = newId()
     const passwordHash = await this.passwords.hash(input.password)
     try {
@@ -94,21 +133,28 @@ export class AuthService {
           data: {
             id,
             email,
+            // Never a reserved brand or role handle (`learnvianotes`, `lvn`, `admin`, …).
             handle: await freeHandle(tx, displayName),
             displayName,
             passwordHash,
-            dateOfBirth,
+            ...declared.value,
             registrationCompletedAt: new Date(),
+            globalRole: role,
+            // Under the consent age the account is a restricted minor (ADR-0108): no usage analytics.
+            analyticsOptOut: declared.value.declaredAge < this.settings.consentAge(),
           },
         })
         await tx.consentRecord.createMany({
-          data: (['TERMS', 'PRIVACY', 'PUBLIC_CONTENT_LICENCE'] as const).map((kind) => ({ id: newId(), userId: id, kind, version: TERMS_VERSION })),
+          data: (['TERMS', 'PRIVACY', 'PUBLIC_CONTENT_LICENCE'] as const).map((kind) => ({ id: newId(), userId: id, kind, version: termsVersion })),
         })
+        const guardian = parentEmail ? guardianConsentFields(declared.value.declaredAge, this.settings.guardianNoticeVersion(), new Date(), parentEmail) : null
+        if (guardian) await tx.guardianConsent.create({ data: { id: newId(), userId: id, ...guardian } })
       })
     } catch (e) {
       // Two sign-ups with the same email at once: the unique index decides.
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        const raced = await this.db.user.findUnique({ where: { email }, select: { id: true, deletedAt: true, emailVerifiedAt: true, passwordHash: true, displayName: true } })
+        const raced = await this.db.user.findUnique({ where: { email }, select: { id: true, email: true, deletedAt: true, emailVerifiedAt: true, passwordHash: true, displayName: true } })
+        if (raced && isStudyPublisher(raced)) throw Errors.conflict(ACCOUNT_EXISTS, ['input', 'email'])
         if (raced && !raced.deletedAt && raced.passwordHash === null && raced.emailVerifiedAt) {
           await this.startEmailLink(raced.id, email, raced.displayName, input.password)
           return { status: 'emailLinkPending' }
@@ -118,8 +164,12 @@ export class AuthService {
       throw e
     }
 
+    // After the account is stored. A mail or Redis failure here does not undo it, and does not fail sign-up.
+    await this.welcome.schedule(id)
+    await this.audience?.schedule(id)
+    if (parentEmail) await this.guardians?.notify(id)
     await this.sendEmailVerification(id, email, displayName)
-    if (input.institutionalEmail) await this.institutional.start(id, input.institutionalEmail)
+    if (input.institutionalEmail) await this.institutional.start(id, input.institutionalEmail, ['input', 'institutionalEmail'], ip)
     await this.events.publish('UserRegistered', { userId: id }, { correlationId })
     return { status: 'created', session: await this.sessions.start(id, device) }
   }
@@ -134,11 +184,18 @@ export class AuthService {
     }
     const limit = await this.limiter.hit(`signin:${email}`, LIMITS.signIn)
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many sign-in attempts. Try again in a few minutes.')
+    const locked = await this.limiter.peek(`signin-fail-addr:${email}`, LIMITS.passwordFailuresPerAddress)
+    if (!locked.allowed) {
+      throw Errors.rateLimited(locked.retryAfter, 'Password sign-in for this email is paused after many wrong passwords. Sign in with a code sent to your email instead, or reset your password.')
+    }
+    await this.access.assertAllowed(email)
 
-    const user = await this.db.user.findUnique({ where: { email }, select: { id: true, passwordHash: true, deletedAt: true, emailVerifiedAt: true } })
-    const ok = await this.passwords.verify(user && !user.deletedAt ? user.passwordHash : null, password)
+    const user = await this.db.user.findUnique({ where: { email }, select: { id: true, email: true, passwordHash: true, deletedAt: true, emailVerifiedAt: true } })
+    // The study publisher has no password. A hash written onto the row later still does not sign in.
+    const ok = await this.passwords.verify(user && !user.deletedAt && !isStudyPublisher(user) ? user.passwordHash : null, password)
     if (!user || !ok) {
       if (network) await this.limiter.hit(`signin-fail:${network}`, LIMITS.signInFailuresPerNetwork)
+      await this.limiter.hit(`signin-fail-addr:${email}`, LIMITS.passwordFailuresPerAddress)
       throw Errors.validation('Email or password is incorrect.')
     }
 
@@ -154,7 +211,11 @@ export class AuthService {
    * Confirms the sign-in email from the link in the verification email. A LINK_EMAIL link instead attaches the
    * password chosen at sign-up to the account that already had this address, and does not sign anyone in.
    */
-  async verifyEmail(token: string): Promise<void> {
+  async verifyEmail(token: string): Promise<{ userId: string }> {
+    const preview = await this.readableToken(token, ['VERIFY_EMAIL', 'LINK_EMAIL'])
+    const owner = await this.db.user.findUnique({ where: { id: preview.userId }, select: { id: true, email: true, deletedAt: true } })
+    if (!owner || owner.deletedAt || isStudyPublisher(owner)) throw Errors.validation(INVALID_LINK, ['input', 'token'])
+    await this.access.assertAllowed(owner.email)
     const row = await this.consumeToken(token, ['VERIFY_EMAIL', 'LINK_EMAIL'])
     if (row.purpose === 'LINK_EMAIL') {
       if (!row.passwordHash) throw Errors.validation(INVALID_LINK, ['input', 'token'])
@@ -165,20 +226,39 @@ export class AuthService {
       if (count !== 1) throw Errors.validation(INVALID_LINK, ['input', 'token'])
       const user = await this.db.user.findUniqueOrThrow({ where: { id: row.userId }, select: { id: true, email: true } })
       await this.legacy.match(user.id, { verifiedEmail: user.email })
-      return
+      return { userId: user.id }
     }
     const user = await this.db.user.update({ where: { id: row.userId }, data: { emailVerifiedAt: new Date() }, select: { id: true, email: true } })
-    // A verified email may find the learner's data from the old site (ADR-0023).
+    // A verified email may find the learner's data from the old site (ADR-0023). Institution verification is unchanged.
     await this.legacy.match(user.id, { verifiedEmail: user.email })
+    return { userId: user.id }
+  }
+
+  /**
+   * Emails another login-email link to the signed-in account. Already verified: ok, and no mail. The limit is
+   * three an hour and is spent only when a mail is sent.
+   */
+  async resendVerification(userId: string): Promise<void> {
+    const user = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { id: true, email: true, displayName: true, emailVerifiedAt: true } })
+    if (!user || isStudyPublisher(user)) throw Errors.unauthenticated()
+    if (user.emailVerifiedAt) return
+    await this.access.assertAllowed(user.email)
+    const limit = await this.limiter.hit(`verify-resend:${userId}`, LIMITS.verifyEmailResend)
+    if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many verification emails. Try again later.')
+    await this.sendEmailVerification(user.id, user.email, user.displayName)
   }
 
   /** Always succeeds for the caller (no account enumeration); emails a link only if an account exists. */
-  async requestPasswordReset(rawEmail: string): Promise<void> {
+  async requestPasswordReset(rawEmail: string, ip?: string): Promise<void> {
     const email = parseField(emailSchema, rawEmail, 'email')
+    await this.limitNetwork('reset-net', ip, LIMITS.passwordResetPerNetwork, 'Too many reset requests from your network. Try again later.')
     const limit = await this.limiter.hit(`reset:${email}`, LIMITS.passwordReset)
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'Too many reset requests. Try again later.')
-    const user = await this.db.user.findUnique({ where: { email }, select: { id: true, displayName: true, deletedAt: true } })
-    if (!user || user.deletedAt) return
+    // Same answer as an unknown address: the caller cannot tell whether the email is on the list.
+    if (!(await this.access.allows(email))) return
+    const user = await this.db.user.findUnique({ where: { email }, select: { id: true, email: true, displayName: true, deletedAt: true } })
+    // No reset mail for the study publisher, and no token that could set a password if the address ever received one.
+    if (!user || user.deletedAt || isStudyPublisher(user)) return
     const token = randomToken()
     await this.db.emailToken.create({
       data: { id: newId(), userId: user.id, purpose: 'RESET_PASSWORD', tokenHash: sha256(token), expiresAt: new Date(Date.now() + RESET_PASSWORD_TTL_MINUTES * 60_000) },
@@ -193,6 +273,12 @@ export class AuthService {
   /** Sets a new password from a reset link and signs the account out everywhere. */
   async resetPassword(token: string, password: string): Promise<void> {
     await this.passwords.assertAcceptable(password)
+    const preview = await this.readableToken(token, 'RESET_PASSWORD')
+    const owner = await this.db.user.findUnique({ where: { id: preview.userId }, select: { id: true, email: true, deletedAt: true } })
+    // An unlisted address, and the study publisher, look like an expired link. The reset does not reveal the list.
+    if (!owner || owner.deletedAt || isStudyPublisher(owner) || !(await this.access.allows(owner.email))) {
+      throw Errors.validation(INVALID_LINK, ['input', 'token'])
+    }
     const row = await this.consumeToken(token, 'RESET_PASSWORD')
     const user = await this.db.user.update({
       where: { id: row.userId },
@@ -202,6 +288,8 @@ export class AuthService {
     })
     await this.db.emailToken.updateMany({ where: { userId: user.id, purpose: 'RESET_PASSWORD', usedAt: null }, data: { usedAt: new Date() } })
     await this.sessions.revokeAll(user.id)
+    // A new password ends the pause that wrong passwords put on this address (ADR-0116).
+    await this.limiter.reset(`signin-fail-addr:${user.email.toLowerCase()}`)
     await this.mailer.send(user.email, 'passwordChanged', { displayName: user.displayName })
   }
 
@@ -232,16 +320,30 @@ export class AuthService {
     await this.mailer.send(email, 'verifyEmail', { displayName, link: this.link('/verify', token) })
   }
 
+  /** A single-use email token that has not been used or expired. Does not mark it used. */
+  private async readableToken(token: string, purpose: 'VERIFY_EMAIL' | 'RESET_PASSWORD' | 'LINK_EMAIL' | Array<'VERIFY_EMAIL' | 'RESET_PASSWORD' | 'LINK_EMAIL'>) {
+    const allowed = Array.isArray(purpose) ? purpose : [purpose]
+    const row = await this.db.emailToken.findUnique({ where: { tokenHash: sha256(token) } })
+    if (!row || !allowed.includes(row.purpose) || row.usedAt || row.expiresAt <= new Date()) throw Errors.validation(INVALID_LINK, ['input', 'token'])
+    return row
+  }
+
   /** Marks a single-use email token used, or throws VALIDATION if it is unknown, used or expired. */
   private async consumeToken(token: string, purpose: 'VERIFY_EMAIL' | 'RESET_PASSWORD' | 'LINK_EMAIL' | Array<'VERIFY_EMAIL' | 'RESET_PASSWORD' | 'LINK_EMAIL'>) {
-    const allowed = Array.isArray(purpose) ? purpose : [purpose]
+    const row = await this.readableToken(token, purpose)
     const now = new Date()
-    const row = await this.db.emailToken.findUnique({ where: { tokenHash: sha256(token) } })
-    if (!row || !allowed.includes(row.purpose) || row.usedAt || row.expiresAt <= now) throw Errors.validation(INVALID_LINK, ['input', 'token'])
     // Drop a pending password hash as the token is spent, so it is not kept after the link is used or rejected.
     const { count } = await this.db.emailToken.updateMany({ where: { id: row.id, usedAt: null }, data: { usedAt: now, passwordHash: null } })
     if (count !== 1) throw Errors.validation(INVALID_LINK, ['input', 'token'])
     return row
+  }
+
+  /** One sliding window per network (IPv4, or IPv6 /64). No address: nothing to key, so the caller's other limits still apply. */
+  private async limitNetwork(name: string, ip: string | undefined, limit: Limit, message: string): Promise<void> {
+    const network = clientNetwork(ip)
+    if (!network) return
+    const hit = await this.limiter.hit(`${name}:${network}`, limit)
+    if (!hit.allowed) throw Errors.rateLimited(hit.retryAfter, message)
   }
 
   private link(path: string, token: string): string {

@@ -1,5 +1,7 @@
 import { Module, type DynamicModule } from '@nestjs/common'
 import { AI_CONFIG, type AiConfig } from './ai.config'
+import { AiAdminStats } from './application/admin-stats'
+import { AiPlanUsage } from './application/plan-usage'
 import { AiGateway } from './application/ai-gateway'
 import { AiKeys } from './application/ai-keys'
 import { AI_PROVIDER_ADAPTER, AiProviders } from './application/ai-providers'
@@ -10,16 +12,22 @@ import { AiEmbeddings } from './application/ai-embeddings'
 import { AskService } from './application/ask.service'
 import { PublicPipeline } from './application/public-pipeline'
 import { MediaInput } from './application/media-input'
+import { VoiceNotesService } from './application/voice-notes.service'
 import { NoteMaterial } from './application/note-material'
 import { AiPageVision } from './application/page-vision'
 import { AiSkillsReader } from './application/skills-reader'
 import { AiDailyLines } from './application/daily-lines'
 import { AiAccountErasure } from './application/account-erasure'
+import { AiReportsService } from './application/ai-reports.service'
+import { GeminiStartup } from './application/gemini-startup'
 import { PromptLibrary } from './application/prompts'
 import { AiResolver } from './graphql/ai.resolver'
 import { AiSettingsResolver } from './graphql/ai-settings.resolver'
 import { AiTasksResolver, NoteAiArtifactsResolver } from './graphql/ai-tasks.resolver'
 import { AskResolver } from './graphql/ai-ask.resolver'
+import { VoiceResolver } from './graphql/voice.resolver'
+import { AiReportsResolver } from './graphql/ai-reports.resolver'
+import { AiAnswerLabelResolver, AiArtifactLabelResolver, AiInsightLabelResolver, NotesFromTranscriptLabelResolver, TranscriptLabelResolver } from './graphql/ai-label.resolver'
 import { InsightsResolver, NoteInsightsResolver } from './graphql/ai-insights.resolver'
 import { OllamaProvider } from './infrastructure/ollama'
 
@@ -44,14 +52,19 @@ export class AiModule {
         AiKeys,
         AiProviders,
         AiGateway,
+        AiAdminStats,
+        AiPlanUsage,
         AiSettingsService,
         AiTasksService,
         MediaInput,
+        VoiceNotesService,
         NoteMaterial,
         AiPageVision,
         AiSkillsReader,
         AiDailyLines,
         AiAccountErasure,
+        AiReportsService,
+        GeminiStartup,
         AskService,
         PublicPipeline,
         AiEmbeddings,
@@ -63,8 +76,15 @@ export class AiModule {
         NoteInsightsResolver,
         InsightsResolver,
         AiSettingsResolver,
+        VoiceResolver,
+        AiReportsResolver,
+        AiAnswerLabelResolver,
+        AiArtifactLabelResolver,
+        AiInsightLabelResolver,
+        TranscriptLabelResolver,
+        NotesFromTranscriptLabelResolver,
       ],
-      exports: [AiGateway, AiTasksService, AskService, PublicPipeline, AiEmbeddings, AiExport, AiPageVision, AiSkillsReader, AiDailyLines],
+      exports: [AiGateway, AiAdminStats, AiTasksService, AskService, PublicPipeline, AiEmbeddings, AiExport, AiPageVision, AiSkillsReader, AiDailyLines],
     }
   }
 }

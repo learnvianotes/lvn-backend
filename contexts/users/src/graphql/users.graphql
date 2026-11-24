@@ -5,7 +5,7 @@ extend schema @link(url: "https://specs.apollo.dev/federation/v2.6", import: ["@
 scalar DateTime
 scalar UUID
 
-enum GlobalRole { STUDENT TEACHER PLATFORM_ADMIN }
+enum GlobalRole { STUDENT TEACHER MANAGER PLATFORM_ADMIN }
 enum VerificationMethod { INSTITUTIONAL_EMAIL TEACHER DOCUMENTS }
 
 "A person on LVN (§4.1). Fields marked viewer-only are null for anyone else."
@@ -18,13 +18,17 @@ type User @key(fields: "id") {
   emailVerified: Boolean!
   "False until the registration details are given (ADR-0017)"
   registrationComplete: Boolean!
-  "Verified by institutional email, a teacher, or platform admins (ADR-0019)"
+  "Verified by institutional email, a teacher, or platform admins (ADR-0019). The stored institution flag. A platform admin can be false here and still need no verification."
   verified: Boolean!
+  "Viewer only. False for a platform admin, and for an account that is already institution-verified. True when this signed-in person should still verify. Null on anyone else's User. Clients hide verify-your-account prompts when this is false; do not key those prompts off verified alone."
+  viewerNeedsVerification: Boolean
   verificationMethod: VerificationMethod
   globalRole: GlobalRole!
   createdAt: DateTime!
   "Viewer only: when the account will be deleted, if its owner asked (ADR-0088)"
   deletionScheduledFor: DateTime
+  "Viewer only. When true, usage analytics are not stored for this account."
+  analyticsOptOut: Boolean
 }
 
 type Query {

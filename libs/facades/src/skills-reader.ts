@@ -13,6 +13,6 @@ export interface ReadSkill {
 export interface SkillsReader {
   /** Whether text can be read now (AI on and answering); otherwise only what needs no AI is imported. */
   available(): Promise<boolean>
-  /** What the text says, at most 30 items, for the teacher to review. */
-  read(source: 'a GitHub profile' | 'a personal or faculty page', text: string): Promise<ReadSkill[]>
+  /** What the text says, at most 30 items, for the teacher to review. `subjectId` is that teacher. */
+  read(source: 'a GitHub profile' | 'a personal or faculty page', text: string, subjectId?: string | null): Promise<ReadSkill[]>
 }

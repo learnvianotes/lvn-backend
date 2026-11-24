@@ -1,0 +1,4 @@
+extend type Query {
+  "Public. This running build: the package version plus the short git SHA, as vX.Y.Z+sha. Not the terms date (termsVersion)."
+  version: String!
+}

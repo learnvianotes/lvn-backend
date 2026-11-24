@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
-export type EmailKind = 'CLASSROOM_POST' | 'DIGEST'
-const KINDS: EmailKind[] = ['CLASSROOM_POST', 'DIGEST']
+export type EmailKind = 'CLASSROOM_POST' | 'DIGEST' | 'MARKETING'
+const KINDS: EmailKind[] = ['CLASSROOM_POST', 'DIGEST', 'MARKETING']
 
 const mac = (secret: string, userId: string, kind: EmailKind) => createHmac('sha256', secret).update(`unsubscribe:${userId}:${kind}`).digest('base64url')
 

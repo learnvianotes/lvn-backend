@@ -1,18 +1,23 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { Errors } from '@lvn-backend/errors'
+import { LimitKey } from '@lvn/contracts/domain'
+import { assertWithinPlan, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { MAILER, type Mailer } from '@lvn-backend/facades'
 import { newId, Prisma, PrismaService } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
 import { domainAndParents, domainOf, isAcademic, isPersonalOrDisposable } from '../domain/email-domains'
+import { clientNetwork } from '../domain/network'
 import { emailSchema } from '../domain/rules'
 import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { EntitlementService } from './entitlement.service'
 import { MX_LOOKUP, type MxLookup } from './providers'
 import { hmac, sameBytes, sixDigitCode } from './secrets'
 
 export const CODE_TTL_MINUTES = 15
 export const MAX_CODE_ATTEMPTS = 5
 const SENDS_PER_HOUR = { max: 3, windowSeconds: 3600 }
+/** Codes from one network, in addition to the per-user cap. Keyed `instcode-net`. */
+export const CODES_PER_NETWORK_PER_HOUR = { max: 30, windowSeconds: 3600 }
 
 export type InstitutionalStatus = 'NONE' | 'CODE_SENT' | 'CONFIRMED' | 'PENDING_REVIEW'
 
@@ -31,6 +36,7 @@ export class InstitutionalEmailService {
     @Inject(EVENT_BUS) private readonly events: EventBus,
     @Inject(MX_LOOKUP) private readonly mx: MxLookup,
     @Inject(USERS_CONFIG) private readonly config: UsersConfig,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   /** Checks an address before anything is stored, so sign-up can refuse it as a field error. */
@@ -47,11 +53,11 @@ export class InstitutionalEmailService {
   }
 
   /** Stores the address as pending and sends it a code. A previous pending address is replaced. */
-  async start(userId: string, raw: string, field = ['input', 'institutionalEmail']): Promise<void> {
+  async start(userId: string, raw: string, field = ['input', 'institutionalEmail'], ip?: string): Promise<void> {
     const { email, domain } = await this.check(raw, field)
     const current = await this.db.institutionalEmail.findFirst({ where: { userId, verifiedAt: { not: null }, replacedAt: null }, select: { email: true } })
     if (current?.email === email) throw Errors.conflict('This address is already confirmed on your account.', field)
-    await this.limitSends(userId)
+    await this.limitSends(userId, ip)
 
     const organizationId = await this.organizationFor(domain)
     const id = newId()
@@ -67,9 +73,9 @@ export class InstitutionalEmailService {
   }
 
   /** A new code for the pending address. */
-  async resend(userId: string): Promise<void> {
+  async resend(userId: string, ip?: string): Promise<void> {
     const pending = await this.pending(userId)
-    await this.limitSends(userId)
+    await this.limitSends(userId, ip)
     const code = sixDigitCode()
     await this.db.institutionalEmail.update({
       where: { id: pending.id },
@@ -106,6 +112,12 @@ export class InstitutionalEmailService {
         }
         // A faculty address is evidence, not a role: membership starts as STUDENT; TEACHER comes from review (§5).
         if (pending.organizationId) {
+          const already = await tx.membership.findUnique({ where: { userId_organizationId: { userId, organizationId: pending.organizationId } } })
+          if (!already) {
+            const cap = await this.entitlements.limit(userId, LimitKey.ORG_SEATS)
+            const seats = BigInt(await tx.membership.count({ where: { userId } }))
+            assertWithinPlan(LimitKey.ORG_SEATS, cap, seats)
+          }
           await tx.membership.upsert({
             where: { userId_organizationId: { userId, organizationId: pending.organizationId } },
             create: { userId, organizationId: pending.organizationId, role: 'STUDENT' },
@@ -149,7 +161,13 @@ export class InstitutionalEmailService {
     return row
   }
 
-  private async limitSends(userId: string): Promise<void> {
+  /** The per-user cap, and `instcode-net` when the call has an address. The network cap is checked first so a full network does not spend the person's own three. */
+  private async limitSends(userId: string, ip?: string): Promise<void> {
+    const network = clientNetwork(ip)
+    if (network) {
+      const net = await this.limiter.hit(`instcode-net:${network}`, CODES_PER_NETWORK_PER_HOUR)
+      if (!net.allowed) throw Errors.rateLimited(net.retryAfter, `Too many codes from your network. Try again in ${net.retryAfter} seconds.`)
+    }
     const limit = await this.limiter.hit(`instcode:${userId}`, SENDS_PER_HOUR)
     if (!limit.allowed) throw Errors.rateLimited(limit.retryAfter, 'You can ask for 3 codes an hour. Try again later.')
   }

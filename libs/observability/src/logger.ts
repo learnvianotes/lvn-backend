@@ -3,7 +3,7 @@ import pino, { type DestinationStream, type Level, type Logger } from 'pino'
 import { logContext } from './log-context'
 
 /**
- * Never written to a log (§7.2): credentials, tokens, one-time codes and the date of birth, wherever they appear one
+ * Never written to a log (§7.2): credentials, tokens, one-time codes, the date of birth and the age (ADR-0104), wherever they appear one
  * level deep in a logged object, and the request headers that carry them. Request bodies and GraphQL variables are
  * not logged at all; this is the second line of defence.
  */
@@ -13,7 +13,7 @@ export const REDACTED_PATHS = [
   'res.headers["set-cookie"]',
   'authorization',
   'cookie',
-  ...['password', 'newPassword', 'refreshToken', 'accessToken', 'idToken', 'token', 'code', 'codeVerifier', 'dateOfBirth', 'secret', 'apiKey'].flatMap((k) => [k, `*.${k}`]),
+  ...['password', 'newPassword', 'refreshToken', 'accessToken', 'idToken', 'token', 'code', 'codeVerifier', 'dateOfBirth', 'age', 'declaredAge', 'secret', 'apiKey'].flatMap((k) => [k, `*.${k}`]),
 ]
 
 export interface LoggerOptions {

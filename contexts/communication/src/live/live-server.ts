@@ -3,7 +3,8 @@ import { HttpAdapterHost } from '@nestjs/core'
 import { buildSchema } from 'graphql'
 import { useServer } from 'graphql-ws/use/ws'
 import { WebSocketServer, type WebSocket } from 'ws'
-import type { Server } from 'node:http'
+import type { IncomingMessage, Server } from 'node:http'
+import type { Duplex } from 'node:stream'
 import { AccessTokenVerifier, TOKEN_AUDIENCE } from '@lvn-backend/auth-guard'
 import { SessionRevocations } from '@lvn-backend/redis'
 import type { LiveEvent } from '@lvn/contracts/notifications'
@@ -45,6 +46,17 @@ export const LIVE_SDL = /* GraphQL */ `
 
 /** Closed with this code for a bad, expired or revoked token; clients reconnect with a fresh one. */
 export const LIVE_FORBIDDEN = 4403
+
+/**
+ * A browser sends Origin on the WebSocket upgrade. It must be on the API's CORS allow-list. Native clients (the
+ * mobile app) send no Origin and are allowed: the access token in `connection_init` is what authenticates them.
+ * More than one Origin value is not a browser handshake and is refused.
+ */
+export function liveUpgradeAllowed(origin: string | string[] | undefined, allowed: readonly string[]): boolean {
+  if (origin === undefined || origin === '') return true
+  const value = Array.isArray(origin) ? (origin.length === 1 ? origin[0] : undefined) : origin
+  return value !== undefined && value !== '' && allowed.includes(value)
+}
 /** Sockets one viewer may hold on one instance (tabs, devices). */
 const SOCKETS_PER_VIEWER = 20
 
@@ -67,7 +79,9 @@ interface Connection {
 export class LiveServer implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly log = new Logger('Live')
   private readonly verifier: AccessTokenVerifier
+  private readonly liveOrigins: readonly string[]
   private readonly perViewer = new Map<string, number>()
+  private server?: Server
   private wss?: WebSocketServer
   private dispose?: () => void | Promise<void>
 
@@ -77,13 +91,34 @@ export class LiveServer implements OnApplicationBootstrap, OnApplicationShutdown
     private readonly revocations: SessionRevocations,
     @Inject(COMMUNICATION_CONFIG) config: CommunicationConfig,
   ) {
-    this.verifier = new AccessTokenVerifier(config.jwtPublicKey, config.jwtIssuer, TOKEN_AUDIENCE)
+    this.verifier = new AccessTokenVerifier(config.jwtPublicKey, [config.jwtIssuer, ...config.jwtExtraIssuers], TOKEN_AUDIENCE)
+    this.liveOrigins = config.liveOrigins
+  }
+
+  /** Refuses a browser Origin that is not on the allow-list before the socket is accepted. */
+  private readonly onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
+    let pathname: string
+    try {
+      pathname = new URL(req.url ?? '/', 'http://localhost').pathname
+    } catch {
+      return
+    }
+    if (pathname !== LIVE_PATH || !this.wss) return
+    if (!liveUpgradeAllowed(req.headers.origin, this.liveOrigins)) {
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+      return
+    }
+    this.wss.handleUpgrade(req, socket, head, (ws) => {
+      this.wss?.emit('connection', ws, req)
+    })
   }
 
   onApplicationBootstrap(): void {
     const server = this.adapter.httpAdapter?.getHttpServer() as Server | undefined
     if (!server) return
-    this.wss = new WebSocketServer({ server, path: LIVE_PATH, maxPayload: 64 * 1024 })
+    this.server = server
+    this.wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 })
+    server.on('upgrade', this.onUpgrade)
     const schema = buildSchema(LIVE_SDL)
     const disposable = useServer<Record<string, unknown>, { connection: Connection }>(
       {
@@ -152,6 +187,7 @@ export class LiveServer implements OnApplicationBootstrap, OnApplicationShutdown
   }
 
   async onApplicationShutdown(): Promise<void> {
+    this.server?.off('upgrade', this.onUpgrade)
     if (!this.wss) return
     for (const client of this.wss.clients) client.close(1001, 'Server going away')
     await this.dispose?.()

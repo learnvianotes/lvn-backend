@@ -26,12 +26,12 @@ const signUpInput = (over: Record<string, unknown> = {}) => ({
   email: newEmail(),
   password: 'correct horse battery staple',
   displayName: 'Asha Rao',
-  dateOfBirth: '2004-05-01',
-  acceptedTermsVersion: '2026-10-08',
+  age: 22,
+  acceptedTermsVersion: '2026-11-12',
   ...over,
 })
 
-/** The date `years` ago today (UTC), as the sign-up forms send it. */
+/** The date `years` ago today (UTC), as sign-up forms from before ADR-0104 send it. */
 const yearsAgo = (years: number) => {
   const d = new Date()
   d.setUTCFullYear(d.getUTCFullYear() - years)
@@ -39,6 +39,26 @@ const yearsAgo = (years: number) => {
 }
 
 type SignUpResult = { signUp: { session: { accessToken: string; refreshToken: string | null; user: { id: string; email: string; emailVerified: boolean; registrationComplete: boolean; verified: boolean; handle: string } } | null; userErrors: { field: string[] | null; message: string; code: string }[] } }
+
+/** 30 days, SESSION_TTL_DAYS. Express sends it as Max-Age in seconds. */
+const REFRESH_MAX_AGE = 30 * 24 * 60 * 60
+
+const refreshSetCookie = (res: request.Response): string => {
+  const cookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []).find((c) => c.startsWith('lvn_rt='))
+  expect(cookie).toBeDefined()
+  return cookie!
+}
+
+/** Host-only lvn_rt: HttpOnly, SameSite=Lax, Path=/graphql, Max-Age, and no Domain attribute. */
+const expectRefreshCookie = (cookie: string, secure: boolean) => {
+  expect(cookie).toMatch(/HttpOnly/)
+  expect(cookie).toMatch(/SameSite=Lax/)
+  expect(cookie).toMatch(/Path=\/graphql/)
+  expect(cookie).toMatch(new RegExp(`Max-Age=${REFRESH_MAX_AGE}\\b`))
+  expect(cookie.split(';').some((part) => part.trim().toLowerCase().startsWith('domain='))).toBe(false)
+  if (secure) expect(cookie).toMatch(/;\s*Secure\b/)
+  else expect(cookie).not.toMatch(/Secure/)
+}
 
 describe('auth', () => {
   let t: TestApp
@@ -66,37 +86,36 @@ describe('auth', () => {
       expect(res.data!.signUp.userErrors).toEqual([])
       expect(session.user).toMatchObject({ email: input.email, emailVerified: false, registrationComplete: true, verified: false, handle: 'asharao' })
       expect(session.refreshToken).toBeNull() // web: the refresh token is in the cookie
+      // ADR-0104: the typed age and when it was given are kept; no date of birth.
+      const row = await t.app.get(PrismaService).user.findUniqueOrThrow({ where: { id: session.user.id } })
+      expect(row).toMatchObject({ declaredAge: 22, dateOfBirth: null })
+      expect(Date.now() - row.ageDeclaredAt!.getTime()).toBeLessThan(60_000)
 
       expect((await t.gql(VIEWER, {}, session.accessToken)).data).toEqual({ viewer: { id: session.user.id, emailVerified: false } })
 
       const email = await mail.latestTo(input.email)
       expect(email.subject).toBe('Confirm your email')
       const token = new URL(/href="([^"]+\/verify\?token=[^"]+)"/.exec(email.html)![1]!.replace(/&amp;/g, '&')).searchParams.get('token')!
-      const verified = await t.gql<{ verifyEmail: { ok: boolean } }>('mutation ($t: String!) { verifyEmail(input: { token: $t }) { ok userErrors { code } } }', { t: token })
+      const verified = await t.gql<{ verifyEmail: { ok: boolean; user: { id: string; emailVerified: boolean; verified: boolean } | null } }>('mutation ($t: String!) { verifyEmail(input: { token: $t }) { ok user { id emailVerified verified } userErrors { code } } }', { t: token })
       expect(verified.data!.verifyEmail.ok).toBe(true)
+      expect(verified.data!.verifyEmail.user).toEqual({ id: session.user.id, emailVerified: true, verified: false })
       expect((await t.gql(VIEWER, {}, session.accessToken)).data).toEqual({ viewer: { id: session.user.id, emailVerified: true } })
 
       const again = await t.gql<{ verifyEmail: { ok: boolean; userErrors: { code: string }[] } }>('mutation ($t: String!) { verifyEmail(input: { token: $t }) { ok userErrors { code } } }', { t: token })
       expect(again.data!.verifyEmail).toEqual({ ok: false, userErrors: [{ code: 'VALIDATION' }] })
     })
 
-    it('sets an HttpOnly, SameSite=Lax refresh cookie scoped to /graphql for the web, not Secure on a plain-HTTP API', async () => {
+    it('sets an HttpOnly, SameSite=Lax refresh cookie scoped to /graphql for the web, not Secure on a plain-HTTP API, and never a Domain', async () => {
       // JWT_ISSUER (the API's public origin) is http:// here: browsers would drop a Secure cookie from it.
       const res = await http().post('/graphql').send({ query: SIGN_UP, variables: { input: signUpInput() } })
-      const cookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []).find((c) => c.startsWith('lvn_rt='))!
-      expect(cookie).toMatch(/HttpOnly/)
-      expect(cookie).not.toMatch(/Secure/)
-      expect(cookie).toMatch(/SameSite=Lax/)
-      expect(cookie).toMatch(/Path=\/graphql/)
+      expectRefreshCookie(refreshSetCookie(res), false)
     })
 
-    it('makes the refresh cookie Secure when the API is served over HTTPS', async () => {
+    it('makes the refresh cookie Secure when the API is served over HTTPS, still with no Domain', async () => {
       const https = await createTestApp({ JWT_ISSUER: 'https://api.example.test' })
       try {
         const res = await request(https.app.getHttpServer()).post('/graphql').send({ query: SIGN_UP, variables: { input: signUpInput() } })
-        const cookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []).find((c) => c.startsWith('lvn_rt='))!
-        expect(cookie).toMatch(/HttpOnly/)
-        expect(cookie).toMatch(/; Secure/)
+        expectRefreshCookie(refreshSetCookie(res), true)
       } finally {
         await https.close()
       }
@@ -108,10 +127,26 @@ describe('auth', () => {
       expect(res.headers['set-cookie']).toBeUndefined()
     })
 
+    it('keeps the refresh token in the cookie when a browser sends the mobile header', async () => {
+      // Sec-Fetch-* is set by the browser and script cannot remove it, so the header is not a way to read lvn_rt.
+      const res = await http().post('/graphql').set('x-lvn-client', 'mobile').set('sec-fetch-site', 'same-origin').set('sec-fetch-mode', 'cors').send({ query: SIGN_UP, variables: { input: signUpInput() } })
+      expect(res.body.data.signUp.session.refreshToken).toBeNull()
+      const cookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []).find((c) => c.startsWith('lvn_rt='))
+      expect(cookie).toMatch(/HttpOnly/)
+      expect(cookie).toMatch(/SameSite=Lax/)
+    })
+
     it.each([
       [{ password: 'short' }, ['input', 'password'], /at least 10/],
-      [{ dateOfBirth: '2004-02-30' }, ['input', 'dateOfBirth'], /real date/],
-      [{ dateOfBirth: '2999-01-01' }, ['input', 'dateOfBirth'], /future/],
+      [{ age: 0 }, ['input', 'age'], /from 1 to 120/],
+      [{ age: 121 }, ['input', 'age'], /from 1 to 120/],
+      [{ age: -5 }, ['input', 'age'], /from 1 to 120/],
+      [{ age: undefined }, ['input', 'age'], /Enter your age/],
+      [{ age: null, dateOfBirth: null }, ['input', 'age'], /Enter your age/],
+      // The deprecated dateOfBirth of apps from before ADR-0104 is still checked as before.
+      [{ age: undefined, dateOfBirth: '2004-02-30' }, ['input', 'dateOfBirth'], /real date/],
+      [{ age: undefined, dateOfBirth: '2999-01-01' }, ['input', 'dateOfBirth'], /future/],
+      [{ age: undefined, dateOfBirth: yearsAgo(0) }, ['input', 'dateOfBirth'], /real date of birth/],
       [{ email: 'not-an-email' }, ['input', 'email'], /valid email/],
       [{ displayName: '   ' }, ['input', 'displayName'], /name/],
       [{ acceptedTermsVersion: '2020-01-01' }, ['input', 'acceptedTermsVersion'], /Terms/],
@@ -121,18 +156,92 @@ describe('auth', () => {
       expect(res.data!.signUp.userErrors).toEqual([{ code: 'VALIDATION', field, message: expect.stringMatching(message) }])
     })
 
-    it('refuses a date of birth below the minimum age and stores nothing (ADR-0091)', async () => {
-      const input = signUpInput({ dateOfBirth: yearsAgo(17) })
+    it.each([17.5, '18', true])('refuses the age %p as VALIDATION before anything is stored', async (age) => {
+      // GraphQL's Int takes whole numbers only; the API reports the bad variable as VALIDATION.
+      const input = signUpInput({ age })
       const res = await t.gql<SignUpResult>(SIGN_UP, { input })
-      expect(res.data!.signUp.session).toBeNull()
-      expect(res.data!.signUp.userErrors).toEqual([{ code: 'UNDER_MINIMUM_AGE', field: ['input', 'dateOfBirth'], message: expect.stringMatching(/only for adults/) }])
-      expect(await t.app.get(PrismaService).user.findUnique({ where: { email: input.email } })).toBeNull()
+      expect(res.data).toBeUndefined()
+      expect(res.errors?.[0]?.extensions.code).toBe('VALIDATION')
+      expect(res.errors?.[0]?.message).toMatch(/input\.age/)
+      expect(await t.app.get(PrismaService).user.count({ where: { email: input.email as string } })).toBe(0)
     })
 
-    it('lets someone in on their eighteenth birthday', async () => {
-      const res = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput({ dateOfBirth: yearsAgo(18) }) })
+    it.each([
+      ['an age', { age: 7 }, 'age'],
+      ['the date of birth an older app sends', { age: undefined, dateOfBirth: yearsAgo(7) }, 'dateOfBirth'],
+    ])('keeps %s below the minimum age as AGE_BLOCKED and returns AGE_RESTRICTED', async (_what, over, field) => {
+      const input = signUpInput(over)
+      const res = await t.gql<{ signUp: { session: { accessToken: string } | null; userErrors: { field: string[] | null; message: string; code: string; supportEmail: string | null }[] } }>(
+        `mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken } userErrors { field message code supportEmail } } }`,
+        { input },
+      )
+      expect(res.data!.signUp.session).toBeNull()
+      expect(res.data!.signUp.userErrors).toEqual([{
+        code: 'AGE_RESTRICTED',
+        field: ['input', field],
+        message: expect.stringMatching(/Contact an admin at support@learnvianotes\.in/),
+        supportEmail: 'support@learnvianotes.in',
+      }])
+      const user = await t.app.get(PrismaService).user.findUnique({ where: { email: input.email as string } })
+      expect(user).toMatchObject({ accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.', analyticsOptOut: true })
+      // Only the age is kept, whichever input it came from (ADR-0104).
+      expect(user).toMatchObject({ declaredAge: 7, dateOfBirth: null })
+      expect(user!.deletedAt).toBeNull()
+      expect(user!.registrationCompletedAt).not.toBeNull()
+      expect(await t.app.get(PrismaService).session.count({ where: { userId: user!.id } })).toBe(0)
+    })
+
+    it('lets someone in who is eighteen', async () => {
+      const res = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput({ age: 18 }) })
       expect(res.data!.signUp.userErrors).toEqual([])
       expect(res.data!.signUp.session).not.toBeNull()
+    })
+
+    it.each([13, 17])('lets a %s-year-old sign up as a restricted minor, records auto_unverified consent, and sign in again', async (age) => {
+      const input = signUpInput({ age, displayName: `Age ${age}`, parentEmail: `parent-${age}@example.com` })
+      const res = await t.gql<SignUpResult>(SIGN_UP, { input })
+      expect(res.data!.signUp.userErrors).toEqual([])
+      const session = res.data!.signUp.session!
+      const db = t.app.get(PrismaService)
+      const user = await db.user.findUniqueOrThrow({ where: { id: session.user.id }, include: { consents: true, guardianConsents: true } })
+      expect(user).toMatchObject({ accountStatus: 'ACTIVE', declaredAge: age, dateOfBirth: null, analyticsOptOut: true, statusReason: null })
+      expect(user.consents.map((c) => c.kind).sort()).toEqual(['PRIVACY', 'PUBLIC_CONTENT_LICENCE', 'TERMS'])
+      expect(user.consents.some((c) => c.kind === 'GUARDIAN')).toBe(false)
+      expect(user.email).toBe(input.email)
+      expect(user.guardianConsents).toEqual([expect.objectContaining({ kind: 'GUARDIAN', method: 'auto_unverified', ageBand: age === 13 ? '13_15' : '16_17', noticeVersion: '2026-11-12', parentEmail: `parent-${age}@example.com`, verifiedAt: null })])
+      const viewer = await t.gql<{ viewer: { restrictedMinor: boolean; analyticsOptOut: boolean } }>(
+        '{ viewer { restrictedMinor analyticsOptOut } }',
+        {},
+        session.accessToken,
+      )
+      expect(viewer.data!.viewer).toEqual({ restrictedMinor: true, analyticsOptOut: true })
+      const stranger = await t.gql<{ userByHandle: { id: string } | null }>('query ($h: String!) { userByHandle(handle: $h) { id } }', { h: session.user.handle })
+      expect(stranger.data!.userByHandle).toBeNull()
+      const own = await t.gql<{ userByHandle: { id: string } | null }>('query ($h: String!) { userByHandle(handle: $h) { id } }', { h: session.user.handle }, session.accessToken)
+      expect(own.data!.userByHandle).toEqual({ id: session.user.id })
+      const again = await t.gql<{ signIn: { session: { user: { id: string } } | null; userErrors: { code: string }[] } }>(SIGN_IN, { input: { email: input.email, password: input.password } })
+      expect(again.data!.signIn.userErrors).toEqual([])
+      expect(again.data!.signIn.session!.user.id).toBe(session.user.id)
+      const optedIn = await t.gql<{ setAnalyticsOptOut: { ok: boolean } }>('mutation { setAnalyticsOptOut(optOut: false) { ok } }', {}, session.accessToken)
+      expect(optedIn.data!.setAnalyticsOptOut.ok).toBe(true)
+      expect(await db.user.findUniqueOrThrow({ where: { id: session.user.id }, select: { analyticsOptOut: true } })).toEqual({ analyticsOptOut: true })
+      expect((await t.gql<{ viewer: { analyticsOptOut: boolean } }>('{ viewer { analyticsOptOut } }', {}, session.accessToken)).data!.viewer.analyticsOptOut).toBe(true)
+    })
+
+    it('lets someone in on their eighteenth birthday from an older app, and stores the age, not the date', async () => {
+      const res = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput({ age: undefined, dateOfBirth: yearsAgo(18) }) })
+      expect(res.data!.signUp.userErrors).toEqual([])
+      const row = await t.app.get(PrismaService).user.findUniqueOrThrow({ where: { id: res.data!.signUp.session!.user.id } })
+      expect(row).toMatchObject({ declaredAge: 18, dateOfBirth: null })
+    })
+
+    it('uses the age when an app sends both, and ignores the date of birth', async () => {
+      const res = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput({ age: 30, dateOfBirth: yearsAgo(10) }) })
+      expect(res.data!.signUp.userErrors).toEqual([])
+      const row = await t.app.get(PrismaService).user.findUniqueOrThrow({ where: { id: res.data!.signUp.session!.user.id } })
+      expect(row).toMatchObject({ declaredAge: 30, dateOfBirth: null })
+      const young = await t.gql<SignUpResult>(SIGN_UP, { input: signUpInput({ age: 7, dateOfBirth: yearsAgo(40) }) })
+      expect(young.data!.signUp.userErrors[0]).toMatchObject({ code: 'AGE_RESTRICTED', field: ['input', 'age'] })
     })
 
     it('refuses an email that already has an account, in any letter case', async () => {
@@ -143,7 +252,7 @@ describe('auth', () => {
     })
 
     it('exposes the terms version new accounts must accept', async () => {
-      expect((await t.gql('{ termsVersion }')).data).toEqual({ termsVersion: '2026-10-08' })
+      expect((await t.gql('{ termsVersion }')).data).toEqual({ termsVersion: '2026-11-12' })
     })
   })
 
@@ -157,6 +266,15 @@ describe('auth', () => {
       const unknown = await t.gql<{ signIn: { session: null; userErrors: { message: string; code: string }[] } }>(SIGN_IN, { input: { email: newEmail(), password: 'wrong password!!' } })
       expect(wrong.data!.signIn.userErrors).toEqual(unknown.data!.signIn.userErrors)
       expect(wrong.data!.signIn.userErrors[0]).toMatchObject({ code: 'VALIDATION', message: 'Email or password is incorrect.' })
+    })
+
+    it('sets the same host-only refresh cookie on sign-in', async () => {
+      const input = signUpInput()
+      await http().post('/graphql').send({ query: SIGN_UP, variables: { input } })
+      const res = await http().post('/graphql').send({ query: SIGN_IN, variables: { input: { email: input.email, password: input.password } } })
+      expect(res.body.data.signIn.session.accessToken).toBeTruthy()
+      expect(res.body.data.signIn.session.refreshToken).toBeNull()
+      expectRefreshCookie(refreshSetCookie(res), false)
     })
 
     it('allows 5 attempts per account per 15 minutes (§7.1)', async () => {
@@ -221,16 +339,33 @@ describe('auth', () => {
     it('requires a session to sign out', async () => {
       expect((await t.gql('mutation { signOut { ok } }')).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
     })
+
+    it('clears the refresh cookie on sign-out with the same Path and no Domain', async () => {
+      const signUp = await http().post('/graphql').send({ query: SIGN_UP, variables: { input: signUpInput() } })
+      const set = refreshSetCookie(signUp)
+      expectRefreshCookie(set, false)
+      const access = signUp.body.data.signUp.session.accessToken as string
+      const out = await http().post('/graphql').set('cookie', set.split(';')[0]!).set('authorization', `Bearer ${access}`).send({ query: 'mutation { signOut { ok } }' })
+      expect(out.body.data.signOut.ok).toBe(true)
+      const cleared = refreshSetCookie(out)
+      expect(cleared).toMatch(/^lvn_rt=;/)
+      expect(cleared).toMatch(/Path=\/graphql/)
+      expect(cleared.split(';').some((part) => part.trim().toLowerCase().startsWith('domain='))).toBe(false)
+    })
   })
 
   describe('password reset', () => {
     const RESET_REQ = 'mutation ($e: String!) { requestPasswordReset(input: { email: $e }) { ok userErrors { code } } }'
     const RESET = 'mutation ($t: String!, $p: String!) { resetPassword(input: { token: $t, password: $p }) { ok userErrors { code field message } } }'
 
-    it('answers ok for an unknown email and sends nothing', async () => {
+    it('answers ok for an unknown email, sends nothing and stores no token', async () => {
       const email = newEmail()
-      expect((await t.gql<{ requestPasswordReset: { ok: boolean } }>(RESET_REQ, { e: email })).data!.requestPasswordReset.ok).toBe(true)
+      const db = t.app.get(PrismaService)
+      const before = await db.emailToken.count()
+      const res = await t.gql<{ requestPasswordReset: { ok: boolean; userErrors: unknown[] } }>(RESET_REQ, { e: email })
+      expect(res.data!.requestPasswordReset).toEqual({ ok: true, userErrors: [] })
       expect(await mail.countTo(email)).toBe(0)
+      expect(await db.emailToken.count()).toBe(before)
     })
 
     it('resets the password from the emailed link and signs out every device', async () => {

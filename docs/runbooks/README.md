@@ -12,6 +12,6 @@ it operates (database and queues: Phase 1; notes: Phase 2). Web-only procedures 
 - `leakage-report.md` — the first hour, day and week after someone saw what they should not (Phase 9)
 - `on-call.md` — SLOs, alerts, who answers and what they do (Phase 9)
 - `lightsail.md` — beta and production on Lightsail: what runs, the memory budget, what Infra provisions, every GitHub
-  secret and variable, the first and every deploy (ADR-0096, ADR-0097)
-- `legacy-content.md` — importing the old site's subjects, topics and Sheet 150 problems from its Firestore as public
-  notes of the LearnViaNotes account (ADR-0098)
+  secret and variable, the first and every deploy (ADR-0096, ADR-0097). The upload scanner is a second instance:
+  `docs/ops/scanner-host.md` (ADR-0102)
+- `legacy-content.md` — the seeded study notes in `content/study`, synced when the migrate container runs (ADR-0098)

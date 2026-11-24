@@ -3,12 +3,16 @@
 scalar UUID
 scalar JSON
 
-enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL UNAVAILABLE UNDER_MINIMUM_AGE }
+enum ErrorCode { UNAUTHENTICATED FORBIDDEN NOT_FOUND VALIDATION CONFLICT RATE_LIMITED INTERNAL UNAVAILABLE UNDER_MINIMUM_AGE AGE_RESTRICTED AI_UNAVAILABLE_FOR_MINOR FEATURE_UNAVAILABLE_FOR_MINOR MINOR_PII_BLOCKED MFA_REQUIRED ADMIN_MFA_REQUIRED }
 
 type UserError @shareable {
   field: [String!]
   message: String!
   code: ErrorCode!
+  "Seconds until a RATE_LIMITED caller may retry. Null for every other code."
+  retryAfter: Int
+  "One address on AGE_RESTRICTED and on a blocked sign-in: SUPPORT_EMAIL (support@learnvianotes.in unless the environment sets another)."
+  supportEmail: String
 }
 
 type OkPayload @shareable {
@@ -81,6 +85,8 @@ type AiArtifact {
   changes: [AiChange!]
   "FAILED: why, in words for the person"
   error: String
+  "True when this text was produced by a model, so clients can show an AI label."
+  aiGenerated: Boolean!
   "Made from the published version (the viewer is a reader) rather than the draft"
   fromPublishedVersion: Boolean!
   "The note was longer than a task reads; its start was used"

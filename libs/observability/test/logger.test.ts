@@ -15,15 +15,18 @@ describe('createLogger', () => {
     expect(new Date(String(lines()[0]!.time)).toISOString()).toBe(lines()[0]!.time)
   })
 
-  it('never writes credentials, tokens, codes or the date of birth', () => {
+  it('never writes credentials, tokens, codes, the date of birth or the age', () => {
     const { logger, lines } = memoryLogger()
     logger.info({
       password: 'hunter2hunter2',
-      input: { refreshToken: 'r-123', code: '123456', dateOfBirth: '2004-05-01', email: 'asha@example.com' },
+      input: { refreshToken: 'r-123', code: '123456', dateOfBirth: '2004-05-01', age: 47, email: 'asha@example.com' },
+      user: { declaredAge: 53 },
       req: { headers: { authorization: 'Bearer abc', cookie: 'lvn_rt=xyz', 'user-agent': 'jest' } },
     })
-    const text = JSON.stringify(lines()[0])
-    for (const secret of ['hunter2hunter2', 'r-123', '123456', '2004-05-01', 'Bearer abc', 'lvn_rt=xyz']) expect(text).not.toContain(secret)
+    const logged = { ...lines()[0] }
+    delete logged.time
+    const text = JSON.stringify(logged)
+    for (const secret of ['hunter2hunter2', 'r-123', '123456', '2004-05-01', '47', '53', 'Bearer abc', 'lvn_rt=xyz']) expect(text).not.toContain(secret)
     expect(lines()[0]).toMatchObject({ password: '[redacted]', input: { email: 'asha@example.com' }, req: { headers: { 'user-agent': 'jest' } } })
   })
 

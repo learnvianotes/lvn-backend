@@ -19,6 +19,8 @@ export interface AiAnswer {
   sources: Array<AiSource>
   /** FAILED: why, in words for the asker */
   error: string | null
+  /** True when this text was produced by a model, so clients can show an AI label. */
+  aiGenerated: boolean
   noteId: string | null
   doubtId: string | null
   createdAt: Date
@@ -40,6 +42,8 @@ export interface AiArtifact {
   changes: Array<AiChange> | null
   /** FAILED: why, in words for the person */
   error: string | null
+  /** True when this text was produced by a model, so clients can show an AI label. */
+  aiGenerated: boolean
   /** Made from the published version (the viewer is a reader) rather than the draft */
   fromPublishedVersion: boolean
   /** The note was longer than a task reads; its start was used */
@@ -98,6 +102,14 @@ export interface AiConnectionIdInput {
   id: string
 }
 
+/** Every model a connection lists, and the select for each use */
+export interface AiConnectionModels {
+  /** Every model the account lists, sorted by id. Nothing is dropped. */
+  all: Array<AiListedModel>
+  /** One select per use, in a fixed order. A use this app cannot call has an empty list. */
+  pickers: Array<AiModelPicker>
+}
+
 export interface AiConnectionPayload {
   connection: AiConnection | null
   userErrors: Array<UserError>
@@ -137,10 +149,35 @@ export interface AiInsight {
   cards: Array<AiCard> | null
   /** Hidden by the owner: only they see it */
   hidden: boolean
+  /** True when this text was produced by a model, so clients can show an AI label. */
+  aiGenerated: boolean
   versionId: string
 }
 
 export type AiLanguage = 'ENGLISH' | 'HINDI' | 'TELUGU'
+
+/** One model a connection's account lists */
+export interface AiListedModel {
+  /** The id the provider uses, sent back as chatModel, embedModel or a route's model */
+  id: string
+  kind: AiModelKind
+  /** Pickers that offer this model. Empty: listed under `all`, shown in no select. */
+  supports: Array<AiModelUse>
+}
+
+/** What a listed model is. A picker offers it only when `supports` includes that picker's use. */
+export type AiModelKind = 'CHAT' | 'EMBEDDING' | 'IMAGE' | 'AUDIO' | 'REALTIME' | 'TTS' | 'MODERATION' | 'OTHER'
+
+/** The models one select offers */
+export interface AiModelPicker {
+  use: AiModelUse
+  models: Array<AiListedModel>
+}
+
+/** A select on /admin/ai. IMAGE, TTS, AUDIO, REALTIME and MODERATION stay empty.
+ * TRANSCRIBE offers models that can hear. Whisper and *-transcribe go to POST /audio/transcriptions.
+ * gpt-audio, Gemini and Gemma take the recording on the chat call. */
+export type AiModelUse = 'CHAT' | 'EMBEDDING' | 'TRANSCRIBE' | 'IMAGE' | 'TTS' | 'AUDIO' | 'REALTIME' | 'MODERATION'
 
 /** Who answers AI calls */
 export type AiProviderKind = 'OLLAMA' | 'OPENAI' | 'ANTHROPIC' | 'GEMINI' | 'OPENAI_COMPATIBLE'
@@ -161,6 +198,33 @@ export interface AiProviderPreset {
   chatModels: Array<string>
   embedModels: Array<string>
 }
+
+/** A report of one AI answer. context is the task, status and note id. The answer text is not here. */
+export interface AiReport {
+  id: string
+  reporterId: string
+  responseId: string
+  /** ANSWER or ARTIFACT */
+  responseKind: string
+  reason: AiReportReason
+  comment: string | null
+  context: unknown
+  status: AiReportStatus
+  resolvedBy: string | null
+  resolvedAt: Date | null
+  createdAt: Date
+}
+
+export interface AiReportPayload {
+  report: AiReport | null
+  userErrors: Array<UserError>
+}
+
+/** Why someone reported a model answer */
+export type AiReportReason = 'INACCURATE' | 'INAPPROPRIATE' | 'HARMFUL' | 'PERSONAL_INFO' | 'OTHER'
+
+/** Where a report sits in the admin queue */
+export type AiReportStatus = 'OPEN' | 'RESOLVED' | 'DISMISSED'
 
 export interface AiSettings {
   connections: Array<AiConnection>
@@ -247,7 +311,7 @@ export interface AskAiPayload {
 /** Where Ask AI looks, always within what the asker may read */
 export type AskAiScope = 'THIS_NOTE' | 'MY_NOTES' | 'MY_PLACES' | 'PUBLIC' | 'WORKSPACE'
 
-export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE'
+export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED' | 'AI_UNAVAILABLE_FOR_MINOR' | 'FEATURE_UNAVAILABLE_FOR_MINOR' | 'MINOR_PII_BLOCKED' | 'MFA_REQUIRED' | 'ADMIN_MFA_REQUIRED'
 
 export interface KeepAiCardsInput {
   artifactId: string
@@ -263,6 +327,13 @@ export interface KeepAiCardsPayload {
 }
 
 export type KeepCardsInto = 'NOTE' | 'NEW_NOTE'
+
+export interface MakeNotesFromTranscriptInput {
+  noteId: string
+  fileId?: string | null
+  captions?: string | null
+  transcript?: string | null
+}
 
 export interface MutationRunAiTaskArgs {
   input: RunAiTaskInput
@@ -297,6 +368,18 @@ export interface MutationSetAiInsightHiddenArgs {
   hidden: boolean
 }
 
+export interface MutationReportAiAnswerArgs {
+  input: ReportAiAnswerInput
+}
+
+export interface MutationResolveAiReportArgs {
+  id: string
+}
+
+export interface MutationDismissAiReportArgs {
+  id: string
+}
+
 export interface MutationSaveAiConnectionArgs {
   input: SaveAiConnectionInput
 }
@@ -319,6 +402,18 @@ export interface MutationSaveAiTaskRouteArgs {
 
 export interface MutationDeleteAiTaskRouteArgs {
   input: AiTaskRouteInput
+}
+
+export interface MutationTranscribeAudioArgs {
+  input: TranscribeAudioInput
+}
+
+export interface MutationTranscribeCaptionClipArgs {
+  input: TranscribeCaptionClipInput
+}
+
+export interface MutationMakeNotesFromTranscriptArgs {
+  input: MakeNotesFromTranscriptInput
 }
 
 /** A note, owned by the notes subgraph; ai adds the viewer's AI results */
@@ -345,6 +440,19 @@ export interface NoteProcessingStep {
   status: AiArtifactStatus
 }
 
+export interface NotesFromTranscript {
+  noteId: string
+  title: string
+  summary: string
+  /** True when this text was produced by a model, so clients can show an AI label. */
+  aiGenerated: boolean
+}
+
+export interface NotesFromTranscriptPayload {
+  notes: NotesFromTranscript | null
+  userErrors: Array<UserError>
+}
+
 export interface OkPayload {
   ok: boolean
   userErrors: Array<UserError>
@@ -360,12 +468,38 @@ export interface QueryMyAiAnswersArgs {
   doubtId?: string | null
 }
 
+export interface QueryAiReportsArgs {
+  status?: AiReportStatus | null
+  first?: number | null
+}
+
+export interface QueryAiReportArgs {
+  id: string
+}
+
 export interface QueryAiConnectionModelsArgs {
   input: AiConnectionIdInput
 }
 
 export interface QueryAiArtifactArgs {
   id: string
+}
+
+export interface QueryVoiceCaptureArgs {
+  input: VoiceCaptureInput
+}
+
+export interface ReportAiAnswerInput {
+  responseId: string
+  /** ANSWER (Ask AI) or ARTIFACT (a task result, including a public study aid) */
+  responseKind: string
+  reason: AiReportReason
+  comment?: string | null
+}
+
+export interface ReportAiAnswerPayload {
+  reportId: string | null
+  userErrors: Array<UserError>
 }
 
 export interface RunAiTaskInput {
@@ -409,8 +543,63 @@ export interface SetAiDefaultsInput {
   embedConnectionId?: string | null
 }
 
+export interface TranscribeAudioInput {
+  noteId: string
+  fileId?: string | null
+  captions?: string | null
+  transcript?: string | null
+}
+
+export interface TranscribeCaptionClipInput {
+  noteId: string
+  fileId?: string | null
+  captions?: string | null
+  transcript?: string | null
+}
+
+export interface Transcript {
+  text: string
+  /** The recording was longer than 30 minutes and the rest was not transcribed */
+  cut: boolean
+  /** True when a model produced this text, so clients can show an AI label. False for browser SpeechRecognition captions. */
+  aiGenerated: boolean
+}
+
+export interface TranscriptPayload {
+  transcript: Transcript | null
+  userErrors: Array<UserError>
+}
+
 export interface UserError {
   field: Array<string> | null
   message: string
   code: ErrorCode
+  /** Seconds until a RATE_LIMITED caller may retry. Null for every other code. */
+  retryAfter: number | null
+  /** One address on AGE_RESTRICTED and on a blocked sign-in: SUPPORT_EMAIL (support@learnvianotes.in unless the environment sets another). */
+  supportEmail: string | null
+}
+
+export interface VoiceCapture {
+  /** The browser API: SpeechRecognition (webkitSpeechRecognition where that is the name) */
+  api: string
+  interimResults: boolean
+  continuous: boolean
+  /** BCP-47 tags the apps may pass as the recognition language */
+  languages: Array<string>
+  /** The mutation to call with a short clip when the browser cannot caption */
+  streamingFallback: string
+}
+
+/** Shared by the voice operations. captions is browser SpeechRecognition text. transcript is the finished text. fileId is an uploaded recording. */
+export interface VoiceCaptureInput {
+  noteId: string
+  fileId?: string | null
+  captions?: string | null
+  transcript?: string | null
+}
+
+export interface VoiceCapturePayload {
+  voiceCapture: VoiceCapture | null
+  userErrors: Array<UserError>
 }

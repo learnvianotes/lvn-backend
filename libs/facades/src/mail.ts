@@ -15,6 +15,8 @@ export interface MailTemplates {
   passwordChanged: { displayName: string }
   /** 6-digit code for a college or organisation email (ADR-0017) */
   institutionalCode: { displayName: string; code: string; expiresInMinutes: number }
+  /** 6-digit sign-in code. `admin` chooses the subject used for platform admins and staff. */
+  mfaCode: { displayName: string; code: string; expiresInMinutes: number; ip: string; requestedAt: string; admin: boolean }
   /** ADR-0088: the account will be deleted on deleteOn unless the person signs in and cancels */
   accountDeletion: { displayName: string; deleteOn: string; link: string }
   /** ADR-0018: the data export is ready to download, until expiresOn */
@@ -23,6 +25,30 @@ export interface MailTemplates {
   classroomPost: { displayName: string; teacherName: string; classroomName: string; text: string; link: string; unsubscribeLink: string }
   /** ADR-0050: the week's unread notifications, counted by kind */
   weeklyDigest: { displayName: string; lines: string[]; link: string; unsubscribeLink: string }
+  /**
+   * Once, when a person first gives their name and age. `lines` is what that account can do (a restricted minor
+   * is not offered public sharing). Links are absolute, from WEB_URL.
+   */
+  welcome: { displayName: string; appLink: string; guideLink: string; lines: string[] }
+  /**
+   * Direct notice to a parent when a minor account is created (ADR-0110). Transactional. `confirmLink` is null when
+   * email confirmation is turned off. Sending this does not record consent.
+   */
+  guardianNotice: {
+    childName: string
+    noticeVersion: string
+    confirmLink: string | null
+    manageLink: string
+    collects: string[]
+    why: string
+    processors: string[]
+    expiresInHours: number
+    supportEmail: string
+  }
+  /** The second email of email plus: sent only after the parent clicks the confirm link. */
+  guardianConsentConfirmed: { childName: string; manageLink: string; expiresInHours: number; supportEmail: string }
+  /** A new manage link, when the child or parent asks for another. Single use. */
+  guardianManageLink: { childName: string; manageLink: string; expiresInHours: number; supportEmail: string }
 }
 
 export type MailTemplate = keyof MailTemplates

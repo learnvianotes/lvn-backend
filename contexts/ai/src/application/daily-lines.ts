@@ -26,9 +26,9 @@ export class AiDailyLines implements DailyLines {
     return (await this.gateway.status()).available
   }
 
-  async write(input: { day: string; facts: string[] }): Promise<{ title: string; line: string }> {
+  async write(input: { day: string; facts: string[]; userId?: string | null }): Promise<{ title: string; line: string }> {
     const facts = input.facts.length ? input.facts.map((f) => `- ${f}`).join('\n') : '- Nothing learned in the app yet: a fresh start.'
-    const out = await this.gateway.generate({ task: 'DAILY_LINE', userId: null, private: true, prompt: 'daily-line', vars: { day: input.day }, content: { facts }, schema: dailyLineSchema, temperature: 0.9 })
+    const out = await this.gateway.generate({ task: 'DAILY_LINE', userId: null, subjectId: input.userId, private: true, prompt: 'daily-line', vars: { day: input.day }, content: { facts }, schema: dailyLineSchema, temperature: 0.9 })
     return cleanLine(out.output)
   }
 }

@@ -1,0 +1,87 @@
+# Voice notes. Live captions are the browser's SpeechRecognition. transcribeCaptionClip is the fallback and is not stored.
+# A full recording is uploaded (purpose VOICE_NOTE, or ATTACHMENT) and finished with completeUpload, which scans it, then transcribeAudio.
+
+type VoiceCapture {
+  "The browser API: SpeechRecognition (webkitSpeechRecognition where that is the name)"
+  api: String!
+  interimResults: Boolean!
+  continuous: Boolean!
+  "BCP-47 tags the apps may pass as the recognition language"
+  languages: [String!]!
+  "The mutation to call with a short clip when the browser cannot caption"
+  streamingFallback: String!
+}
+
+type Transcript {
+  text: String!
+  "The recording was longer than 30 minutes and the rest was not transcribed"
+  cut: Boolean!
+  "True when a model produced this text, so clients can show an AI label. False for browser SpeechRecognition captions."
+  aiGenerated: Boolean!
+}
+
+type TranscriptPayload {
+  transcript: Transcript
+  userErrors: [UserError!]!
+}
+
+type NotesFromTranscript {
+  noteId: UUID!
+  title: String!
+  summary: String!
+  "True when this text was produced by a model, so clients can show an AI label."
+  aiGenerated: Boolean!
+}
+
+type NotesFromTranscriptPayload {
+  notes: NotesFromTranscript
+  userErrors: [UserError!]!
+}
+
+"Shared by the voice operations. captions is browser SpeechRecognition text. transcript is the finished text. fileId is an uploaded recording."
+input VoiceCaptureInput {
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
+}
+
+input TranscribeCaptionClipInput {
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
+}
+
+input TranscribeAudioInput {
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
+}
+
+input MakeNotesFromTranscriptInput {
+  noteId: UUID!
+  fileId: UUID
+  captions: String
+  transcript: String
+}
+
+type VoiceCapturePayload {
+  voiceCapture: VoiceCapture
+  userErrors: [UserError!]!
+}
+
+extend type Query {
+  "How to caption live. It describes the browser and does not call a model. Signed out, the note must be public."
+  voiceCapture(input: VoiceCaptureInput!): VoiceCapturePayload!
+}
+
+extend type Mutation {
+  "A VOICE_NOTE or audio ATTACHMENT on this note, finished with completeUpload."
+  transcribeAudio(input: TranscribeAudioInput!): TranscriptPayload!
+  "Browser captions, or a short uploaded clip when the browser cannot caption."
+  transcribeCaptionClip(input: TranscribeCaptionClipInput!): TranscriptPayload!
+  "A private note from a transcript: a summary, then headings and text. At most 20,000 characters are read."
+  makeNotesFromTranscript(input: MakeNotesFromTranscriptInput!): NotesFromTranscriptPayload!
+}

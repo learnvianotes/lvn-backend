@@ -156,10 +156,11 @@ describe('resource catalogue', () => {
     const add = (who: Person) => t.gql<{ addComment: { comment: { id: string } | null; userErrors: { message: string }[] } }>('mutation ($input: AddCommentInput!) { addComment(input: $input) { comment { id } userErrors { message } } }', { input: { target, body } }, who.token)
     const reader = await person()
     expect((await add(reader)).data!.addComment.userErrors).toEqual([])
-    const child = await person({ dob: new Date(Date.now() - 12 * 365 * 86_400_000).toISOString().slice(0, 10) })
+    // 16: under the consent age, and old enough that the under-13 social gate does not hide the discussion.
+    const child = await person({ dob: new Date(Date.UTC(new Date().getUTCFullYear() - 16, 0, 15)).toISOString().slice(0, 10) })
     const place = async (who: Person) => (await t.gql<{ discussion: { viewerCanComment: boolean; whyNot: string | null; commentCount: number } | null }>('query ($target: CommentTargetInput!) { discussion(target: $target) { viewerCanComment whyNot commentCount } }', { target }, who.token)).data!.discussion
     expect(await place(child)).toEqual({ viewerCanComment: false, whyNot: 'Comments on resources are not open to your account yet.', commentCount: 1 })
-    expect((await place(await person({ verified: false })))?.whyNot).toBe('Verify your account to comment.')
+    expect(await place(await person({ verified: false }))).toMatchObject({ viewerCanComment: true, whyNot: null })
     for (let i = 0; i < 50 && !(await db.notification.count({ where: { userId: author.id, category: 'COMMENT' } })); i++) await new Promise((r) => setTimeout(r, 100))
     expect(await db.notification.findFirst({ where: { userId: author.id, category: 'COMMENT' } })).toMatchObject({ path: `/resources/${id}`, actorId: reader.id })
     // A resource that is not approved has no discussion.

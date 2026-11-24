@@ -1,4 +1,4 @@
-import type { ApiConfig } from '@lvn/contracts/config'
+import { adminMfaEnforced, type ApiConfig } from '@lvn/contracts/config'
 import { TOKEN_AUDIENCE } from '@lvn-backend/auth-guard'
 
 /** What the users context needs from the API configuration; apps/api maps ApiConfig onto it. */
@@ -9,9 +9,13 @@ export interface UsersConfig {
   webUrl: string
   codeHmacSecret: string
   digitalConsentAge: number
-  /** ADR-0091: below this age no account is created (0: everyone may register) */
-  accountMinimumAge: number
+  /** Address shown when someone must contact support. SUPPORT_EMAIL, or support@learnvianotes.in when unset. */
+  supportEmail: string
+  /** Second-factor policy. `enforced` is ADMIN_MFA_REQUIRED, defaulting on in production. */
+  mfa: { enforced: boolean; roles: readonly string[] }
   passwordBreachApiUrl?: string
+  /** ADR-0115: origins besides WEB_URL's that may use passkeys (PASSKEY_ORIGINS). */
+  passkeyOrigins?: string[]
   firebaseProjectId?: string
   github?: { clientId: string; clientSecret: string; oauthUrl: string; apiUrl: string }
   linkedin?: { clientId: string; clientSecret: string; oauthUrl: string; apiUrl: string }
@@ -24,6 +28,28 @@ export interface UsersConfig {
    * allowance, and how the safe fetcher names itself and which test hosts it may reach.
    */
   skillsImport: { githubApiUrl: string | null; githubToken: string | null; userAgent: string; allowHosts: string[] }
+  /**
+   * Environment values for settings an admin can override (ADR-0101). Used only while no AppSetting row is saved.
+   * Null is a budget with no cap.
+   */
+  settingFallbacks: {
+    uploads_enabled: boolean
+    uploads_per_minute: number
+    uploads_per_day: number
+    upload_bytes_per_day: number
+    upload_pending_scans: number
+    uploads_per_ip_per_minute: number
+    scan_queue_concurrency: number
+    ai_public_pipeline: boolean
+    ai_monthly_budget_micro_usd: number | null
+    ai_timeout_ms: number
+    search_hybrid: boolean
+    search_timeout_ms: number
+    digital_consent_age: number
+    /** ADR-0103. Undefined when the variable is unset: the built-in default applies, and is reported as DEFAULT. */
+    terms_version: string | undefined
+    terms_published_versions: string | undefined
+  }
 }
 
 export const USERS_CONFIG = Symbol('USERS_CONFIG')
@@ -37,8 +63,10 @@ export function usersConfigFrom(c: ApiConfig): UsersConfig {
     webUrl: c.WEB_URL,
     codeHmacSecret: c.CODE_HMAC_SECRET,
     digitalConsentAge: c.DIGITAL_CONSENT_AGE,
-    accountMinimumAge: c.ACCOUNT_MINIMUM_AGE,
+    supportEmail: c.SUPPORT_EMAIL,
+    mfa: { enforced: adminMfaEnforced(c.APP_ENV, c.ADMIN_MFA_REQUIRED), roles: c.MFA_ENFORCED_ROLES },
     passwordBreachApiUrl: c.PASSWORD_BREACH_API_URL,
+    passkeyOrigins: c.PASSKEY_ORIGINS,
     firebaseProjectId: c.FIREBASE_PROJECT_ID,
     github:
       c.GITHUB_CLIENT_ID && c.GITHUB_CLIENT_SECRET && c.GITHUB_OAUTH_URL && c.GITHUB_API_URL
@@ -52,5 +80,22 @@ export function usersConfigFrom(c: ApiConfig): UsersConfig {
     // Old-site snapshots (ADR-0023) live in the restricted bucket under the environment prefix.
     legacy: { bucket: c.S3_RESTRICTED_BUCKET, env: c.APP_ENV },
     skillsImport: { githubApiUrl: c.GITHUB_API_URL ?? null, githubToken: c.GITHUB_TOKEN ?? null, userAgent: `LearnViaNotes/1.0 (+${c.WEB_URL})`, allowHosts: c.SAFE_FETCH_ALLOW_HOSTS },
+    settingFallbacks: {
+      uploads_enabled: c.UPLOADS_ENABLED,
+      uploads_per_minute: c.UPLOADS_PER_MINUTE,
+      uploads_per_day: c.UPLOADS_PER_DAY,
+      upload_bytes_per_day: c.UPLOAD_BYTES_PER_DAY,
+      upload_pending_scans: c.UPLOAD_PENDING_SCANS,
+      uploads_per_ip_per_minute: c.UPLOADS_PER_IP_PER_MINUTE,
+      scan_queue_concurrency: c.SCAN_QUEUE_CONCURRENCY,
+      ai_public_pipeline: c.AI_PUBLIC_PIPELINE,
+      ai_monthly_budget_micro_usd: c.AI_MONTHLY_BUDGET_MICRO_USD ?? null,
+      ai_timeout_ms: c.AI_TIMEOUT_MS,
+      search_hybrid: c.SEARCH_HYBRID,
+      search_timeout_ms: c.SEARCH_TIMEOUT_MS,
+      digital_consent_age: c.DIGITAL_CONSENT_AGE,
+      terms_version: c.TERMS_VERSION,
+      terms_published_versions: c.TERMS_PUBLISHED_VERSIONS,
+    },
   }
 }

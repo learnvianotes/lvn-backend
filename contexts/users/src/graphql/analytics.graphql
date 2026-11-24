@@ -1,0 +1,127 @@
+# Our own error log and usage analytics (B9). Usage is dropped when the account has opted out.
+# Client error reports from an opted-out account are stored without the user id.
+# Privacy: pages, notes, search, downloads and sign-ins, the product areas used, searches that found nothing (scope and
+# word count, never the words), quiz starts and the app version (ADR-0107), plus error reports tied to the account id,
+# unless the person opts out. No IP address or user agent is stored. A college ID image is read by the automated check and deleted after the
+# retention window. Only that image is sent to the model, never the name, email or profile.
+
+scalar JSON
+
+"Where the client recorded the event. Backend failures are stored by the server and are not sent here."
+enum ClientPlatform { WEB MOBILE }
+
+"""
+One usage event. The names and the props each may carry are in @lvn/contracts (USAGE_EVENT_NAMES, sanitizeUsageProps;
+ADR-0107).
+"""
+input UsageEventInput {
+  "One of: page_view, note_open, note_upload, search, download, sign_in, feature_use, search_no_results, quiz_start."
+  name: String!
+  "Letters, digits, _ and -, at most 64; anything else is replaced by the server's session."
+  sessionId: String
+  occurredAt: DateTime
+  """
+  A small object: at most 1024 characters as JSON and 16 keys, or the batch is refused.
+  feature_use: { feature } (a UsageFeature id, lower case, e.g. "pdf_viewer"; required).
+  search_no_results: { scope, wordCount } (a UsageSearchScope id, e.g. "notes", and a whole number; both required).
+  quiz_start: { kind } (a QuizStartKind id, e.g. "shared"; required).
+  search: { scope, wordCount } (both optional; `words` is read as wordCount).
+  A missing or unknown required value refuses the batch; every other key is dropped. The other events keep short
+  tokens (letters, digits, _ . : -, at most 40, not an id), numbers and booleans under keys that do not name personal
+  data or text; everything else is dropped. A string `feature` is counted in adminUsage's top features.
+  """
+  props: JSON
+  platform: ClientPlatform!
+  "MAJOR.MINOR[.PATCH[.BUILD]] with an optional -prerelease and +build, at most 32 characters; anything else is not stored."
+  appVersion: String
+}
+
+input ClientErrorInput {
+  route: String
+  code: String!
+  message: String!
+  occurredAt: DateTime
+  platform: ClientPlatform!
+  release: String
+  appVersion: String
+}
+
+input IngestAnalyticsInput {
+  events: [UsageEventInput!]
+  errors: [ClientErrorInput!]
+}
+
+"One error code in the window, with who it affected."
+type AdminErrorGroup {
+  code: String!
+  count: Int!
+  firstSeen: DateTime!
+  lastSeen: DateTime!
+  "At most 100 distinct account ids."
+  userIds: [UUID!]!
+  sampleMessage: String!
+}
+
+type UsageCount {
+  name: String!
+  count: Int!
+}
+
+"DAU, WAU and MAU are distinct accounts in the last 1, 7 and 30 days before `to`."
+type AdminUsageSummary {
+  from: DateTime!
+  to: DateTime!
+  dau: Int!
+  wau: Int!
+  mau: Int!
+  topEvents: [UsageCount!]!
+  topFeatures: [UsageCount!]!
+}
+
+type UserActivityEvent {
+  occurredAt: DateTime!
+  name: String!
+  props: JSON
+  platform: ClientPlatform!
+  appVersion: String
+}
+
+type FunnelStep {
+  name: String!
+  users: Int!
+}
+
+"Display name, email and role for the errors dashboard. Platform admins only."
+type AdminUserLookup {
+  id: UUID!
+  displayName: String!
+  email: String!
+  globalRole: GlobalRole!
+}
+
+extend type Query {
+  "Platform admins. Errors since `since`, or the last 90 days. Grouped by code."
+  adminErrors(since: DateTime): [AdminErrorGroup!]!
+  "Platform admins. Usage between `from` and `to`. Omit them for the last 30 days."
+  adminUsage(from: DateTime, to: DateTime): AdminUsageSummary!
+  "Platform admins. One account's usage, newest first."
+  adminUserActivity(userId: UUID!, first: Int): [UserActivityEvent!]!
+  """
+  Platform admins. 1 to 5 ordered steps, each a usage event name (page_view, note_open, note_upload, search, download,
+  sign_in, feature_use, search_no_results, quiz_start) or a step read from the database (ADR-0105): signed_up (account created), email_verified (login email
+  verified), first_note (the account's first note), returned_d7 (active again 7 or more days after signing up, and
+  after the previous step: a sign-in or session refresh, a usage event, or learning). A person counts at a step when
+  each earlier step happened first; each step's time is its first occurrence since `since` (default: 30 days ago).
+  Database steps leave out deleted accounts and accounts that opted out of analytics.
+  """
+  adminFunnel(steps: [String!]!, since: DateTime): [FunnelStep!]!
+  "Platform admins. Resolves account ids for the errors dashboard. Unknown and deleted accounts are omitted."
+  usersByIds(ids: [UUID!]!): [AdminUserLookup!]!
+}
+
+extend type Mutation {
+  "Signed in. At most 40 events, 30 batches a minute. Unknown event names, and props that break UsageEventInput.props' rules, are refused."
+  ingestAnalytics(input: IngestAnalyticsInput!): OkPayload!
+  "Signed in. Stops or resumes usage analytics for this account."
+  setAnalyticsOptOut(optOut: Boolean!): OkPayload!
+}

@@ -1,4 +1,4 @@
-/** A message to a chat model; `images` are base64 pictures (PNG, JPEG, WebP, GIF) or WAV recordings (transcription). */
+/** A message to a chat model; `images` are base64 pictures (PNG, JPEG, WebP, GIF), a PDF, or WAV recordings (transcription). */
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
@@ -44,7 +44,15 @@ export interface AiProviderAdapter {
   embed(model: string, inputs: string[], timeoutMs: number): Promise<EmbedResult>
   /** The models the account can use, when the provider lists them */
   models?(timeoutMs: number): Promise<string[]>
+  /** POST /audio/transcriptions. Absent when the provider has no such call (Claude, Ollama). */
+  transcribe?(request: { model: string; wav: Uint8Array; timeoutMs: number }): Promise<{ text: string; promptTokens: number }>
 }
+
+/**
+ * Shown when a model permanently refuses the shape of the request (HTTP 400). People see it on the failed artifact
+ * instead of an outage message; it names no secret and no note text. Admins see the same words in the worker log.
+ */
+export const MODEL_UNSUPPORTED = 'The selected model doesn’t support this request.'
 
 /** A provider call that failed; `retryable` when trying again may help (timeouts, overload, a network error). */
 export class ProviderError extends Error {
@@ -67,8 +75,9 @@ export class UnsupportedInput extends ProviderError {
   }
 }
 
-/** What a base64 attachment is, from its first bytes. */
-export function mediaTypeOf(base64: string): 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' | 'audio/wav' {
+/** What a base64 attachment is, from its first bytes. `%PDF` is `JVBER`. */
+export function mediaTypeOf(base64: string): 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' | 'audio/wav' | 'application/pdf' {
+  if (base64.startsWith('JVBER')) return 'application/pdf'
   if (base64.startsWith('iVBORw0KGgo')) return 'image/png'
   if (base64.startsWith('/9j/')) return 'image/jpeg'
   if (base64.startsWith('R0lGOD')) return 'image/gif'

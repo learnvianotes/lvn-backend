@@ -69,7 +69,7 @@ describe('AI provider settings', () => {
     const db = app.app.get(PrismaService)
     expect((await db.aiConnection.findUniqueOrThrow({ where: { id: connection.id } })).apiKeyCipher).not.toContain('very-secret')
     const audit = await db.auditLog.findMany({ where: { targetId: connection.id } })
-    expect(audit.map((a) => a.action)).toEqual(['ai.connection.saved', 'ai.connection.saved'])
+    expect(audit.map((a) => a.action)).toEqual(['ai.connection.saved', 'ai.connection.saved', 'admin.mutation.saveAiConnection'])
     expect(JSON.stringify(audit)).not.toContain('very-secret')
     // Claude makes no embeddings.
     const embed = await save(app, admin, { id: connection.id, kind: 'ANTHROPIC', label: 'Claude', baseUrl: claude.url, mayReceivePrivate: false, enabled: true, chatModel: 'claude-test', embedModel: 'x' })
@@ -99,21 +99,55 @@ describe('AI provider settings', () => {
   it('lists every model a connection’s account has, page after page, for platform admins only and without spending tokens', async () => {
     const shown = (await settings(app, admin)).data!.aiSettings
     const claudeId = shown.connections.find((c) => c.label.startsWith('Claude'))!.id
-    const models = (token: string, id = claudeId) => app.gql<{ aiConnectionModels: string[] }>('query ($input: AiConnectionIdInput!) { aiConnectionModels(input: $input) }', { input: { id } }, token)
+    const gptId = shown.connections.find((c) => c.label === 'ChatGPT')!.id
+    type Listed = { id: string; kind: string; supports: string[] }
+    type Lists = { all: Listed[]; pickers: { use: string; models: Listed[] }[] }
+    const query = 'query ($input: AiConnectionIdInput!) { aiConnectionModels(input: $input) { all { id kind supports } pickers { use models { id kind supports } } } }'
+    const models = (token: string, id = claudeId) => app.gql<{ aiConnectionModels: Lists }>(query, { input: { id } }, token)
     // More than one page of Anthropic's 1000.
     claude.models = Array.from({ length: 1205 }, (_, i) => `claude-${String(i).padStart(4, '0')}`)
     const before = claude.requests.length
     const listed = (await models(admin)).data!.aiConnectionModels
-    expect(listed).toHaveLength(1205)
-    expect(listed.slice(0, 2)).toEqual(['claude-0000', 'claude-0001'])
-    expect(listed.at(-1)).toBe('claude-1204')
+    expect(listed.all).toHaveLength(1205)
+    expect(listed.all.slice(0, 2).map((m) => m.id)).toEqual(['claude-0000', 'claude-0001'])
+    expect(listed.all.at(-1)!.id).toBe('claude-1204')
+    expect(listed.all.every((m) => m.kind === 'CHAT' && m.supports.includes('CHAT'))).toBe(true)
+    expect(listed.pickers.find((p) => p.use === 'CHAT')!.models).toHaveLength(1205)
+    expect(listed.pickers.find((p) => p.use === 'EMBEDDING')!.models).toEqual([])
     const asked = claude.requests.slice(before)
     expect(asked.map((r) => r.path)).toEqual(['/v1/models', '/v1/models'])
     expect(asked[1]!.query.get('after_id')).toBe('claude-0999')
     claude.models = ['claude-test']
     expect((await models(student)).errors?.[0]?.extensions.code).toBe('FORBIDDEN')
-    expect((await app.gql('query ($input: AiConnectionIdInput!) { aiConnectionModels(input: $input) }', { input: { id: claudeId } })).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
+    expect((await app.gql(query, { input: { id: claudeId } })).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
     expect((await models(admin, '00000000-0000-4000-8000-000000000000')).errors?.[0]?.extensions.code).toBe('NOT_FOUND')
+
+    // OpenAI pages of 12: the select keeps every id, and each picker drops what this app cannot call.
+    openai.modelPageSize = 12
+    openai.models = ['gpt-4o', 'gpt-image-1', 'tts-1', 'whisper-1', 'text-embedding-3-small', 'text-embedding-ada-002', 'gpt-audio-mini', 'omni-moderation-latest', 'sora-2', 'brand-new-model', ...Array.from({ length: 140 }, (_, i) => `gpt-page-${String(i).padStart(3, '0')}`)]
+    const openaiBefore = openai.requests.length
+    const account = (await models(admin, gptId)).data!.aiConnectionModels
+    expect(account.all).toHaveLength(openai.models.length)
+    expect(new Set(account.all.map((m) => m.id))).toEqual(new Set(openai.models))
+    const picker = (use: string) => account.pickers.find((p) => p.use === use)!.models.map((m) => m.id)
+    expect(picker('CHAT')).toEqual(expect.arrayContaining(['gpt-4o', 'gpt-page-000']))
+    expect(picker('CHAT')).not.toEqual(expect.arrayContaining(['gpt-image-1', 'tts-1', 'whisper-1', 'text-embedding-3-small', 'text-embedding-ada-002', 'brand-new-model', 'sora-2', 'gpt-audio-mini']))
+    expect(picker('EMBEDDING')).toEqual(['text-embedding-3-small'])
+    expect(picker('TRANSCRIBE')).toEqual(['gpt-audio-mini', 'whisper-1'])
+    expect(picker('IMAGE')).toEqual([])
+    expect(picker('TTS')).toEqual([])
+    expect(openai.requests.slice(openaiBefore).filter((r) => r.path === '/v1/models').length).toBeGreaterThan(1)
+    const image = await save(app, admin, { id: gptId, kind: 'OPENAI', label: 'ChatGPT', baseUrl: openai.url, mayReceivePrivate: false, enabled: true, chatModel: 'gpt-image-1', embedModel: 'text-embedding-3-small' })
+    expect(image.data!.saveAiConnection.userErrors[0]).toMatchObject({ field: ['input', 'chatModel'], message: expect.stringMatching(/image model/) })
+    const ada = await save(app, admin, { id: gptId, kind: 'OPENAI', label: 'ChatGPT', baseUrl: openai.url, mayReceivePrivate: false, enabled: true, chatModel: 'gpt-4o', embedModel: 'text-embedding-ada-002' })
+    expect(ada.data!.saveAiConnection.userErrors[0]).toMatchObject({ field: ['input', 'embedModel'], message: expect.stringMatching(/768/) })
+    const whisper = await mutate('saveAiTaskRoute', 'SaveAiTaskRouteInput', { task: 'TRANSCRIBE', connectionId: gptId, model: 'whisper-1' })
+    expect(whisper.userErrors).toEqual([])
+    expect(whisper.settings!.routes).toEqual([{ task: 'TRANSCRIBE', connectionId: gptId, model: 'whisper-1' }])
+    openai.modelPageSize = null
+    openai.models = ['gpt-test', 'text-embedding-test']
+    const restored = await save(app, admin, { id: gptId, kind: 'OPENAI', label: 'ChatGPT', baseUrl: openai.url, mayReceivePrivate: false, enabled: true, chatModel: 'gpt-test', embedModel: 'text-embedding-test' })
+    expect(restored.data!.saveAiConnection.userErrors).toEqual([])
   })
 
   it('chooses who answers: the defaults, and each task’s route; a route refuses a provider that cannot do the task', async () => {

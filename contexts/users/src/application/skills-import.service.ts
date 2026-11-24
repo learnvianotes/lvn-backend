@@ -143,9 +143,9 @@ export class SkillsImportService {
     const identity = await this.db.externalIdentity.findUnique({ where: { id: identityId } })
     if (!identity?.verifiedAt) return
     let found: Found[]
-    let note: string | null = null
+    let note: string | null
     try {
-      ;({ found, note } = identity.kind === 'GITHUB' ? await this.fromGitHub(identity.value) : await this.fromWebsite(identity.value))
+      ;({ found, note } = identity.kind === 'GITHUB' ? await this.fromGitHub(identity.value, identity.userId) : await this.fromWebsite(identity.value, identity.userId))
     } catch (err) {
       const reason = err instanceof SafeFetchError || err instanceof ImportError ? err.message : 'The source could not be read just now; it is tried again next month, or check it again.'
       if (!(err instanceof SafeFetchError || err instanceof ImportError)) this.log.warn(`import ${identity.id}: ${(err as Error).message}`)
@@ -200,7 +200,7 @@ export class SkillsImportService {
   // ── Sources ──
 
   /** GitHub: the most starred own repositories as projects, as GitHub gives them; skills read from the bio and repositories. */
-  private async fromGitHub(login: string): Promise<{ found: Found[]; note: string | null }> {
+  private async fromGitHub(login: string, userId: string): Promise<{ found: Found[]; note: string | null }> {
     const user = await this.github<GitHubUser>(`/users/${login}`)
     const repos = (await this.github<GitHubRepo[]>(`/users/${login}/repos?type=owner&sort=updated&per_page=30`)).filter((r) => !r.fork && !r.archived)
     const projects: Found[] = [...repos]
@@ -218,18 +218,18 @@ export class SkillsImportService {
       .filter(Boolean)
       .join('\n')
       .slice(0, LIMITS.text)
-    const read = await this.reader.read('a GitHub profile', text)
+    const read = await this.reader.read('a GitHub profile', text, userId)
     const skills: Found[] = read.filter((i) => i.kind === 'SKILL').map((i) => ({ ...i, sourceUrl: user.html_url }))
     return { found: [...projects, ...skills], note: null }
   }
 
   /** A personal or faculty page: what it says, read into items. */
-  private async fromWebsite(url: string): Promise<{ found: Found[]; note: string | null }> {
+  private async fromWebsite(url: string, userId: string): Promise<{ found: Found[]; note: string | null }> {
     if (!(await this.reader.available())) return { found: [], note: 'AI is not set up here yet, so the page could not be read into items.' }
     const html = await this.page(url)
     const meta = readPageMeta(html, url)
     const text = [meta.title, meta.description, readPageText(html.slice(Math.max(html.search(/<body\b/i), 0)), LIMITS.text)].filter(Boolean).join('\n').slice(0, LIMITS.text)
-    const read: ReadSkill[] = await this.reader.read('a personal or faculty page', text)
+    const read: ReadSkill[] = await this.reader.read('a personal or faculty page', text, userId)
     return { found: read.map((i) => ({ ...i, sourceUrl: url })), note: null }
   }
 

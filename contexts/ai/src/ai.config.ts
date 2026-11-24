@@ -1,7 +1,12 @@
 import type { ApiConfig } from '@lvn/contracts/config'
+import { geminiEnvNames } from './domain/gemini-policy'
 
 /** What the `ai` context needs from the configuration (ADR-0058). */
 export interface AiConfig {
+  /** development, sandbox or production. Production refuses to start when Gemini is configured. */
+  appEnv: ApiConfig['APP_ENV']
+  /** Names of environment variables that configure Gemini. Values are never copied here. */
+  geminiEnvNames: readonly string[]
   /** `none`: AI is off, and says so */
   provider: 'none' | 'ollama'
   ollama: { url: string } | null
@@ -19,7 +24,9 @@ export interface AiConfig {
 
 export const AI_CONFIG = Symbol('AI_CONFIG')
 
-export const aiConfigFrom = (c: ApiConfig): AiConfig => ({
+export const aiConfigFrom = (c: ApiConfig, env: NodeJS.ProcessEnv = {}): AiConfig => ({
+  appEnv: c.APP_ENV,
+  geminiEnvNames: geminiEnvNames(env),
   provider: c.AI_PROVIDER,
   ollama: c.OLLAMA_URL ? { url: c.OLLAMA_URL } : null,
   chatModel: c.AI_CHAT_MODEL ?? null,

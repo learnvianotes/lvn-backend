@@ -9,6 +9,6 @@ export const PAGE_VISION = Symbol('PAGE_VISION')
 export interface PageVision {
   /** Whether a page can be read now (AI on and answering); otherwise conversion keeps the OCR's cards. */
   available(): Promise<boolean>
-  /** A page image (PNG, base64) transcribed verbatim, as cards of our types, and its words. */
-  read(png: string): Promise<{ cards: NewCard[]; text: string }>
+  /** A page image (PNG, base64) transcribed verbatim, as cards of our types, and its words. `subjectId` is the person whose PDF it is. */
+  read(png: string, subjectId?: string | null): Promise<{ cards: NewCard[]; text: string }>
 }

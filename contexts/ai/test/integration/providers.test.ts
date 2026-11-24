@@ -8,6 +8,7 @@ import { AiGateway } from '../../src/application/ai-gateway'
 import { AiKeys } from '../../src/application/ai-keys'
 import { AiProviders } from '../../src/application/ai-providers'
 import { PromptLibrary } from '../../src/application/prompts'
+import { MODEL_UNSUPPORTED } from '../../src/domain/provider'
 import { OllamaProvider } from '../../src/infrastructure/ollama'
 
 /**
@@ -25,7 +26,7 @@ describe('AI providers', () => {
   const SECRET = 'a-test-secret-for-ai-keys-0123456789abcdef'
   const entitlements: Entitlements = { limit: async () => null }
   const events = { publish: async () => undefined, subscribe: () => undefined } as unknown as EventBus
-  const config = (over: Partial<AiConfig> = {}): AiConfig => ({ provider: 'ollama', ollama: { url: ollama.url }, chatModel: 'gemma4', embedModel: 'embeddinggemma', timeoutMs: 5_000, monthlyBudgetMicroUsd: null, publicPipeline: true, keysSecret: SECRET, ...over })
+  const config = (over: Partial<AiConfig> = {}): AiConfig => ({ appEnv: 'development', geminiEnvNames: [], provider: 'ollama', ollama: { url: ollama.url }, chatModel: 'gemma4', embedModel: 'embeddinggemma', timeoutMs: 5_000, monthlyBudgetMicroUsd: null, publicPipeline: true, keysSecret: SECRET, ...over })
   const gateway = (over: Partial<AiConfig> = {}) => {
     const c = config(over)
     return new AiGateway(db, new PromptLibrary(), c, new AiProviders(db, c, c.provider === 'ollama' ? new OllamaProvider(ollama.url) : null, new AiKeys(c)), entitlements, events)
@@ -72,7 +73,7 @@ describe('AI providers', () => {
     }
     ollama.chats.length = 0
     ollama.answer = () => SUMMARY
-  })
+  }, 30_000)
 
   it('answers with ChatGPT when it is the default: its key, a JSON-schema answer, its prices in the usage row', async () => {
     const id = await connect({ kind: 'OPENAI', baseUrl: openai.url, key: 'sk-test-1234', chatModel: 'gpt-test', inputMicroUsdPerMTok: 1_000_000, outputMicroUsdPerMTok: 2_000_000 })
@@ -176,6 +177,27 @@ describe('AI providers', () => {
     await expect(ask(gateway(), { private: true })).rejects.toMatchObject({ message: 'AI cannot work on private notes here.' })
     expect(openai.requests).toHaveLength(0)
     await expect(ask(gateway(), { private: false })).resolves.toBeDefined()
+  })
+
+  it('answers with a Claude that rejects a forced tool, and a permanent 400 does not open the circuit', async () => {
+    await defaults(await connect({ kind: 'ANTHROPIC', baseUrl: claude.url, key: 'sk-ant-test', chatModel: 'claude-sonnet-5-5' }))
+    const refused = JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'tool_choice: type "tool" and "any" are not supported for this model.' } })
+    claude.answer = (req) => ((req.body.tool_choice as { type?: string } | undefined)?.type === 'tool' ? { status: 400, body: refused } : SUMMARY)
+    const g = gateway()
+    expect((await ask(g)).output.summary).toBe('Heaps keep the smallest on top.')
+    expect(claude.requests.map((r) => (r.body.tool_choice as { type: string }).type)).toEqual(['tool', 'auto'])
+    expect(claude.requests[1]!.body.tools).toHaveLength(1)
+    // The refusal was handled inside the adapter: repeated tasks stay up, and the circuit stays closed.
+    for (let i = 0; i < 4; i++) expect((await ask(g)).output.concepts).toEqual(['heap'])
+    expect(await g.status()).toEqual({ available: true, reason: null })
+
+    claude.answer = () => ({ status: 400, body: JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'model: not_a_model' } }) })
+    claude.requests.length = 0
+    for (let i = 0; i < 4; i++) await expect(ask(g)).rejects.toMatchObject({ code: 'UNAVAILABLE', message: MODEL_UNSUPPORTED })
+    // Not an outage: one request each, and the provider is still there. The words name no note and no provider body.
+    expect(claude.requests).toHaveLength(4)
+    expect(MODEL_UNSUPPORTED).not.toMatch(/heap|tool_choice|sk-ant/)
+    expect(await g.status()).toEqual({ available: true, reason: null })
   })
 
   it('opens the circuit of the failing connection only', async () => {

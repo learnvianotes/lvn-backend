@@ -1,8 +1,8 @@
 import { randomInt } from 'node:crypto'
 import { Inject, Injectable } from '@nestjs/common'
-import { Action, can, ClassroomRole as Role, type Actor, type Resource } from '@lvn/contracts/domain'
+import { Action, can, ClassroomRole as Role, verificationBlocks, type Actor, type Resource } from '@lvn/contracts/domain'
 import { docSchema, docText } from '@lvn/contracts/validation'
-import { Errors } from '@lvn-backend/errors'
+import { assertWithinPlan, Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { AUDIT, ENTITLEMENTS, PEOPLE, POLICY, type Audit, type Entitlements, type People, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
@@ -46,6 +46,7 @@ export class ClassroomsService {
   ) {}
 
   private async actor(userId: string): Promise<Actor> {
+    await this.people.assertSocialOpen(userId)
     const actor = await this.policy.actor(userId)
     if (!actor) throw Errors.unauthenticated()
     return actor
@@ -53,6 +54,7 @@ export class ClassroomsService {
 
   /** The class, the viewer's place in it and what `can()` needs; null when the viewer may not know of it. */
   private async load(viewerId: string, classroomId: string) {
+    await this.people.assertSocialOpen(viewerId)
     const classroom = await this.db.classroom.findFirst({ where: { id: classroomId, deletedAt: null } })
     if (!classroom) return null
     const now = new Date()
@@ -100,6 +102,7 @@ export class ClassroomsService {
 
   /** What a code shows before joining: the class's name and its teacher, nothing inside (ADR-0046). */
   async byCode(viewerId: string, code: string): Promise<{ classroom: ClassroomRow; view: ClassroomView | null } | null> {
+    await this.people.assertSocialOpen(viewerId)
     const rate = await this.limiter.hit(`core:class:code:${viewerId}`, { max: CLASS_LIMITS.codeTriesPerHour, windowSeconds: 3600 })
     if (!rate.allowed) throw Errors.rateLimited(rate.retryAfter, 'Too many class codes tried. Try again later.')
     const classroom = await this.db.classroom.findFirst({ where: { joinCode: code.trim().toUpperCase(), deletedAt: null } })
@@ -128,7 +131,8 @@ export class ClassroomsService {
     if (!can(actor, Action.CLASSROOM_CREATE)) throw Errors.forbidden('Classes are run by teachers.')
     const { name, description } = this.clean(input.name, input.description)
     const limit = await this.entitlements.limit(actorId, 'CLASSROOMS_OWNED')
-    if (limit !== null && BigInt(await this.db.classroom.count({ where: { ownerId: actorId, deletedAt: null } })) >= limit) throw Errors.validation(`Your plan allows ${limit} classes.`)
+    const owned = BigInt(await this.db.classroom.count({ where: { ownerId: actorId, deletedAt: null } }))
+    assertWithinPlan('CLASSROOMS_OWNED', limit, owned)
     const rate = await this.limiter.hit(`core:class:create:${actorId}`, { max: CLASS_LIMITS.classesPerDay, windowSeconds: 86_400 })
     if (!rate.allowed) throw Errors.rateLimited(rate.retryAfter, 'You have started a lot of classes today. Try again tomorrow.')
     const id = newId()
@@ -161,7 +165,8 @@ export class ClassroomsService {
 
   private async assertRoom(c: ClassroomRow) {
     const limit = await this.entitlements.limit(c.ownerId, 'CLASSROOM_MEMBERS')
-    if (limit !== null && BigInt(await this.db.classroomMember.count({ where: { classroomId: c.id } })) >= limit) throw Errors.validation('This class is full.')
+    const members = BigInt(await this.db.classroomMember.count({ where: { classroomId: c.id } }))
+    assertWithinPlan('CLASSROOM_MEMBERS', limit, members)
   }
 
   private async addMember(c: ClassroomRow, userId: string, role: StoredClassRole) {
@@ -178,7 +183,8 @@ export class ClassroomsService {
     if (view?.role) throw Errors.conflict('You are already in this class.')
     if (view?.pendingRequestId) return classroom.id
     const actor = await this.actor(actorId)
-    if (!can(actor, Action.CLASSROOM_REQUEST_JOIN, { kind: 'classroom', pendingJoinRequest: false })) throw Errors.forbidden('Verify your account to join classes.')
+    const joinResource = { kind: 'classroom' as const, pendingJoinRequest: false }
+    if (!can(actor, Action.CLASSROOM_REQUEST_JOIN, joinResource)) throw Errors.forbidden(verificationBlocks(actor, Action.CLASSROOM_REQUEST_JOIN, joinResource) ? 'Verify your account to join classes.' : undefined)
     const id = newId()
     await this.db.classroomJoinRequest.create({ data: { id, classroomId: classroom.id, userId: actorId, via } })
     const staff = await this.db.classroomMember.findMany({ where: { classroomId: classroom.id, role: { in: ['TEACHER', 'TA'] } }, select: { userId: true }, take: 100 })
@@ -244,7 +250,7 @@ export class ClassroomsService {
       await this.db.classroomInvite.update({ where: { id: inviteId }, data: { declinedAt: new Date() } })
       return classroom.id
     }
-    if (!can(actor, Action.CLASSROOM_ACCEPT_INVITE, resource)) throw Errors.forbidden(actor.institutionVerified ? undefined : 'Verify your account to join classes.')
+    if (!can(actor, Action.CLASSROOM_ACCEPT_INVITE, resource)) throw Errors.forbidden(verificationBlocks(actor, Action.CLASSROOM_ACCEPT_INVITE, resource) ? 'Verify your account to join classes.' : undefined)
     await this.db.classroomInvite.update({ where: { id: inviteId }, data: { acceptedAt: new Date() } })
     await this.db.classroomJoinRequest.updateMany({ where: { classroomId: classroom.id, userId: actorId, status: 'PENDING' }, data: { status: 'WITHDRAWN' } })
     await this.addMember(classroom, actorId, inv.role as StoredClassRole)
@@ -252,6 +258,7 @@ export class ClassroomsService {
   }
 
   async myInvites(viewerId: string) {
+    await this.people.assertSocialOpen(viewerId)
     return this.db.classroomInvite.findMany({ where: { invitedUserId: viewerId, acceptedAt: null, declinedAt: null, expiresAt: { gt: new Date() }, classroom: { deletedAt: null } }, include: { classroom: true }, orderBy: { createdAt: 'desc' } })
   }
 
@@ -299,10 +306,13 @@ export class ClassroomsService {
   async members(viewerId: string, classroomId: string) {
     const { resource, actor } = await this.require(viewerId, classroomId)
     if (!can(actor, Action.CLASSROOM_REVIEW_JOIN_REQUESTS, resource)) throw Errors.forbidden()
-    return this.db.classroomMember.findMany({ where: { classroomId }, orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }], take: 2000 })
+    const rows = await this.db.classroomMember.findMany({ where: { classroomId }, orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }], take: 2000 })
+    const closed = new Set(await this.people.socialClosedIds(rows.map((r) => r.userId)))
+    return rows.filter((r) => !closed.has(r.userId))
   }
 
   async mine(viewerId: string) {
+    await this.people.assertSocialOpen(viewerId)
     const rows = await this.db.classroomMember.findMany({ where: { userId: viewerId, classroom: { deletedAt: null } }, include: { classroom: true }, orderBy: { classroom: { updatedAt: 'desc' } }, take: 200 })
     return rows.map((r) => r.classroom)
   }
@@ -314,14 +324,16 @@ export class ClassroomsService {
     if (!can(actor, Action.CLASSROOM_POST, resource)) throw Errors.forbidden('Only the class’s teacher and TAs post announcements.')
     const doc = docSchema.safeParse(body)
     if (!doc.success) throw Errors.validation('This announcement could not be read.', ['input', 'body'])
-    const text = docText(doc.data).trim()
-    if (!text) throw Errors.validation('Write something first.', ['input', 'body'])
+    const filtered = docSchema.safeParse(await this.people.filterMinorDoc(actorId, doc.data))
+    if (!filtered.success) throw Errors.validation('This announcement could not be read.', ['input', 'body'])
+    const text = docText(filtered.data).trim()
+    if (!text || text === '[removed]') throw Errors.validation('Write something first.', ['input', 'body'])
     if (text.length > CLASS_LIMITS.postChars) throw Errors.validation(`Keep announcements to ${CLASS_LIMITS.postChars} characters.`, ['input', 'body'])
     const rate = await this.limiter.hit(`core:class:post:${actorId}`, { max: CLASS_LIMITS.postsPerHour, windowSeconds: 3600 })
     if (!rate.allowed) throw Errors.rateLimited(rate.retryAfter, 'You have posted a lot in the last hour. Try again later.')
     const id = newId()
     await this.db.$transaction([
-      this.db.classroomPost.create({ data: { id, classroomId, authorId: actorId, body: doc.data as Prisma.InputJsonValue } }),
+      this.db.classroomPost.create({ data: { id, classroomId, authorId: actorId, body: filtered.data as Prisma.InputJsonValue } }),
       this.db.classroom.update({ where: { id: classroomId }, data: { updatedAt: new Date() } }),
     ])
     const members = await this.db.classroomMember.findMany({ where: { classroomId, userId: { not: actorId } }, select: { userId: true } })
@@ -358,7 +370,7 @@ export class ClassroomsService {
   /** An announcement as comments need it (ADR-0047): null unless the viewer is a member; staff moderate. */
   async postPlace(viewerId: string, postId: string): Promise<{ classroomId: string; authorId: string; staff: boolean } | null> {
     const p = await this.db.classroomPost.findFirst({ where: { id: postId, deletedAt: null, OR: [{ moderation: 'OK' }, { authorId: viewerId }] } })
-    if (!p) return null
+    if (!p || (p.authorId !== viewerId && (await this.people.socialClosedIds([p.authorId])).length)) return null
     const loaded = await this.load(viewerId, p.classroomId)
     if (!loaded?.role) return null
     return { classroomId: p.classroomId, authorId: p.authorId, staff: loaded.role === 'TEACHER' || loaded.role === 'TA' }
@@ -367,10 +379,12 @@ export class ClassroomsService {
   async posts(viewerId: string, classroomId: string, size: number, after: [string, string] | null) {
     const { role } = await this.require(viewerId, classroomId)
     if (!role) throw Errors.forbidden()
-    return this.db.classroomPost.findMany({
+    const rows = await this.db.classroomPost.findMany({
       where: { classroomId, deletedAt: null, AND: [{ OR: [{ moderation: 'OK' }, { authorId: viewerId }] }, ...(after ? [{ OR: [{ createdAt: { lt: new Date(after[0]) } }, { createdAt: new Date(after[0]), id: { lt: after[1] } }] }] : [])] },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: size + 1,
     })
+    const closed = new Set(await this.people.socialClosedIds(rows.map((r) => r.authorId)))
+    return rows.filter((r) => !closed.has(r.authorId))
   }
 }

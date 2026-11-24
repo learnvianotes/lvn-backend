@@ -33,7 +33,19 @@ describe('security: roles', () => {
     // shareNote's role is what the owner lets one person do with one note (§5: EDITOR or VIEWER), never an account role;
     // setGroupRole is an admin giving a member a role below their own (ADR-0045); inviteToClassroom and setClassroomRole
     // are class staff placing someone in their class (ADR-0046). Both are tested below.
-    expect(roleInputs.sort()).toEqual(['inviteToClassroom(input).role', 'setClassroomRole(input).role', 'setGlobalRole(input).role', 'setGroupRole(input).role', 'shareNote(input).role'])
+    // The allowlist role is the GlobalRole a platform admin grants one invited email. Plan `appliesToRole` says which
+    // role an entitlement covers (ADR-0101). Neither is a student-facing way to gain a role; the next test calls them.
+    expect(roleInputs.sort()).toEqual([
+      'addAccessAllowlistEntry(input).role',
+      'createAdminPlan(input).entitlements.appliesToRole',
+      'inviteToClassroom(input).role',
+      'setClassroomRole(input).role',
+      'setGlobalRole(input).role',
+      'setGroupRole(input).role',
+      'shareNote(input).role',
+      'updateAccessAllowlistEntry(input).role',
+      'updateAdminPlan(input).entitlements.appliesToRole',
+    ])
   })
 
   // Every mutation of the API, several times: it grows with the API, so it has its own time.
@@ -86,7 +98,7 @@ describe('security: roles', () => {
   it('makes every new account a student, whatever it sends', async () => {
     const res = await t.gql<{ signUp: { session: { user: { globalRole: string } } | null } }>(
       'mutation ($input: SignUpInput!) { signUp(input: $input) { session { user { globalRole } } } }',
-      { input: { email: 'new-teacher-claim@example.com', password: 'a long enough passphrase', displayName: 'Claims To Teach', dateOfBirth: '1990-01-01', acceptedTermsVersion: '2026-10-08' } },
+      { input: { email: 'new-teacher-claim@example.com', password: 'a long enough passphrase', displayName: 'Claims To Teach', age: 36, acceptedTermsVersion: '2026-11-12' } },
     )
     expect(res.data?.signUp.session?.user.globalRole).toBe('STUDENT')
   })

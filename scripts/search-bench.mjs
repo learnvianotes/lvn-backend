@@ -58,7 +58,7 @@ const stamp = Date.now()
 const { termsVersion } = await gql('{ termsVersion }')
 const signUp = async (who) => {
   const up = await gql('mutation ($input: SignUpInput!) { signUp(input: $input) { session { accessToken user { id } } userErrors { message } } }', {
-    input: { email: `bench-${who}-${stamp}@example.com`, password: `bench passphrase ${stamp}`, displayName: `Bench ${who}`, dateOfBirth: '2000-01-01', acceptedTermsVersion: termsVersion },
+    input: { email: `bench-${who}-${stamp}@example.com`, password: `bench passphrase ${stamp}`, displayName: `Bench ${who}`, age: 26, acceptedTermsVersion: termsVersion },
   })
   return { token: up.signUp.session.accessToken, id: up.signUp.session.user.id }
 }

@@ -1,6 +1,6 @@
 import { UseGuards } from '@nestjs/common'
-import { Args, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql'
-import { CurrentViewer, SignedInGuard, type Viewer } from '@lvn-backend/auth-guard'
+import { Args, Context, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql'
+import { CurrentViewer, RequireMfa, SignedInGuard, type RequestContext, type Viewer } from '@lvn-backend/auth-guard'
 import { Errors, withUserErrors } from '@lvn-backend/errors'
 import { AppSettingsService } from '../application/app-settings.service'
 import { UsersService } from '../application/users.service'
@@ -25,12 +25,20 @@ import type {
 interface CollegeIdRow {
   id: string
   userId: string
+  method: string
+  purpose: string
+  teacherId: string | null
   status: string
   message: string | null
   createdAt: Date
   decidedAt: Date | null
   reason: string | null
   documentIds: string[]
+  aiVerdict: string | null
+  aiConfidence: number | null
+  aiReason: string | null
+  aiExtracted: unknown
+  aiCheckedAt: Date | null
 }
 
 /** Anyone may ask whether the control should be shown (ADR-0099). */
@@ -59,23 +67,28 @@ export class StudentIdVerificationResolver {
   }
 
   @Query('studentIdVerificationQueue')
+  @RequireMfa()
   studentIdVerificationQueue(@Args() { first, after }: QueryStudentIdVerificationQueueArgs, @CurrentViewer() viewer: Viewer): Promise<CollegeIdRow[]> {
     return this.verification.collegeIdQueue(viewer.userId, first ?? 20, after)
   }
 
   @Query('studentIdCardUrl')
+  @RequireMfa()
   studentIdCardUrl(@Args() { requestId }: QueryStudentIdCardUrlArgs, @CurrentViewer() viewer: Viewer): Promise<SignedUrl> {
     return this.verification.collegeIdUrl(viewer.userId, requestId)
   }
 
   @Query('studentIdVerificationSettings')
+  @RequireMfa()
   studentIdVerificationSettings(@CurrentViewer() viewer: Viewer): Promise<StudentIdVerificationSettings> {
     return this.settings.studentIdVerificationSettings(viewer.userId)
   }
 
   @Mutation('createStudentIdUploadIntent')
-  createStudentIdUploadIntent(@Args() { input }: MutationCreateStudentIdUploadIntentArgs, @CurrentViewer() viewer: Viewer): Promise<StudentIdUploadPayload> {
-    return withUserErrors<StudentIdUploadPayload>(async () => ({ upload: await this.verification.createCollegeIdUpload(viewer.userId, input) }), { upload: null })
+  createStudentIdUploadIntent(@Args() { input }: MutationCreateStudentIdUploadIntentArgs, @CurrentViewer() viewer: Viewer, @Context() ctx: RequestContext): Promise<StudentIdUploadPayload> {
+    const raw = (ctx.req as { ip?: string }).ip ?? ''
+    const ip = raw.startsWith('::ffff:') ? raw.slice('::ffff:'.length) : raw
+    return withUserErrors<StudentIdUploadPayload>(async () => ({ upload: await this.verification.createCollegeIdUpload(viewer.userId, input, ip) }), { upload: null })
   }
 
   @Mutation('submitStudentIdVerification')
@@ -97,6 +110,7 @@ export class StudentIdVerificationResolver {
   }
 
   @Mutation('reviewStudentIdVerification')
+  @RequireMfa()
   reviewStudentIdVerification(@Args() { input }: MutationReviewStudentIdVerificationArgs, @CurrentViewer() viewer: Viewer): Promise<StudentIdVerificationPayload> {
     return withUserErrors<StudentIdVerificationPayload>(
       async () => ({ request: (await this.verification.reviewCollegeId(viewer.userId, input.requestId, input.approve, input.reason)) as never }),
@@ -105,6 +119,7 @@ export class StudentIdVerificationResolver {
   }
 
   @Mutation('setStudentIdVerificationEnabled')
+  @RequireMfa()
   setStudentIdVerificationEnabled(@Args() { enabled }: MutationSetStudentIdVerificationEnabledArgs, @CurrentViewer() viewer: Viewer): Promise<OkPayload> {
     return withUserErrors<OkPayload>(async () => {
       await this.settings.setStudentIdVerificationEnabled(viewer.userId, enabled)
@@ -121,8 +136,13 @@ export class StudentIdVerificationResolver {
 
   @ResolveField('card')
   async card(@Parent() row: CollegeIdRow, @CurrentViewer() viewer: Viewer): Promise<VerificationDocument | null> {
-    const files = await this.verification.documentsFor(viewer.userId, row.documentIds)
+    const files = await this.verification.documentsFor(viewer.userId, row)
     const file = files[0]
     return file ? { fileId: file.id, fileName: file.originalFileName, mimeType: file.mimeType, sizeBytes: file.sizeBytes } : null
+  }
+
+  @ResolveField('aiCheck')
+  aiCheck(@Parent() row: CollegeIdRow, @CurrentViewer() viewer: Viewer) {
+    return this.verification.aiCheckFor(viewer.userId, row)
   }
 }

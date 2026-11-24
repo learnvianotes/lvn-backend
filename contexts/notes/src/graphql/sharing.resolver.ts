@@ -53,10 +53,34 @@ export class SharingResolver {
     return n.opened.access === 'OWNER' ? n.sharedWithConnections : null
   }
 
+  @ResolveField('visibilityChoices')
+  visibilityChoices(@Parent() n: NoteParent) {
+    if (n.opened.access !== 'OWNER') return null
+    return this.sharing.choices(n.opened.actor, n)
+  }
+
+  @ResolveField('sharePath')
+  sharePath(@Parent() n: NoteParent) {
+    if (n.opened.access !== 'OWNER' || !n.publishedVersionId) return null
+    if (n.visibility !== 'UNLISTED' && n.visibility !== 'PUBLIC') return null
+    return `/n/${n.slug}-${n.id}`
+  }
+
   @Mutation('setNoteSharedWithConnections')
   @UseGuards(SignedInGuard)
   setNoteSharedWithConnections(@Args() { input }: { input: { noteId: string; shared: boolean } }, @CurrentViewer() viewer: Viewer): Promise<NotePayload> {
     return withUserErrors<NotePayload>(async () => ({ note: toNote(await this.sharing.setSharedWithConnections(viewer.userId, input.noteId, input.shared)) }), { note: null })
+  }
+
+  @Query('forkingEnabled')
+  async forkingEnabled(@Args('noteId') noteId: string, @CurrentViewer() viewer: Viewer | null): Promise<boolean> {
+    const opened = await this.notes.open(viewer?.userId ?? null, noteId)
+    return opened?.note.forkingEnabled ?? false
+  }
+
+  @ResolveField('allowForks')
+  allowForks(@Parent() n: NoteParent): boolean {
+    return n.forkingEnabled
   }
 
   @ResolveField('forkedFrom')

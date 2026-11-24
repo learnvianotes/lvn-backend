@@ -3,11 +3,11 @@
 # One image, three uses:
 #   docker run <image>                                                 GraphQL API on :4000 (default)
 #   docker run <image> node apps/worker/dist/main.js                   background jobs
-#   docker run <image> node node_modules/prisma/build/index.js migrate deploy    migrations, before new api tasks start
+#   docker run <image> node scripts/migrate-and-sync.mjs                       migrations, then the study-note sync, before new api tasks start
 # Configuration comes only from the environment (docs/architecture/env.md); no .env file is copied in.
 #   docker build -f infra/docker/api.Dockerfile -t lvn-backend .
 
-ARG NODE_IMAGE=node:22-bookworm-slim
+ARG NODE_IMAGE=node:24-bookworm-slim
 
 FROM ${NODE_IMAGE} AS build
 # Prisma's schema engine needs OpenSSL.

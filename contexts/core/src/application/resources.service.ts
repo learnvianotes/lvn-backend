@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common'
-import { Action, can, type Actor, type ResourceStatus } from '@lvn/contracts/domain'
+import { Action, can, verificationBlocks, type Actor, type ResourceStatus } from '@lvn/contracts/domain'
 import { RESOURCE_LIMITS } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
@@ -97,7 +97,8 @@ export class ResourcesService implements OnModuleInit {
     if (can(actor, Action.RESOURCE_SUBMIT)) return { actor, why: null }
     if (actor.suspended) return { actor, why: 'Your account is suspended: resources wait until it ends.' }
     if (actor.restrictedMinor) return { actor, why: 'Resources are public with your name, so child accounts do not add them.' }
-    return { actor, why: 'Verify your account to add resources.' }
+    if (verificationBlocks(actor, Action.RESOURCE_SUBMIT)) return { actor, why: 'Verify your account to add resources.' }
+    return { actor, why: 'You cannot add resources.' }
   }
 
   // ── Reading ──────────────────────────────────────────────────────────────────────────────────────────────────

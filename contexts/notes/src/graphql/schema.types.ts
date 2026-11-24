@@ -122,10 +122,10 @@ export interface CreateUploadIntentInput {
 }
 
 /** Fixed error vocabulary (§6.2) */
-export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE'
+export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED' | 'AI_UNAVAILABLE_FOR_MINOR' | 'FEATURE_UNAVAILABLE_FOR_MINOR' | 'MINOR_PII_BLOCKED' | 'MFA_REQUIRED' | 'ADMIN_MFA_REQUIRED'
 
-/** What an upload is for: AVATAR, VERIFICATION_DOCUMENT, and ATTACHMENT (a picture, video, audio or PDF for a note you can edit, given as parentId). Other purposes arrive with their features. */
-export type FilePurpose = 'ATTACHMENT' | 'COVER' | 'VOICE_NOTE' | 'AVATAR' | 'IMPORT' | 'EXPORT' | 'VERIFICATION_DOCUMENT' | 'GROUP_PICTURE'
+/** What an upload is for. ATTACHMENT is a picture, video, audio, PDF, Word (.doc, .docx), PowerPoint (.ppt, .pptx) or plain-text file for a note you can edit (parentId). PAGE_IMAGE is a PNG or JPEG for a note page (parentId). VOICE_NOTE is audio; parentId is the note when the recording belongs to one, and omitted when it stands alone. Every one of these finishes with completeUpload, so a remote scan still runs. */
+export type FilePurpose = 'ATTACHMENT' | 'COVER' | 'VOICE_NOTE' | 'AVATAR' | 'IMPORT' | 'EXPORT' | 'VERIFICATION_DOCUMENT' | 'GROUP_PICTURE' | 'PAGE_IMAGE'
 
 /** The viewer's folder; nested up to 5 levels */
 export interface Folder {
@@ -182,6 +182,15 @@ export interface ImportSkip {
   /** The file (or card) in the upload */
   path: string
   reason: string
+}
+
+export interface InkStroke {
+  id: string
+  tool: StrokeTool
+  /** Set for pen and marker */
+  color: string | null
+  width: number
+  points: Array<StrokePoint>
 }
 
 /** A file a media card shows. The url works for 15 minutes (until expiresAt); load the card again for a new one. */
@@ -280,6 +289,26 @@ export interface MutationProposeTopicArgs {
   input: ProposeTopicInput
 }
 
+export interface MutationSaveNotePagesArgs {
+  input: SaveNotePagesInput
+}
+
+export interface MutationDeleteNotePageArgs {
+  input: NotePageIdInput
+}
+
+export interface MutationPlacePageImageArgs {
+  input: PlacePageImageInput
+}
+
+export interface MutationUpdatePageImageArgs {
+  input: UpdatePageImageInput
+}
+
+export interface MutationRemovePageImageArgs {
+  input: PageImageIdInput
+}
+
 export interface MutationAddPdfHighlightArgs {
   input: AddPdfHighlightInput
 }
@@ -372,7 +401,10 @@ export interface Note {
   draftUpdatedAt: Date | null
   publishedVersion: NoteVersion | null
   publishedAt: Date | null
-  forkingEnabled: boolean
+  /** Whether other people may copy this note */
+  allowForks: boolean
+  /** Private copies other people have made */
+  forkCount: number
   cardCount: number
   /** The first words of the note (at most 180 characters), for lists and previews */
   excerpt: string
@@ -394,6 +426,8 @@ export interface Note {
   pdfConversion?: PdfConversion | null
   /** Owner only; null for everyone else */
   moderation?: NoteModeration | null
+  /** In index order. Empty when the note has no pages. */
+  pages?: Array<NotePage>
   /** Its first picture as the viewer sees it (ADR-0076): a card's preview in Community; null without one */
   previewPicture?: MediaFile | null
   /** The owner's and editors' highlights, in page order (empty for readers); only those on one PDF with `fileId` */
@@ -406,6 +440,10 @@ export interface Note {
   forkedFrom?: ForkCredit | null
   /** Owner only: every connection of the owner reads it, and new connections will too (teachers, ADR-0013) */
   sharedWithConnections?: boolean | null
+  /** Owner only: Private, Unlisted and Public, plus Shared while the note is already Shared */
+  visibilityChoices?: Array<VisibilityChoice> | null
+  /** Owner only, once the note is published and Unlisted or Public: /n/{slug}-{id} */
+  sharePath?: string | null
   /** Owner only: the groups the note is shared to */
   groups?: Array<Group> | null
   /** Owner only: the classes the note is shared to */
@@ -511,6 +549,43 @@ export interface NoteModeration {
   canAppeal: boolean
 }
 
+export interface NotePage {
+  id: string
+  index: number
+  /** The drawing as stored: { strokes: [{ id, tool, color, width, points }] }. tool is pen, marker, eraser or ruler. */
+  drawing: unknown
+  strokes: Array<InkStroke>
+  images: Array<NotePageImage>
+}
+
+export interface NotePageIdInput {
+  pageId: string
+}
+
+export interface NotePageImage {
+  id: string
+  fileId: string
+  /** Null while the scan is pending or failed */
+  href: string | null
+  /** The file's name */
+  name: string
+  x: number
+  y: number
+  w: number
+  h: number
+  rotation: number
+}
+
+export interface NotePagePayload {
+  page: NotePage | null
+  userErrors: Array<UserError>
+}
+
+export interface NotePagesPayload {
+  pages: Array<NotePage> | null
+  userErrors: Array<UserError>
+}
+
 export interface NotePayload {
   note: Note | null
   userErrors: Array<UserError>
@@ -588,6 +663,10 @@ export interface OutlineItem {
   text: string
 }
 
+export interface PageImageIdInput {
+  imageId: string
+}
+
 export interface PageInfo {
   hasNextPage: boolean
   endCursor: string | null
@@ -659,6 +738,18 @@ export interface PdfPagesUsage {
   limit: number | null
 }
 
+export interface PlacePageImageInput {
+  pageId: string
+  /** A PAGE_IMAGE upload for this note, finished with completeUpload */
+  fileId: string
+  name?: string | null
+  x: number
+  y: number
+  w: number
+  h: number
+  rotation?: number | null
+}
+
 export interface ProposeTopicInput {
   subjectId: string
   parentId?: string | null
@@ -721,6 +812,10 @@ export interface QuerySharedWithMeArgs {
   after?: string | null
 }
 
+export interface QueryForkingEnabledArgs {
+  noteId: string
+}
+
 export interface QuerySyncPullArgs {
   since?: string | null
   after?: string | null
@@ -740,6 +835,33 @@ export interface Resource {
 export interface RestoreNoteVersionInput {
   noteId: string
   versionId: string
+}
+
+export interface SaveNotePageImageInput {
+  /** Absent: a new picture on this page */
+  id?: string | null
+  fileId: string
+  /** Stored as the file's name when set */
+  name?: string | null
+  x: number
+  y: number
+  w: number
+  h: number
+  rotation?: number | null
+}
+
+export interface SaveNotePageInput {
+  /** Absent: a new page */
+  id?: string | null
+  index: number
+  drawing: unknown
+  /** When set, replaces the pictures on this page. Omit to leave them. */
+  images?: Array<SaveNotePageImageInput> | null
+}
+
+export interface SaveNotePagesInput {
+  noteId: string
+  pages: Array<SaveNotePageInput>
 }
 
 /** Narrows the notes found (and topics, by subject); never widens what the viewer may read */
@@ -792,6 +914,13 @@ export interface ShareNoteInput {
   person: string
   role: NoteShareRole
 }
+
+export interface StrokePoint {
+  x: number
+  y: number
+}
+
+export type StrokeTool = 'PEN' | 'MARKER' | 'ERASER' | 'RULER'
 
 export interface StudyPdfInput {
   noteId: string
@@ -921,6 +1050,16 @@ export interface UpdateNoteDraftPayload {
   userErrors: Array<UserError>
 }
 
+export interface UpdatePageImageInput {
+  imageId: string
+  name?: string | null
+  x: number
+  y: number
+  w: number
+  h: number
+  rotation?: number | null
+}
+
 export interface UpdatePdfHighlightInput {
   highlightId: string
   color?: HighlightColor | null
@@ -965,7 +1104,18 @@ export interface UserError {
   field: Array<string> | null
   message: string
   code: ErrorCode
+  /** Seconds until a RATE_LIMITED caller may retry. Null for every other code. */
+  retryAfter: number | null
+  /** One address on AGE_RESTRICTED and on a blocked sign-in: SUPPORT_EMAIL (support@learnvianotes.in unless the environment sets another). */
+  supportEmail: string | null
 }
 
-/** Who can read a note (§4.2) */
-export type Visibility = 'PRIVATE' | 'SHARED' | 'PUBLIC'
+/** Who can read a note (§4.2). UNLISTED is the link: anyone with it can read, and it is left out of lists, search and profiles. */
+export type Visibility = 'PRIVATE' | 'SHARED' | 'UNLISTED' | 'PUBLIC'
+
+/** One visibility the owner may set. reason is set only when enabled is false. */
+export interface VisibilityChoice {
+  visibility: Visibility
+  enabled: boolean
+  reason: string | null
+}

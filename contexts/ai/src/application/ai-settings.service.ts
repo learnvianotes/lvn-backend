@@ -5,7 +5,11 @@ import { AUDIT, POLICY, type Audit, type Policy } from '@lvn-backend/facades'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { AI_CONFIG, type AiConfig } from '../ai.config'
 import { presetOf, PROVIDER_PRESETS, ROUTABLE_TASKS } from '../domain/catalog'
+import { isGeminiModel, isGoogleGenerativeUrl } from '../domain/gemini-policy'
+import { ID_CARD_CHECK_TASK } from '../domain/id-card-route'
+import { classifyModels, rejectionFor, useForTask, type AiModelUse } from '../domain/model-capabilities'
 import { ProviderError, type AiProviderAdapter, type AiProviderKind } from '../domain/provider'
+import { parseProviderUrl, ProviderUrlError } from '../domain/provider-url'
 import { AiGateway } from './ai-gateway'
 import { AiKeys } from './ai-keys'
 import { AI_PROVIDER_ADAPTER, AiProviders, type Target } from './ai-providers'
@@ -91,7 +95,7 @@ export class AiSettingsService {
       environment: { kind: this.environment?.name ?? null, chatModel: this.environment ? this.config.chatModel : null, embedModel: this.environment ? this.config.embedModel : null },
       routes: routes.map((r) => ({ task: r.task, connectionId: r.connectionId, model: r.model, inputMicroUsdPerMTok: r.inputMicroUsdPerMTok, outputMicroUsdPerMTok: r.outputMicroUsdPerMTok })),
       tasks: ROUTABLE_TASKS,
-      presets: PROVIDER_PRESETS,
+      presets: PROVIDER_PRESETS.filter((preset) => preset.kind !== 'GEMINI'),
       keysCanBeSaved: this.keys.available,
       spentThisMonthMicroUsd: spent,
       monthlyBudgetMicroUsd: this.config.monthlyBudgetMicroUsd,
@@ -108,7 +112,14 @@ export class AiSettingsService {
     const label = input.label.trim()
     if (!label || label.length > 60) throw Errors.validation('Give the connection a name of at most 60 characters.', ['input', 'label'])
     const baseUrl = trimmed(input.baseUrl)
-    if (baseUrl && !/^https?:\/\/[^\s/]+/.test(baseUrl)) throw Errors.validation('The address starts with http:// or https://.', ['input', 'baseUrl'])
+    if (baseUrl) {
+      try {
+        parseProviderUrl(baseUrl)
+      } catch (e) {
+        if (e instanceof ProviderUrlError) throw Errors.validation(e.message, ['input', 'baseUrl'])
+        throw e
+      }
+    }
     if (!baseUrl && !preset.defaultBaseUrl) throw Errors.validation(`${preset.name} needs an address, such as ${input.kind === 'OLLAMA' ? 'http://gpu-host:11434' : 'http://litellm:4000/v1'}.`, ['input', 'baseUrl'])
     const apiKey = trimmed(input.apiKey)
     if (apiKey && !this.keys.available) throw Errors.unavailable('Keys cannot be saved here: set AI_KEYS_SECRET on the API and the worker first.')
@@ -118,7 +129,12 @@ export class AiSettingsService {
     const chatModel = trimmed(input.chatModel)
     const embedModel = trimmed(input.embedModel)
     for (const [field, model] of [['chatModel', chatModel], ['embedModel', embedModel]] as const) if (model && model.length > 200) throw Errors.validation('That model name is too long.', ['input', field])
+    if (input.kind === 'GEMINI' || isGoogleGenerativeUrl(baseUrl) || isGeminiModel(chatModel) || isGeminiModel(embedModel)) {
+      throw Errors.validation('Gemini and Google Generative AI are not available.', ['input', input.kind === 'GEMINI' ? 'kind' : isGoogleGenerativeUrl(baseUrl) ? 'baseUrl' : 'chatModel'])
+    }
     if (embedModel && !preset.canEmbed) throw Errors.validation(`${preset.name} has no embeddings: leave the embedding model empty.`, ['input', 'embedModel'])
+    rejectUnlessSupported(chatModel, input.kind, 'CHAT', 'chatModel')
+    rejectUnlessSupported(embedModel, input.kind, 'EMBEDDING', 'embedModel')
     const prices = { inputMicroUsdPerMTok: price(input.inputMicroUsdPerMTok, 'inputMicroUsdPerMTok'), outputMicroUsdPerMTok: price(input.outputMicroUsdPerMTok, 'outputMicroUsdPerMTok'), embedMicroUsdPerMTok: price(input.embedMicroUsdPerMTok, 'embedMicroUsdPerMTok') }
     const key = apiKey ? { apiKeyCipher: this.keys.seal(apiKey), apiKeyHint: apiKey.slice(-4) } : input.clearApiKey ? { apiKeyCipher: null, apiKeyHint: null } : {}
     const data = { label, baseUrl, mayReceivePrivate: input.mayReceivePrivate, enabled: input.enabled, chatModel, embedModel, ...prices, ...key }
@@ -161,8 +177,13 @@ export class AiSettingsService {
     if (!model || model.length > 200) throw Errors.validation('Name the model that answers this task.', ['input', 'model'])
     const connection = input.connectionId ? await this.db.aiConnection.findUnique({ where: { id: input.connectionId } }) : null
     if (input.connectionId && !connection) throw Errors.notFound('That connection no longer exists.')
+    if (connection?.kind === 'GEMINI' || isGeminiModel(model) || isGoogleGenerativeUrl(connection?.baseUrl)) {
+      throw Errors.validation('Gemini and Google Generative AI are not available.', ['input', 'model'])
+    }
+    if (input.task === ID_CARD_CHECK_TASK && connection && !connection.mayReceivePrivate) throw Errors.validation('ID cards can only go to a connection that may receive private data.', ['input', 'connectionId'])
     if (connection && input.task === 'EMBED' && !presetOf(connection.kind).canEmbed) throw Errors.validation(`${presetOf(connection.kind).name} has no embeddings.`, ['input', 'connectionId'])
     if (connection && input.task === 'TRANSCRIBE' && !presetOf(connection.kind).canHear) throw Errors.validation(`${presetOf(connection.kind).name} cannot hear recordings.`, ['input', 'connectionId'])
+    if (connection) rejectUnlessSupported(model, connection.kind, useForTask(input.task), 'model')
     const data = { connectionId: connection?.id ?? null, model, inputMicroUsdPerMTok: price(input.inputMicroUsdPerMTok, 'inputMicroUsdPerMTok'), outputMicroUsdPerMTok: price(input.outputMicroUsdPerMTok, 'outputMicroUsdPerMTok') }
     await this.db.aiModelRoute.upsert({ where: { task: input.task }, create: { task: input.task, ...data }, update: data })
     await this.audit.record({ actorId: adminId, action: 'ai.route.saved', targetType: 'AiModelRoute', metadata: { task: input.task, connection: connection?.label ?? null, model } })
@@ -178,13 +199,17 @@ export class AiSettingsService {
     return this.settings(adminId)
   }
 
-  /** Every model the connection's account lists, for the page's model fields; empty when it lists none or fails. */
-  async listModels(adminId: string, id: string): Promise<string[]> {
+  /**
+   * Every model the connection's account lists, plus the select for each use. The full list drops nothing. A picker
+   * lists only models this app can call for that use. Empty when the provider lists none or the call fails.
+   */
+  async listModels(adminId: string, id: string) {
     await this.assertAdmin(adminId)
     const row = await this.db.aiConnection.findUnique({ where: { id } })
     if (!row) throw Errors.notFound('This connection no longer exists.')
     const adapter = this.providers.adapterFor(row)
-    return adapter?.models ? await adapter.models(TEST_TIMEOUT_MS).catch(() => [] as string[]) : []
+    const ids = adapter?.models ? await adapter.models(TEST_TIMEOUT_MS).catch(() => [] as string[]) : []
+    return classifyModels(ids, row.kind)
   }
 
   /**
@@ -233,6 +258,12 @@ export class AiSettingsService {
     const actor = await this.policy.actor(userId)
     if (actor?.globalRole !== GlobalRole.PLATFORM_ADMIN) throw Errors.forbidden('Only platform admins choose AI providers.')
   }
+}
+
+function rejectUnlessSupported(model: string | null, provider: AiProviderKind, use: AiModelUse, field: string) {
+  if (!model) return
+  const reason = rejectionFor(model, provider, use)
+  if (reason) throw Errors.validation(reason, ['input', field])
 }
 
 function price(value: number | null | undefined, field: string): number {

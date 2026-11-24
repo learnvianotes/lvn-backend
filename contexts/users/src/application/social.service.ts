@@ -1,12 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { Action, can, milestoneFor, type Actor, type GlobalRole, type Resource } from '@lvn/contracts/domain'
+import { Action, can, milestoneFor, verificationBlocks, type Actor, type GlobalRole, type Resource } from '@lvn/contracts/domain'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
 import { newId, PrismaService, type Prisma } from '@lvn-backend/prisma-base'
 import { RateLimiter } from '@lvn-backend/redis'
+import { methodsFromConsentRows } from '../domain/guardian-consent'
 import { isRestrictedMinor } from '../domain/rules'
-import { USERS_CONFIG, type UsersConfig } from '../users.config'
+import { AGE_FIELDS, namedInLists, RESTRICTION_CONSENT_SELECT } from './age'
 import { AuditService } from './audit.service'
+import { PlatformSettingsStore } from './platform-settings.store'
 import { PolicyService } from './policy.service'
 
 /** ADR-0043: follows a person may make in an hour. */
@@ -59,7 +61,7 @@ export class SocialService {
     private readonly limiter: RateLimiter,
     private readonly audit: AuditService,
     @Inject(EVENT_BUS) private readonly events: EventBus,
-    @Inject(USERS_CONFIG) private readonly config: UsersConfig,
+    private readonly settings: PlatformSettingsStore,
   ) {}
 
   /** The actor and everything `can()` needs about the target; a missing or deleted target is NOT_FOUND. */
@@ -68,7 +70,7 @@ export class SocialService {
     if (!actor) throw Errors.unauthenticated()
     const target = await this.db.user.findFirst({
       where: { id: targetId, deletedAt: null },
-      select: { id: true, globalRole: true, dateOfBirth: true, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } },
+      select: { id: true, globalRole: true, ...AGE_FIELDS, ...RESTRICTION_CONSENT_SELECT },
     })
     if (!target) throw Errors.notFound('Nobody on LearnViaNotes has that account.')
     const [following, followsActor, blockedByActor, blockingActor, restrictedByActor, connected, pending] = await Promise.all([
@@ -90,7 +92,7 @@ export class SocialService {
         kind: 'user',
         targetId,
         targetGlobalRole: target.globalRole as GlobalRole,
-        targetRestrictedMinor: isRestrictedMinor(target.dateOfBirth, this.config.digitalConsentAge, target.consents.length > 0),
+        targetRestrictedMinor: isRestrictedMinor(target, this.settings.consentAge(), methodsFromConsentRows(target), new Date(), this.settings.verificationSettings()),
         following: following > 0,
         followsActor: followsActor > 0,
         blocked: blockedByActor + blockingActor > 0,
@@ -135,7 +137,7 @@ export class SocialService {
     const { actor, resource } = await this.facts(actorId, targetId)
     if (resource.following) return
     if (!can(actor, Action.USER_FOLLOW, resource)) {
-      if (!actor.institutionVerified) throw Errors.forbidden('Verify your account to follow people.')
+      if (verificationBlocks(actor, Action.USER_FOLLOW, resource)) throw Errors.forbidden('Verify your account to follow people.')
       // Blocks and restricted minors get the same answer: neither is revealed (ADR-0016).
       throw Errors.forbidden("You can't follow this person.")
     }
@@ -216,7 +218,7 @@ export class SocialService {
     if (resource.connected || resource.pendingConnection === 'OUTGOING') return
     if (resource.pendingConnection === 'INCOMING') throw Errors.conflict('They already asked to connect with you: accept their request instead.')
     if (!can(actor, Action.USER_REQUEST_CONNECTION, resource)) {
-      if (!actor.institutionVerified) throw Errors.forbidden('Verify your account to connect with teachers.')
+      if (verificationBlocks(actor, Action.USER_REQUEST_CONNECTION, resource)) throw Errors.forbidden('Verify your account to connect with teachers.')
       throw Errors.forbidden('Teachers connect with other teachers.')
     }
     const limit = await this.limiter.hit(`users:connect:${actorId}`, { max: CONNECTION_REQUESTS_PER_DAY, windowSeconds: 86_400 })
@@ -232,7 +234,7 @@ export class SocialService {
     if (!request) throw Errors.notFound('That request is not there any more.')
     if (request.status !== 'PENDING') throw Errors.conflict('That request was already answered.')
     const { actor, resource } = await this.facts(actorId, request.fromUserId)
-    if (accept && !can(actor, Action.USER_RESPOND_TO_CONNECTION, resource)) throw Errors.forbidden(actor.institutionVerified ? undefined : 'Verify your account to connect with teachers.')
+    if (accept && !can(actor, Action.USER_RESPOND_TO_CONNECTION, resource)) throw Errors.forbidden(verificationBlocks(actor, Action.USER_RESPOND_TO_CONNECTION, resource) ? 'Verify your account to connect with teachers.' : undefined)
     await this.db.$transaction(async (tx) => {
       await tx.connectionRequest.update({ where: { id: requestId }, data: { status: accept ? 'ACCEPTED' : 'DECLINED', respondedAt: new Date() } })
       if (accept) await tx.connection.createMany({ data: [pair(actorId, request.fromUserId)], skipDuplicates: true })
@@ -272,11 +274,9 @@ export class SocialService {
     return rows.map((r) => (r.toUserId === userId ? { id: r.id, direction: 'INCOMING' as const, personId: r.fromUserId, createdAt: r.createdAt } : { id: r.id, direction: 'OUTGOING' as const, personId: r.toUserId, createdAt: r.createdAt }))
   }
 
-  /** People who may be named in a list: not deleted, and not restricted minors (ADR-0016). */
+  /** People who may be named in a list: not deleted, and not restricted minors (ADR-0016; the age is ADR-0104's). */
   private nameable(): Prisma.UserWhereInput {
-    const adultsBornBy = new Date()
-    adultsBornBy.setUTCFullYear(adultsBornBy.getUTCFullYear() - this.config.digitalConsentAge)
-    return { deletedAt: null, OR: [{ dateOfBirth: { lte: adultsBornBy } }, { consents: { some: { kind: 'GUARDIAN' } } }] }
+    return { deletedAt: null, accountStatus: { notIn: ['AGE_BLOCKED', 'BLOCKED'] }, OR: namedInLists(this.settings.consentAge(), new Date(), this.settings.emailPlusEnabled()) }
   }
 
   /** The person's followers, newest first, restricted minors left out of the names (they are still counted). */
@@ -332,8 +332,8 @@ export class SocialService {
   /** A restricted minor's profile is theirs alone (ADR-0043). */
   async profileVisible(viewerId: string | null, userId: string): Promise<boolean> {
     if (viewerId === userId) return true
-    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { dateOfBirth: true, consents: { where: { kind: 'GUARDIAN' }, select: { id: true }, take: 1 } } })
-    return !!u && !isRestrictedMinor(u.dateOfBirth, this.config.digitalConsentAge, u.consents.length > 0)
+    const u = await this.db.user.findFirst({ where: { id: userId, deletedAt: null }, select: { ...AGE_FIELDS, ...RESTRICTION_CONSENT_SELECT } })
+    return !!u && !isRestrictedMinor(u, this.settings.consentAge(), methodsFromConsentRows(u), new Date(), this.settings.verificationSettings())
   }
 
   /** A user by handle, or by id (links in notifications carry ids); deleted accounts are not found. */

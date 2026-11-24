@@ -1,6 +1,19 @@
 import { Module, type DynamicModule } from '@nestjs/common'
+import { MfaGuardModule } from '@lvn-backend/auth-guard'
+import { JsonScalar } from '@lvn-backend/graphql'
+import { AccessAllowlistService } from './application/access-allowlist.service'
+import { AccessGate } from './application/access-gate'
 import { AdminService } from './application/admin.service'
+import { AdminMetricsService } from './application/admin-metrics.service'
+import { AdminContentService } from './application/admin-content.service'
+import { AdminUsageMetricsService } from './application/admin-usage-metrics.service'
+import { DailyMetricsService } from './application/daily-metrics.service'
 import { AppSettingsService } from './application/app-settings.service'
+import { PlanAdminService } from './application/plan-admin.service'
+import { PublicPlansService } from './application/public-plans.service'
+import { PlatformSettingsStore } from './application/platform-settings.store'
+import { TermsVersionProvider } from './application/terms-version.provider'
+import { AdminTermsService } from './application/admin-terms.service'
 import { AuditService } from './application/audit.service'
 import { AuthService } from './application/auth.service'
 import { EntitlementService } from './application/entitlement.service'
@@ -13,6 +26,10 @@ import { PolicyService } from './application/policy.service'
 import { ConsentService } from './application/consent.service'
 import { DataExportService } from './application/data-export.service'
 import { ProfileService } from './application/profile.service'
+import { FIREBASE_DIRECTORY, FirebaseAdminDirectory } from './application/firebase-directory'
+import { GuardianManageService } from './application/guardian-manage.service'
+import { GuardianNoticeService } from './application/guardian-notice.service'
+import { MinorPurgeService } from './application/minor-purge.service'
 import { DnsMxLookup, FirebaseGoogleIdTokens, GOOGLE_ID_TOKENS, MX_LOOKUP } from './application/providers'
 import { RegistrationService } from './application/registration.service'
 import { SessionService } from './application/session.service'
@@ -20,7 +37,11 @@ import { SocialService } from './application/social.service'
 import { SkillsImportService } from './application/skills-import.service'
 import { TeacherProfileService } from './application/teacher-profile.service'
 import { UsersService } from './application/users.service'
+import { AnalyticsService, BackendErrorSink, SentrySubjectBinding } from './application/analytics.service'
+import { IdCardCheckService } from './application/id-card-check.service'
 import { VerificationService } from './application/verification.service'
+import { AudienceSyncService } from './application/audience-sync.service'
+import { WelcomeEmailService } from './application/welcome-email.service'
 import { AuthResolver } from './graphql/auth.resolver'
 import { ProfileResolver } from './graphql/profile.resolver'
 import { TermsResolver } from './graphql/terms.resolver'
@@ -32,9 +53,27 @@ import { StudentIdVerificationPublicResolver, StudentIdVerificationResolver } fr
 import { TeacherStatusResolver, VerificationResolver } from './graphql/verification.resolver'
 import { UserReferenceResolver } from './graphql/user-reference.resolver'
 import { UserSignInMethodsResolver, ViewerResolver } from './graphql/viewer.resolver'
+import { VersionResolver } from './graphql/version.resolver'
 import { USERS_CONFIG, type UsersConfig } from './users.config'
+import { AccountAdminService } from './application/account-admin.service'
 import { AccountDeletionService } from './application/account-deletion.service'
+import { AgeBlockService } from './application/age-block.service'
+import { SupportContact } from './application/support-contact'
 import { AccountResolver } from './graphql/account.resolver'
+import { GuardianResolver } from './graphql/guardian.resolver'
+import { AccessAllowlistResolver } from './graphql/access.resolver'
+import { AnalyticsOptOutResolver, AnalyticsResolver } from './graphql/analytics.resolver'
+import { AdminActivityService } from './application/admin-activity.service'
+import { MfaService } from './application/mfa.service'
+import { AdminActivityResolver } from './graphql/admin-activity.resolver'
+import { AdminDashboardResolver } from './graphql/admin.resolver'
+import { MfaResolver } from './graphql/mfa.resolver'
+import { AdminContentResolver } from './graphql/admin-content.resolver'
+import { AdminUsageMetricsResolver } from './graphql/admin-usage-metrics.resolver'
+import { PlansResolver } from './graphql/plans.resolver'
+import { SignInCodeService } from './application/sign-in-code.service'
+import { PasskeyService } from './application/passkey.service'
+import { SignInMethodsResolver } from './graphql/sign-in-methods.resolver'
 
 /**
  * The `users` bounded context (spec §6.1) — Postgres schema `users`.
@@ -51,35 +90,74 @@ export class UsersModule {
   static forRoot(config: UsersConfig): DynamicModule {
     return {
       module: UsersModule,
+      imports: [MfaGuardModule.forRoot(config.mfa)],
       providers: [
         { provide: USERS_CONFIG, useValue: config },
+        JsonScalar,
         // Google sign-in is off unless a Firebase project is configured (ADR-0007).
         { provide: GOOGLE_ID_TOKENS, useFactory: () => (config.firebaseProjectId ? new FirebaseGoogleIdTokens(config.firebaseProjectId) : null) },
+        { provide: FIREBASE_DIRECTORY, useFactory: () => new FirebaseAdminDirectory(config.firebaseProjectId) },
         { provide: MX_LOOKUP, useClass: DnsMxLookup },
         UsersService,
         PasswordService,
         SessionService,
         AuthService,
+        SignInCodeService,
+        PasskeyService,
         OAuthService,
         RegistrationService,
+        WelcomeEmailService,
+        AudienceSyncService,
         InstitutionalEmailService,
         PolicyService,
         EntitlementService,
         AuditService,
+        IdCardCheckService,
+        AnalyticsService,
+        BackendErrorSink,
+        SentrySubjectBinding,
         VerificationService,
+        PlatformSettingsStore,
+        TermsVersionProvider,
+        AdminTermsService,
+        AccessGate,
+        AccessAllowlistService,
         AppSettingsService,
+        AdminMetricsService,
+        AdminUsageMetricsService,
+        AdminContentService,
+        DailyMetricsService,
+        PlanAdminService,
+        PublicPlansService,
         AdminService,
+        AdminActivityService,
+        MfaService,
         UsersMaintenance,
         ProfileService,
         ConsentService,
         DataExportService,
+        SupportContact,
+        AgeBlockService,
+        AccountAdminService,
         AccountDeletionService,
+        MinorPurgeService,
+        GuardianNoticeService,
+        GuardianManageService,
         AccountResolver,
+        GuardianResolver,
+        AccessAllowlistResolver,
+        AdminDashboardResolver,
+        AdminActivityResolver,
+        AdminUsageMetricsResolver,
+        MfaResolver,
+        AdminContentResolver,
+        PlansResolver,
         LegacyService,
         SocialService,
         TeacherProfileService,
         SkillsImportService,
         ViewerResolver,
+        VersionResolver,
         UserSignInMethodsResolver,
         SocialResolver,
         PeopleResolver,
@@ -87,6 +165,7 @@ export class UsersModule {
         TeacherProfileFieldsResolver,
         UserReferenceResolver,
         AuthResolver,
+        SignInMethodsResolver,
         RegistrationResolver,
         VerificationResolver,
         StudentIdVerificationResolver,
@@ -95,8 +174,10 @@ export class UsersModule {
         ProfileResolver,
         TermsResolver,
         DataResolver,
+        AnalyticsResolver,
+        AnalyticsOptOutResolver,
       ],
-      exports: [PolicyService, EntitlementService, UsersMaintenance, DataExportService, SkillsImportService, AccountDeletionService],
+      exports: [PolicyService, EntitlementService, UsersMaintenance, DataExportService, SkillsImportService, AccountDeletionService, IdCardCheckService, WelcomeEmailService, AudienceSyncService, UsersService, PlatformSettingsStore],
     }
   }
 }

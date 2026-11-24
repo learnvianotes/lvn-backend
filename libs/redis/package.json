@@ -8,11 +8,11 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test",
-    "test": "jest"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest"
   },
   "dependencies": {
-    "@nestjs/common": "^11.2.7",
-    "ioredis": "^6.0.0"
+    "@nestjs/common": "^12.6.0",
+    "ioredis": "^6.1.0"
   },
   "devDependencies": {
     "@lvn-backend/testing": "workspace:*"

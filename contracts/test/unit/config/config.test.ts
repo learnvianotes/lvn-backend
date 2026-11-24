@@ -30,6 +30,9 @@ describe('loadConfig', () => {
     const cfg = loadConfig(apiConfigSchema, valid)
     expect(cfg.API_PORT).toBe(4000)
     expect(cfg.CORS_ORIGINS).toEqual(['http://localhost:3000', 'https://sandbox.learnvianotes.in'])
+    expect(cfg.MAIL_FROM).toBe('LearnViaNotes <no-reply@learnvianotes.in>')
+    expect(cfg.MAIL_REPLY_TO).toBe('support@learnvianotes.in')
+    expect(cfg.JWT_EXTRA_ISSUERS).toEqual([])
   })
 
   it('fails fast, naming every bad variable but never its value', () => {
@@ -56,6 +59,8 @@ describe('apiConfigSchema (Phase 1)', () => {
     expect(() => loadConfig(apiConfigSchema, { ...valid, SMTP_URL: undefined })).toThrow(/SMTP_URL/)
     expect(() => loadConfig(apiConfigSchema, { ...valid, MAIL_TRANSPORT: 'resend' })).toThrow(/RESEND_API_KEY/)
     expect(loadConfig(apiConfigSchema, { ...valid, MAIL_TRANSPORT: 'resend', RESEND_API_KEY: 're_123' }).MAIL_TRANSPORT).toBe('resend')
+    expect(loadConfig(apiConfigSchema, { ...valid, RESEND_AUDIENCE_ID: 'd110d285-117b-4c6f-8e0f-ede15540ca7f' }).RESEND_AUDIENCE_ID).toBe('d110d285-117b-4c6f-8e0f-ede15540ca7f')
+    expect(() => loadConfig(apiConfigSchema, { ...valid, RESEND_AUDIENCE_ID: 'general' })).toThrow(/RESEND_AUDIENCE_ID/)
   })
 
   it('sends through SES with the task role, needing only the region', () => {
@@ -74,9 +79,32 @@ describe('apiConfigSchema (Phase 1)', () => {
   it('defaults the digital consent age to 18 (DPDP) and bounds it', () => {
     expect(loadConfig(apiConfigSchema, valid).DIGITAL_CONSENT_AGE).toBe(18)
     expect(loadConfig(apiConfigSchema, { ...valid, DIGITAL_CONSENT_AGE: '16' }).DIGITAL_CONSENT_AGE).toBe(16)
-    expect(loadConfig(apiConfigSchema, valid).ACCOUNT_MINIMUM_AGE).toBe(18)
-    expect(loadConfig(apiConfigSchema, { ...valid, ACCOUNT_MINIMUM_AGE: '0' }).ACCOUNT_MINIMUM_AGE).toBe(0)
+    // The sign-up floor is the admin setting account_minimum_age, not an environment variable (ADR-0109).
+    expect(loadConfig(apiConfigSchema, { ...valid, ACCOUNT_MINIMUM_AGE: '4' })).not.toHaveProperty('ACCOUNT_MINIMUM_AGE')
+    const { MAIL_FROM: _from, ...withoutSender } = valid
+    expect(loadConfig(apiConfigSchema, withoutSender).MAIL_FROM).toBe('LearnViaNotes <no-reply@learnvianotes.in>')
+    expect(loadConfig(apiConfigSchema, { ...valid, MAIL_REPLY_TO: 'help@learnvianotes.in' }).MAIL_REPLY_TO).toBe('help@learnvianotes.in')
+    expect(loadConfig(apiConfigSchema, { ...valid, JWT_EXTRA_ISSUERS: 'https://www.learnvianotes.in, https://learnvianotes.in' }).JWT_EXTRA_ISSUERS).toEqual([
+      'https://www.learnvianotes.in',
+      'https://learnvianotes.in',
+    ])
+    expect(loadConfig(apiConfigSchema, valid).SUPPORT_EMAIL).toBe('support@learnvianotes.in')
+    expect(loadConfig(apiConfigSchema, { ...valid, SUPPORT_EMAIL: 'help@learnvianotes.in' }).SUPPORT_EMAIL).toBe('help@learnvianotes.in')
     expect(() => loadConfig(apiConfigSchema, { ...valid, DIGITAL_CONSENT_AGE: '10' })).toThrow(/DIGITAL_CONSENT_AGE/)
+  })
+
+  it('leaves the terms version to the users context unless set, and keeps it among the published ones (ADR-0103)', () => {
+    const cfg = loadConfig(apiConfigSchema, valid)
+    expect(cfg.TERMS_VERSION).toBeUndefined()
+    expect(cfg.TERMS_PUBLISHED_VERSIONS).toBeUndefined()
+    expect(loadConfig(apiConfigSchema, { ...valid, TERMS_VERSION: '2026-10-08' }).TERMS_VERSION).toBe('2026-10-08')
+    expect(loadConfig(apiConfigSchema, { ...valid, TERMS_PUBLISHED_VERSIONS: '2026-10-08, 2026-11-03' }).TERMS_PUBLISHED_VERSIONS).toBe('2026-10-08,2026-11-03')
+    expect(() => loadConfig(apiConfigSchema, { ...valid, TERMS_VERSION: '3 Nov 2026' })).toThrow(/TERMS_VERSION/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, TERMS_PUBLISHED_VERSIONS: '2026-10-08;2026-11-03' })).toThrow(/TERMS_PUBLISHED_VERSIONS/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, TERMS_VERSION: '2026-02-30' })).toThrow(/TERMS_VERSION: Use a real date/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, TERMS_PUBLISHED_VERSIONS: '2026-10-08,2026-13-01' })).toThrow(/TERMS_PUBLISHED_VERSIONS: Use real dates/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, TERMS_VERSION: '2026-12-01', TERMS_PUBLISHED_VERSIONS: '2026-10-08,2026-11-03' })).toThrow(/TERMS_VERSION: must be one of TERMS_PUBLISHED_VERSIONS/)
+    expect(loadConfig(apiConfigSchema, { ...valid, TERMS_VERSION: '2026-12-01', TERMS_PUBLISHED_VERSIONS: '2026-11-03,2026-12-01' }).TERMS_VERSION).toBe('2026-12-01')
   })
 
   it('needs endpoints and redirect URIs for a provider that is switched on', () => {
@@ -140,6 +168,14 @@ describe('workerConfigSchema', () => {
     expect(cfg.LEGACY_FIREBASE_PROJECT_ID).toBe('learnvianotes-old')
     expect(() => loadConfig(workerConfigSchema, { ...valid, S3_BUCKET: undefined })).toThrow(/S3_BUCKET/)
   })
+
+  it('rolls the admin metrics up at 02:00 IST over the last 3 days unless told otherwise (ADR-0106)', () => {
+    expect(loadConfig(workerConfigSchema, valid)).toMatchObject({ METRICS_ROLLUP_CRON: '30 20 * * *', METRICS_ROLLUP_DAYS: 3 })
+    expect(loadConfig(workerConfigSchema, { ...valid, METRICS_ROLLUP_CRON: ' 0 21 * * * ', METRICS_ROLLUP_DAYS: '7' })).toMatchObject({ METRICS_ROLLUP_CRON: '0 21 * * *', METRICS_ROLLUP_DAYS: 7 })
+    expect(() => loadConfig(workerConfigSchema, { ...valid, METRICS_ROLLUP_CRON: 'daily' })).toThrow(/METRICS_ROLLUP_CRON/)
+    expect(() => loadConfig(workerConfigSchema, { ...valid, METRICS_ROLLUP_DAYS: '0' })).toThrow(/METRICS_ROLLUP_DAYS/)
+    expect(() => loadConfig(workerConfigSchema, { ...valid, METRICS_ROLLUP_DAYS: '32' })).toThrow(/METRICS_ROLLUP_DAYS/)
+  })
 })
 
 describe('mobileConfigSchema', () => {
@@ -183,6 +219,34 @@ describe('telemetry', () => {
     expect(() => loadConfig(apiConfigSchema, { ...valid, OTEL_EXPORTER_OTLP_ENDPOINT: 'collector:4318' })).toThrow(/OTEL_EXPORTER_OTLP_ENDPOINT/)
     const c = loadConfig(apiConfigSchema, { ...valid, OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4318', SENTRY_DSN: 'https://key@o1.ingest.sentry.io/2', RELEASE: 'abc1234' })
     expect(c).toMatchObject({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4318', RELEASE: 'abc1234' })
+  })
+})
+
+describe('upload scanning (ADR-0102)', () => {
+  const secret = 's'.repeat(32)
+  it('leaves scanning off unless SCAN_MODE or CLAMAV_URL says otherwise', () => {
+    const cfg = loadConfig(apiConfigSchema, valid)
+    expect(cfg.SCAN_MODE).toBeUndefined()
+    expect(cfg.SCANNER_TIMEOUT_MS).toBe(180_000)
+    expect(cfg.SCAN_QUEUE_CONCURRENCY).toBe(4)
+    expect(cfg.SCAN_JOB_ATTEMPTS).toBe(5)
+    expect(cfg.UPLOADS_PER_MINUTE).toBe(10)
+    expect(cfg.UPLOADS_PER_DAY).toBe(100)
+    expect(cfg.UPLOAD_BYTES_PER_DAY).toBe(500 * 1024 * 1024)
+    expect(cfg.UPLOAD_PENDING_SCANS).toBe(12)
+    expect(cfg.UPLOADS_PER_IP_PER_MINUTE).toBe(30)
+    expect(loadConfig(apiConfigSchema, { ...valid, CLAMAV_URL: 'tcp://127.0.0.1:3310' }).CLAMAV_URL).toBe('tcp://127.0.0.1:3310')
+  })
+
+  it('requires the service address and secret for remote mode, and a private address outside development', () => {
+    expect(() => loadConfig(apiConfigSchema, { ...valid, SCAN_MODE: 'remote' })).toThrow(/SCANNER_URL[\s\S]*SCANNER_SECRET/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, SCAN_MODE: 'local' })).toThrow(/CLAMAV_URL/)
+    expect(() => loadConfig(apiConfigSchema, { ...valid, SCANNER_URL: 'http://10.0.0.5:8080' })).toThrow(/SCAN_MODE/)
+    const remote = { ...valid, SCAN_MODE: 'remote', SCANNER_URL: 'http://127.0.0.1:8080', SCANNER_SECRET: secret }
+    expect(loadConfig(apiConfigSchema, remote).SCANNER_URL).toBe('http://127.0.0.1:8080')
+    expect(() => loadConfig(apiConfigSchema, { ...remote, APP_ENV: 'sandbox' })).toThrow(/SCANNER_URL/)
+    expect(() => loadConfig(apiConfigSchema, { ...remote, APP_ENV: 'production', SCANNER_URL: 'https://scan.example.com' })).toThrow(/SCANNER_URL/)
+    expect(loadConfig(apiConfigSchema, { ...remote, APP_ENV: 'production', SCANNER_URL: 'http://10.0.1.8:8080' }).SCANNER_URL).toBe('http://10.0.1.8:8080')
   })
 })
 

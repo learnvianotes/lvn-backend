@@ -51,6 +51,10 @@ export interface NoteAccess {
    * by `excludeOwners`; newest published first, before the (at, id) cursor; at most `take`.
    */
   publicOnTopicsPage(viewerId: string, topicIds: string[], excludeOwners: string[], before: { at: Date; id: string } | null, take: number): Promise<PublicTopicPage[]>
+  /** Public notes, newest published first, not the viewer's. No topic or behaviour filter (ADR-0112). */
+  recentPublic(viewerId: string, take: number): Promise<PublicTopicNote[]>
+  /** The same list, paged, leaving out `excludeOwners`. `basedOn` stays empty for a minor. */
+  recentPublicPage(viewerId: string, excludeOwners: string[], before: { at: Date; id: string } | null, take: number): Promise<PublicTopicPage[]>
   /** Of these notes, the strictly public ones (published, not held back, not trashed), with their owners, in the order given. */
   publicAmong(noteIds: string[]): Promise<{ noteId: string; ownerId: string }[]>
 }

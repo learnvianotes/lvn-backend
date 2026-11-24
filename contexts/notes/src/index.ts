@@ -6,6 +6,10 @@ export { NotesModule }
 export { notesConfigFrom, type NotesConfig } from './notes.config'
 /** Implementation of the FILES facade, bound by the composition roots. */
 export { FilesService } from './application/files.service'
+/** Notes, storage, PDF pages and imports counted against a plan (NOTES_PLAN_USAGE). */
+export { NotesPlanUsage } from './application/plan-usage'
+/** Note and storage totals for the admin dashboard (ADR-0101). */
+export { NotesAdminStats } from './application/admin-stats'
 /** Implementation of the NOTE_MODERATION facade (ADR-0037), bound by the composition roots. */
 export { NoteModerationService } from './application/moderation.service'
 /** Implementation of the NOTE_ACCESS facade (ADR-0047), bound by the composition roots. */
@@ -24,10 +28,11 @@ export { SEMANTIC_SEARCH, type SemanticSearch } from './application/search-ranki
 export { NotesExport } from './application/notes-export'
 /** Imports of notes (ADR-0018), run by apps/worker from the notes.import queue. */
 export { NOTES_IMPORT_QUEUE, NoteImportService } from './application/note-import.service'
-/** The old site's study content into notes (ADR-0098), run by apps/worker's `content:import-legacy`. */
-export { firestoreContentSource, LegacyContentImport, type LegacyContentReport, type LegacyContentSource } from './application/legacy-content'
+/** Converts a prepared catalogue into notes (ADR-0098). Deploy reads `content/study` instead; see `study-content-sync`. */
+export { LegacyContentImport, type LegacyContentReport, type LegacyContentSource } from './application/legacy-content'
 export { NOTES_PDF_QUEUE, PDF_ENGINE_QUEUE, PDF_LIMITS, PdfConversionService } from './application/pdf-conversion.service'
 export { IMAGE_SIZES, MediaProcessingService, NOTES_MEDIA_QUEUE, variantKey } from './application/media-processing.service'
+export { FILE_SCAN_QUEUE } from './application/scan-policy'
 export { clamdScan } from './application/clamav'
 /** Nightly housekeeping (version pruning, emptying the trash), run by apps/worker. */
 export { NotesMaintenance } from './application/notes-maintenance'

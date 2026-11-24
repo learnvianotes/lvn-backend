@@ -73,7 +73,7 @@ export class ClassQuizzesService implements OnModuleInit {
     if (title.length > QUIZ_LIMITS.title) throw Errors.validation(`Keep the title to ${QUIZ_LIMITS.title} characters.`, ['input', 'title'])
     if (!input.questions.length) throw Errors.validation('Add at least one question.', ['input', 'questions'])
     if (input.questions.length > QUIZ_LIMITS.questions) throw Errors.validation(`A quiz has at most ${QUIZ_LIMITS.questions} questions.`, ['input', 'questions'])
-    const contents = input.questions.map((q, i) => question(q, i))
+    const contents = input.questions.map((q, i) => parseQuizQuestion(q, i))
     const rate = await this.limiter.hit(`core:class:quiz:${actorId}`, { max: QUIZ_LIMITS.quizzesPerHour, windowSeconds: 3600 })
     if (!rate.allowed) throw Errors.rateLimited(rate.retryAfter, 'You have published a lot of quizzes in the last hour. Try again later.')
     // The note it was made from, kept only when its author can read it.
@@ -189,7 +189,7 @@ export class ClassQuizzesService implements OnModuleInit {
 }
 
 /** A question as quiz card content: complete words, any page anchor dropped. */
-function question(raw: unknown, i: number): QuizContent {
+export function parseQuizQuestion(raw: unknown, i: number): QuizContent {
   const { anchor: _anchor, ...rest } = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
   const parsed = parseCardContent(CardType.QUIZ, rest)
   const field = ['input', 'questions', String(i)]

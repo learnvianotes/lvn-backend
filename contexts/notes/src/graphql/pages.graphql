@@ -1,0 +1,122 @@
+# Pages of a note: vector ink and pictures placed on it. Anyone who can read the note sees them; editors change them.
+
+enum StrokeTool { PEN MARKER ERASER RULER }
+
+type StrokePoint {
+  x: Float!
+  y: Float!
+}
+
+type InkStroke {
+  id: String!
+  tool: StrokeTool!
+  "Set for pen and marker"
+  color: String
+  width: Float!
+  points: [StrokePoint!]!
+}
+
+type NotePageImage {
+  id: UUID!
+  fileId: UUID!
+  "Null while the scan is pending or failed"
+  href: String
+  "The file's name"
+  name: String!
+  x: Float!
+  y: Float!
+  w: Float!
+  h: Float!
+  rotation: Float!
+}
+
+type NotePage {
+  id: UUID!
+  index: Int!
+  "The drawing as stored: { strokes: [{ id, tool, color, width, points }] }. tool is pen, marker, eraser or ruler."
+  drawing: JSON!
+  strokes: [InkStroke!]!
+  images: [NotePageImage!]!
+}
+
+extend type Note {
+  "In index order. Empty when the note has no pages."
+  pages: [NotePage!]!
+}
+
+input SaveNotePageImageInput {
+  "Absent: a new picture on this page"
+  id: UUID
+  fileId: UUID!
+  "Stored as the file's name when set"
+  name: String
+  x: Float!
+  y: Float!
+  w: Float!
+  h: Float!
+  rotation: Float
+}
+
+input SaveNotePageInput {
+  "Absent: a new page"
+  id: UUID
+  index: Int!
+  drawing: JSON!
+  "When set, replaces the pictures on this page. Omit to leave them."
+  images: [SaveNotePageImageInput!]
+}
+
+input SaveNotePagesInput {
+  noteId: UUID!
+  pages: [SaveNotePageInput!]!
+}
+
+input NotePageIdInput {
+  pageId: UUID!
+}
+
+input PlacePageImageInput {
+  pageId: UUID!
+  "A PAGE_IMAGE upload for this note, finished with completeUpload"
+  fileId: UUID!
+  name: String
+  x: Float!
+  y: Float!
+  w: Float!
+  h: Float!
+  rotation: Float
+}
+
+input UpdatePageImageInput {
+  imageId: UUID!
+  name: String
+  x: Float!
+  y: Float!
+  w: Float!
+  h: Float!
+  rotation: Float
+}
+
+input PageImageIdInput {
+  imageId: UUID!
+}
+
+type NotePagePayload {
+  page: NotePage
+  userErrors: [UserError!]!
+}
+
+type NotePagesPayload {
+  pages: [NotePage!]
+  userErrors: [UserError!]!
+}
+
+extend type Mutation {
+  "Write the ink and pictures of these pages. Editors of the note."
+  saveNotePages(input: SaveNotePagesInput!): NotePagesPayload!
+  deleteNotePage(input: NotePageIdInput!): OkPayload!
+  "Place a scanned PNG or JPEG on a page."
+  placePageImage(input: PlacePageImageInput!): NotePagePayload!
+  updatePageImage(input: UpdatePageImageInput!): NotePagePayload!
+  removePageImage(input: PageImageIdInput!): OkPayload!
+}

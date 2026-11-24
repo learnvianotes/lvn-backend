@@ -1,0 +1,77 @@
+# Signing in without a password (ADR-0115): a code emailed to the account, or a passkey.
+
+input RequestSignInCodeInput {
+  email: String!
+}
+
+input SignInWithCodeInput {
+  email: String!
+  "The 6 digits from the email. Spaces are ignored."
+  code: String!
+}
+
+"Options for navigator.credentials.get, and the id that names this attempt. Five minutes, one use."
+type PasskeySignInStart {
+  attemptId: String!
+  "PublicKeyCredentialRequestOptionsJSON, as a JSON string"
+  optionsJson: String!
+}
+
+input FinishPasskeySignInInput {
+  attemptId: String!
+  "AuthenticationResponseJSON from the browser, as a JSON string"
+  responseJson: String!
+}
+
+type Passkey {
+  id: UUID!
+  "What the person calls the device, e.g. \"Pixel 8\""
+  name: String!
+  createdAt: DateTime!
+  lastUsedAt: DateTime
+  "Synced to the person's cloud account (iCloud Keychain, Google Password Manager), so it survives a lost phone."
+  backedUp: Boolean!
+}
+
+type PasskeyRegistrationStart {
+  "PublicKeyCredentialCreationOptionsJSON, as a JSON string"
+  optionsJson: String!
+}
+
+input FinishPasskeyRegistrationInput {
+  "RegistrationResponseJSON from the browser, as a JSON string"
+  responseJson: String!
+  "Defaults to \"Passkey\". At most 60 characters."
+  name: String
+}
+
+type PasskeyPayload {
+  passkey: Passkey
+  userErrors: [UserError!]!
+}
+
+input RenamePasskeyInput {
+  id: UUID!
+  name: String!
+}
+
+extend type Query {
+  "Signed in. This account's passkeys, oldest first."
+  myPasskeys: [Passkey!]!
+}
+
+extend type Mutation {
+  "Emails a 6-digit sign-in code when an account has this address. Always ok, so it never tells who has an account."
+  requestSignInCode(input: RequestSignInCodeInput!): OkPayload!
+  "Signs in with the emailed code. Five wrong tries end the code; ask for a new one."
+  signInWithCode(input: SignInWithCodeInput!): AuthPayload!
+  "Starts a passkey sign-in. No email: the browser offers the passkeys it has for this site."
+  startPasskeySignIn: PasskeySignInStart!
+  finishPasskeySignIn(input: FinishPasskeySignInInput!): AuthPayload!
+  "Signed in. Starts adding a passkey for this device."
+  startPasskeyRegistration: PasskeyRegistrationStart!
+  "Signed in. Saves the passkey the browser made."
+  finishPasskeyRegistration(input: FinishPasskeyRegistrationInput!): PasskeyPayload!
+  renamePasskey(input: RenamePasskeyInput!): PasskeyPayload!
+  removePasskey(id: UUID!): OkPayload!
+}

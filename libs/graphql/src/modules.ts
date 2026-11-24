@@ -1,5 +1,6 @@
 import { IntrospectAndCompose, LocalGraphQLDataSource, type SupergraphSdlHook } from '@apollo/gateway'
 import { ApolloServerPluginInlineTraceDisabled } from '@apollo/server/plugin/disabled'
+import type { ApolloServerPlugin } from '@apollo/server' with { 'resolution-mode': 'import' }
 import { ApolloFederationDriver, ApolloGatewayDriver, type ApolloFederationDriverConfig, type ApolloGatewayDriverConfig } from '@nestjs/apollo'
 import { Module, type DynamicModule, type InjectionToken, type Type } from '@nestjs/common'
 import { GraphQLModule } from '@nestjs/graphql'
@@ -30,10 +31,11 @@ function subgraphModule(registry: SubgraphRegistry, { name, typeDefs, modules }:
     typeDefs,
     include: [...modules, GraphqlCommonModule],
     path: `${SUBGRAPH_PATH_PREFIX}/${name}`,
-    playground: false,
+    graphiql: false,
     introspection: false,
     // Traces are for Apollo's cloud; ours come from OpenTelemetry (§16.5).
-    plugins: [ApolloServerPluginInlineTraceDisabled()],
+    // The plugin factory is typed from @apollo/server's require entry; Nest's driver wants the import entry.
+    plugins: [ApolloServerPluginInlineTraceDisabled() as ApolloServerPlugin],
     transformSchema: (schema) => {
       registry.register(name, schema)
       return schema

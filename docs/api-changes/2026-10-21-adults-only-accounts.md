@@ -1,5 +1,8 @@
 # Accounts for adults only (College/Interview launch)
 
+> The live sign-up response is now `AGE_RESTRICTED` and the account is kept. See `2026-10-25-age-restricted-accounts.md`.
+> The forms ask for an age in whole years, not a date of birth. See `2026-11-04-age-instead-of-date-of-birth.md`.
+
 - Date: 2026-10-21
 - Package: `@lvn/contracts` 0.60.0
 - Spec: ADR-0091 (§6.2, §7, §15.2)

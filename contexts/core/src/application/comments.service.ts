@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common'
-import { milestoneFor } from '@lvn/contracts/domain'
+import { Action, milestoneFor, verificationBlocks } from '@lvn/contracts/domain'
 import { docSchema, docText } from '@lvn/contracts/validation'
 import { Errors } from '@lvn-backend/errors'
 import { EVENT_BUS, type EventBus } from '@lvn-backend/event-bus'
@@ -88,7 +88,7 @@ export class CommentsService {
       const r = await this.resources.one(viewerId, target.id)
       if (!r || r.status !== 'APPROVED') return null
       const actor = await this.policy.actor(viewerId)
-      const canComment = !!actor?.institutionVerified && !actor.suspended && !actor.restrictedMinor
+      const canComment = !!actor && !actor.suspended && !actor.restrictedMinor && !verificationBlocks(actor, Action.NOTE_COMMENT)
       place = { ...base, ownerId: r.submittedById, canComment, whyNot: canComment ? null : await this.whyNot(viewerId, true, undefined, 'resources'), canModerate: false, publicNote: true, link: { kind: 'RESOURCE', resourceId: target.id } }
     } else {
       const p = await this.classrooms.postPlace(viewerId, target.id)
@@ -99,12 +99,15 @@ export class CommentsService {
     if (place.canComment && place.ownerId !== viewerId && (await this.people.blockedBetween(viewerId, place.ownerId))) {
       place = { ...place, canComment: false, whyNot: "You can't comment here." }
     }
+    // Public notes, resources, group posts and class announcements expose the child. A private note does not use this gate.
+    if (place.publicNote || target.type === 'GROUP_POST' || target.type === 'CLASSROOM_POST') await this.people.assertSocialOpen(viewerId)
     return place
   }
 
   private async whyNot(viewerId: string, publicNote: boolean, otherwise = "You can't comment here.", publicWhat = 'public notes'): Promise<string> {
     const actor = await this.policy.actor(viewerId)
-    if (!actor?.institutionVerified) return 'Verify your account to comment.'
+    if (!actor) return otherwise
+    if (verificationBlocks(actor, Action.NOTE_COMMENT)) return 'Verify your account to comment.'
     if (publicNote && actor.restrictedMinor) return `Comments on ${publicWhat} are not open to your account yet.`
     return otherwise
   }
@@ -117,7 +120,8 @@ export class CommentsService {
 
   /** What of a discussion the viewer sees: no blocked people, approvals waiting only for their two people, class threads. */
   private async visible(viewerId: string, place: Place): Promise<Prisma.CommentWhereInput> {
-    const hidden = await this.people.blockedIds(viewerId)
+    const authors = await this.db.comment.findMany({ where: { targetType: place.target.type, targetId: place.target.id }, distinct: ['authorId'], select: { authorId: true }, take: 2000 })
+    const hidden = [...new Set([...(await this.people.blockedIds(viewerId)), ...(await this.people.socialClosedIds(authors.map((a) => a.authorId))).filter((id) => id !== viewerId)])]
     const and: Prisma.CommentWhereInput[] = [
       { OR: [{ state: 'VISIBLE' }, { authorId: viewerId }, { ownerId: viewerId }] },
       // Held, hidden or removed by moderation (ADR-0051): its author's alone.
@@ -129,13 +133,15 @@ export class CommentsService {
   }
 
   /** The document, and the scorer's verdict when it flags it: the comment is then held for review (ADR-0051). */
-  private body(raw: unknown) {
+  private async body(viewerId: string, raw: unknown) {
     const doc = docSchema.safeParse(raw)
     if (!doc.success) throw Errors.validation('This comment could not be read.', ['input', 'body'])
-    const text = docText(doc.data).trim()
-    if (!text) throw Errors.validation('Write something first.', ['input', 'body'])
+    const filtered = docSchema.safeParse(await this.people.filterMinorDoc(viewerId, doc.data))
+    if (!filtered.success) throw Errors.validation('This comment could not be read.', ['input', 'body'])
+    const text = docText(filtered.data).trim()
+    if (!text || text === '[removed]') throw Errors.validation('Write something first.', ['input', 'body'])
     if (text.length > COMMENT_LIMITS.chars) throw Errors.validation(`Keep comments to ${COMMENT_LIMITS.chars} characters.`, ['input', 'body'])
-    return { doc: doc.data as Prisma.InputJsonValue, held: this.moderation.verdictOf(text) }
+    return { doc: filtered.data as Prisma.InputJsonValue, held: this.moderation.verdictOf(text) }
   }
 
   private heldReason(message: string) {
@@ -145,7 +151,7 @@ export class CommentsService {
   async add(viewerId: string, input: { target: CommentTarget; cardId?: string | null; parentId?: string | null; body: unknown }): Promise<string> {
     const place = await this.require(viewerId, input.target)
     if (!place.canComment) throw Errors.forbidden(place.whyNot ?? undefined)
-    const { doc: body, held } = this.body(input.body)
+    const { doc: body, held } = await this.body(viewerId, input.body)
     if (input.cardId && (input.target.type !== 'NOTE' || !(await this.notes.hasCard(input.target.id, input.cardId)))) throw Errors.validation('That card is not in this note.', ['input', 'cardId'])
     let parent: CommentRow | null = null
     if (input.parentId) {
@@ -199,7 +205,7 @@ export class CommentsService {
     const { comment, place } = await this.mustGet(viewerId, commentId)
     if (comment.authorId !== viewerId) throw Errors.forbidden('Only its author edits a comment.')
     if (comment.moderation === 'HIDDEN' || comment.moderation === 'REMOVED') throw Errors.validation('A moderator took this comment down; appeal instead of editing it.')
-    const { doc, held } = this.body(body)
+    const { doc, held } = await this.body(viewerId, body)
     await this.db.comment.update({ where: { id: commentId }, data: { body: doc, editedAt: new Date(), ...(held ? { moderation: 'PENDING_REVIEW' as const, moderationReason: this.heldReason(held.message) } : {}) } })
     if (held) await this.moderation.fileSystemReport('COMMENT', commentId, held.reason, `Held when edited: ${held.message}`)
     // Only people named for the first time in this edit are told.

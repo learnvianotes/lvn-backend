@@ -1,5 +1,5 @@
 import type { AccessTokenVerifier, RequestContext, Viewer } from '@lvn-backend/auth-guard'
-import { requestIdFrom } from '@lvn-backend/observability'
+import { noteViewer, requestIdFrom } from '@lvn-backend/observability'
 
 /** Answers whether a session family was revoked within the access-token lifetime (Redis in apps/api). */
 export interface RevocationCheck {
@@ -15,7 +15,16 @@ export function viewerFromRequest(req: Req, verifier: AccessTokenVerifier): View
   if (!value?.startsWith('Bearer ')) return null
   const result = verifier.verify(value.slice(7).trim())
   if (!result.ok) return null
-  return { userId: result.claims.sub, sessionId: result.claims.sid, roles: result.claims.roles }
+  return {
+    userId: result.claims.sub,
+    sessionId: result.claims.sid,
+    roles: result.claims.roles,
+    amr: result.claims.amr ?? [],
+    mfa: result.claims.mfa === true,
+    mfaAt: typeof result.claims.mfaAt === 'number' ? result.claims.mfaAt : null,
+    mfaReq: result.claims.mfaReq === true,
+    mfaExempt: result.claims.mfaExempt === true,
+  }
 }
 
 /** The id the access log gave this request (from X-Request-Id when well-formed, §7.2), so both name it the same. */
@@ -29,6 +38,7 @@ export function buildRequestContext(verifier: AccessTokenVerifier, revocations: 
     const r = req as Req
     let viewer = viewerFromRequest(r, verifier)
     if (viewer && (await revocations.isRevoked(viewer.sessionId))) viewer = null
+    noteViewer(viewer?.userId)
     return { req: r, res: res as RequestContext['res'], requestId: requestIdOf(r), viewer }
   }
 }

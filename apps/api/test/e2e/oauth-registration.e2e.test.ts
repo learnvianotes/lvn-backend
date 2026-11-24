@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto'
 import { newId, PrismaService } from '@lvn-backend/prisma-base'
+import { STUDY_PUBLISHER_EMAIL, STUDY_PUBLISHER_ID } from '@lvn-backend/users'
 import { Mailbox } from '@lvn-backend/testing'
 import request from 'supertest'
 import { createTestApp, infra, type TestApp } from '../support/app'
@@ -12,7 +14,7 @@ const REDIRECT = 'http://localhost:3000/oauth/callback'
 const VERIFIER = 'v'.repeat(43)
 
 const GOOGLE = `mutation ($t: String!) { signInWithGoogle(input: { idToken: $t }) {
-  session { accessToken user { id email emailVerified registrationComplete displayName globalRole signInMethods } } userErrors { field message code } } }`
+  session { accessToken user { id email emailVerified verified registrationComplete displayName globalRole signInMethods } } userErrors { field message code } } }`
 const EXCHANGE = `mutation ($input: OAuthExchangeInput!) { oauthExchange(input: $input) {
   session { accessToken user { id email displayName emailVerified registrationComplete } } userErrors { field message code } } }`
 const SIGN_UP = `mutation ($input: SignUpInput!) { signUp(input: $input) { emailLinkPending session { accessToken user { id } } userErrors { field message code } } }`
@@ -26,9 +28,28 @@ const RESEND = `mutation { resendInstitutionalEmailCode { ok userErrors { code m
 
 let seq = 0
 const unique = (prefix: string) => `${prefix}${Date.now().toString(36)}${seq++}`
-const terms = '2026-10-08'
+const terms = '2026-11-12'
 
 type Payload<K extends string> = Record<K, { emailLinkPending?: boolean; session: { accessToken: string; user: Record<string, unknown> } | null; userErrors: { field: string[] | null; message: string; code: string }[] }>
+
+/** 30 days, SESSION_TTL_DAYS, as the Set-Cookie Max-Age in seconds. */
+const REFRESH_MAX_AGE = 30 * 24 * 60 * 60
+
+const refreshSetCookie = (res: request.Response): string => {
+  const cookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []).find((c) => c.startsWith('lvn_rt='))
+  expect(cookie).toBeDefined()
+  return cookie!
+}
+
+const expectRefreshCookie = (cookie: string, secure: boolean) => {
+  expect(cookie).toMatch(/HttpOnly/)
+  expect(cookie).toMatch(/SameSite=Lax/)
+  expect(cookie).toMatch(/Path=\/graphql/)
+  expect(cookie).toMatch(new RegExp(`Max-Age=${REFRESH_MAX_AGE}\\b`))
+  expect(cookie.split(';').some((part) => part.trim().toLowerCase().startsWith('domain='))).toBe(false)
+  if (secure) expect(cookie).toMatch(/;\s*Secure\b/)
+  else expect(cookie).not.toMatch(/Secure/)
+}
 type Ok<K extends string> = Record<K, { ok: boolean; userErrors: { field: string[] | null; message: string; code: string }[] }>
 
 describe('provider sign-in and registration', () => {
@@ -65,6 +86,21 @@ describe('provider sign-in and registration', () => {
   })
 
   describe('Google (ADR-0007)', () => {
+    it('sets a host-only refresh cookie on Google sign-up, Secure only when the API is HTTPS', async () => {
+      const email = `${unique('cookie')}@gmail.com`
+      const res = await request(t.app.getHttpServer()).post('/graphql').send({ query: GOOGLE, variables: { t: `google:${unique('uid')}:${email}:Cookie One` } })
+      expect(res.body.data.signInWithGoogle.session.user.email).toBe(email)
+      expectRefreshCookie(refreshSetCookie(res), false)
+
+      const https = await createTestApp({ JWT_ISSUER: 'https://api.example.test', FIREBASE_PROJECT_ID: 'lvn-test' })
+      try {
+        const secure = await request(https.app.getHttpServer()).post('/graphql').send({ query: GOOGLE, variables: { t: `google:${unique('uid')}:${unique('secure')}@gmail.com:Cookie Two` } })
+        expectRefreshCookie(refreshSetCookie(secure), true)
+      } finally {
+        await https.close()
+      }
+    })
+
     it('creates an account that owes its registration details, then completes it once', async () => {
       const email = `${unique('g')}@gmail.com`
       const res = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${unique('uid')}:${email}:Meera Iyer` })
@@ -72,40 +108,85 @@ describe('provider sign-in and registration', () => {
       expect(s.user).toMatchObject({ email, emailVerified: true, registrationComplete: false, displayName: 'Meera Iyer' })
       expect((await t.gql<{ viewer: { restrictedMinor: boolean } }>(VIEWER, {}, s.accessToken)).data!.viewer.restrictedMinor).toBe(true)
 
-      const bad = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'Meera', dateOfBirth: 'yesterday', acceptedTermsVersion: terms } }, s.accessToken)
-      expect(bad.data!.completeRegistration.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'dateOfBirth'] })
+      const bad = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'Meera', age: 0, acceptedTermsVersion: terms } }, s.accessToken)
+      expect(bad.data!.completeRegistration.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'age'] })
+      const missing = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'Meera', acceptedTermsVersion: terms } }, s.accessToken)
+      expect(missing.data!.completeRegistration.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'age'], message: 'Enter your age.' })
+      const fraction = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'Meera', age: 24.5, acceptedTermsVersion: terms } }, s.accessToken)
+      expect(fraction.errors?.[0]?.extensions.code).toBe('VALIDATION')
+      const legacyBad = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'Meera', dateOfBirth: 'yesterday', acceptedTermsVersion: terms } }, s.accessToken)
+      expect(legacyBad.data!.completeRegistration.userErrors[0]).toMatchObject({ code: 'VALIDATION', field: ['input', 'dateOfBirth'] })
 
-      const done = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'Meera Iyer', dateOfBirth: '2001-03-09', acceptedTermsVersion: terms } }, s.accessToken)
+      const done = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'Meera Iyer', age: 25, acceptedTermsVersion: terms } }, s.accessToken)
       expect(done.data!.completeRegistration).toEqual({ ok: true, userErrors: [] })
       const viewer = (await t.gql<{ viewer: Record<string, unknown> }>(VIEWER, {}, s.accessToken)).data!.viewer
       expect(viewer).toMatchObject({ registrationComplete: true, restrictedMinor: false, verified: false, institutionalEmailStatus: 'NONE' })
+      expect(await t.app.get(PrismaService).user.findUniqueOrThrow({ where: { id: s.user.id as string } })).toMatchObject({ declaredAge: 25, dateOfBirth: null })
 
-      const again = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'X', dateOfBirth: '2001-03-09', acceptedTermsVersion: terms } }, s.accessToken)
+      const again = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'X', age: 25, acceptedTermsVersion: terms } }, s.accessToken)
       expect(again.data!.completeRegistration.userErrors[0]!.code).toBe('CONFLICT')
     })
 
-    it('erases an unfinished account whose own answer is under the minimum age, and only that one (ADR-0091)', async () => {
+    it('completes registration from an app that still sends a date of birth, and keeps only the age (ADR-0104)', async () => {
+      const email = `${unique('legacy')}@gmail.com`
+      const s = (await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${unique('uid')}:${email}:Old App` })).data!.signInWithGoogle.session!
+      const born = new Date()
+      born.setUTCFullYear(born.getUTCFullYear() - 25)
+      const done = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'Old App', dateOfBirth: born.toISOString().slice(0, 10), acceptedTermsVersion: terms } }, s.accessToken)
+      expect(done.data!.completeRegistration).toEqual({ ok: true, userErrors: [] })
+      const row = await t.app.get(PrismaService).user.findUniqueOrThrow({ where: { id: s.user.id as string } })
+      expect(row).toMatchObject({ declaredAge: 25, dateOfBirth: null, registrationCompletedAt: expect.any(Date) })
+      expect((await t.gql<{ viewer: Record<string, unknown> }>(VIEWER, {}, s.accessToken)).data!.viewer).toMatchObject({ registrationComplete: true, restrictedMinor: false })
+    })
+
+    it('keeps an unfinished account whose own answer is under the minimum age, and signs that Google account in no further', async () => {
       const db = t.app.get(PrismaService)
       const uid = unique('young')
       const res = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${uid}:${uid}@gmail.com:Young One` })
       const s = res.data!.signInWithGoogle.session!
       const id = s.user.id as string
-      const young = new Date()
-      young.setUTCFullYear(young.getUTCFullYear() - 16)
+      const adult = new Date()
+      adult.setUTCFullYear(adult.getUTCFullYear() - 40)
 
-      const refused = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'Young One', dateOfBirth: young.toISOString().slice(0, 10), acceptedTermsVersion: terms } }, s.accessToken)
-      expect(refused.data!.completeRegistration).toEqual({ ok: false, userErrors: [{ code: 'UNDER_MINIMUM_AGE', field: ['input', 'dateOfBirth'], message: expect.stringMatching(/only for adults/) }] })
+      // When both are sent the age decides; the adult date of birth is ignored.
+      const refused = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'Young One', age: 7, dateOfBirth: adult.toISOString().slice(0, 10), acceptedTermsVersion: terms } }, s.accessToken)
+      expect(refused.data!.completeRegistration).toEqual({ ok: false, userErrors: [{ code: 'AGE_RESTRICTED', field: ['input', 'age'], message: expect.stringMatching(/create an account/) }] })
       const user = await db.user.findUniqueOrThrow({ where: { id } })
-      expect(user).toMatchObject({ displayName: 'Deleted user', dateOfBirth: null, registrationCompletedAt: null })
-      expect(user.deletedAt).not.toBeNull()
-      expect(await db.oAuthAccount.count({ where: { userId: id } })).toBe(0)
-      expect(await db.session.count({ where: { userId: id } })).toBe(0)
+      expect(user).toMatchObject({ displayName: 'Young One', accountStatus: 'AGE_BLOCKED', statusReason: 'Below the minimum age for an account.' })
+      expect(user).toMatchObject({ declaredAge: 7, dateOfBirth: null })
+      expect(user.ageDeclaredAt).not.toBeNull()
+      expect(user.registrationCompletedAt).not.toBeNull()
+      expect(user.deletedAt).toBeNull()
+      expect(await db.oAuthAccount.count({ where: { userId: id } })).toBe(1)
+      expect(await db.session.count({ where: { userId: id, revokedAt: null } })).toBe(0)
       expect((await t.gql(VIEWER, {}, s.accessToken)).data?.viewer ?? null).toBeNull()
 
-      // The same Google account starts again from nothing.
       const again = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${uid}:${uid}@gmail.com:Young One` })
-      expect(again.data!.signInWithGoogle.session!.user).toMatchObject({ registrationComplete: false })
-      expect(again.data!.signInWithGoogle.session!.user.id).not.toBe(id)
+      expect(again.data!.signInWithGoogle.session).toBeNull()
+      expect(again.data!.signInWithGoogle.userErrors[0]!.code).toBe('AGE_RESTRICTED')
+      expect(await db.user.count({ where: { email: `${uid}@gmail.com` } })).toBe(1)
+    })
+
+    it.each([13, 17])('completes registration at %s as a restricted minor, keeps the session, and records auto_unverified consent', async (age) => {
+      const db = t.app.get(PrismaService)
+      const uid = unique(`age${age}`)
+      const res = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${uid}:${uid}@gmail.com:School Age` })
+      const s = res.data!.signInWithGoogle.session!
+      const id = s.user.id as string
+      const done = await t.gql<Ok<'completeRegistration'>>(COMPLETE, { input: { displayName: 'School Age', age, parentEmail: `parent-${age}@example.com`, acceptedTermsVersion: terms } }, s.accessToken)
+      expect(done.data!.completeRegistration).toEqual({ ok: true, userErrors: [] })
+      const user = await db.user.findUniqueOrThrow({ where: { id }, include: { consents: true, guardianConsents: true } })
+      expect(user).toMatchObject({ accountStatus: 'ACTIVE', declaredAge: age, analyticsOptOut: true, statusReason: null })
+      expect(user.consents.map((c) => c.kind).sort()).toEqual(['PRIVACY', 'PUBLIC_CONTENT_LICENCE', 'TERMS'])
+      expect(user.email).not.toBe(`parent-${age}@example.com`)
+      expect(user.guardianConsents).toEqual([expect.objectContaining({ method: 'auto_unverified', ageBand: age === 13 ? '13_15' : '16_17', parentEmail: `parent-${age}@example.com`, verifiedAt: null })])
+      expect((await t.gql<{ viewer: { restrictedMinor: boolean; registrationComplete: boolean } }>(VIEWER, {}, s.accessToken)).data!.viewer).toMatchObject({
+        restrictedMinor: true,
+        registrationComplete: true,
+      })
+      const again = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${uid}:${uid}@gmail.com:School Age` })
+      expect(again.data!.signInWithGoogle.session!.user.id).toBe(id)
+      expect(again.data!.signInWithGoogle.userErrors).toEqual([])
     })
 
     it('signs the same Google account into the same LVN account', async () => {
@@ -125,7 +206,7 @@ describe('provider sign-in and registration', () => {
       const password = 'my own long password'
       const signUp = await request(t.app.getHttpServer()).post('/graphql').send({
         query: SIGN_UP,
-        variables: { input: { email, password, displayName: 'Ravi', dateOfBirth: '2002-01-01', acceptedTermsVersion: terms } },
+        variables: { input: { email, password, displayName: 'Ravi', age: 24, acceptedTermsVersion: terms } },
       })
       const userId = signUp.body.data.signUp.session.user.id as string
       const accessToken = signUp.body.data.signUp.session.accessToken as string
@@ -149,26 +230,29 @@ describe('provider sign-in and registration', () => {
       expect(seen.data!.userByHandle!.signInMethods).toBeNull()
     })
 
-    it('does not link Google to an account whose email is not verified, and does not create another user', async () => {
+    it('links Google to an unconfirmed address, drops the password that reserved it, and signs that session out', async () => {
       const email = `${unique('victim')}@example.com`
       const password = 'attacker chosen password'
       const attacker = await t.gql<Payload<'signUp'>>(SIGN_UP, {
-        input: { email, password, displayName: 'Not the owner', dateOfBirth: '2000-01-01', acceptedTermsVersion: terms },
+        input: { email, password, displayName: 'Not the owner', age: 26, acceptedTermsVersion: terms },
       })
       const attackerToken = attacker.data!.signUp.session!.accessToken
       const userId = attacker.data!.signUp.session!.user.id as string
       const db = t.app.get(PrismaService)
       const before = await db.user.count()
       const g = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:${unique('uid')}:${email}` })
-      expect(g.data!.signInWithGoogle.session).toBeNull()
-      expect(g.data!.signInWithGoogle.userErrors[0]).toMatchObject({ code: 'VALIDATION', message: expect.stringMatching(/not verified/) })
+      expect(g.data!.signInWithGoogle.userErrors).toEqual([])
+      expect(g.data!.signInWithGoogle.session!.user).toMatchObject({ id: userId, emailVerified: true, verified: false, displayName: 'Not the owner' })
       expect(await db.user.count()).toBe(before)
-      expect(await db.oAuthAccount.count({ where: { userId } })).toBe(0)
+      expect(await db.oAuthAccount.count({ where: { userId, provider: 'GOOGLE' } })).toBe(1)
       const user = await db.user.findUniqueOrThrow({ where: { id: userId } })
-      expect(user.emailVerifiedAt).toBeNull()
-      expect(user.passwordHash).not.toBeNull()
-      expect((await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password } })).data!.signIn.session).not.toBeNull()
-      expect((await t.gql<{ viewer: { id: string } }>(VIEWER, {}, attackerToken)).data!.viewer.id).toBe(userId)
+      expect(user.emailVerifiedAt).not.toBeNull()
+      expect(user.verifiedAt).toBeNull()
+      expect(user.passwordHash).toBeNull()
+      expect((await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email, password } })).data!.signIn.session).toBeNull()
+      expect((await t.gql<{ viewer: { id: string } | null }>('{ viewer { id } }', {}, attackerToken)).data!.viewer).toBeNull()
+      const googleToken = g.data!.signInWithGoogle.session!.accessToken
+      expect((await t.gql<{ viewer: { id: string; signInMethods: string[] } }>('{ viewer { id signInMethods } }', {}, googleToken)).data!.viewer).toEqual({ id: userId, signInMethods: ['GOOGLE'] })
     })
 
     it('refuses a Google token whose email is not verified, and stores nothing', async () => {
@@ -190,12 +274,10 @@ describe('provider sign-in and registration', () => {
       const userId = g.data!.signInWithGoogle.session!.user.id as string
       const db = t.app.get(PrismaService)
       const before = await db.user.count()
-      const form = { email, password, displayName: 'Other Name', dateOfBirth: '2001-03-09', acceptedTermsVersion: terms }
+      const form = { email, password, displayName: 'Other Name', age: 25, acceptedTermsVersion: terms }
 
-      const young = new Date()
-      young.setUTCFullYear(young.getUTCFullYear() - 16)
-      const minor = await t.gql<Payload<'signUp'>>(SIGN_UP, { input: { ...form, dateOfBirth: young.toISOString().slice(0, 10) } })
-      expect(minor.data!.signUp.userErrors[0]!.code).toBe('UNDER_MINIMUM_AGE')
+      const minor = await t.gql<Payload<'signUp'>>(SIGN_UP, { input: { ...form, age: 7 } })
+      expect(minor.data!.signUp.userErrors[0]!.code).toBe('AGE_RESTRICTED')
       expect(await db.user.findUnique({ where: { id: userId }, select: { passwordHash: true, deletedAt: true, displayName: true } })).toMatchObject({
         passwordHash: null,
         deletedAt: null,
@@ -261,6 +343,14 @@ describe('provider sign-in and registration', () => {
   describe('GitHub and LinkedIn (Authorization Code + PKCE)', () => {
     const githubUser = (email: string, verified = true) => ({ id: String(Math.floor(Math.random() * 1e9)), name: 'Kiran Rao', emails: [{ email, primary: true, verified }] })
 
+    it('sets the same host-only refresh cookie when a GitHub sign-up creates the account', async () => {
+      const email = `${unique('ghcookie')}@example.com`
+      stub.issue('code-cookie', { user: githubUser(email), codeVerifier: VERIFIER, redirectUri: REDIRECT })
+      const res = await request(t.app.getHttpServer()).post('/graphql').send({ query: EXCHANGE, variables: { input: { provider: 'GITHUB', code: 'code-cookie', codeVerifier: VERIFIER, redirectUri: REDIRECT } } })
+      expect(res.body.data.oauthExchange.session.user.email).toBe(email)
+      expectRefreshCookie(refreshSetCookie(res), false)
+    })
+
     it('signs in with a GitHub code and its verifier, and again into the same account', async () => {
       const user = githubUser(`${unique('gh')}@example.com`)
       stub.issue('code-1', { user, codeVerifier: VERIFIER, redirectUri: REDIRECT })
@@ -302,7 +392,7 @@ describe('provider sign-in and registration', () => {
   describe('institutional email (ADR-0017)', () => {
     const signUp = async (over: Record<string, unknown> = {}) => {
       const res = await t.gql<Payload<'signUp'>>(SIGN_UP, {
-        input: { email: `${unique('s')}@example.com`, password: 'a long enough passphrase', displayName: 'Asha Rao', dateOfBirth: '2004-05-01', acceptedTermsVersion: terms, ...over },
+        input: { email: `${unique('s')}@example.com`, password: 'a long enough passphrase', displayName: 'Asha Rao', age: 22, acceptedTermsVersion: terms, ...over },
       })
       return res.data!.signUp
     }
@@ -402,6 +492,85 @@ describe('provider sign-in and registration', () => {
 
     it('requires a session', async () => {
       expect((await t.gql(SET_INST, { e: 'a@iitb.ac.in' })).errors?.[0]?.extensions.code).toBe('UNAUTHENTICATED')
+    })
+  })
+
+  describe('study publisher', () => {
+    const RESET_REQ = 'mutation ($e: String!) { requestPasswordReset(input: { email: $e }) { ok userErrors { code } } }'
+    const RESET = 'mutation ($t: String!, $p: String!) { resetPassword(input: { token: $t, password: $p }) { ok userErrors { code } } }'
+    const REFRESH = 'mutation ($input: RefreshSessionInput!) { refreshSession(input: $input) { session { accessToken } } }'
+    const tokenHash = (token: string) => Uint8Array.from(createHash('sha256').update(token).digest())
+
+    it('cannot gain a password or a session by reset, email link, Google or a planted token', async () => {
+      const db = t.app.get(PrismaService)
+      await db.user.create({
+        data: {
+          id: STUDY_PUBLISHER_ID,
+          email: STUDY_PUBLISHER_EMAIL,
+          handle: 'learnvianotes',
+          displayName: 'LearnViaNotes',
+          emailVerifiedAt: new Date(),
+        },
+      })
+      try {
+        const form = { email: ` ${STUDY_PUBLISHER_EMAIL.toUpperCase()} `, password: 'correct horse battery staple', displayName: 'Attacker', age: 25, acceptedTermsVersion: terms }
+        const signUp = await t.gql<Payload<'signUp'>>(SIGN_UP, { input: form })
+        expect(signUp.data!.signUp).toMatchObject({ session: null, emailLinkPending: false, userErrors: [{ code: 'CONFLICT', field: ['input', 'email'] }] })
+        expect(await db.user.findUniqueOrThrow({ where: { id: STUDY_PUBLISHER_ID }, select: { passwordHash: true } })).toMatchObject({ passwordHash: null })
+        expect(await db.emailToken.count({ where: { userId: STUDY_PUBLISHER_ID } })).toBe(0)
+
+        const reset = await t.gql<{ requestPasswordReset: { ok: boolean; userErrors: { code: string }[] } }>(RESET_REQ, { e: STUDY_PUBLISHER_EMAIL })
+        expect(reset.data!.requestPasswordReset).toEqual({ ok: true, userErrors: [] })
+        expect(await db.emailToken.count({ where: { userId: STUDY_PUBLISHER_ID } })).toBe(0)
+        expect(await mail.countTo(STUDY_PUBLISHER_EMAIL)).toBe(0)
+
+        const signIn = await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email: STUDY_PUBLISHER_EMAIL, password: form.password } })
+        expect(signIn.data!.signIn.session).toBeNull()
+        expect(signIn.data!.signIn.userErrors[0]!.code).toBe('VALIDATION')
+
+        const resetToken = 'planted-reset-token'
+        await db.emailToken.create({
+          data: { id: newId(), userId: STUDY_PUBLISHER_ID, purpose: 'RESET_PASSWORD', tokenHash: tokenHash(resetToken), expiresAt: new Date(Date.now() + 3_600_000) },
+        })
+        const resetDone = await t.gql<{ resetPassword: { ok: boolean; userErrors: { code: string }[] } }>(RESET, { t: resetToken, p: form.password })
+        expect(resetDone.data!.resetPassword).toMatchObject({ ok: false, userErrors: [{ code: 'VALIDATION' }] })
+        expect(await db.user.findUniqueOrThrow({ where: { id: STUDY_PUBLISHER_ID }, select: { passwordHash: true, emailVerifiedAt: true } })).toMatchObject({ passwordHash: null })
+
+        const linkToken = 'planted-link-token'
+        await db.emailToken.create({
+          data: { id: newId(), userId: STUDY_PUBLISHER_ID, purpose: 'LINK_EMAIL', tokenHash: tokenHash(linkToken), passwordHash: 'not-a-real-hash', expiresAt: new Date(Date.now() + 3_600_000) },
+        })
+        const linked = await t.gql<{ verifyEmail: { ok: boolean; userErrors: { code: string }[] } }>(VERIFY, { t: linkToken })
+        expect(linked.data!.verifyEmail).toMatchObject({ ok: false, userErrors: [{ code: 'VALIDATION' }] })
+        expect(await db.user.findUniqueOrThrow({ where: { id: STUDY_PUBLISHER_ID }, select: { passwordHash: true } })).toMatchObject({ passwordHash: null })
+
+        const google = await t.gql<Payload<'signInWithGoogle'>>(GOOGLE, { t: `google:publisher-uid:${STUDY_PUBLISHER_EMAIL}:LearnViaNotes` })
+        expect(google.data?.signInWithGoogle?.session ?? null).toBeNull()
+        expect(google.errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+        expect(await db.oAuthAccount.count({ where: { userId: STUDY_PUBLISHER_ID } })).toBe(0)
+        expect(await db.session.count({ where: { userId: STUDY_PUBLISHER_ID } })).toBe(0)
+
+        const donor = await t.gql<Payload<'signUp'>>(SIGN_UP, { input: { ...form, email: `${unique('donor')}@example.com` } })
+        const donorId = donor.data!.signUp.session!.user.id as string
+        const donorHash = (await db.user.findUniqueOrThrow({ where: { id: donorId }, select: { passwordHash: true } })).passwordHash
+        await db.user.update({ where: { id: STUDY_PUBLISHER_ID }, data: { passwordHash: donorHash } })
+        const withPassword = await t.gql<Payload<'signIn'>>(SIGN_IN, { input: { email: STUDY_PUBLISHER_EMAIL, password: form.password } })
+        expect(withPassword.data!.signIn.session).toBeNull()
+        expect(withPassword.data!.signIn.userErrors[0]!.code).toBe('VALIDATION')
+        expect((await db.user.findUniqueOrThrow({ where: { id: STUDY_PUBLISHER_ID }, select: { passwordHash: true } })).passwordHash).toBe(donorHash)
+
+        const refreshToken = 'planted-refresh-token'
+        const sessionId = newId()
+        await db.session.create({
+          data: { id: sessionId, userId: STUDY_PUBLISHER_ID, familyId: newId(), refreshTokenHash: tokenHash(refreshToken), expiresAt: new Date(Date.now() + 86_400_000) },
+        })
+        const refreshed = await t.gql(REFRESH, { input: { refreshToken } })
+        expect(refreshed.errors?.[0]?.extensions.code).toBe('FORBIDDEN')
+        expect(await db.session.findUniqueOrThrow({ where: { id: sessionId } })).toMatchObject({ revokedAt: null, replacedById: null })
+        expect(await db.session.count({ where: { userId: STUDY_PUBLISHER_ID } })).toBe(1)
+      } finally {
+        await db.user.delete({ where: { id: STUDY_PUBLISHER_ID } })
+      }
     })
   })
 })

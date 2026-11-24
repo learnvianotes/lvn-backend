@@ -693,6 +693,8 @@ export interface DailyLine {
   line: string
   /** Written by AI for this person */
   fromAi: boolean
+  /** True when a model wrote the line, false for the chosen line. Clients use this for the AI label. */
+  aiGenerated: boolean
   /** AI is writing today's line: ask again in a few seconds */
   pending: boolean
 }
@@ -788,7 +790,7 @@ export interface EditGroupPostInput {
   body: unknown
 }
 
-export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE'
+export type ErrorCode = 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION' | 'CONFLICT' | 'RATE_LIMITED' | 'INTERNAL' | 'UNAVAILABLE' | 'UNDER_MINIMUM_AGE' | 'AGE_RESTRICTED' | 'AI_UNAVAILABLE_FOR_MINOR' | 'FEATURE_UNAVAILABLE_FOR_MINOR' | 'MINOR_PII_BLOCKED' | 'MFA_REQUIRED' | 'ADMIN_MFA_REQUIRED'
 
 export interface Exam {
   id: string
@@ -1532,6 +1534,26 @@ export interface MutationSetRhythmSharingArgs {
   input: SetRhythmSharingInput
 }
 
+export interface MutationCreateSharedQuizArgs {
+  input: SharedQuizWriteInput
+}
+
+export interface MutationUpdateSharedQuizArgs {
+  input: UpdateSharedQuizInput
+}
+
+export interface MutationSetSharedQuizVisibilityArgs {
+  input: SetSharedQuizVisibilityInput
+}
+
+export interface MutationSubmitSharedQuizAttemptArgs {
+  input: SubmitSharedQuizAttemptInput
+}
+
+export interface MutationDeleteSharedQuizArgs {
+  input: SharedQuizIdInput
+}
+
 export interface MutationAddWeeklyTaskArgs {
   input: AddWeeklyTaskInput
 }
@@ -1780,6 +1802,22 @@ export interface QueryResourceRecommendationsArgs {
   after?: string | null
 }
 
+export interface QuerySharedQuizArgs {
+  id: string
+}
+
+export interface QuerySharedQuizByLinkArgs {
+  token: string
+}
+
+export interface QueryMyQuizzesArgs {
+  first?: number | null
+}
+
+export interface QueryPublicQuizzesArgs {
+  first?: number | null
+}
+
 export interface QueryDoubtArgs {
   id: string
 }
@@ -1809,6 +1847,14 @@ export interface QuizAttemptPayload {
   /** The quiz again, now with its answers for the viewer */
   quiz: ClassQuiz | null
   userErrors: Array<UserError>
+}
+
+export type QuizVisibility = 'PRIVATE' | 'UNLISTED' | 'PUBLIC'
+
+export interface QuizVisibilityChoice {
+  visibility: QuizVisibility
+  enabled: boolean
+  reason: string | null
 }
 
 export interface ReactInput {
@@ -2291,6 +2337,78 @@ export interface SetRhythmSharingInput {
   share: boolean
 }
 
+export interface SetSharedQuizVisibilityInput {
+  quizId: string
+  visibility: QuizVisibility
+}
+
+export interface SharedQuiz {
+  id: string
+  title: string
+  visibility: QuizVisibility
+  owner: User
+  publishedAt: Date | null
+  questionCount: number
+  questions: Array<SharedQuizQuestion>
+  /** Owner only, when the quiz is not Private: /q/{linkToken} */
+  sharePath: string | null
+  /** Owner only */
+  visibilityChoices: Array<QuizVisibilityChoice> | null
+  /** The viewer's own attempts, newest first */
+  myAttempts: Array<QuizAttempt>
+  /** Owner only. Counts, never who took it. */
+  stats: SharedQuizStats | null
+  viewerIsOwner: boolean
+}
+
+export interface SharedQuizAttemptPayload {
+  attempt: QuizAttempt | null
+  quiz: SharedQuiz | null
+  userErrors: Array<UserError>
+}
+
+export interface SharedQuizIdInput {
+  quizId: string
+}
+
+export interface SharedQuizPayload {
+  quiz: SharedQuiz | null
+  userErrors: Array<UserError>
+}
+
+export interface SharedQuizQuestion {
+  id: string
+  position: number
+  question: unknown
+  choices: Array<ClassQuizChoice>
+  multiple: boolean
+  /** Null until the viewer has submitted, or is the owner */
+  correct: Array<string> | null
+  explanation: unknown | null
+}
+
+export interface SharedQuizQuestionStats {
+  questionId: string
+  /** How many scored attempts (the first one of each person) got this question right */
+  correctCount: number
+}
+
+export interface SharedQuizStats {
+  takerCount: number
+  scoredAttempts: number
+  practiceAttempts: number
+  /** Mean of each person's first score, as a fraction of the questions. Null when nobody has taken it. */
+  averageScore: number | null
+  questions: Array<SharedQuizQuestionStats>
+}
+
+export interface SharedQuizWriteInput {
+  title: string
+  /** 1 to 50 questions, each quiz card content */
+  questions: Array<unknown>
+  visibility?: QuizVisibility | null
+}
+
 export interface StartContestInput {
   contestId: string
 }
@@ -2332,6 +2450,12 @@ export interface SubmitResourceInput {
   coverFileId?: string | null
   /** Else the preview's imageUrl, copied into storage */
   imageUrl?: string | null
+}
+
+export interface SubmitSharedQuizAttemptInput {
+  quizId: string
+  clientOpId: string
+  answers: Array<QuizAnswerInput>
 }
 
 /** A task worth setting this week, and why */
@@ -2408,6 +2532,12 @@ export interface UpdateResourceInput {
   removeCover?: boolean | null
 }
 
+export interface UpdateSharedQuizInput {
+  quizId: string
+  title: string
+  questions: Array<unknown>
+}
+
 export interface UpdateWeeklyTaskInput {
   id: string
   target?: number | null
@@ -2428,6 +2558,10 @@ export interface UserError {
   field: Array<string> | null
   message: string
   code: ErrorCode
+  /** Seconds until a RATE_LIMITED caller may retry. Null for every other code. */
+  retryAfter: number | null
+  /** One address on AGE_RESTRICTED and on a blocked sign-in: SUPPORT_EMAIL (support@learnvianotes.in unless the environment sets another). */
+  supportEmail: string | null
 }
 
 export interface WeakTopic {

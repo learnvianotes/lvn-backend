@@ -22,7 +22,7 @@ type StudentIdUploadPayload {
   userErrors: [UserError!]!
 }
 
-"The student's own view of a college-ID request. `card` is null except for a platform admin, and null once the card has been deleted."
+"A college-ID request. `card` is set for a reviewer and null for the student. It is null once the card has been deleted."
 type StudentIdVerificationRequest {
   id: UUID!
   status: VerificationRequestStatus!
@@ -32,6 +32,8 @@ type StudentIdVerificationRequest {
   reason: String
   requester: User!
   card: VerificationDocument
+  "The automated reading, once it has run. The ID number is hidden from the student."
+  aiCheck: IdCardCheck
 }
 
 type StudentIdVerificationPayload {
@@ -39,10 +41,18 @@ type StudentIdVerificationPayload {
   userErrors: [UserError!]!
 }
 
-"Platform admins. `updatedAt` is null until someone changes the switch."
+"Platform admins. `updatedAt` is null until someone changes the college-ID switch. The AI switches default off."
 type StudentIdVerificationSettings {
   enabled: Boolean!
   updatedAt: DateTime
+  "student_id_ai_check. Off until an admin turns it on."
+  aiCheckEnabled: Boolean!
+  "student_id_ai_auto_approve. Off until an admin turns it on. Never rejects."
+  autoApproveOnHighConfidence: Boolean!
+  "student_id_ai_confidence_threshold, 50–100. Default 90."
+  confidenceThreshold: Int!
+  "student_id_image_retention_days. Default 30. A withdrawn card is deleted at once."
+  imageRetentionDays: Int!
 }
 
 input CreateStudentIdUploadInput {
@@ -72,9 +82,9 @@ extend type Query {
   studentIdVerificationEnabled: Boolean!
   "Signed in: the viewer's latest college-ID request, or null if they have never sent one."
   myStudentIdVerification: StudentIdVerificationRequest
-  "Platform admins: pending college-ID requests, oldest first. `after` is the last id seen."
+  "Platform admins: every pending college-ID request. A verified teacher: students of their institution. Managers, unverified teachers and students are refused. Oldest first. `after` is the last id seen."
   studentIdVerificationQueue(first: Int, after: UUID): [StudentIdVerificationRequest!]!
-  "Platform admins: a 5-minute link to the card. Every view is written to the audit log. The student, and every other non-admin, is refused."
+  "A reviewer of this card: a 5-minute link. Every view is written to the audit log. The student is refused."
   studentIdCardUrl(requestId: UUID!): SignedUrl!
   "Platform admins: the switch and when it last changed."
   studentIdVerificationSettings: StudentIdVerificationSettings!
@@ -87,7 +97,7 @@ extend type Mutation {
   submitStudentIdVerification(input: SubmitStudentIdVerificationInput!): StudentIdVerificationPayload!
   "The student withdraws their own pending college-ID request. The card is deleted."
   withdrawStudentIdVerification(requestId: UUID!): OkPayload!
-  "Platform admins. Approval sets the account verified with method DOCUMENTS. The card is deleted either way. A reason is optional."
+  "A reviewer of this request. Approval sets the account verified with method DOCUMENTS. The card is kept until the retention window. A reason is optional."
   reviewStudentIdVerification(input: ReviewStudentIdVerificationInput!): StudentIdVerificationPayload!
   "Platform admins. Does not change UPLOADS_ENABLED. Off is the default."
   setStudentIdVerificationEnabled(enabled: Boolean!): OkPayload!

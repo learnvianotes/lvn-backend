@@ -1,0 +1,402 @@
+# Platform-admin dashboard (ADR-0101): counts, every application setting, and plan prices.
+# Counts identify nobody. Prices are configuration: nothing is charged and no payment provider is called.
+# Ports, URLs and connection details stay in the environment.
+
+enum AdminSettingType { BOOLEAN INTEGER STRING }
+
+"What an admin may send for this setting."
+type AdminSettingConstraints {
+  "The smallest value, when the setting is an integer. Float so a byte cap above 2^31-1 can be listed."
+  min: Float
+  "The largest value, when the setting is an integer. Float so a byte cap above 2^31-1 can be listed."
+  max: Float
+  "Text: the longest value, in characters."
+  maxLength: Int
+  "Text: a regular expression the value must match."
+  pattern: String
+  "An integer may be cleared. Send an empty value. Empty means no cap for ai_monthly_budget_micro_usd."
+  nullable: Boolean!
+}
+
+"""
+One application setting. `value` is `true` or `false`, a decimal integer, text, or empty when an integer is cleared.
+`overridden` is false when no admin has saved a row: `value` is then the environment variable or the built-in default.
+Categories: auth, verification, uploads, ai, search, accounts, notes, legal.
+"""
+type AdminSetting {
+  key: String!
+  type: AdminSettingType!
+  category: String!
+  description: String!
+  value: String!
+  overridden: Boolean!
+  "When an admin last saved it. Null while the environment or the built-in default is in effect."
+  updatedAt: DateTime
+  constraints: AdminSettingConstraints!
+}
+
+type AdminSettingPayload {
+  setting: AdminSetting
+  userErrors: [UserError!]!
+}
+
+input UpdateAdminSettingInput {
+  key: String!
+  "The same form as AdminSetting.value."
+  value: String!
+}
+
+"People. `active` is distinct accounts with a session that is not revoked and not expired."
+type AdminUserMetrics {
+  total: Int!
+  newLast7Days: Int!
+  newLast30Days: Int!
+  active: Int!
+}
+
+"Notes, the catalogue, and places. Deleted notes, groups and classes are left out."
+type AdminContentMetrics {
+  notes: Int!
+  publicNotes: Int!
+  subjects: Int!
+  topics: Int!
+  groups: Int!
+  classrooms: Int!
+}
+
+"Token sums and cost are decimal strings because they can exceed a GraphQL Int. Cost is millionths of a US dollar, 0 when no call recorded a price."
+type AdminAiProviderUsage {
+  provider: String!
+  tasksRun: Int!
+  failures: Int!
+  promptTokens: String!
+  completionTokens: String!
+  costMicroUsd: String!
+}
+
+type AdminAiModelUsage {
+  provider: String!
+  model: String!
+  tasksRun: Int!
+  failures: Int!
+  promptTokens: String!
+  completionTokens: String!
+  costMicroUsd: String!
+}
+
+type AdminAiTaskUsage {
+  task: String!
+  tasksRun: Int!
+  failures: Int!
+  promptTokens: String!
+  completionTokens: String!
+  costMicroUsd: String!
+}
+
+"`from` is inclusive and `to` is exclusive, both aligned to a UTC minute. A refresh within that minute reuses the cached aggregate."
+type AdminAiMetrics {
+  from: DateTime!
+  to: DateTime!
+  tasksRun: Int!
+  failures: Int!
+  promptTokens: String!
+  completionTokens: String!
+  costMicroUsd: String!
+  byProvider: [AdminAiProviderUsage!]!
+  byModel: [AdminAiModelUsage!]!
+  byTask: [AdminAiTaskUsage!]!
+}
+
+"Bytes are a decimal string. Files are those stored: uploaded, processing, ready or quarantined."
+type AdminStorageMetrics {
+  bytes: String!
+  files: Int!
+}
+
+type AdminVerificationMetrics {
+  "Pending college-ID reviews."
+  studentIdQueue: Int!
+  "Pending verification requests of every purpose, including the college-ID queue."
+  pendingRequests: Int!
+  "Domains waiting for a decision (ACADEMIC_QUEUED or NEEDS_REVIEW)."
+  domainReviews: Int!
+}
+
+type AdminModerationMetrics {
+  openReports: Int!
+  openAppeals: Int!
+}
+
+type AdminScanMetrics {
+  "Uploads waiting for a scan. They are not served."
+  pending: Int!
+  "Scans that used up their attempts. They are not served."
+  failed: Int!
+}
+
+"""
+Dashboard totals. Cached in each API process for about a minute. No personal data.
+`from` and `to` bound AI usage only. Omit them for the last 30 days through the current minute.
+The window can be at most 366 days.
+"""
+type AdminMetrics {
+  generatedAt: DateTime!
+  users: AdminUserMetrics!
+  content: AdminContentMetrics!
+  ai: AdminAiMetrics!
+  storage: AdminStorageMetrics!
+  verification: AdminVerificationMetrics!
+  moderation: AdminModerationMetrics!
+  scans: AdminScanMetrics!
+}
+
+enum PlanInterval { NONE MONTH YEAR }
+
+"One limit on a plan. `limit` is a decimal string, or null for unlimited."
+type AdminPlanEntitlement {
+  key: LimitKey!
+  limit: String
+  appliesToRole: GlobalRole
+}
+
+"""
+A plan's price and limits. `priceMinor` is minor currency units (paise, cents): 49900 INR MONTH is ₹499 a month.
+`subscriberCount` is how many accounts are on it. Saving a price does not charge anyone.
+"""
+type AdminPlan {
+  id: UUID!
+  code: String!
+  name: String!
+  priceMinor: Int!
+  currency: String!
+  interval: PlanInterval!
+  features: [String!]!
+  active: Boolean!
+  entitlements: [AdminPlanEntitlement!]!
+  subscriberCount: Int!
+}
+
+type AdminPlanPayload {
+  plan: AdminPlan
+  userErrors: [UserError!]!
+}
+
+input AdminPlanEntitlementInput {
+  key: LimitKey!
+  "A whole number of the unit LimitKey names, or null for unlimited."
+  limit: String
+  "Null means every role. A role-specific row wins over that one."
+  appliesToRole: GlobalRole
+}
+
+input CreateAdminPlanInput {
+  "2–32 characters: A–Z, digits and underscores, starting with a letter. Stored uppercase."
+  code: String!
+  name: String!
+  "Minor units, 0 to 2000000000."
+  priceMinor: Int!
+  "ISO 4217, three letters."
+  currency: String!
+  interval: PlanInterval!
+  features: [String!]
+  active: Boolean
+  "Replaces nothing: these are the plan's limits. Empty means unlimited everywhere."
+  entitlements: [AdminPlanEntitlementInput!]
+}
+
+input UpdateAdminPlanInput {
+  id: UUID!
+  name: String
+  priceMinor: Int
+  currency: String
+  interval: PlanInterval
+  "Replaces the whole feature list, including with an empty list."
+  features: [String!]
+  active: Boolean
+  "Replaces the whole limit list, including with an empty list. Omit to leave the limits."
+  entitlements: [AdminPlanEntitlementInput!]
+}
+
+"Where a value in effect comes from: a saved admin setting, the environment variable, or the built-in default."
+enum TermsVersionSource { SETTING ENV DEFAULT }
+
+"The latest save or reset of the terms_version setting."
+type AdminTermsChange {
+  "The admin who made it. Null when that account is gone."
+  actorId: UUID
+  "Null when that account is gone or deleted."
+  actorDisplayName: String
+  at: DateTime!
+  "The version in effect before the change."
+  previous: String
+}
+
+"""
+The terms version that signUp, completeRegistration and acceptTerms require (Query.termsVersion), and who has accepted
+it (ADR-0103). Counts are accounts that are not deleted, by their latest Terms acceptance, the same rule as
+User.termsAccepted. A count below 5 is null, so a small group is not shown. Change the version with
+updateAdminSetting(key: "terms_version"); it must be one of publishedVersions (setting terms_published_versions).
+"""
+type AdminTermsStatus {
+  current: String!
+  source: TermsVersionSource!
+  "Versions whose text the web has published, oldest first. Only these may be chosen."
+  publishedVersions: [String!]!
+  "Accounts whose latest acceptance is the current version. Null when fewer than 5."
+  acceptedCurrent: Int
+  "Accounts whose latest acceptance is another version; they are asked to accept again. Null when fewer than 5."
+  acceptedOlder: Int
+  "Null when no admin has saved or reset terms_version."
+  lastChange: AdminTermsChange
+}
+
+enum AccountStatus { ACTIVE AGE_BLOCKED BLOCKED SUSPENDED }
+
+"Which accounts adminUsers returns. BLOCKED_OR_SUSPENDED is both reversible holds."
+enum AdminUserStatusFilter { AGE_BLOCKED BLOCKED_OR_SUSPENDED ACTIVE }
+
+"An account as a platform admin sees it, including its age (ADR-0104) and the standing reason."
+type AdminManagedUser {
+  id: UUID!
+  email: String!
+  displayName: String!
+  handle: String!
+  "YYYY-MM-DD. Only accounts that have one: registered before ADR-0104, or set by an admin. Null otherwise."
+  dateOfBirth: String
+  """
+  Whole years now (ADR-0104): from dateOfBirth when there is one, else the age given at registration plus the whole
+  years since, which is never more than the real age. Null before registration is finished.
+  """
+  age: Int
+  accountStatus: AccountStatus!
+  statusReason: String
+  globalRole: GlobalRole!
+  createdAt: DateTime!
+}
+
+type AdminUserList {
+  users: [AdminManagedUser!]!
+  total: Int!
+}
+
+type AdminUserPayload {
+  user: AdminManagedUser
+  userErrors: [UserError!]!
+}
+
+input AdminUpdateUserInput {
+  userId: UUID!
+  displayName: String
+  email: String
+  """
+  Whole years, 1 to 120, as of now (ADR-0104). The age gate runs again. Refused (VALIDATION) on an account that has
+  a date of birth, which decides the age (correct dateOfBirth instead), and together with dateOfBirth.
+  """
+  age: Int
+  "YYYY-MM-DD. The age gate runs again; a date of birth decides the age over a declared one. Not together with age."
+  dateOfBirth: String
+  "Why this change is being made. Required, including when a new age or date of birth lets an under-age account pass."
+  reason: String!
+}
+
+input AdminSetAccountStandingInput {
+  userId: UUID!
+  "ACTIVE lifts a block or suspension. BLOCKED is indefinite. SUSPENDED needs until. AGE_BLOCKED is refused: correct the age or date of birth."
+  status: AccountStatus!
+  reason: String!
+  "Required when status is SUSPENDED. A time in the future."
+  until: DateTime
+}
+
+input AdminDeleteUserInput {
+  userId: UUID!
+  reason: String!
+  "The exact word DELETE."
+  confirm: String!
+}
+
+input AdminActivityFilter {
+  actorId: UUID
+  "Exact action name, such as settings.updated or mfa.verified."
+  action: String
+  targetType: String
+  from: DateTime
+  to: DateTime
+}
+
+"One append-only audit row. details has secrets redacted. There is no mutation that changes or deletes it."
+type AdminActivityEntry {
+  id: UUID!
+  actorId: UUID
+  "The actor's email at the time. Null when the account had already been removed."
+  actorEmail: String
+  action: String!
+  targetType: String!
+  targetId: UUID
+  details: JSON
+  ip: String
+  userAgent: String
+  createdAt: DateTime!
+}
+
+type AdminActivityConnection {
+  entries: [AdminActivityEntry!]!
+  "Pass as cursor to read the next page. Null on the last page."
+  nextCursor: String
+}
+
+type AdminActivityActionCount {
+  action: String!
+  count: Int!
+}
+
+type AdminActivityDayCount {
+  "UTC midnight of that day."
+  day: DateTime!
+  count: Int!
+}
+
+"Counts for charts. from is inclusive and to is exclusive. Omit both for the last 30 days. At most 366 days."
+type AdminActivitySummary {
+  from: DateTime!
+  to: DateTime!
+  total: Int!
+  byAction: [AdminActivityActionCount!]!
+  byDay: [AdminActivityDayCount!]!
+}
+
+extend type Query {
+  "Platform admins with a valid MFA. Audit rows, newest first. limit is 1 to 100, 50 when omitted."
+  adminActivity(filter: AdminActivityFilter, cursor: String, limit: Int): AdminActivityConnection!
+  "Platform admins with a valid MFA. How many audit rows, per action and per UTC day."
+  adminActivitySummary(from: DateTime, to: DateTime): AdminActivitySummary!
+  "Platform admins. Counts for the dashboard."
+  adminMetrics(from: DateTime, to: DateTime): AdminMetrics!
+  "Platform admins. Every application setting, with its type, description and validation."
+  adminSettings: [AdminSetting!]!
+  "Platform admins. The terms version in effect, where it comes from, the published versions and acceptance counts."
+  adminTermsStatus: AdminTermsStatus!
+  "Platform admins. Every plan, with its price, limits and how many accounts are on it."
+  adminPlans: [AdminPlan!]!
+  "Platform admins. Accounts in one standing, optionally matched on name, email or handle."
+  adminUsers(status: AdminUserStatusFilter!, search: String, first: Int): AdminUserList!
+}
+
+extend type Mutation {
+  "Platform admins. Saves one setting and writes an audit row. A boolean is true or false."
+  updateAdminSetting(input: UpdateAdminSettingInput!): AdminSettingPayload!
+  "Platform admins. Forgets the saved row. The environment variable or the built-in default applies again."
+  resetAdminSetting(key: String!): AdminSettingPayload!
+  "Platform admins. Adds a plan. Nothing is charged."
+  createAdminPlan(input: CreateAdminPlanInput!): AdminPlanPayload!
+  "Platform admins. Edits a plan's name, price, limits, features or active flag. The code stays. FREE cannot be deactivated."
+  updateAdminPlan(input: UpdateAdminPlanInput!): AdminPlanPayload!
+  "Platform admins. Deletes a plan nobody is on. FREE cannot be deleted. People on a plan are left where they are: mark it inactive instead."
+  deleteAdminPlan(id: UUID!): OkPayload!
+  "Platform admins. Edits name, email, age or date of birth and re-runs the age gate. A passing age clears AGE_BLOCKED. Audited."
+  adminUpdateUser(input: AdminUpdateUserInput!): AdminUserPayload!
+  "Platform admins. Blocks, suspends or restores an account. Block and suspend revoke every session. Audited."
+  adminSetAccountStanding(input: AdminSetAccountStandingInput!): AdminUserPayload!
+  "Platform admins. Permanently anonymises the account, deletes its files and sessions, and keeps a hashed-email tombstone. confirm must be DELETE."
+  adminDeleteUser(input: AdminDeleteUserInput!): OkPayload!
+}
