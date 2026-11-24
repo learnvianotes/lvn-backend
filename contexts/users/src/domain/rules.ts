@@ -15,7 +15,7 @@ export const DEFAULT_TERMS_VERSION = '2026-11-12'
  * only choose one of these. The admin setting `terms_published_versions`, else TERMS_PUBLISHED_VERSIONS, replaces it.
  * `2026-11-12` is the 13+ terms update (ADR-0113). Older dates stay so an acceptance of them is still a known version.
  */
-export const DEFAULT_PUBLISHED_TERMS_VERSIONS: readonly string[] = ['2026-10-08', '2026-11-03', '2026-11-12']
+export const DEFAULT_PUBLISHED_TERMS_VERSIONS: readonly string[] = ['2026-10-08', '2026-11-03', '2026-11-12', '2026-11-25']
 
 export const SESSION_TTL_DAYS = 30
 export const VERIFY_EMAIL_TTL_HOURS = 24

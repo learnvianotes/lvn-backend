@@ -70,10 +70,10 @@ describe('terms version managed by an admin', () => {
 
   it('starts from the built-in version and its published list', async () => {
     expect(await termsVersion()).toBe('2026-11-12')
-    expect(await status()).toEqual({ current: '2026-11-12', source: 'DEFAULT', publishedVersions: ['2026-10-08', '2026-11-03', '2026-11-12'], acceptedCurrent: null, acceptedOlder: null, lastChange: null })
+    expect(await status()).toEqual({ current: '2026-11-12', source: 'DEFAULT', publishedVersions: ['2026-10-08', '2026-11-03', '2026-11-12', '2026-11-25'], acceptedCurrent: null, acceptedOlder: null, lastChange: null })
     const listed = (await t.gql<{ adminSettings: { key: string; category: string; value: string; overridden: boolean; constraints: { pattern: string | null } }[] }>(SETTINGS, {}, admin.token)).data!.adminSettings
     expect(listed.find((s) => s.key === 'terms_version')).toMatchObject({ category: 'legal', value: '2026-11-12', overridden: false, constraints: { pattern: '^\\d{4}-\\d{2}-\\d{2}$' } })
-    expect(listed.find((s) => s.key === 'terms_published_versions')).toMatchObject({ category: 'legal', value: '2026-10-08,2026-11-03,2026-11-12', overridden: false })
+    expect(listed.find((s) => s.key === 'terms_published_versions')).toMatchObject({ category: 'legal', value: '2026-10-08,2026-11-03,2026-11-12,2026-11-25', overridden: false })
   })
 
   it('is platform-admin only', async () => {
@@ -134,7 +134,7 @@ describe('terms version managed by an admin', () => {
     const audits = await termsAudits()
     expect(audits).toHaveLength(1)
     expect(audits[0]).toMatchObject({ actorId: admin.id, action: 'settings.updated', metadata: { key: 'terms_version', value: '2026-12-01', previous: '2026-11-12' } })
-    expect(await db.auditLog.findFirst({ where: { action: 'settings.updated', metadata: { path: ['key'], equals: 'terms_published_versions' } } })).toMatchObject({ metadata: { value: '2026-10-08,2026-11-03,2026-11-12,2026-12-01', previous: '2026-10-08,2026-11-03,2026-11-12' } })
+    expect(await db.auditLog.findFirst({ where: { action: 'settings.updated', metadata: { path: ['key'], equals: 'terms_published_versions' } } })).toMatchObject({ metadata: { value: '2026-10-08,2026-11-03,2026-11-12,2026-12-01', previous: '2026-10-08,2026-11-03,2026-11-12,2026-11-25' } })
 
     const now = await status()
     expect(now).toMatchObject({ current: '2026-12-01', source: 'SETTING', publishedVersions: ['2026-10-08', '2026-11-03', '2026-11-12', '2026-12-01'] })
@@ -176,7 +176,7 @@ describe('terms version managed by an admin', () => {
     const audits = await termsAudits()
     expect(audits.at(-1)).toMatchObject({ actorId: admin.id, action: 'settings.reset', metadata: { key: 'terms_version', previous: '2026-12-01', value: '2026-11-12' } })
     expect((await reset('terms_published_versions')).userErrors).toEqual([])
-    expect(await status()).toMatchObject({ current: '2026-11-12', source: 'DEFAULT', publishedVersions: ['2026-10-08', '2026-11-03', '2026-11-12'], lastChange: { actorId: admin.id, previous: '2026-12-01' } })
+    expect(await status()).toMatchObject({ current: '2026-11-12', source: 'DEFAULT', publishedVersions: ['2026-10-08', '2026-11-03', '2026-11-12', '2026-11-25'], lastChange: { actorId: admin.id, previous: '2026-12-01' } })
 
     // Sign-in is never gated on the terms: the earlier account (latest acceptance 2026-12-01) still signs in.
     const session = await signIn(earlier.email)
