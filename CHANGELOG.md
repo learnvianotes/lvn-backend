@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-25
+
+### Changed
+
+- Sign-up and completing a Google registration no longer need an age. When none is sent, accepting the Terms is the declaration and the account is recorded as an adult (18), so people search, analytics consent and guardian rules work unchanged. An age that is sent is still checked as before.
+
 ## [0.8.0] - 2026-11-25
 
 ### Added

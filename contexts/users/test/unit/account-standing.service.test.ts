@@ -118,7 +118,6 @@ describe('AuthService age gate', () => {
     [{ age: 0 }, ['input', 'age'], /from 1 to 120/],
     [{ age: 121 }, ['input', 'age'], /from 1 to 120/],
     [{ age: 17.5 }, ['input', 'age'], /whole number/],
-    [{ age: null }, ['input', 'age'], /Enter your age/],
     [{ age: undefined, dateOfBirth: '2004-02-30' }, ['input', 'dateOfBirth'], /real date/],
     [{ age: undefined, dateOfBirth: '2999-01-01' }, ['input', 'dateOfBirth'], /future/],
     [{ age: undefined, dateOfBirth: new Date().toISOString().slice(0, 10) }, ['input', 'dateOfBirth'], /real date of birth/],
@@ -227,9 +226,8 @@ describe('RegistrationService age gate', () => {
     expect(held).toHaveBeenCalledWith('google-1', 'Young One', { declaredAge: ageOn(new Date('2012-01-01T00:00:00Z')), ageDeclaredAt: expect.any(Date) }, DEFAULT_TERMS_VERSION)
   })
 
-  it('refuses a missing or impossible age before holding anything', async () => {
+  it('refuses an impossible age before holding anything (a missing age is an adult by the Terms)', async () => {
     const { service, held } = registration()
-    expect(await rejection(() => service.complete('google-1', { displayName: 'Young One', acceptedTermsVersion: DEFAULT_TERMS_VERSION }))).toMatchObject({ code: ErrorCode.VALIDATION, field: ['input', 'age'] })
     expect(await rejection(() => service.complete('google-1', { displayName: 'Young One', age: 200, acceptedTermsVersion: DEFAULT_TERMS_VERSION }))).toMatchObject({ code: ErrorCode.VALIDATION, field: ['input', 'age'] })
     expect(held).not.toHaveBeenCalled()
   })
