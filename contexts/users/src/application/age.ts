@@ -1,6 +1,6 @@
 import { Errors } from '@lvn-backend/errors'
 import type { Prisma } from '@lvn-backend/prisma-base'
-import { GUARDIAN_CONSENT_EMAIL_PLUS, GUARDIAN_CONSENT_VERIFIED } from '../domain/guardian-consent'
+import { GUARDIAN_CONSENT_EMAIL_PLUS, GUARDIAN_CONSENT_UNDER, GUARDIAN_CONSENT_VERIFIED } from '../domain/guardian-consent'
 import { ageOn, ageSchema, dateOfBirthSchema, latestDayYearsBefore } from '../domain/rules'
 import { parseField } from './input'
 
@@ -62,7 +62,8 @@ export interface DeclaredAge {
  * ADR-0104: the age a `signUp` or `completeRegistration` input declares. `age` is the field. `dateOfBirth` is the
  * deprecated one that apps from before ADR-0104 still send: it is checked as before, turned into whole years today,
  * and only that age is kept. When both are sent, `age` wins and `dateOfBirth` is ignored. `field` is the input the
- * client sent, for errors such as AGE_RESTRICTED.
+ * client sent, for errors such as AGE_RESTRICTED. When neither is sent, the person declared adulthood by accepting the
+ * Terms and ADULT_BY_TERMS is stored.
  */
 export function readDeclaredAge(input: { age?: number | null; dateOfBirth?: string | null }, now: Date = new Date()): { value: DeclaredAge; field: 'age' | 'dateOfBirth' } {
   if (input.age != null) return { value: { declaredAge: parseField(ageSchema, input.age, 'age'), ageDeclaredAt: now }, field: 'age' }
@@ -72,5 +73,10 @@ export function readDeclaredAge(input: { age?: number | null; dateOfBirth?: stri
     if (!ageSchema.safeParse(years).success) throw Errors.validation('Enter a real date of birth.', ['input', 'dateOfBirth'])
     return { value: { declaredAge: years, ageDeclaredAt: now }, field: 'dateOfBirth' }
   }
-  throw Errors.validation('Enter your age.', ['input', 'age'])
+  // Sign-up no longer asks for an age. Accepting the Terms, which require users to be adults, is the declaration:
+  // the account is stored as an adult, so people search, analytics consent and guardian rules keep working unchanged.
+  return { value: { declaredAge: ADULT_BY_TERMS, ageDeclaredAt: now }, field: 'age' }
 }
+
+/** The age recorded when a client sends no age: the Terms state users are adults (GUARDIAN_CONSENT_UNDER = 18). */
+export const ADULT_BY_TERMS = GUARDIAN_CONSENT_UNDER

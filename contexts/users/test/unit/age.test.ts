@@ -110,14 +110,17 @@ describe('readDeclaredAge (ADR-0104)', () => {
     [{ age: -3 }, 'age', 'Enter an age from 1 to 120.'],
     [{ age: 121 }, 'age', 'Enter an age from 1 to 120.'],
     [{ age: 18.2 }, 'age', 'Enter your age as a whole number.'],
-    [{}, 'age', 'Enter your age.'],
-    [{ age: null, dateOfBirth: null }, 'age', 'Enter your age.'],
     [{ dateOfBirth: '2026-06-01' }, 'dateOfBirth', 'Enter a real date of birth.'],
     [{ dateOfBirth: '1900-01-01' }, 'dateOfBirth', 'Enter a real date of birth.'],
     [{ dateOfBirth: '2004-02-30' }, 'dateOfBirth', 'Enter a real date.'],
     [{ dateOfBirth: '' }, 'dateOfBirth', 'Use the format YYYY-MM-DD.'],
   ])('refuses %p as VALIDATION on input.%s', (input, field, message) => {
     expect(fails(input as never)).toMatchObject({ code: ErrorCode.VALIDATION, field: ['input', field], message })
+  })
+
+  it('records an adult when no age is sent (the Terms are the declaration)', () => {
+    expect(readDeclaredAge({}, now)).toEqual({ value: { declaredAge: 18, ageDeclaredAt: now }, field: 'age' })
+    expect(readDeclaredAge({ age: null, dateOfBirth: null }, now).value.declaredAge).toBe(18)
   })
 
   it('accepts the oldest and youngest ages the range allows', () => {

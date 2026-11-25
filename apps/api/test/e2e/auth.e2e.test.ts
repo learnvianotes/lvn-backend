@@ -141,8 +141,6 @@ describe('auth', () => {
       [{ age: 0 }, ['input', 'age'], /from 1 to 120/],
       [{ age: 121 }, ['input', 'age'], /from 1 to 120/],
       [{ age: -5 }, ['input', 'age'], /from 1 to 120/],
-      [{ age: undefined }, ['input', 'age'], /Enter your age/],
-      [{ age: null, dateOfBirth: null }, ['input', 'age'], /Enter your age/],
       // The deprecated dateOfBirth of apps from before ADR-0104 is still checked as before.
       [{ age: undefined, dateOfBirth: '2004-02-30' }, ['input', 'dateOfBirth'], /real date/],
       [{ age: undefined, dateOfBirth: '2999-01-01' }, ['input', 'dateOfBirth'], /future/],
